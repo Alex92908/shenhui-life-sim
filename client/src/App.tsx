@@ -423,6 +423,15 @@ const ENTRY_STEPS: { set: LifeSet; pose: LifePose; caption: string; sub: string 
 ];
 const [carriage, setCarriage] = useState<CarriageRide | null>(null);
 const [carriageLog, setCarriageLog] = useState<string>("");
+/* 车厢顶部的站点条：列车每到一站就把当前站滚到中间 */
+const routeStripRef = useRef<HTMLDivElement | null>(null);
+useEffect(() => {
+const el = routeStripRef.current;
+if (!el || !carriage) return;
+const cur = el.querySelector<HTMLElement>(`[data-stop="${carriage.stopIdx}"]`);
+if (!cur) return;
+el.scrollTo({ left: Math.max(0, cur.offsetLeft - el.clientWidth / 2 + cur.offsetWidth / 2), behavior: "smooth" });
+}, [carriage?.stopIdx, carriage?.route, carriage]);
 /** 公交/打车的搭乘电影动画：和地铁车厢一样是弹出的活动场景
     （等车→上车→坐进车厢看窗外风景→到站下车）。每趟车都演，不管远近；
     四步按这趟行程的实际时长等分推进（每步 = 行程时长 ÷ 4），
@@ -501,6 +510,17 @@ const [barsHidden, setBarsHidden] = useState(false);
    (plus the native Fullscreen API when the browser allows it). */
 const [mapFullscreen, setMapFullscreen] = useState(false);
 const mapShellRef = useRef<HTMLDivElement | null>(null);
+/* 全屏看地图时地区面板默认收起：选地点、搜索、换城市都不再自动弹出，
+   只有点右侧竖条才展开。 */
+const mapFullscreenRef = useRef(false);
+mapFullscreenRef.current = mapFullscreen;
+const autoOpenAside = () => { if (!mapFullscreenRef.current) setAsideOpen(true); };
+const wasFullscreen = useRef(false);
+useEffect(() => {
+if (mapFullscreen) setAsideOpen(false);
+else if (wasFullscreen.current) setAsideOpen(true);
+wasFullscreen.current = mapFullscreen;
+}, [mapFullscreen]);
 useEffect(() => {
   const onFs = () => { if (!document.fullscreenElement) setMapFullscreen(false); };
   document.addEventListener("fullscreenchange", onFs);
@@ -517,11 +537,17 @@ useEffect(() => {
 const toggleMapFullscreen = () => {
   if (mapFullscreen) {
     setMapFullscreen(false);
+    setAsideOpen(true);
     if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
   } else {
     setMapFullscreen(true);
-    const el = mapShellRef.current;
-    if (el && el.requestFullscreen) void el.requestFullscreen().catch(() => {});
+    setAsideOpen(false);
+    // Fullscreen the whole page, not the map shell: in native fullscreen
+    // only the fullscreen element's subtree is painted, so popups living
+    // outside the shell (metro carriage, bus/taxi ride, life scenes, toasts,
+    // daily tasks, share…) would never show up.
+    const el = document.documentElement;
+    if (el.requestFullscreen) void el.requestFullscreen().catch(() => {});
   }
 };
 /* ---- 手游件：弹幕 / 奖励飘字 / 每日任务弹窗 / 升职特效 ----
@@ -1022,7 +1048,7 @@ if (!gsRef.current || walking || carriage) return;
 const s0 = gsRef.current;
 setSelectedLoc(locId);
 setAsideTab("place");
-setAsideOpen(true);
+autoOpenAside();
 if (locId === currentLocRef.current) return;
 const mode = modeOverride ?? travelMode;
 const from = locById(currentLocRef.current);
@@ -1283,7 +1309,7 @@ s.log = [{ day: s.day, text: `坐厦深高铁从${fromStation}到${toStation}，
 });
 setCurrentLoc(INTERCITY_STATION[to]); currentLocRef.current = INTERCITY_STATION[to];
 setSelectedLoc(INTERCITY_STATION[to]);
-setAsideTab("place"); setAsideOpen(true);
+setAsideTab("place"); autoOpenAside();
 setMapFocus({ locId: INTERCITY_STATION[to], nonce: Date.now() });
 showToast(charged ? `🚄 到${toStation}了！这里是${CITIES[to].name}——地图、天气、街坊都换了，进度原样带着（车票 ¥${INTERCITY_FARE}）。` : `🚄 到${toStation}了！钱包不够车票钱——这趟免费坐，绝不拦路。这里是${CITIES[to].name}，进度原样带着。`);
 burstDanmaku([`🚄 ${profileRef.current?.name ?? "我"} 坐高铁去了${CITIES[to].name}`, `欢迎来到${CITIES[to].name} 🎉`]);
@@ -3029,7 +3055,7 @@ return (
 {/* Map — the hero, and now the whole stage: it fills the section
     edge-to-edge at all times. ⛶ 全屏 still offers the native
     full-viewport mode on top of that; Esc or the same button exits. */}
-<div ref={mapShellRef} className={mapFullscreen ? "fixed inset-0 z-[90] flex flex-col bg-[var(--bg)] p-3 pt-safe" : "absolute inset-0 flex flex-col p-2.5"}>
+<div ref={mapShellRef} className={mapFullscreen ? "fixed inset-0 z-[38] flex flex-col bg-[var(--bg)] p-3 pt-safe" : "absolute inset-0 flex flex-col p-2.5"}>
 <div className="relative px-1.5 pb-2.5">
 <div className="flex gap-2">
 <input value={mapQuery} onChange={(e) => setMapQuery(e.target.value)} placeholder={s.cityKey === "hz" ? "🔍 搜地点或城轨/高铁站：西湖、老街、惠州南…" : "🔍 搜地点或地铁站：公园、商场、医院、博物馆、海滩…"} aria-label={`搜索地点或${railWord(s.cityKey)}站`} className="min-w-0 flex-1 rounded-full border border-[var(--line)] bg-[var(--surface)] px-3.5 py-2 text-sm outline-none focus:border-[var(--border)]" />
@@ -3049,7 +3075,7 @@ return (
 {locResults.map((l) => {
 const plan = l.id !== currentLoc ? planRailTrip(s.cityKey, currentLoc, l.id) : null;
 return (
-<button key={l.id} type="button" aria-label={`定位到${l.name}`} onClick={() => { setSelectedLoc(l.id); setAsideTab("place"); setAsideOpen(true); setMapFocus({ locId: l.id, nonce: Date.now() }); setMapQuery(""); }} className="flex w-full items-center gap-2 rounded-[10px] px-2 py-1.5 text-left hover:bg-[var(--surface2)]">
+<button key={l.id} type="button" aria-label={`定位到${l.name}`} onClick={() => { setSelectedLoc(l.id); setAsideTab("place"); autoOpenAside(); setMapFocus({ locId: l.id, nonce: Date.now() }); setMapQuery(""); }} className="flex w-full items-center gap-2 rounded-[10px] px-2 py-1.5 text-left hover:bg-[var(--surface2)]">
 <span className="text-lg">{l.emoji}</span>
 <span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold">{l.name}</span><span className="block truncate text-[11px] text-[var(--dim)]">{l.id === currentLoc ? "你现在在这里" : plan ? `怎么去：${plan.boardLoc !== currentLoc ? `先步行到${locById(plan.boardLoc).short}站 · ` : ""}${railWord(s.cityKey)} ${plan.route.summary} · ${plan.route.stops} 站 · ¥${plan.route.fare}${plan.alightLoc !== l.id ? ` · 到${locById(plan.alightLoc).short}站再步行过去` : ""}` : "怎么去：离得很近，步行就到（在下方选好出行方式，点地点名或地图上的建筑前往）"}</span></span>
 <span className="shrink-0 text-[11px] font-black text-[var(--accent2)]">定位 →</span>
@@ -3713,9 +3739,9 @@ return (
 <p className="mt-0.5 text-xs opacity-90">{locById(c.fromLoc).name} → {locById(c.toLoc).name} · 共 {c.route.stops} 站{c.route.isTransfer ? ` · 换乘 ${c.route.transferStations.length} 次（${c.route.transferStations.join("、")}）` : ""} · 票价 ¥{c.route.fare} · {c.seated ? "💺 坐着" : "🧍 站着扶杆"}</p>
 </div>
 {/* route strip */}
-<div className="flex items-center gap-0 overflow-x-auto px-4 pt-3">
+<div ref={routeStripRef} className="relative flex items-center gap-0 overflow-x-auto px-4 pt-3 [scrollbar-width:none]">
 {c.route.stations.map((st, i) => (
-<span key={st.name + i} className="flex shrink-0 items-center">
+<span key={st.name + i} data-stop={i} className="flex shrink-0 items-center">
 <span className={`grid h-7 w-7 place-items-center rounded-full border-2 text-[10px] font-black ${i < c.stopIdx ? "border-transparent text-white" : i === c.stopIdx ? "bg-[var(--surface)]" : "border-[var(--line)] text-[var(--dim)]"}`} style={i < c.stopIdx ? { background: curLine.colorCss } : i === c.stopIdx ? { borderColor: curLine.colorCss, color: curLine.colorCss } : {}}>{i + 1}</span>
 <span className={`mx-1 text-[11px] font-bold ${i === c.stopIdx ? "" : "text-[var(--dim)]"}`}>{st.name}{c.route.transferStations.includes(st.name) && i > 0 && i < total - 1 ? (c.route.shuttleFrom.includes(st.name) ? "（接驳换乘）" : "（换乘）") : ""}</span>
 {i < total - 1 && <span className="h-0.5 w-3 shrink-0" style={{ background: i < c.stopIdx ? curLine.colorCss : "var(--line)" }} />}
