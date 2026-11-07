@@ -1474,13 +1474,22 @@ export function MapView(p: Props) {
       e.preventDefault();
       camRef.current.lastUser = performance.now();
       autoFitRef.current = false;
-      camRef.current.dist = Math.max(16, Math.min(130, camRef.current.dist + e.deltaY * 0.05));
+      // a trackpad pinch arrives as ctrl+wheel with small deltas: scale it
+      // multiplicatively so pinching feels like pinching
+      const d = camRef.current.dist;
+      const next = e.ctrlKey ? d * Math.exp(e.deltaY * 0.012) : d + e.deltaY * 0.05;
+      camRef.current.dist = Math.max(16, Math.min(130, next));
       setZoomPct(Math.round((fitDistRef.current / camRef.current.dist) * 100));
     };
     dom.addEventListener("pointerdown", onDown);
     dom.addEventListener("pointermove", onMove);
     dom.addEventListener("pointerup", onUp);
-    dom.addEventListener("wheel", onWheel, { passive: false });
+    // Wheel / pinch anywhere over the map (labels, chips and the corner
+    // controls included), not just on the bare canvas: a pinch that lands
+    // on a label would otherwise reach the browser and magnify the whole
+    // page, pushing the header and side panels out of view.
+    const wheelTarget = mount.parentElement ?? dom;
+    wheelTarget.addEventListener("wheel", onWheel, { passive: false });
 
     const resize = () => {
       const w = mount.clientWidth;
@@ -1986,7 +1995,7 @@ export function MapView(p: Props) {
       dom.removeEventListener("pointerdown", onDown);
       dom.removeEventListener("pointermove", onMove);
       dom.removeEventListener("pointerup", onUp);
-      dom.removeEventListener("wheel", onWheel);
+      wheelTarget.removeEventListener("wheel", onWheel);
       renderer.dispose();
       mount.removeChild(renderer.domElement);
       labels.innerHTML = "";

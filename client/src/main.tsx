@@ -5,6 +5,14 @@ import { createRoot } from "react-dom/client";
 import { App, LS_KEY } from "./App";
 import "./theme.css";
 
+// The game is a full-window app: a trackpad pinch (ctrl+wheel in Chrome /
+// Edge / Firefox, gesture events in Safari) must not magnify the page — the
+// visual zoom pushes the header, search bar and side panels off screen with
+// no obvious way back (only ⌘0). The map handles pinch itself; keyboard
+// zoom (⌘+ / ⌘−) keeps working for anyone who wants bigger text.
+window.addEventListener("wheel", (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
+for (const t of ["gesturestart", "gesturechange"]) document.addEventListener(t, (e) => e.preventDefault(), { passive: false });
+
 const rootEl = document.querySelector<HTMLElement>("[data-generated-space-root]");
 if (!rootEl) {
   throw new Error("missing generated space root element");
