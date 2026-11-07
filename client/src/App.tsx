@@ -23,6 +23,7 @@ type ChatAction, type MemMap, type NpcPost, type PlayerNews,
 } from "./npc";
 import { MapView } from "./MapView";
 import { MetroMapModal } from "./MetroMap";
+import { PlacesMapModal } from "./PlacesMap";
 import { LifeStage3D, type LifeSet, type LifePose } from "./LifeStage";
 import { GUIDE, guideForLocName, tourForCity, type DayTour, type GuidePlace } from "./experience";
 
@@ -510,6 +511,7 @@ const [shareOpen, setShareOpen] = useState(false);
 const [shareImg, setShareImg] = useState<{ url: string; blob: Blob } | null>(null);
 const [cloudAt, setCloudAt] = useState("");
 const [restoreCode, setRestoreCode] = useState("");
+const [placesMapOpen, setPlacesMapOpen] = useState(false);
 /* 语言 + 用户协议 / 隐私政策 */
 const [lang, setLangState] = useState<Lang>(() => getLang());
 const switchLang = (l: Lang) => {
@@ -542,11 +544,20 @@ const mapShellRef = useRef<HTMLDivElement | null>(null);
 /* 全屏看地图时地区面板默认收起：选地点、搜索、换城市都不再自动弹出，
    只有点右侧竖条才展开。 */
 const mapFullscreenRef = useRef(false);
+/* 📌 固定：面板钉住后不被点空白收起、不挡地图操作，全屏也保持打开 */
+const [asidePinned, setAsidePinned] = useState(() => { try { return localStorage.getItem("shhr-pin-aside") === "1"; } catch { return false; } });
+const [navPinned, setNavPinned] = useState(() => { try { return localStorage.getItem("shhr-pin-nav") === "1"; } catch { return false; } });
+const asidePinnedRef = useRef(asidePinned); asidePinnedRef.current = asidePinned;
+const navPinnedRef = useRef(navPinned); navPinnedRef.current = navPinned;
+const togglePin = (which: "aside" | "nav") => {
+const set = which === "aside" ? setAsidePinned : setNavPinned;
+set((v) => { const nv = !v; try { localStorage.setItem(`shhr-pin-${which}`, nv ? "1" : "0"); } catch { /* storage unavailable */ } return nv; });
+};
 mapFullscreenRef.current = mapFullscreen;
-const autoOpenAside = () => { if (!mapFullscreenRef.current) setAsideOpen(true); };
+const autoOpenAside = () => { if (!mapFullscreenRef.current || asidePinnedRef.current) setAsideOpen(true); };
 const wasFullscreen = useRef(false);
 useEffect(() => {
-if (mapFullscreen) setAsideOpen(false);
+if (mapFullscreen) { if (!asidePinnedRef.current) setAsideOpen(false); }
 else if (wasFullscreen.current) setAsideOpen(true);
 wasFullscreen.current = mapFullscreen;
 }, [mapFullscreen]);
@@ -570,7 +581,7 @@ const toggleMapFullscreen = () => {
     if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
   } else {
     setMapFullscreen(true);
-    setAsideOpen(false);
+    if (!asidePinnedRef.current) setAsideOpen(false);
     // Fullscreen the whole page, not the map shell: in native fullscreen
     // only the fullscreen element's subtree is painted, so popups living
     // outside the shell (metro carriage, bus/taxi ride, life scenes, toasts,
@@ -3142,6 +3153,7 @@ return (
 <div className="relative px-1.5 pb-2.5">
 <div className="flex gap-2">
 <input value={mapQuery} onChange={(e) => setMapQuery(e.target.value)} placeholder={s.cityKey === "hz" ? "🔍 搜地点或城轨/高铁站：西湖、老街、惠州南…" : "🔍 搜地点或地铁站：公园、商场、医院、博物馆、海滩…"} aria-label={`搜索地点或${railWord(s.cityKey)}站`} className="min-w-0 flex-1 rounded-full border border-[var(--line)] bg-[var(--surface)] px-3.5 py-2 text-sm outline-none focus:border-[var(--border)]" />
+<button type="button" aria-label="打开景点分布图" onClick={() => setPlacesMapOpen(true)} className="shrink-0 rounded-full bg-[var(--green)] px-3.5 py-2 text-xs font-black text-white">🗺️ 景点分布图</button>
 <button type="button" aria-label={s.cityKey === "hz" ? "打开惠州城际高铁线网图" : "打开地铁线路图"} onClick={() => { setMetroMapDest(null); setMetroMapOpen(true); }} className="shrink-0 rounded-full bg-[var(--accent2)] px-3.5 py-2 text-xs font-black text-white">{s.cityKey === "hz" ? "🚆 城际/高铁线网图" : "🚇 地铁线路图"}</button>
 <button type="button" aria-label={mapFullscreen ? "退出地图全屏" : "地图全屏"} aria-pressed={mapFullscreen} onClick={toggleMapFullscreen} className={`shrink-0 rounded-full px-3.5 py-2 text-xs font-black text-white ${mapFullscreen ? "bg-[var(--accent)]" : "bg-[#14202b]"}`}>{mapFullscreen ? "⛶ 退出全屏" : "⛶ 全屏看地图"}</button>
 </div>
@@ -3208,6 +3220,7 @@ return (
 <div className="absolute left-3 top-[13%] z-20 flex max-h-[74%] w-[min(332px,calc(100%-24px))] flex-col rounded-[16px] border border-black/40 bg-[#0b1622]/95 p-3 text-white shadow-2xl">
 <div className="mb-1 flex items-center justify-between gap-2">
 <p className="text-xs font-black">🧭 出行导航</p>
+<button type="button" aria-label={navPinned ? "取消固定出行导航" : "固定出行导航"} aria-pressed={navPinned} title={navPinned ? "已固定：选地点后不收起；再点取消" : "固定：选了地点出发后面板也不收起"} onClick={() => togglePin("nav")} className={`ml-auto rounded-full px-2.5 py-1 text-[11px] font-black ${navPinned ? "bg-white text-[#14202b]" : "border border-white/25 bg-white/10"}`}>📌 {navPinned ? "已固定" : "固定"}</button>
 <button type="button" aria-label="收起出行导航" onClick={() => setNavOpen(false)} className="rounded-full border border-white/25 bg-white/10 px-2.5 py-1 text-[11px] font-black">收起 ✕</button>
 </div>
 <div className="flex flex-wrap gap-1.5 text-[11px] font-bold">
@@ -3249,7 +3262,7 @@ return (
 <p className="mt-2.5 text-[11px] font-black tracking-wide text-white/70">去哪里 · 点了就出发，选中的地点详情在右侧「📍 地点」里</p>
 <div className="mt-1.5 flex min-h-0 flex-wrap content-start gap-1.5 overflow-y-auto pr-0.5">
 {getLocations(s.cityKey).map((l) => (
-<button key={l.id} type="button" aria-label={`前往${l.name}`} onClick={() => { setNavOpen(false); walkTo(l.id); }} className={`rounded-full border px-2.5 py-1.5 text-xs font-bold ${l.id === selectedLoc ? "border-transparent bg-white text-[#14202b]" : "border-white/25 bg-white/10 text-white"}`}>
+<button key={l.id} type="button" aria-label={`前往${l.name}`} onClick={() => { if (!navPinnedRef.current) setNavOpen(false); walkTo(l.id); }} className={`rounded-full border px-2.5 py-1.5 text-xs font-bold ${l.id === selectedLoc ? "border-transparent bg-white text-[#14202b]" : "border-white/25 bg-white/10 text-white"}`}>
 {l.emoji} {l.short}{world?.online.some((pl) => pl.cityKey === s.cityKey && pl.locId === l.id && pl.id !== myId) ? " ·有人" : ""}
 </button>
 ))}
@@ -3270,10 +3283,11 @@ return (
 <>
 {asideOpen && (
 <>
-<button type="button" aria-label="点空白处把地区面板竖着收起成右侧竖条" onClick={() => setAsideOpen(false)} className="fixed inset-0 z-[35] cursor-default bg-black/15" />
+{!asidePinned && <button type="button" aria-label="点空白处把地区面板竖着收起成右侧竖条" onClick={() => setAsideOpen(false)} className="fixed inset-0 z-[35] cursor-default bg-black/15" />}
 <div className="float-panel fixed bottom-3 right-3 top-[76px] z-40 flex w-[430px] max-w-[calc(100vw-24px)] flex-col overflow-y-auto overflow-x-hidden rounded-[18px] border-2 border-[var(--border)] p-4 shadow-2xl">
 <div className="mb-2.5 flex items-center justify-between gap-2">
 <p className="text-xs font-black tracking-wide text-[var(--dim)]">🗺️ 地区面板 · {selLoc.emoji} {selLoc.short}一带</p>
+<button type="button" aria-label={asidePinned ? "取消固定地区面板" : "固定地区面板"} aria-pressed={asidePinned} title={asidePinned ? "已固定：点空白不收起，地图照常可点；再点取消固定" : "固定：面板一直挂着，点地图空白处也不收起"} onClick={() => togglePin("aside")} className={`ml-auto shrink-0 rounded-full px-2.5 py-1.5 text-[11px] font-black ${asidePinned ? "bg-[var(--text)] text-[var(--bg)]" : "border border-[var(--line)] bg-[var(--surface)]"}`}>📌 {asidePinned ? "已固定" : "固定"}</button>
 <button type="button" aria-label="竖着收起地区面板，收成屏幕右侧的竖条，点竖条随时展开" title="竖着收起成右侧竖条，一直留在屏幕边上，点一下就展开" onClick={() => setAsideOpen(false)} className="shrink-0 rounded-full border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-[11px] font-black transition hover:border-[var(--border)]">竖收起 »</button>
 </div>
 <div className="grid grid-cols-6 gap-1 rounded-full bg-[var(--surface2)] p-1" role="tablist" aria-label="地点与联机面板">
@@ -3913,6 +3927,12 @@ return (
 </div>
 );
 })()}
+
+{placesMapOpen && (
+<PlacesMapModal cityKey={s.cityKey} fromLocId={currentLoc} onClose={() => setPlacesMapOpen(false)}
+onGo={(id) => { setPlacesMapOpen(false); walkTo(id); }}
+onLocate={(x, z, name) => { setPlacesMapOpen(false); setMapFocus({ x, z, nonce: Date.now() }); showToast(`📍 已在地图上定位到「${name}」。`); }} />
+)}
 
 {metroMapOpen && (
 <MetroMapModal cityKey={s.cityKey} fromLocId={currentLoc} initialDest={metroMapDest} onClose={() => setMetroMapOpen(false)}

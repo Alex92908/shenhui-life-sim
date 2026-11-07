@@ -293,6 +293,8 @@ interface Chip {
   station?: boolean;
   /** A real place (park, mall, museum …) — shown only when zoomed in. */
   place?: boolean;
+  /** The small English subtitle line under a place name, if any. */
+  sub?: HTMLElement | null;
   w: number;
   h: number;
   lastText: string;
@@ -323,6 +325,20 @@ export function MapView(p: Props) {
   const [zoomPct, setZoomPct] = useState(100);
   const [glFailed, setGlFailed] = useState(false);
   const [cine, setCine] = useState(true);
+  /* 标签密度：精简 / 标准 / 全部 — fewer labels when zoomed out so they stop
+     covering the city; remembered per browser. */
+  type LabelDensity = "few" | "normal" | "all";
+  const [labelDensity, setLabelDensity] = useState<LabelDensity>(() => {
+    try { const v = localStorage.getItem("shhr-labels"); if (v === "few" || v === "normal" || v === "all") return v; } catch { /* default */ }
+    return "normal";
+  });
+  const labelDensityRef = useRef(labelDensity);
+  labelDensityRef.current = labelDensity;
+  const cycleLabels = () => setLabelDensity((d) => {
+    const next: LabelDensity = d === "few" ? "normal" : d === "normal" ? "all" : "few";
+    try { localStorage.setItem("shhr-labels", next); } catch { /* storage unavailable */ }
+    return next;
+  });
   const cineRef = useRef(true);
   cineRef.current = cine;
   const focusRef = useRef(0);
@@ -1167,7 +1183,7 @@ export function MapView(p: Props) {
         "position:absolute;left:0;top:0;transform:translate(-50%,-100%);white-space:nowrap;pointer-events:auto;cursor:pointer;font:700 11px 'Noto Sans SC',sans-serif;line-height:1.3;padding:3px 8px;border-radius:10px;border:1px solid rgba(20,26,32,.55);background:rgba(255,253,248,.93);color:#14202b;box-shadow:0 1px 4px rgba(10,20,30,.25);";
       b.addEventListener("click", () => propsRef.current.onSelect(l.id));
       labels.appendChild(b);
-      chips.push({ el: b, kind: "loc", locId: l.id, w: 0, h: 0, lastText: "", visible: true, clampDx: 0, clampDy: 0, getPos: () => ({ x: l.x, y: LAND + (labelTop.get(l.id) ?? l.h * 1.7 + 1.2) + 1.4, z: l.z }) });
+      chips.push({ el: b, kind: "loc", sub: b.querySelector("span"), locId: l.id, w: 0, h: 0, lastText: "", visible: true, clampDx: 0, clampDy: 0, getPos: () => ({ x: l.x, y: LAND + (labelTop.get(l.id) ?? l.h * 1.7 + 1.2) + 1.4, z: l.z }) });
     }
     for (const range of MOUNTAINS[cityKey]) {
       if (!range.label || range.lx === undefined || range.lz === undefined) continue;
@@ -1837,6 +1853,11 @@ export function MapView(p: Props) {
       declutterTick++;
       const redo = declutterTick % 3 === 1;
       const placed: { x1: number; y1: number; x2: number; y2: number }[] = [];
+      const density = labelDensityRef.current;
+      const english = document.documentElement.lang === "en";
+      // how many place labels may show at once (zoomed out it is the city view)
+      const locCap = density === "all" ? 999 : overview ? (density === "few" ? 8 : 22) : density === "few" ? 14 : 60;
+      let locShown = 0;
       const cands: { chip: Chip; sx: number; sy: number; prio: number }[] = [];
       for (const chip of chips) {
         const pos = chip.getPos();
@@ -1859,7 +1880,7 @@ export function MapView(p: Props) {
         if (chip.kind === "actor") {
           if (chip.self) prio = 0;
           else {
-            if (overview && dCam > 20) {
+            if ((overview && dCam > 20) || (density !== "all" && dCam > (density === "few" ? 6 : 12))) {
               chip.visible = false;
               chip.el.style.display = "none";
               continue;
@@ -1876,6 +1897,11 @@ export function MapView(p: Props) {
           }
           prio = (chip.place ? 9.3 : 9.5) + dCam / 40;
         } else if (chip.metro) {
+          if (density === "few") {
+            chip.visible = false;
+            chip.el.style.display = "none";
+            continue;
+          }
           prio = 8;
         } else {
           if (overview) {
@@ -1884,6 +1910,12 @@ export function MapView(p: Props) {
             continue;
           }
           prio = 9;
+        }
+        // the English subtitle duplicates the name in English mode, and is
+        // noise at city scale: show it only zoomed in, in Chinese
+        if (chip.sub) {
+          const want = overview || english || density === "few" ? "none" : "";
+          if (chip.sub.style.display !== want) { chip.sub.style.display = want; chip.w = 0; }
         }
         const txt = chip.el.textContent ?? "";
         if (chip.w === 0 || (chip.kind === "actor" && txt !== chip.lastText)) {
@@ -1898,7 +1930,12 @@ export function MapView(p: Props) {
       if (redo) {
         cands.sort((a, b) => a.prio - b.prio);
         for (const c of cands) {
-          const hw = c.chip.w / 2 + 4;
+          if (c.chip.kind === "loc" && !c.chip.self && c.chip.locId !== propsRef.current.selfLocId && c.chip.locId !== propsRef.current.destLocId && locShown >= locCap) {
+            c.chip.visible = false;
+            c.chip.el.style.display = "none";
+            continue;
+          }
+          const hw = c.chip.w / 2 + (density === "all" ? 4 : 9);
           /* Edge clamp: pull the anchor inward so the WHOLE chip stays on
              screen — a place at the map's edge used to get its label sliced
              in half by the overlay edge. The delta is remembered on the
@@ -1923,6 +1960,7 @@ export function MapView(p: Props) {
             continue;
           }
           placed.push(box);
+          if (c.chip.kind === "loc") locShown++;
           c.chip.visible = true;
           c.chip.el.style.display = "";
           c.chip.el.style.transform = `translate(-50%,-100%) translate(${ax.toFixed(1)}px,${ay.toFixed(1)}px)`;
@@ -2113,6 +2151,7 @@ export function MapView(p: Props) {
         <span className="grid h-9 min-w-9 place-items-center rounded-full border border-black/40 bg-[#14202b]/90 px-2 text-[11px] font-black text-white shadow" aria-label={`当前缩放 ${zoomPct}%`} title="当前缩放比例（⌂ 回到 100%）">{zoomPct}%</span>
         <button type="button" aria-label="放大地图" onClick={() => zoomBy(0.78)} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">＋</button>
         <button type="button" aria-label="缩小地图" onClick={() => zoomBy(1.28)} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">－</button>
+        <button type="button" aria-label="标签密度" title={labelDensity === "few" ? "标签：精简（点一下切换）" : labelDensity === "normal" ? "标签：标准（点一下切换）" : "标签：全部（点一下切换）"} onClick={cycleLabels} className="grid h-9 min-w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 px-2 text-[11px] font-black text-[#14202b] shadow">🏷️{labelDensity === "few" ? "简" : labelDensity === "normal" ? "标" : "全"}</button>
         <button type="button" aria-label="重置视角" onClick={resetCam} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">⌂</button>
       </div>
       <p className="pointer-events-none absolute left-3 top-3 z-10 rounded-full bg-[#0b1622]/70 px-3 py-1.5 text-[11px] font-bold text-white/90">

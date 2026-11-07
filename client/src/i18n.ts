@@ -158,12 +158,56 @@ const EN: Record<string, string> = {
   "站（上下车、换乘、到站自动盖章）": "stations (stamped when you board, change or arrive)", "🏅 成就 · 点已解锁的戴上称号（别的玩家能看到）": "🏅 Achievements · wear an unlocked one as your title (others see it)",
   "进度存在这台设备的浏览器里（开了云存档也会存一份到服务器）。今天：": "Progress is stored in this browser (and on the server with cloud save). Today:",
   "🗺️ 地区面板 · ": "🗺️ Area · ", "一带": "", "🔥 连续上线": "🔥 Streak", "最长": "best", "已过完": "runs done", "局": "",
+  "📌 固定": "📌 Pin", "📌 已固定": "📌 Pinned", "固定地区面板": "Pin the area panel", "取消固定地区面板": "Unpin the area panel", "固定出行导航": "Pin directions", "取消固定出行导航": "Unpin directions",
+  "标签密度": "Label density", "🏷️简": "🏷️ Few", "🏷️标": "🏷️ Std", "🏷️全": "🏷️ All",
+  // directions panel / minimap / map toolbar
+  "收起导航": "Hide directions", "个地点（双城共": "places (both cities:", "个，含口岸/山区/风景区）": "incl. checkpoints, mountains, scenic areas)", "🟢 同城真人": "🟢 Real players here",
+  "人（含你）": "(incl. you)", "🧑‍🤝‍🧑 街坊 NPC": "🧑‍🤝‍🧑 Neighbour NPCs", "位也在图上散步（名字后是今日心情）": "walking around too (today's mood after the name)",
+  "出行方式 · 选好再点地点（或直接点地图上的建筑/标签前往）": "Travel mode · pick one, then a place (or tap a building/label on the map)",
+  "最慢": "slowest", "慢": "slow", "摩托/电动车": "Moto / e-bike", "中速": "medium", "地铁": "Metro", "快": "fast", "城际/高铁": "Intercity / HSR", "最快": "fastest",
+  "免费，最慢，耗能量": "Free, slowest, costs energy", "· 速度差别是真的：步行最慢，骑行快近一倍，电动车/公交再快，打车和": "· Speeds are real: walking is slowest, cycling nearly twice as fast, e-bike/bus faster, taxi and",
+  "更快，高铁/城际最快——地图上人物的移动速度、实际到达时间都按这个来。公交/打车/": "faster, HSR/intercity fastest — the figure on the map and arrival times follow this. Bus/taxi/",
+  "/高铁搭乘时都会弹车厢动画。": "/rail rides play a carriage scene.", "🚲 骑行全图开通：本城": "🚲 Bikes reach everywhere: all", "个地点——山顶、海滩、老街、景区——全都能骑到；余额不够付骑行费时免费骑，绝不拦路。": "places in this city — peaks, beaches, old streets, scenic areas; ride free if you can't pay.",
+  "去哪里 · 点了就出发，选中的地点详情在右侧「📍 地点」里": "Where to · tap to go; details appear in 📍 Place on the right", "·有人": "· players here",
+  "拖动旋转 · 滚轮/＋－缩放（右下角显示比例） · 点建筑或标签前往 · 左下小地图看全城、点它定位镜头 · 天色按当地真实时间、云雨按真实天气走 · 右下 ☀️🌇🌙 预览时间 · 🕐 回到真实时间 · 🎥 延时演示 · 🎬 电影镜头": "Drag to rotate · scroll/＋－ to zoom · tap a building or label to go · minimap bottom-left · sky follows local time and live weather · ☀️🌇🌙 preview time · 🕐 back to real time · 🎥 time-lapse · 🎬 cinematic camera",
+  "🗺️ 小地图 ·": "🗺️ Minimap ·", "全城": "whole city", "收起 ▾": "Hide ▾", "⚪ 你 · 🟡 NPC/玩家 · 🔴 目的地 · 点图定位镜头": "⚪ You · 🟡 NPC/players · 🔴 destination · tap to move the camera",
+  "💬 弹幕": "💬 Danmaku", "开": "on", "🚄 切换城市 · 去": "🚄 Switch city · to", "固定": "Pin",
+  "跳到白天": "Jump to day", "跳到黄昏": "Jump to dusk", "跳到夜晚": "Jump to night", "回到真实时间：天色按深圳/惠州当地此刻走": "Back to real time",
+  "延时演示：一昼夜30秒，看昼夜光影全程": "Time-lapse: a full day in 30 s", "关闭电影镜头": "Turn off cinematic camera", "当前缩放比例（⌂ 回到 100%）": "Zoom (⌂ resets to 100%)",
+  "放大地图": "Zoom in", "缩小地图": "Zoom out", "重置视角": "Reset view", "收起小地图": "Hide minimap", "标签：精简（点一下切换）": "Labels: few (tap to change)", "标签：标准（点一下切换）": "Labels: standard (tap to change)", "标签：全部（点一下切换）": "Labels: all (tap to change)",
+  "点空白处把地区面板竖着收起成右侧竖条": "Click outside to collapse the area panel", "固定：面板一直挂着，点地图空白处也不收起": "Pin: keep the panel open", "竖着收起地区面板，收成屏幕右侧的竖条，点竖条随时展开": "Collapse the area panel to the side rail",
+  "竖着收起成右侧竖条，一直留在屏幕边上，点一下就展开": "Collapse to the side rail", "地点与联机面板": "Place and multiplayer panel", "固定：选了地点出发后面板也不收起": "Pin: stay open after choosing a place",
+  "收起地图上的出行导航": "Hide directions", "地图全屏": "Fullscreen map", "搜索地点或地铁站": "Search places or stations", "打开地图上的出行导航": "Open directions",
+  "刷新深圳真实天气": "Refresh Shenzhen weather", "竖着收起状态卡，收成屏幕左侧的竖排按钮": "Collapse the status card", "竖着收起，收成屏幕左侧的竖排按钮，点一下就展开": "Collapse to a side button",
+  "展开：状态详情 / 峰会活动 / 城市速览": "Expand: status / Summit / city overview", "按场合换上睡衣": "Change into pyjamas",
+  // place panel bits
+  "🗺️ 地区面板 ·": "🗺️ Area ·", "👕 场合提示：这里更适合穿「": "👕 Dress tip: better to wear “", "），你现在穿的是「": "), you're wearing “", "睡衣": "pyjamas", "休闲装": "casual wear", "正装": "formal wear", "运动装": "sportswear", "雨衣": "raincoat",
+  "换上睡衣": "Put on pyjamas", "在家穿睡衣：躺平恢复额外 +6 能量": "pyjamas at home: +6 extra energy when resting", "🛏️ 住宿场景": "🛏️ Places to stay", "酒店 / 青旅 / 民宿 / 租房 · 走进去看房间": "Hotels / hostels / B&Bs / rentals · step inside",
+  "🏠 My home · 户型 / 衣柜 / 装修 / 家具": "🏠 My home · layout / wardrobe / decor / furniture", "家具": "Furniture", "件": "items", "最近：": "Latest: ", "地址": "Address", "价格": "Price", "时间": "Hours", "城市知识：": "City fact: ",
+  "📷 真实经历 · 实拍": "📷 Real experience ·", "上一张实拍照片": "Previous photo", "下一张实拍照片": "Next photo",
+  // metro map modal
+  "地铁 / 城轨线网图": "Metro / rail network map", "全部运营线路 · 点站点选起点和终点": "All lines in service · tap stations for start and end", "全选": "All", "反选": "Invert", "○ 单选": "○ Single", "缩放": "Zoom",
+  "放大到 200% 或只看 ≤3 条线时显示全部站名，鼠标停在站点上也能看站名": "All station names show at 200% or with ≤3 lines; hover a station to see its name", "线路数据 © OpenStreetMap contributors": "Line data © OpenStreetMap contributors",
+  "起点 ·": "From ·", "终点 ·": "To ·", "再点一个站": "tap another station", "清除": "Clear", "📍 在地图上定位「": "📍 Show on map “", "示意线网图：按真实站点方位绘制，距离经压缩，非等比例测绘。": "Schematic: real station directions, compressed distances, not to scale.",
+  "起点已选好，再点一个终点站就能规划路线。": "Start set — tap a destination station to plan the route.", "地铁线网图": "Metro network map", "关闭线网图": "Close the metro map", "显示全部线路": "Show all lines", "反选线路": "Invert lines",
+  "单选模式：点一条线只显示这一条": "Single mode: tap a line to show only it", "单选模式：点一条线就只看这一条": "Single mode: tap a line to show only it", "深圳地铁线网示意图": "Shenzhen metro schematic", "清除起终点选择": "Clear start and end",
+  "东莞·广州方向": "towards Dongguan · Guangzhou", "惠州南·惠州方向": "towards Huizhou South", "深圳北·深圳方向": "towards Shenzhen North",
+  // daily modal / phone
+  "📋 每日任务 · Day": "📋 Daily tasks · Day", "的一天，从签到开始": " — start the day with a check-in", "峰会倒计时": "Summit countdown", "🔥 连续上线第": "🔥 Day",
+  "（真实日历，断一天从 1 重来，第 7 天起奖励最高）": "of your streak (real days; miss one and it restarts; max reward from day 7)", "Today's tasks · 完成点领取，奖励立刻飘字到账": "Today's tasks · claim when done",
+  "去创业公司点「上班」": "Go to the startup and tap “Work”", "每日任务": "Daily tasks", "关闭每日任务": "Close daily tasks", "每日签到领奖励": "Daily check-in reward",
+  "职业中心": "Career", "招聘广场": "Jobs", "点外卖": "Delivery", "手机银行": "Bank", "街坊社交": "Neighbours", "日历": "Calendar", "天气": "Weather", "记账本": "Ledger", "城市地图": "City map",
+  "峰会资讯": "Summit news", "地铁通": "Metro", "城轨通": "Rail", "手机": "Phone", "我的家": "My home",
+  "急救 120 · 报警 110 · 最近医院：": "Ambulance 120 · Police 110 · nearest hospital: ",
+  "🗺️ 景点分布图": "🗺️ Places map", "打开景点分布图": "Open the places map", "关闭景点分布图": "Close the places map", "游戏地点": "Game places", "景点古迹": "Sights & history",
+  "公园 · 山海": "Parks · hills & sea", "文化 · 校园": "Culture · campuses", "医院 · 公共服务": "Hospitals · services", "搜地点名…": "Search places…", "📍 在地图上定位": "📍 Show on map", "前往 →": "Go →",
+  "点一个点看详情；名字放不下时会自动隐藏，放大能看到更多。红圈是你现在的位置。地点数据 © OpenStreetMap contributors。": "Tap a point for details; names hide when they would overlap — zoom in to see more. The red ring is you. Place data © OpenStreetMap contributors.",
   // misc
   "知道了": "Got it", "关闭": "Close", "中文": "中文", "深惠人生战绩.png": "shenzhen-life.png", "我的深惠人生战绩卡": "My Shenzhen life card",
   "真实天气暂时取不到": "Live weather unavailable", "🌡️ 实况加载中…": "🌡️ Loading weather…", "（网络不通，这是上次的缓存）": "(offline — cached)",
   "职场新人": "Rookie", "业务骨干": "Core staff", "小组主管": "Team lead", "部门经理": "Manager", "城市合伙人": "City partner",
   "上班": "Work", "加班": "Overtime", "交租": "Rent", "今日": "Today", "已完成": "Done", "进行中": "In progress", "已结束": "Ended", "无路线": "No route",
-  "城中村出租屋": "Urban-village flat", "海边出租屋": "Seaside flat", "我的家": "My home", "舒适度": "Comfort", "人脉": "Network", "技能": "Skill", "职级": "Rank",
+  "城中村出租屋": "Urban-village flat", "海边出租屋": "Seaside flat", "舒适度": "Comfort", "人脉": "Network", "技能": "Skill", "职级": "Rank",
   "上班次数": "Work days", "加班次数": "Overtime nights", "干饭次数": "Meals", "最高存款": "Peak savings", "理财余额": "Investments", "最终存款": "Final savings",
   "存活天数": "Days survived", "已交房租": "Rent paid", "累计收入": "Total earned",
 };
@@ -208,16 +252,18 @@ const WORDS: Record<string, string> = {
   "大部晴朗": "Mostly clear", "晴间多云": "Partly cloudy", "雷阵雨": "Thunderstorms", "毛毛雨": "Drizzle", "阵雨": "Showers", "小雨": "Light rain", "中雨": "Rain", "大雨": "Heavy rain", "暴雨": "Rainstorm",
   "多云": "Cloudy", "阴": "Overcast", "晴": "Clear", "雾": "Fog", "深圳实况": "Shenzhen live", "惠州实况": "Huizhou live", "实况": "live",
   "食材": "Groceries", "体质": "Fitness", "技能": "Skill", "现金": "cash", "转入理财": "into investments", "可能": "maybe", "约一半概率转手": "~50% chance to resell for", "人情": "Goodwill", "关系": "Bond",
-  "还有": "in", "天": "days", "号线": "", "深圳": "Shenzhen", "惠州": "Huizhou", "公里": "km", "分钟": "min", "免费": "free", "能量": "Energy", "心情": "Mood", "经验": "XP", "人脉": "Network",
+  "还有": "in", "天气": "Weather", "号线": "", "深圳": "Shenzhen", "惠州": "Huizhou", "公里": "km", "分钟": "min", "免费": "free", "能量": "Energy", "心情": "Mood", "经验": "XP", "人脉": "Network",
 };
 const WORD_KEYS = Object.keys(WORDS).sort((a, b) => b.length - a.length);
 let built = false;
 function buildDataNames(): void {
   if (built) return;
   built = true;
-  for (const [zh, en] of Object.entries(SZ_STATION_EN)) { EN[zh] ??= en; EN[`${zh}站`] ??= en.endsWith("Station") ? en : `${en} Station`; }
-  for (const ck of ["sz", "hz"] as const) for (const l of getLocations(ck)) { const en = LOC_EN[l.name] ?? SHORT_EN[l.short]; if (en) EN[l.short] ??= en; }
+  for (const [k, m] of Object.entries(PLACE_KINDS)) { const en = KIND_EN[k]; if (en) EN[m.label] ??= en; }
   for (const [zh, en] of Object.entries(SHORT_EN)) EN[zh] ??= en;
+  for (const [zh, en] of Object.entries(SZ_STATION_EN)) { EN[zh] ??= en; EN[`${zh}站`] ??= en.endsWith("Station") ? en : `${en} Station`; }
+  // a short label only gets the full English name when it is specific (not "医院", "商场" …)
+  for (const ck of ["sz", "hz"] as const) for (const l of getLocations(ck)) { const en = SHORT_EN[l.short] ?? (l.short.length >= 3 ? LOC_EN[l.name] : undefined); if (en) EN[l.short] ??= en; }
   for (const [zh, en] of Object.entries(ROADS_EN)) EN[zh] ??= en;
   for (const [zh, en] of Object.entries(LOC_EN)) EN[zh] ??= en;
   for (const p of placesForCity("sz")) if (p.en) EN[p.name] ??= p.en;
@@ -237,6 +283,18 @@ const PATTERNS: [RegExp, string | ((...m: string[]) => string)][] = [
   [/^(\d+(?:\/\d+)?)号线$/, "Line $1"], [/^有轨(\d)号线$/, "Tram $1"], [/^(\d+)号线（(.+)）$/, "Line $1"],
   [/^· 还有 (\d+) 天$/, "· $1 days to go"], [/^11 月 (\d+) 日$/, "Nov $1"], [/^11 月 (\d+)–(\d+) 日$/, "Nov $1–$2"], [/^(.+) ([\d.]+)m · (.+)$/, (_m, a, h, b) => `${EN[a!] ?? a} ${h}m · ${EN[b!] ?? b}`],
 ];
+const nameEN = (zh: string) => EN[zh] ?? EN[`${zh}站`] ?? zh;
+PATTERNS.push(
+  [/^前往(.+)$/, (_m, n) => `Go to ${nameEN(n!)}`],
+  [/^(.+) · 点一下去这个站$/, (_m, n) => `${n} · tap to go`],
+  [/^(.+) · (.+) · 最近站：(.+)$/, (_m, a, b, c) => `${nameEN(a!)} · ${b} · nearest station: ${nameEN(c!)}`],
+  [/^隐藏(.+)$/, (_m, n) => `Hide ${nameEN(n!)}`], [/^打开(.+)$/, (_m, n) => `Open ${nameEN(n!)}`], [/^展开(.+)$/, (_m, n) => `Expand ${nameEN(n!)}`],
+  [/^出行方式(.+)，速度(.+)$/, (_m, a, b) => `Travel by ${nameEN(a!)}, ${nameEN(b!)}`],
+  [/^在大地图上定位(.+)$/, (_m, n) => `Show ${nameEN(n!)} on the map`], [/^线网图缩放到 (\d+)%$/, "Zoom metro map to $1%"],
+  [/^当前缩放 (\d+)%$/, "Zoom $1%"], [/^存钱目标进度 (\d+)%$/, "Savings goal $1%"], [/^领取连续上线奖励 · ¥(\d+)$/, "Claim streak reward · ¥$1"],
+  [/^(.+) · Line (.+)$/, (_m, a, b) => `${nameEN(a!)} · Line ${b}`],
+  [/^(.+)↔(.+)$/, (_m, a, b) => `${nameEN(a!)}↔${nameEN(b!)}`],
+);
 const EMOJI_PREFIX = /^((?:\p{Extended_Pictographic}|\uFE0F|\u200D|[\u2600-\u27BF])+\s*)(.+)$/u;
 
 function translateText(raw: string): string | null {
