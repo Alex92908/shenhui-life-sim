@@ -1,7 +1,7 @@
 /* 地标缩影 — low-poly miniatures of the real buildings and places.
 
    Every playable location used to be the same box + pyramid roof. Here each
-   one gets a small model of what is really there: 平安金融中心's tapered
+   one gets a small model of what is really there: 某安金融中心's tapered
    tower, 春茧's lattice cocoon, the 口岸 inspection halls with their lane
    canopies, 城中村 handshake buildings, beaches with umbrellas, mountain
    parks with trails and a summit pavilion …
@@ -17,7 +17,7 @@ import { SZ_PLACES } from "./places-sz";
 
 export interface BuiltLandmark {
   group: THREE.Group;
-  /** Height of the model's top (for the label and the APEC flag). */
+  /** Height of the model's top (for the label and the Summit flag). */
   top: number;
   /** Groups that turn about their local z axis (ferris wheels). */
   spin: THREE.Object3D[];
@@ -264,7 +264,7 @@ export function createLandmarks(winTex: THREE.Texture) {
 
   /* ---- specific locations ---- */
   const SPECIFIC: Record<string, (k: Kit, l: Loc, spin: THREE.Object3D[], g: THREE.Group) => number> = {
-    // 平安金融中心: tapered glass shaft, stone ribs, crown and spire
+    // 某安金融中心: tapered glass shaft, stone ribs, crown and spire
     "sz:bank": (k) => {
       plate(k, 1.7);
       k.box(CONCRETE, 2.8, 1.2, 2.8, 0, 0.14, 0);
@@ -284,7 +284,7 @@ export function createLandmarks(winTex: THREE.Texture) {
       return 5.4;
     },
     /* ---- 大厂总部 ---- */
-    // 腾讯滨海大厦: twin towers tied by three sky bridges
+    // 某讯滨海大厦: twin towers tied by three sky bridges
     "sz:co-tencent": (k) => {
       plate(k, 1.75);
       tower(k, 1.05, 10.5, 1.1, 0x7fa9c9, -1.0, -0.1, 0.14);
@@ -293,7 +293,7 @@ export function createLandmarks(winTex: THREE.Texture) {
       k.box(neon(0x3b82f6), 0.8, 0.3, 0.05, -1.0, 8.5, 0.47);
       return 11;
     },
-    // 腾讯企鹅岛: a reclaimed-land campus ringed by water, two 云海大厦 towers,
+    // 某讯大铲湾园区: a reclaimed-land campus ringed by water, two 云海大厦 towers,
     // mid-rise blocks with green roofs, a seaside boardwalk — and a penguin
     "sz:co-penguin": (k) => {
       k.cyl(WATER, 1.9, 1.9, 0.05, 0, 0, 0, 28);
@@ -315,7 +315,7 @@ export function createLandmarks(winTex: THREE.Texture) {
       k.box(orange, 0.12, 0.04, 0.1, 1.12, 0.16, 1.02);
       return 4.1;
     },
-    // 抖音集团后海中心: a slim ~150 m tower with a sloped crown
+    // 某音集团后海中心: a slim ~150 m tower with a sloped crown
     "sz:co-bytedance": (k) => {
       plate(k, 1.3);
       k.box(CONCRETE, 1.6, 0.6, 1.4, 0, 0.14, 0);
@@ -325,7 +325,7 @@ export function createLandmarks(winTex: THREE.Texture) {
       k.box(neon(0xf43f5e), 0.06, 6.5, 0.06, -0.53, 1.6, 0.53);
       return 9.8;
     },
-    // 百度国际大厦: east and west towers on a shared podium
+    // 某度国际大厦: east and west towers on a shared podium
     "sz:co-baidu": (k) => {
       plate(k, 1.3);
       k.box(CONCRETE, 2.2, 0.7, 1.4, 0, 0.14, 0);
@@ -334,7 +334,7 @@ export function createLandmarks(winTex: THREE.Texture) {
       k.box(neon(0x2563eb), 0.6, 0.25, 0.04, -0.55, 7.2, 0.46);
       return 8.2;
     },
-    // 大疆天空之城: two towers with platforms cantilevered between them
+    // 某疆总部大楼: two towers with platforms cantilevered between them
     "sz:co-dji": (k) => {
       plate(k, 1.3);
       tower(k, 0.75, 8.5, 0.75, 0x30363d, -0.6, -0.1, 0.14);
@@ -345,7 +345,7 @@ export function createLandmarks(winTex: THREE.Texture) {
       for (const [dx, dz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) k.cyl(STEEL, 0.09, 0.09, 0.02, -0.6 + dx * 0.2, 9.36, -0.1 + dz * 0.2, 8);
       return 9.6;
     },
-    // 华为坂田基地: a low campus of research blocks around a lake
+    // 某为坂田基地: a low campus of research blocks around a lake
     "sz:co-huawei": (k) => {
       k.cyl(GRASS, 1.5, 1.5, 0.12, 0, 0, 0, 26);
       k.cyl(WATER, 0.5, 0.5, 0.04, 0.2, 0.12, 0.25, 18);
@@ -358,7 +358,7 @@ export function createLandmarks(winTex: THREE.Texture) {
       for (let i = 0; i < 6; i++) roundTree(k, Math.cos(i) * 1.25, Math.sin(i) * 1.25, 0.55, 0.12);
       return 1.8;
     },
-    // 中兴通讯大厦: blue glass tower with a stepped top
+    // 某兴通讯大厦: blue glass tower with a stepped top
     "sz:co-zte": (k) => {
       plate(k, 1.3);
       tower(k, 1.2, 5.4, 1.0, 0x4b8fd1, 0, 0, 0.14);
@@ -366,7 +366,7 @@ export function createLandmarks(winTex: THREE.Texture) {
       k.cyl(STEEL, 0.04, 0.04, 1.2, 0, 6.54, 0, 4);
       return 7.6;
     },
-    // 招商银行大厦: tall tower with a slanted crown
+    // 某商银行大厦: tall tower with a slanted crown
     "sz:co-cmb": (k) => {
       plate(k, 1.3);
       k.box(CONCRETE, 1.6, 0.8, 1.4, 0, 0.14, 0);
@@ -375,7 +375,7 @@ export function createLandmarks(winTex: THREE.Texture) {
       k.box(RED, 1.02, 0.25, 1.02, 0, 9.2, 0);
       return 11.6;
     },
-    // 万科中心: the "horizontal skyscraper" floating on legs over a park
+    // 某科中心: the "horizontal skyscraper" floating on legs over a park
     "sz:co-vanke": (k) => {
       k.cyl(GRASS, 1.55, 1.55, 0.12, 0, 0, 0, 26);
       const arm = M(0xd9dcd6, { rough: 0.5 });
@@ -387,7 +387,7 @@ export function createLandmarks(winTex: THREE.Texture) {
       for (let i = 0; i < 4; i++) roundTree(k, -1.0 + i * 0.5, 0.6, 0.5, 0.12);
       return 1.8;
     },
-    // 比亚迪坪山总部: an office block, saw-tooth factory roofs, EVs lined up
+    // 某亚迪坪山总部: an office block, saw-tooth factory roofs, EVs lined up
     "sz:co-byd": (k) => {
       plate(k, 1.5, CONCRETE);
       tower(k, 0.9, 2.6, 0.8, 0x9fc4a8, -0.75, -0.6, 0.14);

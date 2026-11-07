@@ -1,8 +1,8 @@
 // Static game data for 深惠人生模拟电脑高配版.
 // Locations / identities / careers / foods ported from the previous edition;
 // ZhuyaHome style templates, furniture and material prices are ZhuyaHome's
-// real catalog data. APEC venues and dates follow the real 33rd APEC in
-// Shenzhen: leaders' week opens Nov 14, welcome banquet Nov 16 at 太子湾 MGM,
+// real catalog data. Summit venues follow a fictional 湾区国际峰会 (no real event) in
+// Shenzhen: leaders' week opens Nov 14, welcome banquet Nov 16 at 太子湾 海景酒店,
 // CEO Summit Nov 17–18 at 前海国际会议中心, leaders' meeting Nov 18–19 at
 // 深圳国际交流中心 (香蜜湖). The 30-day season is November, so game day N is
 // November N.
@@ -42,7 +42,7 @@ export const CITIES: Record<CityKey, CityInfo> = {
     funDesc: "沿着湾边走一走，看对岸的灯一盏盏亮",
     gigName: "跑腿 / 闪送单",
     scene: "深圳 · 城中村握手楼",
-    sky: "平安金融中心",
+    sky: "某安金融中心",
   },
   hz: {
     name: "惠州",
@@ -115,16 +115,16 @@ export interface Company {
 }
 export const COMPANIES: Company[] = [
   { id: "startup", name: "科技园创业公司", short: "创业公司", emoji: "🏢", locIds: ["work"], payMul: 1, otMul: 1, energy: 28, mood: 0, needSkill: 0, needXp: 0, needCareer: 0, culture: "小公司什么都要干，工资一般，但没人管你几点到。" },
-  { id: "tencent", name: "腾讯", short: "腾讯", emoji: "🐧", locIds: ["co-tencent", "co-penguin"], payMul: 1.6, otMul: 1, energy: 30, mood: -1, needSkill: 3, needXp: 10, needCareer: 1, canteen: true, culture: "福利好、食堂出名，滨海大厦和企鹅岛两个园区都能上班。" },
-  { id: "bytedance", name: "抖音集团（字节跳动）", short: "字节", emoji: "🎵", locIds: ["co-bytedance"], payMul: 1.8, otMul: 1.1, energy: 34, mood: -4, needSkill: 3, needXp: 8, needCareer: 1, canteen: true, culture: "钱给得最多，节奏也最快，加班是常态。" },
-  { id: "huawei", name: "华为", short: "华为", emoji: "📶", locIds: ["co-huawei"], payMul: 1.7, otMul: 1.25, energy: 34, mood: -3, needSkill: 4, needXp: 12, needCareer: 1, canteen: true, culture: "奋斗者文化：加班多，但加班费和年终也给得足。" },
-  { id: "dji", name: "大疆", short: "大疆", emoji: "🚁", locIds: ["co-dji"], payMul: 1.65, otMul: 1, energy: 32, mood: -2, needSkill: 4, needXp: 10, needCareer: 1, canteen: true, culture: "对产品要求极高，面试看技术，进去能玩到最新的无人机。" },
-  { id: "baidu", name: "百度", short: "百度", emoji: "🔎", locIds: ["co-baidu"], payMul: 1.45, otMul: 1, energy: 29, mood: -1, needSkill: 2, needXp: 6, needCareer: 0, culture: "老牌大厂，节奏比新贵们稳一些。" },
-  { id: "zte", name: "中兴通讯", short: "中兴", emoji: "📡", locIds: ["co-zte"], payMul: 1.3, otMul: 1, energy: 28, mood: 0, needSkill: 1, needXp: 4, needCareer: 0, canteen: true, culture: "通信老厂，稳定，门槛比互联网大厂低。" },
-  { id: "cmb", name: "招商银行", short: "招行", emoji: "🏦", locIds: ["co-cmb"], payMul: 1.45, otMul: 0.9, energy: 26, mood: 1, needSkill: 2, needXp: 6, needCareer: 1, formal: true, culture: "金融业的体面工作：准点下班多，但面试必须穿正装。" },
-  { id: "pingan", name: "中国平安", short: "平安", emoji: "🏙️", locIds: ["bank"], payMul: 1.4, otMul: 1, energy: 28, mood: 0, needSkill: 2, needXp: 6, needCareer: 0, formal: true, culture: "在平安金融中心上班，深圳最高楼里看日落。面试要穿正装。" },
-  { id: "vanke", name: "万科", short: "万科", emoji: "🏗️", locIds: ["co-vanke"], payMul: 1.35, otMul: 1, energy: 26, mood: 3, needSkill: 2, needXp: 6, needCareer: 0, culture: "在大梅沙海边上班，通勤远，但心情好。" },
-  { id: "byd", name: "比亚迪", short: "比亚迪", emoji: "🔋", locIds: ["co-byd"], payMul: 1.2, otMul: 1.1, energy: 30, mood: 0, needSkill: 0, needXp: 2, needCareer: 0, canteen: true, culture: "新能源大厂招人多，门槛低，包吃，坪山离市区有点远。" },
+  { id: "tencent", name: "某讯", short: "某讯", emoji: "🐧", locIds: ["co-tencent", "co-penguin"], payMul: 1.6, otMul: 1, energy: 30, mood: -1, needSkill: 3, needXp: 10, needCareer: 1, canteen: true, culture: "福利好、食堂出名，滨海大厦和大铲湾园区两个园区都能上班。" },
+  { id: "bytedance", name: "某音集团", short: "某音", emoji: "🎵", locIds: ["co-bytedance"], payMul: 1.8, otMul: 1.1, energy: 34, mood: -4, needSkill: 3, needXp: 8, needCareer: 1, canteen: true, culture: "钱给得最多，项目节奏快。" },
+  { id: "huawei", name: "某为", short: "某为", emoji: "📶", locIds: ["co-huawei"], payMul: 1.7, otMul: 1.25, energy: 34, mood: -3, needSkill: 4, needXp: 12, needCareer: 1, canteen: true, culture: "研发氛围浓，加班费和年终也给得足。" },
+  { id: "dji", name: "某疆", short: "某疆", emoji: "🚁", locIds: ["co-dji"], payMul: 1.65, otMul: 1, energy: 32, mood: -2, needSkill: 4, needXp: 10, needCareer: 1, canteen: true, culture: "对产品要求极高，面试看技术，进去能玩到最新的无人机。" },
+  { id: "baidu", name: "某度", short: "某度", emoji: "🔎", locIds: ["co-baidu"], payMul: 1.45, otMul: 1, energy: 29, mood: -1, needSkill: 2, needXp: 6, needCareer: 0, culture: "老牌大厂，节奏比新贵们稳一些。" },
+  { id: "zte", name: "某兴通讯", short: "某兴", emoji: "📡", locIds: ["co-zte"], payMul: 1.3, otMul: 1, energy: 28, mood: 0, needSkill: 1, needXp: 4, needCareer: 0, canteen: true, culture: "通信老厂，稳定，门槛比互联网大厂低。" },
+  { id: "cmb", name: "某商银行", short: "某商行", emoji: "🏦", locIds: ["co-cmb"], payMul: 1.45, otMul: 0.9, energy: 26, mood: 1, needSkill: 2, needXp: 6, needCareer: 1, formal: true, culture: "金融业的体面工作：准点下班多，但面试必须穿正装。" },
+  { id: "pingan", name: "某安集团", short: "某安", emoji: "🏙️", locIds: ["bank"], payMul: 1.4, otMul: 1, energy: 28, mood: 0, needSkill: 2, needXp: 6, needCareer: 0, formal: true, culture: "在某安金融中心上班，深圳最高楼里看日落。面试要穿正装。" },
+  { id: "vanke", name: "某科", short: "某科", emoji: "🏗️", locIds: ["co-vanke"], payMul: 1.35, otMul: 1, energy: 26, mood: 3, needSkill: 2, needXp: 6, needCareer: 0, culture: "在大梅沙海边上班，通勤远，但心情好。" },
+  { id: "byd", name: "某亚迪", short: "某亚迪", emoji: "🔋", locIds: ["co-byd"], payMul: 1.2, otMul: 1.1, energy: 30, mood: 0, needSkill: 0, needXp: 2, needCareer: 0, canteen: true, culture: "新能源大厂招人多，门槛低，包吃，坪山离市区有点远。" },
 ];
 /** What the player still lacks for this company's hiring bar (empty = qualified). */
 export function companyGaps(co: Company, s: { skill: number; xp: number; careerIdx: number }): string[] {
@@ -151,7 +151,7 @@ export const NPCS: Npc[] = [
   { name: "阿强", job: "外卖骑手", emoji: "🛵", color: 0xff8a00, line: "跑单路过，顺手帮你扶了下快倒的电动车。", outfit: "黄色骑手服 + 头盔，保温箱不离身", shirt: 0xf5b301, pants: 0x2e3440, accessory: "helmet", behavior: "commute", preferTypes: ["food", "transit"] },
   { name: "小美", job: "南山白领", emoji: "💼", color: 0xec4899, line: "总在夜市碰到她，拼桌吃猪脚饭认识的。", outfit: "粉色衬衫 + 西装裤，挎通勤包", shirt: 0xec4899, pants: 0x3a3f4a, accessory: "bag", behavior: "commute", preferTypes: ["work", "food", "mall"] },
   { name: "陈伯", job: "小区保安", emoji: "🧢", color: 0x64748b, line: "门岗陈伯，谁晚归他都记得，热心肠。", outfit: "藏青保安制服 + 大檐帽，腰间别着对讲机", shirt: 0x2c3e63, pants: 0x232a3a, accessory: "cap", behavior: "patrol", preferTypes: ["home", "mall"] },
-  { name: "Lisa", job: "APEC 外宾联络员", emoji: "🌐", color: 0x8b5cf6, line: "APEC 筹备组的外联，英语超好，常在各个会场出没。", outfit: "深色西装套装 + 丝巾，胸前挂工作证", shirt: 0x5b4a8a, pants: 0x2b2b33, accessory: "tie", behavior: "wander", preferTypes: ["apec", "lodging"] },
+  { name: "Lisa", job: "峰会外宾联络员", emoji: "🌐", color: 0x8b5cf6, line: "峰会筹备组的外联，英语超好，常在各个会场出没。", outfit: "深色西装套装 + 丝巾，胸前挂工作证", shirt: 0x5b4a8a, pants: 0x2b2b33, accessory: "tie", behavior: "wander", preferTypes: ["apec", "lodging"] },
   { name: "大芬姐", job: "夜市摊主", emoji: "🍢", color: 0xf59e0b, line: "烧烤摊老板娘，熟客永远多送一串。", outfit: "碎花围裙 + 袖套，头发利落地扎起来", shirt: 0xd97706, pants: 0x4a3226, accessory: "apron", behavior: "stay", preferTypes: ["food", "market"] },
   { name: "子健", job: "职院学生", emoji: "🎒", color: 0x22c55e, line: "在图书馆夜校总坐你隔壁，一起备考。", outfit: "绿色连帽卫衣 + 双肩包", shirt: 0x22c55e, pants: 0x374151, accessory: "bag", behavior: "wander", preferTypes: ["learn", "gym"] },
   { name: "王姨", job: "保洁阿姨", emoji: "🧹", color: 0x14b8a6, line: "写字楼和车站的保洁，拖把水桶是她的全套装备，地砖被她拖得能照人。", outfit: "橙色保洁马甲 + 胶手套", shirt: 0xe07b39, pants: 0x3f4a3a, accessory: "vest", behavior: "patrol", preferTypes: ["transit", "work", "mall"] },
@@ -268,7 +268,7 @@ export const FURNITURE: Furniture[] = [
   { id: "bathtub", emoji: "🛁", name: "独立浴缸", price: 5600, comfort: 20, styles: ["轻奢现代", "北欧轻奢", "日式"], color: 0xf1f5f9, desc: "卫生间升级款，加班回来泡个澡，一天的累都化在水里。", room: "bathroom" },
 ];
 
-/* ---- APEC 真实日程（第 33 届，深圳，2026 年 11 月） ---- */
+/* ---- 峰会日程 ---- */
 export type ApecPhaseId = "before" | "prep" | "banquet" | "ceo" | "leaders" | "after";
 
 export interface ApecPhase {
@@ -280,18 +280,18 @@ export interface ApecPhase {
 /** Game day N = November N. Leaders' week: 14–19. */
 export function apecPhase(day: number): ApecPhase {
   if (day < 14)
-    return { id: "before", label: "APEC 倒计时", detail: `第 33 届 APEC 领导人周 11 月 14 日在深圳开启，主题「建设亚太共同体，促进共同繁荣」，21 个成员经济体参加。会场周边的会务兼职正在招人。` };
+    return { id: "before", label: "峰会倒计时", detail: `湾区国际峰会周 11 月 14 日在深圳开启，各方嘉宾云集。会场周边的会务兼职正在招人。` };
   if (day <= 15)
-    return { id: "prep", label: "领导人周 · 筹备", detail: "领导人周已经开启，各会场在做最后布展和联调。三个会场的筹备兼职都加了人手，收入 ×1.2。" };
+    return { id: "prep", label: "峰会周 · 筹备", detail: "峰会周已经开启，各会场在做最后布展和联调。三个会场的筹备兼职都加了人手，收入 ×1.2。" };
   if (day === 16)
-    return { id: "banquet", label: "欢迎晚宴日", detail: "今晚欢迎晚宴在南山太子湾的 MGM 酒店举行。太子湾晚宴服务收入 ×1.5，其他会场筹备 ×1.2。" };
+    return { id: "banquet", label: "欢迎晚宴日", detail: "今晚欢迎晚宴在南山太子湾的海景酒店举行。太子湾晚宴服务收入 ×1.5，其他会场筹备 ×1.2。" };
   if (day === 17)
-    return { id: "ceo", label: "CEO 峰会", detail: "APEC 工商领导人峰会（CEO 峰会）在前海国际会议中心举行（17–18 日）。前海会务与接待收入 ×1.5。" };
+    return { id: "ceo", label: "工商峰会", detail: "湾区工商峰会在前海国际会议中心举行（17–18 日）。前海会务与接待收入 ×1.5。" };
   if (day === 18)
-    return { id: "leaders", label: "领导人会议 · CEO 峰会收官", detail: "领导人非正式会议在香蜜湖深圳国际交流中心开幕（18–19 日），前海 CEO 峰会今天收官。两个会场收入都 ×1.5。" };
+    return { id: "leaders", label: "峰会主会议 · 工商峰会收官", detail: "峰会主会议在香蜜湖深圳国际交流中心开幕（18–19 日），前海工商峰会今天收官。两个会场收入都 ×1.5。" };
   if (day === 19)
-    return { id: "leaders", label: "领导人会议 · 收官", detail: "领导人会议今天收官，会徽上的 21 根羽毛对应 21 个成员经济体。香蜜湖会场服务收入 ×1.5。" };
-  return { id: "after", label: "APEC 已落幕", detail: "领导人周已经结束，志愿者证书和这段经历还在。人脉和经验，是这周留给你最实在的东西。" };
+    return { id: "leaders", label: "峰会主会议 · 收官", detail: "峰会主会议今天收官，会徽上是深圳湾的海浪和木棉花。香蜜湖会场服务收入 ×1.5。" };
+  return { id: "after", label: "峰会已落幕", detail: "峰会周已经结束，志愿者证书和这段经历还在。人脉和经验，是这周留给你最实在的东西。" };
 }
 
 /** Which venue is peaking on a given day, for per-venue multipliers. */
@@ -308,11 +308,11 @@ export function isApecWeek(day: number): boolean {
   return day >= 14 && day <= 19;
 }
 
-/* ---- APEC 领导人周活动（公开上线版）：每天一个任务，按真实日程 ----
-   玩家只能以志愿者 / 记者 / 司机的身份参与——领导人周的闭门会议不对
-   公众开放，游戏里也绝不让玩家扮领导人进会场。完成 = 先到会场打卡
+/* ---- 湾区峰会周活动（公开上线版）：每天一个任务，按日程 ----
+   玩家只能以志愿者 / 记者 / 司机的身份参与——峰会周的闭门会议不对
+   公众开放，游戏里也绝不让玩家扮与会嘉宾进会场。完成 = 先到会场打卡
    （按真实地铁线路去），再做当天的岗位任务。六天全做完发服务证书。 */
-export const APEC_SLOGAN = "来深圳看 APEC、玩游戏认深圳";
+export const APEC_SLOGAN = "来深圳看峰会、玩游戏认深圳";
 
 export type ApecRole = "志愿者" | "记者" | "司机";
 
@@ -334,14 +334,14 @@ export interface ApecTask {
 
 export const APEC_TASKS: ApecTask[] = [
   {
-    id: "apec-d14", day: 14, dateLabel: "11 月 14 日", event: "领导人周开幕 · 高官会与工商咨询理事会",
+    id: "apec-d14", day: 14, dateLabel: "11 月 14 日", event: "峰会周开幕 · 筹备会与工商论坛",
     role: "志愿者", roleEmoji: "🎽", venueLocId: "apec-xiangmihu",
     title: "开幕日志愿引导",
-    desc: "领导人周今天开幕，高官会和工商咨询理事会在香蜜湖国际交流中心开场。会议是闭门的，你的岗位在门外：引导、答疑、分发物料——盛会少不了门外的人。",
+    desc: "峰会周今天开幕，筹备会和工商论坛在香蜜湖国际交流中心开场。会议是闭门的，你的岗位在门外：引导、答疑、分发物料——盛会少不了门外的人。",
     energy: 20, payMul: 1.1, xp: 3, network: 1,
   },
   {
-    id: "apec-d15", day: 15, dateLabel: "11 月 15 日", event: "领导人周 · 高官会与工商咨询理事会续会",
+    id: "apec-d15", day: 15, dateLabel: "11 月 15 日", event: "峰会周 · 筹备会与工商论坛续会",
     role: "司机", roleEmoji: "🚐", venueLocId: "apec-xiangmihu",
     title: "会场通勤摆渡司机",
     desc: "开摆渡车在香蜜湖会场、周边酒店和地铁站之间接送记者与工作人员。路线要熟、时间要准，车上听各国记者聊花絮，比新闻里热闹。",
@@ -351,28 +351,28 @@ export const APEC_TASKS: ApecTask[] = [
     id: "apec-d16", day: 16, dateLabel: "11 月 16 日晚", event: "太子湾欢迎晚宴",
     role: "志愿者", roleEmoji: "🎽", venueLocId: "apec-taiziwan",
     title: "欢迎晚宴礼宾服务",
-    desc: "今晚欢迎晚宴在南山太子湾的 MGM 酒店举行。你做礼宾引导和晚宴服务：嘉宾从邮轮港一路走来，海风、灯光、乐队都在你的班次里。",
+    desc: "今晚欢迎晚宴在南山太子湾的海景酒店举行。你做礼宾引导和晚宴服务：嘉宾从邮轮港一路走来，海风、灯光、乐队都在你的班次里。",
     energy: 20, payMul: 1.5, xp: 3, network: 1,
   },
   {
-    id: "apec-d17", day: 17, dateLabel: "11 月 17 日", event: "前海 CEO 峰会 · 第一天",
+    id: "apec-d17", day: 17, dateLabel: "11 月 17 日", event: "前海工商峰会 · 第一天",
     role: "记者", roleEmoji: "🎤", venueLocId: "apec-qianhai",
-    title: "CEO 峰会跑会记者",
-    desc: "APEC 工商领导人峰会在前海国际会议中心开场。你在新闻中心当跑会记者：抢机位、记要点、发快讯，把企业高管们的原话第一时间传出去。",
+    title: "工商峰会跑会记者",
+    desc: "湾区工商峰会在前海国际会议中心开场。你在新闻中心当跑会记者：抢机位、记要点、发快讯，把企业高管们的原话第一时间传出去。",
     energy: 20, payMul: 1.3, xp: 3, network: 1,
   },
   {
-    id: "apec-d18", day: 18, dateLabel: "11 月 18 日", event: "领导人会议开幕 · CEO 峰会收官",
+    id: "apec-d18", day: 18, dateLabel: "11 月 18 日", event: "峰会主会议开幕 · 工商峰会收官",
     role: "司机", roleEmoji: "🚐", venueLocId: "apec-xiangmihu",
-    title: "领导人会议外围保障司机",
-    desc: "领导人非正式会议今天在香蜜湖开幕，前海 CEO 峰会同日收官。你开保障车跑会场外围路线，接送媒体与后勤——离会场最近的普通人岗位之一。",
+    title: "峰会主会议外围保障司机",
+    desc: "峰会主会议今天在香蜜湖开幕，前海工商峰会同日收官。你开保障车跑会场外围路线，接送媒体与后勤——离会场最近的普通人岗位之一。",
     energy: 24, payMul: 1.5, xp: 3, network: 1,
   },
   {
-    id: "apec-d19", day: 19, dateLabel: "11 月 19 日", event: "领导人会议 · 收官日",
+    id: "apec-d19", day: 19, dateLabel: "11 月 19 日", event: "峰会主会议 · 收官日",
     role: "志愿者", roleEmoji: "🎽", venueLocId: "apec-xiangmihu",
     title: "收官日志愿服务",
-    desc: "领导人周最后一天。你做完最后一班志愿服务，在签退台领到这周的服务证书——21 根羽毛的会徽下面，印着你的名字。",
+    desc: "峰会周最后一天。你做完最后一班志愿服务，在签退台领到这周的服务证书——峰会会徽下面，印着你的名字。",
     energy: 18, payMul: 1.4, xp: 4, network: 1,
   },
 ];
@@ -381,7 +381,7 @@ export function apecTaskOfDay(day: number): ApecTask | null {
   return APEC_TASKS.find((t) => t.day === day) ?? null;
 }
 
-export const APEC_CERT_NAME = "🎖️ APEC 领导人周服务证书";
+export const APEC_CERT_NAME = "🎖️ 湾区峰会服务证书";
 
 /* ---- 地点：深圳 25 + 惠州 21 = 46，坐标按双城真实地理方位铺在大地图上 ---- */
 export type LocType =
@@ -417,34 +417,34 @@ export interface Loc {
 }
 
 const SZ_LOCS: Loc[] = [
-  { id: "airport", type: "transit", emoji: "✈️", name: "宝安国际机场", short: "机场", desc: "T3 航站楼人流昼夜不停。机场摆渡、行李寄存、接机跑腿的单子多，APEC 周外宾抵离高峰更缺人。", gigName: "机场摆渡 / 接机跑腿", x: -27, z: -3, color: 0x38bdf8, h: 2.2, w: 4.2 },
-  { id: "apec-qianhai", type: "apec", emoji: "🏙️", name: "前海国际会议中心", short: "前海会议中心", desc: "APEC 工商领导人峰会（CEO 峰会，11 月 17–18 日）的举办地。各国企业高管云集，会务、接待、同传协助都缺人。", x: -21, z: 5, color: 0xb91c1c, h: 3.6, w: 3.6 },
+  { id: "airport", type: "transit", emoji: "✈️", name: "宝安国际机场", short: "机场", desc: "T3 航站楼人流昼夜不停。机场摆渡、行李寄存、接机跑腿的单子多，峰会周外宾抵离高峰更缺人。", gigName: "机场摆渡 / 接机跑腿", x: -27, z: -3, color: 0x38bdf8, h: 2.2, w: 4.2 },
+  { id: "apec-qianhai", type: "apec", emoji: "🏙️", name: "前海国际会议中心", short: "前海会议中心", desc: "湾区工商峰会（11 月 17–18 日）的举办地。各国企业高管云集，会务、接待、同传协助都缺人。", x: -21, z: 5, color: 0xb91c1c, h: 3.6, w: 3.6 },
   { id: "happyvalley", type: "fun", emoji: "🎢", name: "欢乐谷", short: "欢乐谷", desc: "过山车的尖叫声隔着一条街都听得见。深漂的快乐老家，一张门票换一天不管不顾。", funName: "欢乐谷玩一整天", funCost: 120, funMood: 30, funDesc: "排最长的队，坐最快的过山车，下来腿软心飞", x: -19, z: -6, color: 0xe879f9, h: 3, w: 3.4 },
   { id: "work", type: "work", emoji: "🏢", name: "科技园公司", short: "公司", desc: "南山科技园里一家几十人的创业公司，灯火通明到深夜。你在深圳的第一份工；想跳槽，就去各大厂总部面试。", x: -17, z: 0, color: 0x3b82f6, h: 6, w: 3.2 },
   /* 大厂总部：都能面试、拿 offer、跳槽过去上班（见 COMPANIES）。位置按真实地铁站摆放。 */
-  { id: "co-tencent", type: "work", emoji: "🐧", name: "腾讯滨海大厦", short: "腾讯", desc: "后海的腾讯总部：两栋塔楼用三座空中连廊连在一起，微信和 QQ 在这里长大。", x: -15.6, z: 7.8, color: 0x2563eb, h: 6, w: 2.6 },
-  { id: "co-penguin", type: "work", emoji: "🏝️", name: "腾讯企鹅岛 · 大铲湾总部", short: "企鹅岛", desc: "宝安大铲湾填海建起的腾讯新总部园区，2025 年 10 月起试运营，规划能容纳 8–10 万人，滨海栈道和红树林对市民开放。", x: -24, z: 3.9, color: 0x0ea5e9, h: 3, w: 2.8 },
-  { id: "co-bytedance", type: "work", emoji: "🎵", name: "抖音集团 · 后海中心", short: "字节", desc: "字节跳动在深圳的第一座自建总部，后海约 150 米高的塔楼。", x: -17.3, z: 5, color: 0x111827, h: 5.5, w: 2.4 },
-  { id: "co-baidu", type: "work", emoji: "🔎", name: "百度国际大厦", short: "百度", desc: "后海的百度深圳总部，东西两座塔楼。", x: -14, z: 1.8, color: 0x2563eb, h: 5, w: 2.4 },
-  { id: "co-dji", type: "work", emoji: "🚁", name: "大疆天空之城", short: "大疆", desc: "西丽留仙洞的大疆总部：两座塔楼之间悬挑出一层层平台，无人机在楼顶试飞。", x: -12.7, z: -0.8, color: 0x1f2937, h: 6, w: 2.4 },
-  { id: "co-huawei", type: "work", emoji: "📶", name: "华为坂田基地", short: "华为", desc: "龙岗坂田的华为总部园区，大片低层研发楼、湖和绿地，地铁 10 号线有一站就叫「华为」。", x: 6.2, z: -11.9, color: 0xdc2626, h: 2, w: 3.0 },
-  { id: "co-zte", type: "work", emoji: "📡", name: "中兴通讯大厦", short: "中兴", desc: "南山科技园的中兴总部，深南大道边的老牌通信大厂。", x: -19.3, z: 2.4, color: 0x0284c7, h: 4.5, w: 2.4 },
-  { id: "co-cmb", type: "work", emoji: "🏦", name: "招商银行大厦", short: "招行", desc: "福田深南大道上的招商银行总部，银行的规矩多，面试要穿正装。", x: -3.8, z: 0.7, color: 0xb91c1c, h: 6.5, w: 2.4 },
-  { id: "co-vanke", type: "work", emoji: "🏗️", name: "万科中心", short: "万科", desc: "大梅沙海边的「水平摩天楼」：整栋楼架在空中，下面是公园，开窗就是海。", x: 29.3, z: 8, color: 0xf97316, h: 1.6, w: 3.0 },
-  { id: "co-byd", type: "work", emoji: "🔋", name: "比亚迪坪山总部", short: "比亚迪", desc: "坪山的比亚迪总部和工厂，新能源车和电池，招工量大，门槛低。", x: 35, z: -6.4, color: 0x16a34a, h: 2.5, w: 3.0 },
+  { id: "co-tencent", type: "work", emoji: "🐧", name: "某讯滨海大厦", short: "某讯", desc: "后海的某讯总部：两栋塔楼用三座空中连廊连在一起。", x: -15.6, z: 7.8, color: 0x2563eb, h: 6, w: 2.6 },
+  { id: "co-penguin", type: "work", emoji: "🏝️", name: "某讯 · 大铲湾总部", short: "大铲湾园区", desc: "宝安大铲湾填海建起的某讯新总部园区，2025 年 10 月起试运营，规划能容纳 8–10 万人，滨海栈道和红树林对市民开放。", x: -24, z: 3.9, color: 0x0ea5e9, h: 3, w: 2.8 },
+  { id: "co-bytedance", type: "work", emoji: "🎵", name: "某音集团 · 后海中心", short: "某音", desc: "某音集团在深圳的第一座自建总部，后海约 150 米高的塔楼。", x: -17.3, z: 5, color: 0x111827, h: 5.5, w: 2.4 },
+  { id: "co-baidu", type: "work", emoji: "🔎", name: "某度国际大厦", short: "某度", desc: "后海的某度深圳总部，东西两座塔楼。", x: -14, z: 1.8, color: 0x2563eb, h: 5, w: 2.4 },
+  { id: "co-dji", type: "work", emoji: "🚁", name: "某疆总部大楼", short: "某疆", desc: "西丽留仙洞的某疆总部：两座塔楼之间悬挑出一层层平台，无人机在楼顶试飞。", x: -12.7, z: -0.8, color: 0x1f2937, h: 6, w: 2.4 },
+  { id: "co-huawei", type: "work", emoji: "📶", name: "某为坂田基地", short: "某为", desc: "龙岗坂田的某为总部园区，大片低层研发楼、湖和绿地。", x: 6.2, z: -11.9, color: 0xdc2626, h: 2, w: 3.0 },
+  { id: "co-zte", type: "work", emoji: "📡", name: "某兴通讯大厦", short: "某兴", desc: "南山科技园的某兴总部，深南大道边的老牌通信大厂。", x: -19.3, z: 2.4, color: 0x0284c7, h: 4.5, w: 2.4 },
+  { id: "co-cmb", type: "work", emoji: "🏦", name: "某商银行大厦", short: "某商行", desc: "福田深南大道上的某商银行总部，银行的规矩多，面试要穿正装。", x: -3.8, z: 0.7, color: 0xb91c1c, h: 6.5, w: 2.4 },
+  { id: "co-vanke", type: "work", emoji: "🏗️", name: "某科中心", short: "某科", desc: "大梅沙海边的「水平摩天楼」：整栋楼架在空中，下面是公园，开窗就是海。", x: 29.3, z: 8, color: 0xf97316, h: 1.6, w: 3.0 },
+  { id: "co-byd", type: "work", emoji: "🔋", name: "某亚迪坪山总部", short: "某亚迪", desc: "坪山的某亚迪总部和工厂，新能源车和电池，招工量大，门槛低。", x: 35, z: -6.4, color: 0x16a34a, h: 2.5, w: 3.0 },
   { id: "talent", type: "fun", emoji: "🏃", name: "人才公园", short: "人才公园", desc: "海边跑道和求贤阁。晨跑的人、看海的人、聊 offer 的人，都在这儿。", funName: "沿海边跑道散步", funCost: 10, funMood: 20, funDesc: "跑道灯光一路亮到海边，跑完一身轻", x: -16, z: 11, color: 0x14b8a6, h: 0.8, w: 3 },
   { id: "mall", type: "mall", emoji: "🛍️", name: "海岸城商场", short: "商场", desc: "逛街、买衣服、看人花钱。也能接周末促销兼职，站柜台赚点外快。", x: -14, z: 5, color: 0xec4899, h: 3.4, w: 3.4 },
   { id: "home", type: "home", emoji: "🏠", name: "城中村握手楼", short: "出租屋", desc: "你租的小单间，窗户对着隔壁楼——握手楼名不虚传。睡觉、躺平都在这儿。", x: -13, z: -4, color: 0xff6b4a, h: 2.4, w: 2.8 },
   { id: "gym", type: "gym", emoji: "🏋️", name: "社区健身房", short: "健身房", desc: "铁馆月卡不贵。体质练上去（健身 3 次后），上班都没那么耗能量了。", x: -11, z: -8, color: 0x84cc16, h: 2.4, w: 2.8 },
-  { id: "apec-taiziwan", type: "apec", emoji: "🚢", name: "太子湾 · MGM 欢迎晚宴", short: "太子湾晚宴", desc: "南山太子湾，11 月 16 日晚 APEC 欢迎晚宴在太子湾 MGM 酒店举行。晚宴服务、礼宾引导是普通人离这场盛会最近的岗位。", x: -22, z: 12, color: 0x991b1b, h: 3, w: 3.4 },
+  { id: "apec-taiziwan", type: "apec", emoji: "🚢", name: "太子湾 · 峰会欢迎晚宴", short: "太子湾晚宴", desc: "南山太子湾，11 月 16 日晚 峰会欢迎晚宴在太子湾海景酒店举行。晚宴服务、礼宾引导是普通人离这场盛会最近的岗位。", x: -22, z: 12, color: 0x991b1b, h: 3, w: 3.4 },
   { id: "port", type: "transit", emoji: "🛳️", name: "蛇口邮轮母港", short: "邮轮港", desc: "邮轮靠港时行李搬运、接送单特别多，外国游客也多，练口语的好地方。", gigName: "邮轮行李搬运 / 接送", x: -27, z: 11, color: 0x0ea5e9, h: 1.6, w: 3.2 },
   { id: "szbayport", type: "port", emoji: "🛃", name: "深圳湾口岸", short: "深圳湾口岸", desc: "过大桥就是香港。跨境代购、接送、行李帮忙的单子不断，口岸越忙越有赚头。", gigName: "口岸接送 / 跨境跑腿", x: -18, z: 15, color: 0x22d3ee, h: 1.8, w: 3.4 },
   { id: "fun", type: "fun", emoji: "🌅", name: "深圳湾公园", short: "海边公园", desc: "看海、吹风、看日落。花小钱回大心情，深漂的充电站。", x: -8, z: 12, color: 0x10b981, h: 0.8, w: 3.2 },
-  { id: "apec-xiangmihu", type: "apec", emoji: "🌐", name: "深圳国际交流中心 · 香蜜湖", short: "国际交流中心", desc: "福田香蜜湖北侧，第 33 届 APEC 领导人非正式会议的主会场（11 月 18–19 日）。领导人周不对公众开放，普通人以志愿者、会务、接待、司机的身份参与。", x: -4, z: -7, color: 0xdc2626, h: 4.4, w: 3.6 },
+  { id: "apec-xiangmihu", type: "apec", emoji: "🌐", name: "深圳国际交流中心 · 香蜜湖", short: "国际交流中心", desc: "福田香蜜湖北侧，湾区国际峰会的主会场（11 月 18–19 日）。峰会周不对公众开放，普通人以志愿者、会务、接待、司机的身份参与。", x: -4, z: -7, color: 0xdc2626, h: 4.4, w: 3.6 },
   { id: "lianhua", type: "fun", emoji: "⛰️", name: "莲花山公园", short: "莲花山", desc: "登顶看福田灯火，邓小平像前吹吹风。免费，心情照样回满。", funName: "登莲花山看夜景", funCost: 0, funMood: 16, funDesc: "一分钱不花，爬到山顶看整座城市亮起来", x: -3, z: -13, color: 0x059669, h: 1.2, w: 3.2 },
   { id: "library", type: "learn", emoji: "📚", name: "深圳图书馆 · 夜校", short: "图书馆", desc: "北馆夜校和自习区灯火通明。攒技能点的地方——想升职，先来这儿充电。", x: 0, z: -4, color: 0x7c3aed, h: 3.2, w: 3.2 },
   { id: "north", type: "transit", emoji: "🚄", name: "深圳北站", short: "北站", desc: "高铁站人流如织。车站跑腿、闪送单不少，赶上出差潮还能多赚点。", gigName: "车站跑腿 / 闪送", x: 1, z: -15, color: 0x6366f1, h: 1.8, w: 3.6 },
-  { id: "bank", type: "bank", emoji: "🏦", name: "平安银行大厦", short: "银行", desc: "存款、理财都在这儿办。闲钱买理财，每晚有点收益——但投资有波动，别上头。", x: 2, z: 1, color: 0xf59e0b, h: 5.2, w: 3 },
+  { id: "bank", type: "bank", emoji: "🏦", name: "某安金融中心", short: "银行", desc: "存款、理财都在这儿办。闲钱买理财，每晚有点收益——但投资有波动，别上头。", x: 2, z: 1, color: 0xf59e0b, h: 5.2, w: 3 },
   { id: "metro", type: "transit", emoji: "🚇", name: "地铁站", short: "地铁站", desc: "早高峰能把鞋挤掉的地方。也能在这附近接跑腿/外卖兼职单。", x: 5, z: 3, color: 0x8b5cf6, h: 1.2, w: 3.2 },
   { id: "hq", type: "market", emoji: "📱", name: "华强北电子市场", short: "华强北", desc: "一米柜台走出过无数传奇。能淘二手手机捡漏，也能接装机兼职练手。", x: 6, z: -6, color: 0x06b6d4, h: 4.6, w: 3.2 },
   { id: "food", type: "food", emoji: "🍜", name: "东门夜市食街", short: "夜市", desc: "猪脚饭、沙县、海底捞全在这一条街。没能量了就来这儿回血。", x: 10, z: 3, color: 0xf59e0b, h: 1.8, w: 3.2 },
@@ -500,7 +500,7 @@ const HZ_LOCS: Loc[] = [
   { id: "hzsouth", type: "transit", emoji: "🚄", name: "惠州南站", short: "惠州南站", desc: "厦深高铁大站，去深圳北只要半小时。出站口的接送、跑腿单常年不断。", gigName: "车站接送 / 跑腿", x: 2, z: 7, color: 0x6366f1, h: 1.8, w: 3.6 },
   { id: "danshui", type: "market", emoji: "🏮", name: "淡水老城", short: "淡水老城", desc: "惠阳淡水的老骑楼街，客家小吃和老字号挤满一条街。帮工、摆摊、修小电器的活儿都找得到。", gigName: "老城摆摊 / 帮工", x: 7, z: 3, color: 0xf59e0b, h: 2, w: 3.2 },
   { id: "dayawan", type: "fun", emoji: "🏝️", name: "大亚湾黄金海岸", short: "黄金海岸", desc: "沙子细、海水清，本地人周末拖家带口来。摆个小摊卖椰子也能赚点零花。", funName: "黄金海岸踏浪", funCost: 12, funMood: 24, funDesc: "踩着细沙走完整条海岸线，烦恼都被浪带走了", x: 11, z: 10, color: 0x0891b2, h: 0.7, w: 3.4 },
-  { id: "hotel", type: "transit", emoji: "♨️", name: "温泉酒店", short: "温泉酒店", desc: "巽寮湾边的温泉酒店，周末客流旺。帮工、接待、行李单都不少，APEC 周深圳客多，这边也跟着旺。", gigName: "温泉酒店帮工 / 接待", x: 17, z: 1, color: 0xf97316, h: 2.8, w: 3.2 },
+  { id: "hotel", type: "transit", emoji: "♨️", name: "温泉酒店", short: "温泉酒店", desc: "巽寮湾边的温泉酒店，周末客流旺。帮工、接待、行李单都不少，峰会周深圳客多，这边也跟着旺。", gigName: "温泉酒店帮工 / 接待", x: 17, z: 1, color: 0xf97316, h: 2.8, w: 3.2 },
   { id: "xunliao", type: "transit", emoji: "⛵", name: "巽寮湾渔港", short: "巽寮湾", desc: "渔船回港时最热闹。帮渔家分拣、给游客当向导，旺季不缺活儿。", gigName: "渔港帮工 / 海钓向导", x: 20, z: 8, color: 0x0284c7, h: 1.4, w: 3.4 },
   { id: "home", type: "home", emoji: "🏠", name: "海边出租屋", short: "出租屋", desc: "推窗能闻到海风的老房子，租金便宜。睡觉、躺平都在这儿。", x: 23, z: 4, color: 0xfb923c, h: 2.2, w: 2.8 },
   { id: "fun", type: "fun", emoji: "🏖️", name: "双月湾海边", short: "海边", desc: "沙滩、海浪、日落，全免费。心情崩了就来这儿坐一会儿。", x: 27, z: 10, color: 0x06b6d4, h: 0.6, w: 3.4 },
@@ -601,7 +601,7 @@ function placesAround(cityKey: CityKey, locId: string): Near[] {
 }
 /** 附近服务：the nearest real hospital (24h emergency first), pharmacy,
     police station and visitor centre, by real distance — for anyone who
-    needs help, APEC delegates and volunteers included. */
+    needs help, Summit delegates and volunteers included. */
 export function nearbyServices(cityKey: CityKey, locId: string): Near[] {
   const all = placesAround(cityKey, locId);
   const pick = (kind: PlaceKind, n: number, pref?: (p: CityPlace) => boolean) => {
@@ -661,7 +661,7 @@ export const APPS = [
   { id: "weather", e: "🌦️", n: "天气" },
   { id: "ledger", e: "🧾", n: "记账本" },
   { id: "map", e: "🗺️", n: "城市地图" },
-  { id: "apec", e: "🌐", n: "APEC资讯" },
+  { id: "apec", e: "🌐", n: "峰会资讯" },
   { id: "home", e: "🏠", n: "我的家" },
   { id: "metro", e: "🚇", n: "地铁通" },
 ] as const;
@@ -669,7 +669,7 @@ export const APPS = [
 export type AppId = (typeof APPS)[number]["id"];
 
 export const OFFERS = [
-  { name: "会展临时接待", mul: 1.5, note: "APEC 周最缺人，手快有" },
+  { name: "会展临时接待", mul: 1.5, note: "峰会周最缺人，手快有" },
   { name: "夜市地推兼职", mul: 1.2, note: "晚上出摊，氛围组" },
   { name: "高端代驾大单", mul: 1.4, note: "要驾照，更要好脾气" },
   { name: "商场周末促销", mul: 1.25, note: "站柜台，活儿稳" },
@@ -768,14 +768,14 @@ export const SCENIC_SPOTS: ScenicSpot[] = [
   { locId: "hzbotanic", cityKey: "hz", name: "惠州植物园", tag: "花园", tip: "温室热带植物和丰山全景" },
 ];
 
-/* ---- 双语地名 + 景区等级 + 城市简介（帮 APEC 外宾和新玩家认识这座城） ----
+/* ---- 双语地名 + 景区等级 + 城市简介（帮 峰会外宾和新玩家认识这座城） ----
    English names keyed by the location's Chinese name (names are unique per
    city). Grades follow the official Shenzhen A-level scenic-area list
    (深圳市文化广电旅游体育局 A级旅游景区一览表): 华侨城旅游度假区（世界之窗/
    锦绣中华/欢乐谷）与欢乐海岸、观澜湖为 5A，东部华侨城、青青世界、野生动物园、
    海上田园、光明农场大观园、仙湖植物园、大梅沙、大鹏所城为 4A。 */
 export const LOC_EN: Record<string, string> = {
-  "宝安国际机场": "Bao'an International Airport", "前海国际会议中心": "Qianhai Int'l Convention Center", "欢乐谷": "Happy Valley", "科技园公司": "Science & Technology Park", "腾讯滨海大厦": "Tencent Binhai Mansion", "腾讯企鹅岛 · 大铲湾总部": "Tencent Penguin Island", "抖音集团 · 后海中心": "Douyin Houhai Center", "百度国际大厦": "Baidu International Building", "大疆天空之城": "DJI Sky City", "华为坂田基地": "Huawei Bantian Base", "中兴通讯大厦": "ZTE Building", "招商银行大厦": "China Merchants Bank Tower", "万科中心": "Vanke Center", "比亚迪坪山总部": "BYD Headquarters", "人才公园": "Talent Park", "海岸城商场": "Coastal City Mall", "城中村握手楼": "Urban Village Rental", "社区健身房": "Community Gym", "太子湾 · MGM 欢迎晚宴": "Prince Bay · MGM Welcome Banquet", "蛇口邮轮母港": "Shekou Cruise Homeport", "深圳湾口岸": "Shenzhen Bay Port", "深圳湾公园": "Shenzhen Bay Park", "深圳国际交流中心 · 香蜜湖": "Shenzhen Int'l Exchange Center, Xiangmihu", "莲花山公园": "Lianhuashan Park", "深圳图书馆 · 夜校": "Shenzhen Library & Night School", "深圳北站": "Shenzhen North Station", "平安银行大厦": "Ping An Bank Tower", "地铁站": "Metro Station", "华强北电子市场": "Huaqiangbei Electronics Market", "东门夜市食街": "Dongmen Night Market", "深圳市人民医院": "Shenzhen People's Hospital", "酒吧街 · KTV": "Bar Street & KTV", "罗湖口岸": "Luohu Port", "大芬油画村": "Dafen Oil Painting Village", "大梅沙海滨公园": "Dameisha Beach Park", "深圳湾滨海酒店 · 青旅": "Shenzhen Bay Hotel & Hostel", "皇岗口岸": "Huanggang Port", "梧桐山": "Wutong Mountain", "福田口岸": "Futian Port", "莲塘口岸": "Liantang Port", "仙湖植物园 · 弘法寺": "Fairy Lake Botanical Garden & Hongfa Temple", "盐田海滨栈道": "Yantian Seaside Boardwalk",
+  "宝安国际机场": "Bao'an International Airport", "前海国际会议中心": "Qianhai Int'l Convention Center", "欢乐谷": "Happy Valley", "科技园公司": "Science & Technology Park", "某讯滨海大厦": "Xun Tech Binhai Tower", "某讯 · 大铲湾总部": "Xun Tech Bay Campus", "某音集团 · 后海中心": "Yin Group Houhai Center", "某度国际大厦": "Du Tech International Building", "某疆总部大楼": "Jiang Robotics Tower", "某为坂田基地": "Wei Tech Bantian Campus", "某兴通讯大厦": "Xing Telecom Building", "某商银行大厦": "Shang Bank Tower", "某科中心": "Ke Center", "某亚迪坪山总部": "Di Auto HQ", "人才公园": "Talent Park", "海岸城商场": "Coastal City Mall", "城中村握手楼": "Urban Village Rental", "社区健身房": "Community Gym", "太子湾 · 峰会欢迎晚宴": "Prince Bay · Summit Welcome Banquet", "蛇口邮轮母港": "Shekou Cruise Homeport", "深圳湾口岸": "Shenzhen Bay Port", "深圳湾公园": "Shenzhen Bay Park", "深圳国际交流中心 · 香蜜湖": "Shenzhen Int'l Exchange Center, Xiangmihu", "莲花山公园": "Lianhuashan Park", "深圳图书馆 · 夜校": "Shenzhen Library & Night School", "深圳北站": "Shenzhen North Station", "某安金融中心": "An Finance Center", "地铁站": "Metro Station", "华强北电子市场": "Huaqiangbei Electronics Market", "东门夜市食街": "Dongmen Night Market", "深圳市人民医院": "Shenzhen People's Hospital", "酒吧街 · KTV": "Bar Street & KTV", "罗湖口岸": "Luohu Port", "大芬油画村": "Dafen Oil Painting Village", "大梅沙海滨公园": "Dameisha Beach Park", "深圳湾滨海酒店 · 青旅": "Shenzhen Bay Hotel & Hostel", "皇岗口岸": "Huanggang Port", "梧桐山": "Wutong Mountain", "福田口岸": "Futian Port", "莲塘口岸": "Liantang Port", "仙湖植物园 · 弘法寺": "Fairy Lake Botanical Garden & Hongfa Temple", "盐田海滨栈道": "Yantian Seaside Boardwalk",
   "世界之窗": "Window of the World", "锦绣中华 · 民俗村": "Splendid China Folk Village", "深圳野生动物园": "Shenzhen Safari Park", "东部华侨城": "OCT East", "青青世界": "Evergreen World", "海上田园": "Sea Garden Eco-Tourism Area", "光明农场大观园": "Guangming Farm Grand View Garden", "大鹏所城": "Dapeng Fortress", "欢乐海岸": "OCT Harbour", "观澜湖旅游休闲度假区": "Mission Hills Resort",
   "七娘山": "Qiniang Mountain", "杨梅坑": "Yangmeikeng Coastal Valley", "西涌海滩": "Xichong Beach", "中英街": "Chung Ying Street", "塘朗山郊野公园": "Tanglangshan Country Park", "凤凰山森林公园": "Fenghuangshan Forest Park", "深圳博物馆": "Shenzhen Museum", "海上世界文化艺术中心": "Sea World Culture & Arts Center", "深圳湾体育中心 · 春茧": "Shenzhen Bay Sports Center (Spring Cocoon)", "龙岗大运中心": "Longgang Universiade Center",
   "海龟湾自然保护区": "Sea Turtle Bay Nature Reserve", "三角洲岛": "Delta Island (Sanjiaozhou)", "惠州博物馆": "Huizhou Museum", "霞涌海鲜街": "Xiayong Seafood Street", "东江公园": "Dongjiang Park", "惠州植物园": "Huizhou Botanical Garden",
@@ -792,7 +792,7 @@ export const CITY_INTRO: Record<CityKey, CityIntro> = {
   sz: {
     title: "认识深圳",
     en: "Shenzhen at a Glance",
-    facts: "中国第一个经济特区（1980 年设立）· 面积 1,997 km² · 常住人口约 1,798 万 · 平安金融中心 599 米，中国第二高楼 · 第一高峰梧桐山 943.7 米 · 地铁运营 600+ 公里 · 海岸线约 260 公里，深圳湾大桥直通香港 · 第 33 届 APEC 领导人会议 2026 年 11 月在这里举行。地图上的景区和会场都带英文名，点开地点就能看到——外宾跟着这张图就能认深圳。",
+    facts: "中国第一个经济特区（1980 年设立）· 面积 1,997 km² · 常住人口约 1,798 万 · 某安金融中心 599 米，中国第二高楼 · 第一高峰梧桐山 943.7 米 · 地铁运营 600+ 公里 · 海岸线约 260 公里，深圳湾大桥直通香港 · 游戏里 11 月中旬有一场虚构的「湾区国际峰会」。地图上的景区和会场都带英文名，点开地点就能看到——外宾跟着这张图就能认深圳。",
   },
   hz: {
     title: "认识惠州",

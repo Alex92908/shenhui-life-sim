@@ -36,6 +36,13 @@
       "when": 1794200000000,
       "tag": "0005_anticheat_cloud_saves",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1794300000000,
+      "tag": "0006_public_ids_and_indexes",
+      "breakpoints": true
     }
   ]
 }

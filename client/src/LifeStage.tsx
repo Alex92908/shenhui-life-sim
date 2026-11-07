@@ -565,7 +565,7 @@ export function LifeStage3D(p: Props) {
         box(0.42, 0.6, 0.08, 0x39505f, dx, 1.95, -2.34, 0.3);
       }
       box(0.05, 2.1, 0.08, 0x5a6a78, 0, 1.5, -2.34, 0.4);
-      plane(2.5, 0.62, boardTex("#0c4a6e", [{ t: "APEC · 深圳欢迎您", s: 44, c: "#ffffff", bold: true }, { t: "Welcome to Shenzhen", s: 30, c: "#bae6fd" }]), -3, 3.28, -2.36);
+      plane(2.5, 0.62, boardTex("#0c4a6e", [{ t: "峰会· 深圳欢迎您", s: 44, c: "#ffffff", bold: true }, { t: "Welcome to Shenzhen", s: 30, c: "#bae6fd" }]), -3, 3.28, -2.36);
       plane(2.5, 0.62, boardTex("#fdf6da", [{ t: "先下后上 · 文明乘车", s: 40, c: "#7c5c00", bold: true }, { t: "请勿饮食 · 扶稳站好", s: 28, c: "#a5851f" }]), 3, 3.28, -2.36);
       // bench seats with segmented cushions
       box(11.5, 0.16, 0.55, 0x5a6a78, 0, 0.62, -2.0, 0.5, { metalness: 0.3 });
@@ -1088,9 +1088,9 @@ export function LifeStage3D(p: Props) {
       box(0.5, 0.14, 0.4, 0x3f6d8e, 0.15, 0.83, -0.5, 0.9);
       box(0.5, 0.12, 0.4, 0xf5b942, 0.68, 0.82, -0.5, 0.9);
       box(0.34, 0.1, 0.13, 0x2b2118, 0.42, 0.81, -0.28, 0.7);
-      // APEC welcome pillar + planter + bench + hanging light spheres
+      // Summit welcome pillar + planter + bench + hanging light spheres
       box(0.7, 3.4, 0.7, 0xd8d2c4, 5.3, 1.7, -2.6, 0.7);
-      plane(0.66, 1.5, boardTex("#0c4a6e", [{ t: "APEC", s: 52, c: "#ffffff" }, { t: "深圳欢迎您", s: 34, c: "#bae6fd" }]), 5.3, 2.1, -2.24);
+      plane(0.66, 1.5, boardTex("#0c4a6e", [{ t: "湾区峰会", s: 46, c: "#ffffff" }, { t: "深圳欢迎您", s: 34, c: "#bae6fd" }]), 5.3, 2.1, -2.24);
       box(1.5, 0.45, 0.55, 0xb08954, -5.2, 0.23, -0.7, 0.8);
       const bushM = new THREE.Mesh(new THREE.SphereGeometry(0.42, 8, 7), mat(0x4d9b5f, 1, { flatShading: true }));
       bushM.position.set(-5.2, 0.62, -0.7); bushM.castShadow = true; scene.add(bushM);
@@ -1269,7 +1269,7 @@ export function LifeStage3D(p: Props) {
       box(0.16, 0.3, 0.04, 0x14202b, 2.9, 0.98, 0.02, 0.3, { emissive: 0x7dd3fc, emissiveIntensity: 0.7 });
       // ad lightbox + ceiling light strip
       box(2.3, 1.3, 0.07, 0x2b2118, 4.9, 2.1, -3.76, 0.5);
-      plane(2.2, 1.2, boardTex("#0c4a6e", [{ t: "APEC · 深圳欢迎您", s: 40, c: "#ffffff", bold: true }, { t: "Welcome to Shenzhen", s: 26, c: "#bae6fd" }]), 4.9, 2.1, -3.71);
+      plane(2.2, 1.2, boardTex("#0c4a6e", [{ t: "峰会· 深圳欢迎您", s: 40, c: "#ffffff", bold: true }, { t: "Welcome to Shenzhen", s: 26, c: "#bae6fd" }]), 4.9, 2.1, -3.71);
       const stripP = box(9, 0.07, 0.4, 0xfff2d8, 0, 4.35, -1.2, 0.4, { emissive: 0xffe9b8, emissiveIntensity: 1.2 });
       stripP.castShadow = false;
     } else {

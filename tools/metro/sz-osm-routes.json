@@ -4,151 +4,181 @@
   "地铁 1号线：罗湖 → 机场东": [
    {
     "name": "罗湖",
+    "en": "Luohu",
     "lat": 22.5333096,
     "lon": 114.1132515
    },
    {
     "name": "国贸",
+    "en": "Guomao",
     "lat": 22.5424431,
     "lon": 114.1138096
    },
    {
     "name": "老街",
+    "en": "Laojie",
     "lat": 22.5470714,
     "lon": 114.1108235
    },
    {
     "name": "大剧院",
+    "en": "Grand Theater",
     "lat": 22.5446999,
     "lon": 114.1028545
    },
    {
     "name": "科学馆",
+    "en": "Science Museum",
     "lat": 22.5434997,
     "lon": 114.0897618
    },
    {
     "name": "华强路",
+    "en": "Huaqiang Road",
     "lat": 22.5431486,
     "lon": 114.0799458
    },
    {
     "name": "岗厦",
+    "en": "Gangxia",
     "lat": 22.5376453,
     "lon": 114.0629426
    },
    {
     "name": "会展中心",
+    "en": "Convention & Exhibition Center",
     "lat": 22.5375915,
     "lon": 114.0562518
    },
    {
     "name": "购物公园",
+    "en": "Shopping Park",
     "lat": 22.5374358,
     "lon": 114.0496503
    },
    {
     "name": "香蜜湖",
+    "en": "Xiangmihu",
     "lat": 22.5417266,
     "lon": 114.0336064
    },
    {
     "name": "车公庙",
+    "en": "Chegongmiao",
     "lat": 22.5393158,
     "lon": 114.0207872
    },
    {
     "name": "竹子林",
+    "en": "Zhuzilin",
     "lat": 22.5363971,
     "lon": 114.0090325
    },
    {
     "name": "侨城东",
+    "en": "Qiaocheng East",
     "lat": 22.5355388,
     "lon": 113.9914857
    },
    {
     "name": "华侨城",
+    "en": "OCT",
     "lat": 22.5366286,
     "lon": 113.9804922
    },
    {
     "name": "世界之窗",
+    "en": "Window of the World",
     "lat": 22.5399672,
     "lon": 113.9693395
    },
    {
     "name": "白石洲",
+    "en": "Baishizhou",
     "lat": 22.542548,
     "lon": 113.9622766
    },
    {
     "name": "高新园",
+    "en": "Hi-Tech Park",
     "lat": 22.5432889,
     "lon": 113.9491238
    },
    {
     "name": "深大",
+    "en": "Shenzhen University",
     "lat": 22.5411357,
     "lon": 113.9388552
    },
    {
     "name": "桃园",
+    "en": "Taoyuan",
     "lat": 22.5354235,
     "lon": 113.9196695
    },
    {
     "name": "大新",
+    "en": "Daxin",
     "lat": 22.5352735,
     "lon": 113.9103534
    },
    {
     "name": "鲤鱼门",
+    "en": "Liyumen",
     "lat": 22.5351335,
     "lon": 113.8985057
    },
    {
     "name": "前海湾",
+    "en": "Qianhaiwan",
     "lat": 22.5403581,
     "lon": 113.8931529
    },
    {
     "name": "新安",
+    "en": "Xin'an",
     "lat": 22.5507675,
     "lon": 113.8895883
    },
    {
     "name": "宝安中心",
+    "en": "Bao'an Center",
     "lat": 22.5576571,
     "lon": 113.8823369
    },
    {
     "name": "宝体",
+    "en": "Bao'an Stadium",
     "lat": 22.5632529,
     "lon": 113.8764879
    },
    {
     "name": "坪洲",
+    "en": "Pingzhou",
     "lat": 22.5719509,
     "lon": 113.8657681
    },
    {
     "name": "西乡",
+    "en": "Xixiang",
     "lat": 22.5790677,
     "lon": 113.8569903
    },
    {
     "name": "固戍",
+    "en": "Gushu",
     "lat": 22.6037816,
     "lon": 113.8420237
    },
    {
     "name": "后瑞",
+    "en": "Hourui",
     "lat": 22.6318161,
     "lon": 113.8304237
    },
    {
     "name": "机场东",
+    "en": "Airport East",
     "lat": 22.6499865,
     "lon": 113.8176239
    }
@@ -156,191 +186,229 @@
   "地铁 3号线: 福保 → 坪地六联": [
    {
     "name": "福保",
+    "en": "Futian Bonded Area",
     "lat": 22.5108934,
     "lon": 114.0510506
    },
    {
     "name": "益田",
+    "en": "Yitian",
     "lat": 22.5187843,
     "lon": 114.0459726
    },
    {
     "name": "石厦",
+    "en": "Shixia",
     "lat": 22.5264437,
     "lon": 114.0485374
    },
    {
     "name": "购物公园",
+    "en": "Shopping Park",
     "lat": 22.5362876,
     "lon": 114.0479296
    },
    {
     "name": "福田",
+    "en": "Futian",
     "lat": 22.5433392,
     "lon": 114.0478385
    },
    {
     "name": "少年宫",
+    "en": "Children's Palace",
     "lat": 22.5511471,
     "lon": 114.0549872
    },
    {
     "name": "莲花村",
+    "en": "Lianhuacun",
     "lat": 22.5512585,
     "lon": 114.0623412
    },
    {
     "name": "华新",
+    "en": "Huaxin",
     "lat": 22.5516982,
     "lon": 114.0822166
    },
    {
     "name": "通新岭",
+    "en": "Tongxinling",
     "lat": 22.5518102,
     "lon": 114.091103
    },
    {
     "name": "红岭",
+    "en": "Hongling",
     "lat": 22.5516213,
     "lon": 114.0991766
    },
    {
     "name": "老街",
+    "en": "Laojie",
     "lat": 22.5476656,
     "lon": 114.1108332
    },
    {
     "name": "晒布",
+    "en": "Shaibu",
     "lat": 22.5520936,
     "lon": 114.1177492
    },
    {
     "name": "翠竹",
+    "en": "Cuizhu",
     "lat": 22.5589018,
     "lon": 114.1247748
    },
    {
     "name": "田贝",
+    "en": "Tianbei",
     "lat": 22.569952,
     "lon": 114.1250482
    },
    {
     "name": "水贝",
+    "en": "Shuibei",
     "lat": 22.576918,
     "lon": 114.1196697
    },
    {
     "name": "草埔",
+    "en": "Caopu",
     "lat": 22.5870469,
     "lon": 114.1114029
    },
    {
     "name": "布吉",
+    "en": "Buji",
     "lat": 22.6043661,
     "lon": 114.1165282
    },
    {
     "name": "木棉湾",
+    "en": "Mumianwan",
     "lat": 22.6096794,
     "lon": 114.1252994
    },
    {
     "name": "大芬",
+    "en": "Dafen",
     "lat": 22.6168876,
     "lon": 114.133389
    },
    {
     "name": "丹竹头",
+    "en": "Danzhutou",
     "lat": 22.6224619,
     "lon": 114.143057
    },
    {
     "name": "六约",
+    "en": "Liuyue",
     "lat": 22.6370323,
     "lon": 114.1757436
    },
    {
     "name": "塘坑",
+    "en": "Tangkeng",
     "lat": 22.6420313,
     "lon": 114.187791
    },
    {
     "name": "横岗",
+    "en": "Henggang",
     "lat": 22.6512256,
     "lon": 114.2042014
    },
    {
     "name": "永湖",
+    "en": "Yonghu",
     "lat": 22.6618201,
     "lon": 114.2132712
    },
    {
     "name": "荷坳",
+    "en": "He'ao",
     "lat": 22.6758837,
     "lon": 114.2195343
    },
    {
     "name": "大运",
+    "en": "Universiade",
     "lat": 22.6885339,
     "lon": 114.2233702
    },
    {
     "name": "爱联",
+    "en": "Ailian",
     "lat": 22.7002991,
     "lon": 114.2296713
    },
    {
     "name": "吉祥",
+    "en": "Jixiang",
     "lat": 22.7122992,
     "lon": 114.239571
    },
    {
     "name": "龙城广场",
+    "en": "Longcheng Square",
     "lat": 22.7196944,
     "lon": 114.2498136
    },
    {
     "name": "南联",
+    "en": "Nanlian",
     "lat": 22.72477,
     "lon": 114.2607777
    },
    {
     "name": "双龙",
+    "en": "Shuanglong",
     "lat": 22.7315754,
     "lon": 114.2726618
    },
    {
     "name": "梨园",
+    "en": "Liyuan",
     "lat": 22.737347,
     "lon": 114.2769844
    },
    {
     "name": "新生",
+    "en": "Xinsheng",
     "lat": 22.7508439,
     "lon": 114.2782932
    },
    {
     "name": "坪西",
+    "en": "Pingxi",
     "lat": 22.7659007,
     "lon": 114.2773553
    },
    {
     "name": "低碳城",
+    "en": "Low Carbon City",
     "lat": 22.7738939,
     "lon": 114.2849147
    },
    {
     "name": "白石塘",
+    "en": "Baishitang",
     "lat": 22.7778345,
     "lon": 114.2978781
    },
    {
     "name": "富坪",
+    "en": "Fuping",
     "lat": 22.7827822,
     "lon": 114.3059018
    },
    {
     "name": "坪地六联",
+    "en": "Pingdi Liulian",
     "lat": 22.7896413,
     "lon": 114.3172441
    }
@@ -348,116 +416,139 @@
   "地铁 4号线：福田口岸 -> 牛湖": [
    {
     "name": "福田口岸",
+    "en": "Futian Checkpoint",
     "lat": 22.5184704,
     "lon": 114.0641051
    },
    {
     "name": "福民",
+    "en": "Fumin",
     "lat": 22.5259561,
     "lon": 114.0597712
    },
    {
     "name": "会展中心",
+    "en": "Convention & Exhibition Center",
     "lat": 22.5371762,
     "lon": 114.0560378
    },
    {
     "name": "市民中心",
+    "en": "Civic Center",
     "lat": 22.5444323,
     "lon": 114.0558787
    },
    {
     "name": "少年宫",
+    "en": "Children's Palace",
     "lat": 22.5505503,
     "lon": 114.0558002
    },
    {
     "name": "莲花北",
+    "en": "Lianhua North",
     "lat": 22.5634959,
     "lon": 114.0543969
    },
    {
     "name": "上梅林",
+    "en": "Shangmeilin",
     "lat": 22.5730606,
     "lon": 114.0544836
    },
    {
     "name": "民乐",
+    "en": "Minle",
     "lat": 22.5969992,
     "lon": 114.0436278
    },
    {
     "name": "白石龙",
+    "en": "Baishilong",
     "lat": 22.6041939,
     "lon": 114.0374097
    },
    {
     "name": "深圳北站",
+    "en": "Shenzhen North Railway Station",
     "lat": 22.6131652,
     "lon": 114.0252952
    },
    {
     "name": "红山",
+    "en": "Hongshan",
     "lat": 22.6246312,
     "lon": 114.0184773
    },
    {
     "name": "上塘",
+    "en": "Shangtang",
     "lat": 22.6398178,
     "lon": 114.0078853
    },
    {
     "name": "龙胜",
+    "en": "Longsheng",
     "lat": 22.6473406,
     "lon": 114.0071327
    },
    {
     "name": "龙华",
+    "en": "Longhua",
     "lat": 22.6542803,
     "lon": 114.0173883
    },
    {
     "name": "清湖",
+    "en": "Qinghu",
     "lat": 22.6667384,
     "lon": 114.031484
    },
    {
     "name": "清湖北",
+    "en": "Qinghu North",
     "lat": 22.6749912,
     "lon": 114.0354526
    },
    {
     "name": "竹村",
+    "en": "Zhucun",
     "lat": 22.6895572,
     "lon": 114.0352161
    },
    {
     "name": "茜坑",
+    "en": "Xikeng",
     "lat": 22.7006881,
     "lon": 114.0362269
    },
    {
     "name": "长湖",
+    "en": "Changhu",
     "lat": 22.7135166,
     "lon": 114.0395969
    },
    {
     "name": "观澜",
+    "en": "Guanlan",
     "lat": 22.7179779,
     "lon": 114.0498811
    },
    {
     "name": "松元厦",
+    "en": "Songyuanxia",
     "lat": 22.7237553,
     "lon": 114.0596363
    },
    {
     "name": "观澜湖",
+    "en": "Mission Hills",
     "lat": 22.7243563,
     "lon": 114.0715167
    },
    {
     "name": "牛湖",
+    "en": "Niuhu",
     "lat": 22.7272156,
     "lon": 114.0839393
    }
@@ -465,186 +556,223 @@
   "地铁 5号线：赤湾 → 大剧院": [
    {
     "name": "赤湾",
+    "en": "Chiwan",
     "lat": 22.4821777,
     "lon": 113.8924527
    },
    {
     "name": "荔湾",
+    "en": "Liwan",
     "lat": 22.5012117,
     "lon": 113.8883388
    },
    {
     "name": "铁路公园",
+    "en": "Railway Park",
     "lat": 22.5065344,
     "lon": 113.8846535
    },
    {
     "name": "妈湾",
+    "en": "Mawan",
     "lat": 22.5112242,
     "lon": 113.8810033
    },
    {
     "name": "前湾公园",
+    "en": "Qianwan Park",
     "lat": 22.5197462,
     "lon": 113.8854484
    },
    {
     "name": "前湾",
+    "en": "Qianwan",
     "lat": 22.5249215,
     "lon": 113.8908307
    },
    {
     "name": "桂湾",
+    "en": "Guiwan",
     "lat": 22.5344604,
     "lon": 113.8929353
    },
    {
     "name": "前海湾",
+    "en": "Qianhaiwan",
     "lat": 22.5403372,
     "lon": 113.8928395
    },
    {
     "name": "临海",
+    "en": "Linhai",
     "lat": 22.5473504,
     "lon": 113.8843219
    },
    {
     "name": "宝华",
+    "en": "Baohua",
     "lat": 22.5527225,
     "lon": 113.8802791
    },
    {
     "name": "宝安中心",
+    "en": "Bao'an Center",
     "lat": 22.5574391,
     "lon": 113.8821496
    },
    {
     "name": "翻身",
+    "en": "Fanshen",
     "lat": 22.5629266,
     "lon": 113.888499
    },
    {
     "name": "灵芝",
+    "en": "Lingzhi",
     "lat": 22.571972,
     "lon": 113.8992698
    },
    {
     "name": "洪浪北",
+    "en": "Honglang North",
     "lat": 22.5776836,
     "lon": 113.9058189
    },
    {
     "name": "兴东",
+    "en": "Xingdong",
     "lat": 22.5847462,
     "lon": 113.9140525
    },
    {
     "name": "留仙洞",
+    "en": "Liuxiandong",
     "lat": 22.5835112,
     "lon": 113.9390868
    },
    {
     "name": "西丽",
+    "en": "Xili",
     "lat": 22.583634,
     "lon": 113.9488635
    },
    {
     "name": "大学城",
+    "en": "University Town",
     "lat": 22.5849872,
     "lon": 113.9602548
    },
    {
     "name": "塘朗",
+    "en": "Tanglang",
     "lat": 22.5928215,
     "lon": 113.9947521
    },
    {
     "name": "长岭陂",
+    "en": "Changlingbei",
     "lat": 22.6021513,
     "lon": 114.0054718
    },
    {
     "name": "深圳北站",
+    "en": "Shenzhen North Railway Station",
     "lat": 22.6134575,
     "lon": 114.0256979
    },
    {
     "name": "民治",
+    "en": "Minzhi",
     "lat": 22.6203282,
     "lon": 114.0361279
    },
    {
     "name": "五和",
+    "en": "Wuhe",
     "lat": 22.6293254,
     "lon": 114.0556411
    },
    {
     "name": "坂田",
+    "en": "Bantian",
     "lat": 22.6299592,
     "lon": 114.0651028
    },
    {
     "name": "杨美",
+    "en": "Yangmei",
     "lat": 22.6292109,
     "lon": 114.0751054
    },
    {
     "name": "上水径",
+    "en": "Shangshuijing",
     "lat": 22.6247189,
     "lon": 114.1000921
    },
    {
     "name": "下水径",
+    "en": "Xiashuijing",
     "lat": 22.6175005,
     "lon": 114.1055402
    },
    {
     "name": "长龙",
+    "en": "Changlong",
     "lat": 22.6109863,
     "lon": 114.1082741
    },
    {
     "name": "布吉",
+    "en": "Buji",
     "lat": 22.6054255,
     "lon": 114.1161779
    },
    {
     "name": "百鸽笼",
+    "en": "Baigelong",
     "lat": 22.5973466,
     "lon": 114.1252657
    },
    {
     "name": "布心",
+    "en": "Buxin",
     "lat": 22.5835658,
     "lon": 114.1329483
    },
    {
     "name": "太安",
+    "en": "Tai'an",
     "lat": 22.5769557,
     "lon": 114.1322445
    },
    {
     "name": "怡景",
+    "en": "Yijing",
     "lat": 22.5586896,
     "lon": 114.1349409
    },
    {
     "name": "黄贝岭",
+    "en": "Huangbeiling",
     "lat": 22.5488139,
     "lon": 114.131381
    },
    {
     "name": "湖贝",
+    "en": "Hubei",
     "lat": 22.5467088,
     "lon": 114.118412
    },
    {
     "name": "东门",
+    "en": "Dongmen",
     "lat": 22.5455323,
     "lon": 114.1119012
    },
    {
     "name": "大剧院",
+    "en": "Grand Theater",
     "lat": 22.5440399,
     "lon": 114.1028511
    }
@@ -652,111 +780,133 @@
   "地铁 11号线: 红岭南 → 碧头": [
    {
     "name": "红岭南",
+    "en": null,
     "lat": 22.5412178,
     "lon": 114.1009312
    },
    {
     "name": "华强南",
+    "en": "Huaqiang South",
     "lat": 22.5407417,
     "lon": 114.0829792
    },
    {
     "name": "福星",
+    "en": "Fuxing",
     "lat": 22.5402514,
     "lon": 114.0762937
    },
    {
     "name": "岗厦北",
+    "en": "Gangxia North",
     "lat": 22.5429858,
     "lon": 114.06284
    },
    {
     "name": "福田",
+    "en": "Futian",
     "lat": 22.5428067,
     "lon": 114.0482365
    },
    {
     "name": "车公庙",
+    "en": "Chegongmiao",
     "lat": 22.5389636,
     "lon": 114.0212381
    },
    {
     "name": "红树湾南",
+    "en": "Hongshuwan South",
     "lat": 22.5262582,
     "lon": 113.9664807
    },
    {
     "name": "后海",
+    "en": "Houhai",
     "lat": 22.5213511,
     "lon": 113.9382212
    },
    {
     "name": "南山",
+    "en": "Nanshan",
     "lat": 22.527233,
     "lon": 113.9187229
    },
    {
     "name": "前海湾",
+    "en": "Qianhaiwan",
     "lat": 22.5401022,
     "lon": 113.8925232
    },
    {
     "name": "宝安",
+    "en": "Bao’an",
     "lat": 22.5577484,
     "lon": 113.8755261
    },
    {
     "name": "碧海湾",
+    "en": "Bihaiwan",
     "lat": 22.5788192,
     "lon": 113.8503018
    },
    {
     "name": "机场",
+    "en": "Airport",
     "lat": 22.6264153,
     "lon": 113.8090347
    },
    {
     "name": "机场北",
+    "en": "Airport North",
     "lat": 22.6541212,
     "lon": 113.7930681
    },
    {
     "name": "福永",
+    "en": "Fuyong",
     "lat": 22.6761802,
     "lon": 113.8010117
    },
    {
     "name": "桥头",
+    "en": "Qiaotou",
     "lat": 22.6909855,
     "lon": 113.8059731
    },
    {
     "name": "塘尾",
+    "en": "Tangwei",
     "lat": 22.7049345,
     "lon": 113.8128786
    },
    {
     "name": "马安山",
+    "en": "Ma'anshan",
     "lat": 22.7197891,
     "lon": 113.8120063
    },
    {
     "name": "沙井",
+    "en": "Shajing",
     "lat": 22.7335833,
     "lon": 113.8194588
    },
    {
     "name": "后亭",
+    "en": "Houting",
     "lat": 22.7555498,
     "lon": 113.8218016
    },
    {
     "name": "松岗",
+    "en": "Songgang",
     "lat": 22.7751976,
     "lon": 113.8246412
    },
    {
     "name": "碧头",
+    "en": "Bitou",
     "lat": 22.7862305,
     "lon": 113.8150171
    }
@@ -764,146 +914,175 @@
   "地铁 7号线: 深大丽湖 → 太安": [
    {
     "name": "深大丽湖",
+    "en": "SZU Lihu Campus",
     "lat": 22.5959135,
     "lon": 113.9833889
    },
    {
     "name": "北大",
+    "en": "Peking University",
     "lat": 22.5969527,
     "lon": 113.9735521
    },
    {
     "name": "西丽湖",
+    "en": "Xili Lake",
     "lat": 22.5965468,
     "lon": 113.9605299
    },
    {
     "name": "西丽",
+    "en": "Xili",
     "lat": 22.5836951,
     "lon": 113.9492422
    },
    {
     "name": "茶光",
+    "en": "Chaguang",
     "lat": 22.5771386,
     "lon": 113.9493803
    },
    {
     "name": "珠光",
+    "en": "Zhuguang",
     "lat": 22.5712354,
     "lon": 113.9557768
    },
    {
     "name": "龙井",
+    "en": "Longjing",
     "lat": 22.5671599,
     "lon": 113.9697105
    },
    {
     "name": "桃源村",
+    "en": "Taoyuancun",
     "lat": 22.5628161,
     "lon": 113.9769295
    },
    {
     "name": "深云",
+    "en": "Shenyun",
     "lat": 22.5593019,
     "lon": 113.9888359
    },
    {
     "name": "安托山",
+    "en": "Antuo Hill",
     "lat": 22.551499,
     "lon": 114.0012299
    },
    {
     "name": "农林",
+    "en": "Nonglin",
     "lat": 22.5432281,
     "lon": 114.0132241
    },
    {
     "name": "车公庙",
+    "en": "Chegongmiao",
     "lat": 22.5384332,
     "lon": 114.0233437
    },
    {
     "name": "上沙",
+    "en": "Shangsha",
     "lat": 22.5273286,
     "lon": 114.030579
    },
    {
     "name": "沙尾",
+    "en": "Shawei",
     "lat": 22.5234206,
     "lon": 114.0375364
    },
    {
     "name": "石厦",
+    "en": "Shixia",
     "lat": 22.5257545,
     "lon": 114.0485195
    },
    {
     "name": "皇岗村",
+    "en": "Huanggangcun",
     "lat": 22.5258117,
     "lon": 114.0539397
    },
    {
     "name": "福民",
+    "en": "Fumin",
     "lat": 22.5259125,
     "lon": 114.0606399
    },
    {
     "name": "皇岗口岸",
+    "en": "Huanggang Checkpoint",
     "lat": 22.5241735,
     "lon": 114.0689798
    },
    {
     "name": "赤尾",
+    "en": "Chiwei",
     "lat": 22.5345217,
     "lon": 114.0788258
    },
    {
     "name": "华强南",
+    "en": "Huaqiang South",
     "lat": 22.5399464,
     "lon": 114.0816972
    },
    {
     "name": "华强北",
+    "en": "Huaqiang North",
     "lat": 22.5456631,
     "lon": 114.0817133
    },
    {
     "name": "华新",
+    "en": "Huaxin",
     "lat": 22.5517778,
     "lon": 114.0816022
    },
    {
     "name": "黄木岗",
+    "en": "Huangmugang",
     "lat": 22.558569,
     "lon": 114.0822192
    },
    {
     "name": "八卦岭",
+    "en": "Bagualing",
     "lat": 22.5644901,
     "lon": 114.0899787
    },
    {
     "name": "红岭北",
+    "en": "Hongling North",
     "lat": 22.5646354,
     "lon": 114.0999978
    },
    {
     "name": "笋岗",
+    "en": "Sungang",
     "lat": 22.5658409,
     "lon": 114.1058714
    },
    {
     "name": "洪湖",
+    "en": "Honghu",
     "lat": 22.5686265,
     "lon": 114.1173203
    },
    {
     "name": "田贝",
+    "en": "Tianbei",
     "lat": 22.5696861,
     "lon": 114.1239869
    },
    {
     "name": "太安",
+    "en": "Tai'an",
     "lat": 22.5769648,
     "lon": 114.1322183
    }
@@ -911,161 +1090,193 @@
   "地铁 9号线：前湾 → 文锦": [
    {
     "name": "前湾",
+    "en": "Qianwan",
     "lat": 22.5252835,
     "lon": 113.8900699
    },
    {
     "name": "梦海",
+    "en": "Menghai",
     "lat": 22.52206,
     "lon": 113.893754
    },
    {
     "name": "怡海",
+    "en": "Yihai",
     "lat": 22.5185839,
     "lon": 113.898016
    },
    {
     "name": "荔林",
+    "en": "Litchi Orchards",
     "lat": 22.5147965,
     "lon": 113.908453
    },
    {
     "name": "南油西",
+    "en": "Nanyou West",
     "lat": 22.5123138,
     "lon": 113.9134467
    },
    {
     "name": "南油",
+    "en": "Nanyou",
     "lat": 22.5135028,
     "lon": 113.9213968
    },
    {
     "name": "南山书城",
+    "en": "Nanshan Book Mall",
     "lat": 22.5214632,
     "lon": 113.9236364
    },
    {
     "name": "深大南",
+    "en": "Shenzhen University South",
     "lat": 22.5290324,
     "lon": 113.9310743
    },
    {
     "name": "粤海门",
+    "en": "Yuehaimen",
     "lat": 22.5357088,
     "lon": 113.9417505
    },
    {
     "name": "高新南",
+    "en": "High-Tech South",
     "lat": 22.5357725,
     "lon": 113.9464994
    },
    {
     "name": "红树湾南",
+    "en": "Hongshuwan South",
     "lat": 22.5260685,
     "lon": 113.9664529
    },
    {
     "name": "深湾",
+    "en": "Shenwan",
     "lat": 22.5259419,
     "lon": 113.973674
    },
    {
     "name": "深圳湾公园",
+    "en": "Shenzhen Bay Park",
     "lat": 22.5244174,
     "lon": 113.9880274
    },
    {
     "name": "下沙",
+    "en": "Xiasha",
     "lat": 22.5315811,
     "lon": 114.0186534
    },
    {
     "name": "车公庙",
+    "en": "Chegongmiao",
     "lat": 22.5384567,
     "lon": 114.0234596
    },
    {
     "name": "香梅",
+    "en": "Xiangmei",
     "lat": 22.5482424,
     "lon": 114.034304
    },
    {
     "name": "景田",
+    "en": "Jingtian",
     "lat": 22.556089,
     "lon": 114.0384739
    },
    {
     "name": "梅景",
+    "en": "Meijing",
     "lat": 22.5635772,
     "lon": 114.0329385
    },
    {
     "name": "下梅林",
+    "en": "Xiameilin",
     "lat": 22.5684555,
     "lon": 114.0368749
    },
    {
     "name": "梅村",
+    "en": "Meicun",
     "lat": 22.5711688,
     "lon": 114.0471644
    },
    {
     "name": "上梅林",
+    "en": "Shangmeilin",
     "lat": 22.5710922,
     "lon": 114.055317
    },
    {
     "name": "孖岭",
+    "en": "Maling",
     "lat": 22.5711219,
     "lon": 114.0631368
    },
    {
     "name": "银湖",
+    "en": "Yinhu",
     "lat": 22.5713924,
     "lon": 114.0843222
    },
    {
     "name": "泥岗",
+    "en": "Nigang",
     "lat": 22.5701728,
     "lon": 114.0920549
    },
    {
     "name": "红岭北",
+    "en": "Hongling North",
     "lat": 22.5646987,
     "lon": 114.0994376
    },
    {
     "name": "园岭",
+    "en": "Yuanling",
     "lat": 22.5588234,
     "lon": 114.0994632
    },
    {
     "name": "红岭",
+    "en": "Hongling",
     "lat": 22.5510439,
     "lon": 114.0994382
    },
    {
     "name": "红岭南",
+    "en": "Hongling South",
     "lat": 22.5423313,
     "lon": 114.0998222
    },
    {
     "name": "鹿丹村",
+    "en": "Ludancun",
     "lat": 22.5382982,
     "lon": 114.1037956
    },
    {
     "name": "人民南",
+    "en": "Renmin South",
     "lat": 22.5380859,
     "lon": 114.1131201
    },
    {
     "name": "向西村",
+    "en": "Xiangxicun",
     "lat": 22.5425311,
     "lon": 114.1206096
    },
    {
     "name": "文锦",
+    "en": "Wenjin",
     "lat": 22.545071,
     "lon": 114.1259283
    }
@@ -1073,136 +1284,163 @@
   "地铁 6号线：科学馆 → 松岗": [
    {
     "name": "科学馆",
+    "en": "Science Museum",
     "lat": 22.5421275,
     "lon": 114.0912197
    },
    {
     "name": "通新岭",
+    "en": "Tongxinling",
     "lat": 22.5513088,
     "lon": 114.0910376
    },
    {
     "name": "体育中心",
+    "en": "Sports Center",
     "lat": 22.5573385,
     "lon": 114.0906334
    },
    {
     "name": "八卦岭",
+    "en": "Bagualing",
     "lat": 22.5633903,
     "lon": 114.0888249
    },
    {
     "name": "银湖",
+    "en": "Yinhu",
     "lat": 22.5713555,
     "lon": 114.0843018
    },
    {
     "name": "翰岭",
+    "en": "Hanling",
     "lat": 22.5770266,
     "lon": 114.06381
    },
    {
     "name": "梅林关",
+    "en": "Meilinguan",
     "lat": 22.5970949,
     "lon": 114.0483148
    },
    {
     "name": "深圳北站",
+    "en": "Shenzhen North Railway Station",
     "lat": 22.6130215,
     "lon": 114.0251358
    },
    {
     "name": "红山",
+    "en": "Hongshan",
     "lat": 22.6245247,
     "lon": 114.0182863
    },
    {
     "name": "上芬",
+    "en": "Shangfen",
     "lat": 22.6432958,
     "lon": 114.0116059
    },
    {
     "name": "元芬",
+    "en": "Yuanfen",
     "lat": 22.6590992,
     "lon": 114.000164
    },
    {
     "name": "阳台山东",
+    "en": "Yangtai Mountain East",
     "lat": 22.6707843,
     "lon": 113.9866328
    },
    {
     "name": "官田",
+    "en": "Guantian",
     "lat": 22.6862722,
     "lon": 113.9448269
    },
    {
     "name": "上屋",
+    "en": "Shangwu",
     "lat": 22.6921384,
     "lon": 113.9336686
    },
    {
     "name": "长圳",
+    "en": "Changzhen",
     "lat": 22.7293218,
     "lon": 113.926087
    },
    {
     "name": "凤凰城",
+    "en": "Fenghuang Town",
     "lat": 22.7504316,
     "lon": 113.928076
    },
    {
     "name": "光明大街",
+    "en": "Guangming St",
     "lat": 22.765012,
     "lon": 113.9379896
    },
    {
     "name": "光明",
+    "en": "Guangming",
     "lat": 22.7747899,
     "lon": 113.9402833
    },
    {
     "name": "科学公园",
+    "en": "Science Park",
     "lat": 22.7805415,
     "lon": 113.9292425
    },
    {
     "name": "楼村",
+    "en": "Loucun",
     "lat": 22.7789972,
     "lon": 113.9185324
    },
    {
     "name": "红花山",
+    "en": "Honghuashan",
     "lat": 22.7808759,
     "lon": 113.9018135
    },
    {
     "name": "公明广场",
+    "en": "Gongming Square",
     "lat": 22.7809167,
     "lon": 113.8861201
    },
    {
     "name": "合水口",
+    "en": "Heshuikou",
     "lat": 22.7847291,
     "lon": 113.8761289
    },
    {
     "name": "薯田埔",
+    "en": "Shutianpu",
     "lat": 22.7840691,
     "lon": 113.8630456
    },
    {
     "name": "松岗公园",
+    "en": "Songgang Park",
     "lat": 22.7813124,
     "lon": 113.8446426
    },
    {
     "name": "溪头",
+    "en": "Xitou",
     "lat": 22.7774057,
     "lon": 113.8319845
    },
    {
     "name": "松岗",
+    "en": "Songgang",
     "lat": 22.7752639,
     "lon": 113.8247874
    }
@@ -1210,121 +1448,145 @@
   "地铁 10号线：福田口岸 → 双拥街": [
    {
     "name": "福田口岸",
+    "en": "Futian Checkpoint",
     "lat": 22.5178868,
     "lon": 114.0627873
    },
    {
     "name": "福民",
+    "en": "Fumin",
     "lat": 22.5278514,
     "lon": 114.0631313
    },
    {
     "name": "岗厦",
+    "en": "Gangxia",
     "lat": 22.5373747,
     "lon": 114.0630377
    },
    {
     "name": "岗厦北",
+    "en": "Gangxia North",
     "lat": 22.5423939,
     "lon": 114.0629392
    },
    {
     "name": "莲花村",
+    "en": "Lianhuacun",
     "lat": 22.5513646,
     "lon": 114.0627516
    },
    {
     "name": "冬瓜岭",
+    "en": "Donggualing",
     "lat": 22.5635062,
     "lon": 114.0625688
    },
    {
     "name": "孖岭",
+    "en": "Maling",
     "lat": 22.5700346,
     "lon": 114.0617687
    },
    {
     "name": "雅宝",
+    "en": "Yabao",
     "lat": 22.6062606,
     "lon": 114.0551784
    },
    {
     "name": "南坑",
+    "en": "Nankeng",
     "lat": 22.6139764,
     "lon": 114.055515
    },
    {
     "name": "光雅园",
+    "en": "Guangyayuan",
     "lat": 22.6191355,
     "lon": 114.0557603
    },
    {
     "name": "五和",
+    "en": "Wuhe",
     "lat": 22.6289369,
     "lon": 114.0556816
    },
    {
     "name": "坂田北",
+    "en": "Bantian North",
     "lat": 22.6375579,
     "lon": 114.0582528
    },
    {
     "name": "贝尔路",
+    "en": "Bei'er Road",
     "lat": 22.6442926,
     "lon": 114.0612888
    },
    {
     "name": "华为",
+    "en": "Huawei",
     "lat": 22.6531184,
     "lon": 114.0620525
    },
    {
     "name": "岗头",
+    "en": "Gangtou",
     "lat": 22.6595142,
     "lon": 114.0666396
    },
    {
     "name": "雪象",
+    "en": "Xuexiang",
     "lat": 22.6596932,
     "lon": 114.0735948
    },
    {
     "name": "甘坑",
+    "en": "Gankeng",
     "lat": 22.6502975,
     "lon": 114.1009316
    },
    {
     "name": "凉帽山",
+    "en": "Liangmao Hill",
     "lat": 22.6489267,
     "lon": 114.1135841
    },
    {
     "name": "上李朗",
+    "en": "Shanglilang",
     "lat": 22.6566734,
     "lon": 114.1219091
    },
    {
     "name": "木古",
+    "en": "Mugu",
     "lat": 22.6726205,
     "lon": 114.1173713
    },
    {
     "name": "华南城",
+    "en": "Huanancheng",
     "lat": 22.6785628,
     "lon": 114.1172561
    },
    {
     "name": "禾花",
+    "en": "Hehua",
     "lat": 22.6891213,
     "lon": 114.1160107
    },
    {
     "name": "平湖",
+    "en": "Pinghu",
     "lat": 22.6964379,
     "lon": 114.1209042
    },
    {
     "name": "双拥街",
+    "en": "Shuangyong Street",
     "lat": 22.7011507,
     "lon": 114.1277233
    }
@@ -1332,216 +1594,259 @@
   "地铁 2&8号线：赤湾 → 溪涌": [
    {
     "name": "赤湾",
+    "en": "Chiwan",
     "lat": 22.4823109,
     "lon": 113.8925946
    },
    {
     "name": "蛇口港",
+    "en": "Shekou Port",
     "lat": 22.4796906,
     "lon": 113.9074168
    },
    {
     "name": "海上世界",
+    "en": "Sea World",
     "lat": 22.4881089,
     "lon": 113.9102019
    },
    {
     "name": "水湾",
+    "en": "Shuiwan",
     "lat": 22.4914168,
     "lon": 113.9148232
    },
    {
     "name": "东角头",
+    "en": "Dongjiaotou",
     "lat": 22.4890984,
     "lon": 113.9264013
    },
    {
     "name": "湾厦",
+    "en": "Wanxia",
     "lat": 22.4965077,
     "lon": 113.9338189
    },
    {
     "name": "海月",
+    "en": "Haiyue",
     "lat": 22.5031285,
     "lon": 113.9329976
    },
    {
     "name": "登良",
+    "en": "Dengliang",
     "lat": 22.5119034,
     "lon": 113.9328482
    },
    {
     "name": "后海",
+    "en": "Houhai",
     "lat": 22.520367,
     "lon": 113.9354394
    },
    {
     "name": "科苑",
+    "en": "Keyuan",
     "lat": 22.5301123,
     "lon": 113.9417943
    },
    {
     "name": "红树湾",
+    "en": "Hongshuwan",
     "lat": 22.5279412,
     "lon": 113.9633401
    },
    {
     "name": "世界之窗",
+    "en": "Window of the World",
     "lat": 22.5398156,
     "lon": 113.9695462
    },
    {
     "name": "侨城北",
+    "en": "Qiaocheng North",
     "lat": 22.5470693,
     "lon": 113.9839304
    },
    {
     "name": "深康",
+    "en": "Shenkang",
     "lat": 22.5492613,
     "lon": 113.993739
    },
    {
     "name": "安托山",
+    "en": "Antuo Hill",
     "lat": 22.5515896,
     "lon": 114.0014389
    },
    {
     "name": "侨香",
+    "en": "Qiaoxiang",
     "lat": 22.5524637,
     "lon": 114.0093354
    },
    {
     "name": "香蜜",
+    "en": "Xiangmi",
     "lat": 22.5557152,
     "lon": 114.0185932
    },
    {
     "name": "香梅北",
+    "en": "Xiangmei North",
     "lat": 22.5566421,
     "lon": 114.027827
    },
    {
     "name": "景田",
+    "en": "Jingtian",
     "lat": 22.5562132,
     "lon": 114.0389134
    },
    {
     "name": "莲花西",
+    "en": "Lianhua West",
     "lat": 22.5498468,
     "lon": 114.044856
    },
    {
     "name": "福田",
+    "en": "Futian",
     "lat": 22.5428758,
     "lon": 114.0479942
    },
    {
     "name": "市民中心",
+    "en": "Civic Center",
     "lat": 22.5432693,
     "lon": 114.0567052
    },
    {
     "name": "岗厦北",
+    "en": "Gangxia North",
     "lat": 22.5433817,
     "lon": 114.0642707
    },
    {
     "name": "华强北",
+    "en": "Huaqiang North",
     "lat": 22.5470528,
     "lon": 114.0802454
    },
    {
     "name": "燕南",
+    "en": "Yannan",
     "lat": 22.5471541,
     "lon": 114.086904
    },
    {
     "name": "大剧院",
+    "en": "Grand Theater",
     "lat": 22.543711,
     "lon": 114.1029206
    },
    {
     "name": "湖贝",
+    "en": "Hubei",
     "lat": 22.5472068,
     "lon": 114.1204496
    },
    {
     "name": "黄贝岭",
+    "en": "Huangbeiling",
     "lat": 22.5487598,
     "lon": 114.1313832
    },
    {
     "name": "新秀",
+    "en": "Xinxiu",
     "lat": 22.5505017,
     "lon": 114.1440656
    },
    {
     "name": "莲塘口岸",
+    "en": "Liantang Checkpoint",
     "lat": 22.5559107,
     "lon": 114.1502686
    },
    {
     "name": "仙湖路",
+    "en": "Xianhu Road",
     "lat": 22.5666913,
     "lon": 114.1613525
    },
    {
     "name": "莲塘",
+    "en": "Liantang",
     "lat": 22.5667878,
     "lon": 114.1692661
    },
    {
     "name": "梧桐山南",
+    "en": "Wutong Mountain South",
     "lat": 22.5604646,
     "lon": 114.1782443
    },
    {
     "name": "沙头角",
+    "en": "Shatoujiao",
     "lat": 22.5571318,
     "lon": 114.2182054
    },
    {
     "name": "海山",
+    "en": "Haishan",
     "lat": 22.5582633,
     "lon": 114.2328734
    },
    {
     "name": "盐田港西",
+    "en": "Yantian Port West",
     "lat": 22.5648679,
     "lon": 114.2417372
    },
    {
     "name": "深外高中",
+    "en": "Shenwai Senior Campus",
     "lat": 22.5865155,
     "lon": 114.2397792
    },
    {
     "name": "盐田路",
+    "en": "Yantian Road",
     "lat": 22.591016,
     "lon": 114.2502655
    },
    {
     "name": "鸿安围",
+    "en": "Honganwei",
     "lat": 22.5933207,
     "lon": 114.259407
    },
    {
     "name": "盐田墟",
+    "en": "Yantianxu",
     "lat": 22.5901672,
     "lon": 114.2709178
    },
    {
     "name": "大梅沙",
+    "en": "Dameisha",
     "lat": 22.5969153,
     "lon": 114.3030496
    },
    {
     "name": "小梅沙",
+    "en": "Xiaomeisha",
     "lat": 22.6044407,
     "lon": 114.3211385
    },
    {
     "name": "溪涌",
+    "en": null,
     "lat": 22.6146531,
     "lon": 114.3550059
    }
@@ -1549,26 +1854,31 @@
   "地铁 20号线: 机场北 → 会展城": [
    {
     "name": "机场北",
+    "en": "Airport North",
     "lat": 22.6542636,
     "lon": 113.793573
    },
    {
     "name": "国展南",
+    "en": "Shenzhen World South",
     "lat": 22.6866997,
     "lon": 113.7731521
    },
    {
     "name": "国展",
+    "en": "Shenzhen World",
     "lat": 22.6984084,
     "lon": 113.7732455
    },
    {
     "name": "国展北",
+    "en": "Shenzhen World North",
     "lat": 22.7080274,
     "lon": 113.7717947
    },
    {
     "name": "会展城",
+    "en": "Convention & Exhibition City",
     "lat": 22.7151053,
     "lon": 113.7646068
    }
@@ -1576,76 +1886,91 @@
   "深圳有轨电车：清湖 → 新澜": [
    {
     "name": "清湖",
+    "en": "Qinghu",
     "lat": 22.6681918,
     "lon": 114.0321798
    },
    {
     "name": "清龙",
+    "en": "Qinglong",
     "lat": 22.6679213,
     "lon": 114.0375341
    },
    {
     "name": "清湖学校",
+    "en": "Qinghu School",
     "lat": 22.6734631,
     "lon": 114.0395134
    },
    {
     "name": "梅龙北",
+    "en": "Meilong North",
     "lat": 22.6786807,
     "lon": 114.0431541
    },
    {
     "name": "碧澜",
+    "en": "Bilan",
     "lat": 22.6865671,
     "lon": 114.0442967
    },
    {
     "name": "文澜",
+    "en": "Wenlan",
     "lat": 22.6895285,
     "lon": 114.0444287
    },
    {
     "name": "大和",
+    "en": "Dahe",
     "lat": 22.694011,
     "lon": 114.044579
    },
    {
     "name": "世纪广场",
+    "en": "Shiji Square",
     "lat": 22.6979198,
     "lon": 114.044459
    },
    {
     "name": "锦鲤",
+    "en": "Jinli",
     "lat": 22.7037651,
     "lon": 114.0440587
    },
    {
     "name": "河西",
+    "en": "Hexi",
     "lat": 22.7036487,
     "lon": 114.0514898
    },
    {
     "name": "观城",
+    "en": "Guancheng",
     "lat": 22.7040447,
     "lon": 114.0569766
    },
    {
     "name": "大布头",
+    "en": "Dabutou",
     "lat": 22.7080759,
     "lon": 114.0602525
    },
    {
     "name": "河东",
+    "en": "Hedong",
     "lat": 22.711201,
     "lon": 114.0554088
    },
    {
     "name": "石角头",
+    "en": "Shijiaotou",
     "lat": 22.7139277,
     "lon": 114.0519639
    },
    {
     "name": "新澜",
+    "en": "Xinlan",
     "lat": 22.7174652,
     "lon": 114.0502552
    }
@@ -1653,61 +1978,73 @@
   "深圳有轨电车：清湖 → 下围": [
    {
     "name": "清湖",
+    "en": "Qinghu",
     "lat": 22.6681918,
     "lon": 114.0321798
    },
    {
     "name": "清龙",
+    "en": "Qinglong",
     "lat": 22.6679213,
     "lon": 114.0375341
    },
    {
     "name": "清湖学校",
+    "en": "Qinghu School",
     "lat": 22.6734631,
     "lon": 114.0395134
    },
    {
     "name": "梅龙北",
+    "en": "Meilong North",
     "lat": 22.6786807,
     "lon": 114.0431541
    },
    {
     "name": "碧澜",
+    "en": "Bilan",
     "lat": 22.6865671,
     "lon": 114.0442967
    },
    {
     "name": "文澜",
+    "en": "Wenlan",
     "lat": 22.6895285,
     "lon": 114.0444287
    },
    {
     "name": "大和",
+    "en": "Dahe",
     "lat": 22.6930155,
     "lon": 114.0455796
    },
    {
     "name": "东庵",
+    "en": "Dong'an",
     "lat": 22.6925719,
     "lon": 114.048592
    },
    {
     "name": "高新区西",
+    "en": "HTIP West",
     "lat": 22.6917875,
     "lon": 114.0538043
    },
    {
     "name": "高新区",
+    "en": "HTIP",
     "lat": 22.6912379,
     "lon": 114.059384
    },
    {
     "name": "高新区东",
+    "en": "HTIP East",
     "lat": 22.6922281,
     "lon": 114.0663279
    },
    {
     "name": "下围",
+    "en": "Xiawei",
     "lat": 22.6936281,
     "lon": 114.0729467
    }
@@ -1715,91 +2052,109 @@
   "地铁 14号线: 岗厦北 -> 沙田": [
    {
     "name": "岗厦北",
+    "en": "Gangxia North",
     "lat": 22.5427525,
     "lon": 114.0628452
    },
    {
     "name": "黄木岗",
+    "en": "Huangmugang",
     "lat": 22.5589035,
     "lon": 114.0819257
    },
    {
     "name": "罗湖北",
+    "en": "Luohu North",
     "lat": 22.5832662,
     "lon": 114.1079904
    },
    {
     "name": "布吉",
+    "en": "Buji",
     "lat": 22.6041655,
     "lon": 114.116739
    },
    {
     "name": "石芽岭",
+    "en": "Shiyaling",
     "lat": 22.6310865,
     "lon": 114.1328583
    },
    {
     "name": "六约北",
+    "en": "Liuyue North",
     "lat": 22.6452804,
     "lon": 114.1707392
    },
    {
     "name": "四联",
+    "en": "Silian",
     "lat": 22.6512627,
     "lon": 114.1880623
    },
    {
     "name": "坳背",
+    "en": "Aobei",
     "lat": 22.6718094,
     "lon": 114.2088778
    },
    {
     "name": "大运",
+    "en": "Universiade",
     "lat": 22.6882593,
     "lon": 114.2230145
    },
    {
     "name": "嶂背",
+    "en": "Zhangbei",
     "lat": 22.6946739,
     "lon": 114.2453675
    },
    {
     "name": "南约",
+    "en": "Nanyue",
     "lat": 22.6905545,
     "lon": 114.2728878
    },
    {
     "name": "宝龙",
+    "en": "Baolong",
     "lat": 22.6909006,
     "lon": 114.2929713
    },
    {
     "name": "锦龙",
+    "en": "Jinlong",
     "lat": 22.6827165,
     "lon": 114.3291246
    },
    {
     "name": "坪山围",
+    "en": "Pingshanwei",
     "lat": 22.6939515,
     "lon": 114.3389496
    },
    {
     "name": "坪山广场",
+    "en": "Pingshan Square",
     "lat": 22.7027942,
     "lon": 114.3438643
    },
    {
     "name": "坪山中心",
+    "en": "Pingshan Center",
     "lat": 22.7114082,
     "lon": 114.3473857
    },
    {
     "name": "坑梓",
+    "en": "Kengzi",
     "lat": 22.7478133,
     "lon": 114.3659641
    },
    {
     "name": "沙田",
+    "en": "Shatian",
     "lat": 22.7585266,
     "lon": 114.3956161
    }
@@ -1807,196 +2162,235 @@
   "地铁 12号线: 左炮台东 → 松岗": [
    {
     "name": "左炮台东",
+    "en": "Zuopaitai East",
     "lat": 22.4733586,
     "lon": 113.8962763
    },
    {
     "name": "太子湾",
+    "en": "Taiziwan",
     "lat": 22.4761094,
     "lon": 113.9068898
    },
    {
     "name": "海上世界",
+    "en": "Sea World",
     "lat": 22.4880033,
     "lon": 113.9088925
    },
    {
     "name": "花果山",
+    "en": "Huaguoshan",
     "lat": 22.4972672,
     "lon": 113.9141366
    },
    {
     "name": "四海",
+    "en": "Sihai",
     "lat": 22.5032733,
     "lon": 113.9171246
    },
    {
     "name": "南油",
+    "en": "Nanyou",
     "lat": 22.5135454,
     "lon": 113.9212613
    },
    {
     "name": "南光",
+    "en": "Nanguang",
     "lat": 22.5195344,
     "lon": 113.9196817
    },
    {
     "name": "南山",
+    "en": "Nanshan",
     "lat": 22.5271457,
     "lon": 113.9187327
    },
    {
     "name": "桃园",
+    "en": "Taoyuan",
     "lat": 22.5353082,
     "lon": 113.9200514
    },
    {
     "name": "南头古城",
+    "en": "Nantou Ancient City",
     "lat": 22.5403678,
     "lon": 113.9194973
    },
    {
     "name": "中山公园",
+    "en": "Zhongshan Park",
     "lat": 22.549656,
     "lon": 113.9185117
    },
    {
     "name": "同乐南",
+    "en": "Tongle South",
     "lat": 22.5593885,
     "lon": 113.9139656
    },
    {
     "name": "新安公园",
+    "en": "Xin'an Park",
     "lat": 22.5653158,
     "lon": 113.9060161
    },
    {
     "name": "灵芝",
+    "en": "Lingzhi",
     "lat": 22.5721519,
     "lon": 113.8991626
    },
    {
     "name": "上川",
+    "en": "Shangchuan",
     "lat": 22.5798066,
     "lon": 113.8915225
    },
    {
     "name": "流塘",
+    "en": "Liutang",
     "lat": 22.5867238,
     "lon": 113.8846871
    },
    {
     "name": "宝安客运站",
+    "en": "Bao'an Passenger Transport Terminal",
     "lat": 22.5925567,
     "lon": 113.8787167
    },
    {
     "name": "宝田一路",
+    "en": "Baotian 1st Road",
     "lat": 22.5976687,
     "lon": 113.8735959
    },
    {
     "name": "平峦山",
+    "en": "Pingluan Hill",
     "lat": 22.6064916,
     "lon": 113.8648221
    },
    {
     "name": "西乡桃源",
+    "en": "Xixiang Taoyuan",
     "lat": 22.6141123,
     "lon": 113.8573839
    },
    {
     "name": "钟屋南",
+    "en": "Zhongwu South",
     "lat": 22.6218574,
     "lon": 113.8541352
    },
    {
     "name": "黄田",
+    "en": "Huangtian",
     "lat": 22.633971,
     "lon": 113.8402078
    },
    {
     "name": "兴围",
+    "en": "Xingwei",
     "lat": 22.6459794,
     "lon": 113.8295485
    },
    {
     "name": "机场东",
+    "en": "Airport East",
     "lat": 22.6503312,
     "lon": 113.8171623
    },
    {
     "name": "福围",
+    "en": "Fuwei",
     "lat": 22.6597807,
     "lon": 113.816377
    },
    {
     "name": "怀德",
+    "en": "Huaide",
     "lat": 22.6694237,
     "lon": 113.8141053
    },
    {
     "name": "福永",
+    "en": "Fuyong",
     "lat": 22.6784054,
     "lon": 113.8026076
    },
    {
     "name": "桥头西",
+    "en": "Qiaotou West",
     "lat": 22.6857772,
     "lon": 113.7923871
    },
    {
     "name": "福海西",
+    "en": "Fuhai West",
     "lat": 22.691258,
     "lon": 113.7843269
    },
    {
     "name": "国展",
+    "en": "Shenzhen World",
     "lat": 22.6980468,
     "lon": 113.7735273
    },
    {
     "name": "国展北",
+    "en": "Shenzhen World North",
     "lat": 22.7080526,
     "lon": 113.7720372
    },
    {
     "name": "海上田园南",
+    "en": "Waterlands Resort South",
     "lat": 22.7214753,
     "lon": 113.7694484
    },
    {
     "name": "海上田园东",
+    "en": "Waterlands Resort East",
     "lat": 22.7340043,
     "lon": 113.7761899
    },
    {
     "name": "蚝乡",
+    "en": "Haoxiang",
     "lat": 22.7433681,
     "lon": 113.7850623
    },
    {
     "name": "沙蚝",
+    "en": "Shahao",
     "lat": 22.7424706,
     "lon": 113.7966397
    },
    {
     "name": "沙井古墟",
+    "en": "Shajing Ancient Market",
     "lat": 22.7471982,
     "lon": 113.8034984
    },
    {
     "name": "步涌",
+    "en": "Buchong",
     "lat": 22.7610031,
     "lon": 113.8075373
    },
    {
     "name": "朗下",
+    "en": "Langxia",
     "lat": 22.770344,
     "lon": 113.8130768
    },
    {
     "name": "松岗",
+    "en": "Songgang",
     "lat": 22.7745437,
     "lon": 113.8232821
    }
@@ -2004,36 +2398,43 @@
   "地铁 6号线支线：深理工 -> 光明城": [
    {
     "name": "深理工",
+    "en": "SUAT",
     "lat": 22.8097853,
     "lon": 113.9643044
    },
    {
     "name": "中大",
+    "en": "Sun Yat-sen University",
     "lat": 22.7993935,
     "lon": 113.9484794
    },
    {
     "name": "圳美",
+    "en": "Zhenmei",
     "lat": 22.7911897,
     "lon": 113.9442228
    },
    {
     "name": "光明",
+    "en": "Guangming",
     "lat": 22.7747906,
     "lon": 113.9403385
    },
    {
     "name": "碧眼",
+    "en": "Biyan",
     "lat": 22.7617107,
     "lon": 113.9461684
    },
    {
     "name": "虹桥公园",
+    "en": "Hongqiao Park",
     "lat": 22.7531957,
     "lon": 113.9451853
    },
    {
     "name": "光明城",
+    "en": "Guangmingcheng",
     "lat": 22.7357456,
     "lon": 113.9486447
    }
@@ -2041,161 +2442,193 @@
   "地铁 16号线: 园山西坑 → 田心": [
    {
     "name": "园山西坑",
+    "en": "Yuanshan Xikeng",
     "lat": 22.6189168,
     "lon": 114.2202053
    },
    {
     "name": "安良",
+    "en": "Anliang",
     "lat": 22.6305656,
     "lon": 114.2149952
    },
    {
     "name": "福坑",
+    "en": "Fukeng",
     "lat": 22.6384645,
     "lon": 114.2173058
    },
    {
     "name": "大康",
+    "en": "Dakang",
     "lat": 22.6419776,
     "lon": 114.2245543
    },
    {
     "name": "园山",
+    "en": "Yuanshan",
     "lat": 22.6483355,
     "lon": 114.233232
    },
    {
     "name": "大安",
+    "en": "Da'an",
     "lat": 22.6577583,
     "lon": 114.2311137
    },
    {
     "name": "吉溪",
+    "en": "Jixi",
     "lat": 22.6632632,
     "lon": 114.2278042
    },
    {
     "name": "金源",
+    "en": "Jinyuan",
     "lat": 22.6760307,
     "lon": 114.2267394
    },
    {
     "name": "大运",
+    "en": "Universiade",
     "lat": 22.6882836,
     "lon": 114.2228562
    },
    {
     "name": "大运中心",
+    "en": "Universiade Center",
     "lat": 22.698401,
     "lon": 114.2156934
    },
    {
     "name": "龙城公园",
+    "en": "Longcheng Park",
     "lat": 22.7072497,
     "lon": 114.2136241
    },
    {
     "name": "黄阁坑",
+    "en": "Huanggekeng",
     "lat": 22.7220604,
     "lon": 114.2133996
    },
    {
     "name": "愉园",
+    "en": "Yuyuan",
     "lat": 22.7310611,
     "lon": 114.2185007
    },
    {
     "name": "回龙埔",
+    "en": "Huilongpu",
     "lat": 22.7319387,
     "lon": 114.2310841
    },
    {
     "name": "尚景",
+    "en": "Shangjing",
     "lat": 22.7321391,
     "lon": 114.238884
    },
    {
     "name": "盛平",
+    "en": "Shengping",
     "lat": 22.7343576,
     "lon": 114.2476837
    },
    {
     "name": "龙园",
+    "en": "Longyuan",
     "lat": 22.7337993,
     "lon": 114.2614532
    },
    {
     "name": "双龙",
+    "en": "Shuanglong",
     "lat": 22.7320675,
     "lon": 114.2724132
    },
    {
     "name": "新塘围",
+    "en": "Xintangwei",
     "lat": 22.7283679,
     "lon": 114.2811717
    },
    {
     "name": "龙东",
+    "en": "Longdong",
     "lat": 22.7244267,
     "lon": 114.2914931
    },
    {
     "name": "宝龙同乐",
+    "en": "Baolong Tongle",
     "lat": 22.7119779,
     "lon": 114.3073968
    },
    {
     "name": "坪山",
+    "en": "Pingshan",
     "lat": 22.7084263,
     "lon": 114.3227574
    },
    {
     "name": "新和",
+    "en": "Xinhe",
     "lat": 22.7059958,
     "lon": 114.3304751
    },
    {
     "name": "六和",
+    "en": "Liuhe",
     "lat": 22.6985996,
     "lon": 114.3327801
    },
    {
     "name": "坪山围",
+    "en": "Pingshanwei",
     "lat": 22.6943014,
     "lon": 114.3369553
    },
    {
     "name": "坪环",
+    "en": "Pinghuan",
     "lat": 22.6880493,
     "lon": 114.3416046
    },
    {
     "name": "东纵纪念馆",
+    "en": "Dongjiang Column Memorial Hall",
     "lat": 22.6887406,
     "lon": 114.3508341
    },
    {
     "name": "沙壆",
+    "en": "Shabo",
     "lat": 22.6890921,
     "lon": 114.3598619
    },
    {
     "name": "燕子湖",
+    "en": "Yanzihu",
     "lat": 22.6910499,
     "lon": 114.3701263
    },
    {
     "name": "石井",
+    "en": "Shijing",
     "lat": 22.6945042,
     "lon": 114.3782732
    },
    {
     "name": "技术大学",
+    "en": "Technology University",
     "lat": 22.7009758,
     "lon": 114.3954839
    },
    {
     "name": "田心",
+    "en": "Tianxin",
     "lat": 22.696337,
     "lon": 114.4093186
    }
@@ -2203,56 +2636,67 @@
   "轻轨 坪山云巴1号线: 坪山高铁站 -> 比亚迪北": [
    {
     "name": "坪山高铁站",
+    "en": "Pingshan High-speed Railway Station",
     "lat": 22.7083036,
     "lon": 114.3227963
    },
    {
     "name": "站前路东",
+    "en": "Zhanqian Road East",
     "lat": 22.7111985,
     "lon": 114.3355959
    },
    {
     "name": "文化聚落",
+    "en": "Culture Center",
     "lat": 22.7128761,
     "lon": 114.3406452
    },
    {
     "name": "坪山中心",
+    "en": "Pingshan Center",
     "lat": 22.7136791,
     "lon": 114.34664
    },
    {
     "name": "中芯国际",
+    "en": "Zhongxinguoji",
     "lat": 22.714251,
     "lon": 114.3508855
    },
    {
     "name": "综合保税区",
+    "en": "Bonded Area",
     "lat": 22.7119549,
     "lon": 114.3563163
    },
    {
     "name": "燕子岭",
+    "en": "Yanziling",
     "lat": 22.7055781,
     "lon": 114.3567359
    },
    {
     "name": "未来城",
+    "en": "Future City",
     "lat": 22.7011631,
     "lon": 114.3477762
    },
    {
     "name": "自然博物馆西",
+    "en": "Natural History Museum West",
     "lat": 22.6946298,
     "lon": 114.3533961
    },
    {
     "name": "龙背",
+    "en": "Longbei",
     "lat": 22.6899755,
     "lon": 114.3546878
    },
    {
     "name": "比亚迪北",
+    "en": "BYD North",
     "lat": 22.6847889,
     "lon": 114.3562613
    }
@@ -2260,131 +2704,157 @@
   "深圳地铁13号线: 深圳湾口岸 → 李松蓢": [
    {
     "name": "深圳湾口岸",
+    "en": "Shenzhen Bay Checkpoint",
     "lat": 22.5059678,
     "lon": 113.9453264
    },
    {
     "name": "人才公园",
+    "en": "Talent Park",
     "lat": 22.5149091,
     "lon": 113.9383905
    },
    {
     "name": "后海",
+    "en": "Houhai",
     "lat": 22.5206392,
     "lon": 113.9385735
    },
    {
     "name": "科苑",
+    "en": "Keyuan",
     "lat": 22.5293667,
     "lon": 113.9410536
    },
    {
     "name": "粤海门",
+    "en": "Yuehaimen",
     "lat": 22.5352227,
     "lon": 113.9408194
    },
    {
     "name": "深大",
+    "en": "Shenzhen University",
     "lat": 22.5405202,
     "lon": 113.9407263
    },
    {
     "name": "高新中",
+    "en": "Hi-Tech Central",
     "lat": 22.5499656,
     "lon": 113.9405157
    },
    {
     "name": "高新北",
+    "en": "Hi-Tech North",
     "lat": 22.55977,
     "lon": 113.9407068
    },
    {
     "name": "石鼓",
+    "en": "Shigu",
     "lat": 22.577739,
     "lon": 113.9392418
    },
    {
     "name": "留仙洞",
+    "en": "Liuxiandong",
     "lat": 22.5847808,
     "lon": 113.9391063
    },
    {
     "name": "百旺",
+    "en": "Baiwang",
     "lat": 22.6252427,
     "lon": 113.9342355
    },
    {
     "name": "应人石",
+    "en": "Yingrenshi",
     "lat": 22.6470599,
     "lon": 113.9216703
    },
    {
     "name": "罗租",
+    "en": "Luozu",
     "lat": 22.6709287,
     "lon": 113.9288673
    },
    {
     "name": "石岩",
+    "en": "Shiyan",
     "lat": 22.6831503,
     "lon": 113.9335218
    },
    {
     "name": "上屋",
+    "en": "Shangwu",
     "lat": 22.6914109,
     "lon": 113.9348943
    },
    {
     "name": "红坳公园",
+    "en": "Hong'ao Park",
     "lat": 22.7263404,
     "lon": 113.9413129
    },
    {
     "name": "光明城",
+    "en": "Guangmingcheng",
     "lat": 22.7357312,
     "lon": 113.9488787
    },
    {
     "name": "德雅路",
+    "en": "Deya Road",
     "lat": 22.7417179,
     "lon": 113.9423399
    },
    {
     "name": "凤凰城",
+    "en": "Fenghuang Town",
     "lat": 22.7514797,
     "lon": 113.9289519
    },
    {
     "name": "月亮路",
+    "en": "Yueliang Rd",
     "lat": 22.7495627,
     "lon": 113.9060744
    },
    {
     "name": "将围",
+    "en": "Jiangwei",
     "lat": 22.7597895,
     "lon": 113.9011325
    },
    {
     "name": "新庄",
+    "en": "Xinzhuang",
     "lat": 22.7691732,
     "lon": 113.8979022
    },
    {
     "name": "公明广场",
+    "en": "Gongming Square",
     "lat": 22.7793572,
     "lon": 113.8881867
    },
    {
     "name": "上村",
+    "en": "Shangcun",
     "lat": 22.7876855,
     "lon": 113.8895288
    },
    {
     "name": "下村",
+    "en": "Xiacun",
     "lat": 22.7963852,
     "lon": 113.8897635
    },
    {
     "name": "李松蓢",
+    "en": "Lisonglang",
     "lat": 22.8074925,
     "lon": 113.8894863
    }
@@ -2392,106 +2862,127 @@
   "穗深城际：竹料=>深圳机场": [
    {
     "name": "竹料",
+    "en": "Zhuliao",
     "lat": 23.3504262,
     "lon": 113.3608569
    },
    {
     "name": "九佛",
+    "en": null,
     "lat": 23.3782146,
     "lon": 113.492809
    },
    {
     "name": "新龙",
+    "en": null,
     "lat": 23.3155383,
     "lon": 113.5704082
    },
    {
     "name": "镇龙",
+    "en": null,
     "lat": 23.2870483,
     "lon": 113.5861923
    },
    {
     "name": "永宁北",
+    "en": "Yongningbei",
     "lat": 23.2172321,
     "lon": 113.5963373
    },
    {
     "name": "永宁南",
+    "en": null,
     "lat": 23.1828615,
     "lon": 113.5853289
    },
    {
     "name": "新塘南",
+    "en": "Xintangnan",
     "lat": 23.1347473,
     "lon": 113.5984959
    },
    {
     "name": "中堂",
+    "en": "Zhongtang",
     "lat": 23.0788084,
     "lon": 113.6163962
    },
    {
     "name": "望牛墩",
+    "en": null,
     "lat": 23.0388278,
     "lon": 113.6231661
    },
    {
     "name": "东莞西",
+    "en": "Dongguanxi",
     "lat": 23.0110559,
     "lon": 113.6203145
    },
    {
     "name": "洪梅",
+    "en": "Hongmei",
     "lat": 22.9831638,
     "lon": 113.6128472
    },
    {
     "name": "东莞港",
+    "en": "Dongguan Port",
     "lat": 22.9105963,
     "lon": 113.6062034
    },
    {
     "name": "厚街",
+    "en": "Houjie",
     "lat": 22.9002548,
     "lon": 113.646608
    },
    {
     "name": "虎门北",
+    "en": "Humenbei",
     "lat": 22.8619291,
     "lon": 113.6666089
    },
    {
     "name": "虎门东",
+    "en": "Humendong",
     "lat": 22.8313893,
     "lon": 113.6882522
    },
    {
     "name": "长安西",
+    "en": "Chang'anxi",
     "lat": 22.7884373,
     "lon": 113.7241205
    },
    {
     "name": "长安",
+    "en": "Chang'an",
     "lat": 22.7818138,
     "lon": 113.7588948
    },
    {
     "name": "沙井西",
+    "en": "Shajingxi",
     "lat": 22.7363564,
     "lon": 113.7882523
    },
    {
     "name": "福海西",
+    "en": "Fuhaixi",
     "lat": 22.6927951,
     "lon": 113.784559
    },
    {
     "name": "深圳机场北",
+    "en": "Shenzhen Airport North",
     "lat": 22.653854,
     "lon": 113.7927034
    },
    {
     "name": "深圳机场",
+    "en": "Shenzhen Airport",
     "lat": 22.6243353,
     "lon": 113.8059848
    }

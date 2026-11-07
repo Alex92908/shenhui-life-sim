@@ -8,7 +8,7 @@
 //     slights remembered, topics talked about, a one-line note ("他记得你…");
 //   · a mood that drifts day to day and colours how they greet and post.
 // NPCs also simulate each other: every morning a few of them post to the
-// 街坊动态墙 about the weather, APEC, the player's news (promotions, new
+// 街坊动态墙 about the weather, Summit, the player's news (promotions, new
 // home) and their own lives, and the others comment — supportively or with
 // teasing, depending on a pairwise affinity seeded from their names.
 // All generation is personality parameters + memory + templates, seeded RNG,
@@ -72,7 +72,7 @@ export function scheduleOf(npc: Npc): string {
   if (j.includes("保安")) return "三班倒轮岗，夜里也要巡逻，谁晚归他都看得见";
   if (j.includes("摊主") && npc.name === "郭叔") return "凌晨 4 点去批发市场进货，摆摊到傍晚 6 点收";
   if (j.includes("摊主")) return "下午 4 点出摊，夜市散场才收摊，越夜越精神";
-  if (j.includes("联络员")) return "跟着会务日程表走，APEC 周期几乎连轴转，深夜还在对流程";
+  if (j.includes("联络员")) return "跟着会务日程表走，峰会周期几乎连轴转，深夜还在对流程";
   if (j.includes("学生")) return "白天上课，晚上泡图书馆自习，周末睡到自然醒";
   if (j.includes("保洁")) return "早上 5 点开工，赶在人流高峰前把地拖干净";
   if (j.includes("邻居")) return "早睡早起，早上买菜、傍晚煲汤，阳台的葱是她的日程表";
@@ -184,17 +184,17 @@ function apecPost(npc: Npc, p: Persona, day: number, rng: () => number): string 
     "今天又陪代表团走了一遍动线。深圳这次是真把门面撑起来了。",
   ]);
   if (day < 14) return pick(rng, [
-    `APEC 还有 ${14 - day} 天，会场那边灯火通明的。听说志愿者还在招人，想去的抓紧。`,
-    "最近总听人聊 APEC，连买菜都能听见大爷大妈议论外国领导人吃啥。",
+    `峰会还有 ${14 - day} 天，会场那边灯火通明的。听说志愿者还在招人，想去的抓紧。`,
+    "最近总听人聊峰会，连买菜都能听见大爷大妈议论外国与会嘉宾吃啥。",
   ]);
   if (isApecWeek(day)) return pick(rng, [
     `${ph.label}，街上外国面孔明显多了。这座城市忙起来的时候，是真有国际范儿。`,
-    "APEC 进行中，地铁安检都严了些。大家出门预留点时间，别迟到。",
-    p.humor > 0.55 ? "今天在路上听见老外学说「唔该」，笑出声。APEC 把全世界都请到家门口了。" : "会场周边的花都重新摆了，整座城都在为这几天做准备。",
+    "峰会进行中，地铁安检都严了些。大家出门预留点时间，别迟到。",
+    p.humor > 0.55 ? "今天在路上听见老外学说「唔该」，笑出声。峰会把全世界都请到家门口了。" : "会场周边的花都重新摆了，整座城都在为这几天做准备。",
   ]);
   return pick(rng, [
-    "APEC 结束了，志愿者证书都发下来了。这段经历，够吹一阵子的。",
-    "领导人周一过，城市好像一下子安静了。热闹过，才更知道平常日子的好。",
+    "峰会结束了，志愿者证书都发下来了。这段经历，够吹一阵子的。",
+    "峰会周一过，城市好像一下子安静了。热闹过，才更知道平常日子的好。",
   ]);
 }
 
@@ -210,7 +210,7 @@ function playerPost(newsItem: PlayerNews, p: Persona, playerName: string, rng: (
     `路过看见${who}家换了新样子，${newsItem.text}，隔着窗都觉得亮堂。`,
   ]);
   if (newsItem.kind === "apec") return pick(rng, [
-    `${who}${newsItem.text}，APEC 的场子都让他/她跑遍了，这履历以后写简历上都发光。`,
+    `${who}${newsItem.text}，峰会的场子都让他/她跑遍了，这履历以后写简历上都发光。`,
     `今天在会场又碰到${who}了，${newsItem.text}，忙得脚不沾地，但精神头十足。`,
   ]);
   return pick(rng, [
@@ -222,7 +222,7 @@ const LIFE_POSTS: Record<string, string[]> = {
   "外卖骑手": ["今天跑了 40 多单，最后一单送到的时候天都黑了。骑手这行，腿勤嘴甜回头客多。", "送餐路上看见晚霞特别好看，停下来拍了张照。今天这单，值了。"],
   "南山白领": ["加班到这个点，楼下猪脚饭都卖完了。打工人的晚饭，主打一个随缘。", "今天的会开得比电视剧还长。散会那一刻，我听见全办公室的肚子都在叫。"],
   "小区保安": ["夜里巡逻，小区安安静静的。谁家灯还亮着，谁就是还没睡的夜猫子——都注意身体啊。", "今天帮三楼奶奶把快递搬上去了，老人家非塞我俩橘子。甜。"],
-  "APEC 外宾联络员": ["陪外宾逛了一圈，人家对深圳的速度赞不绝口。翻译这行，嘴皮子和体力都得跟上。", "整理了一下午各国代表的资料，21 个经济体，名字都快背下来了。"],
+  "峰会外宾联络员": ["陪外宾逛了一圈，人家对深圳的速度赞不绝口。翻译这行，嘴皮子和体力都得跟上。", "整理了一下午各国代表的资料，21 个经济体，名字都快背下来了。"],
   "夜市摊主": ["今晚出摊，羊肉串卖得比昨天快。老主顾说我这孜然放得对味——秘诀？不告诉你😏", "收摊数钱的时候最幸福。烟火气里讨生活，不丢人。"],
   "职院学生": ["图书馆闭馆音乐响了才发现坐了一整天。考试周，大家一起卷吧。", "今天自习效率奇高，奖励自己一杯奶茶。年轻真好，熬一夜第二天照样生龙活虎。"],
   "保洁阿姨": ["早上把大堂地拖得能照人，心里就舒坦。活儿干干净净，人也清清爽爽。", "今天有人对我说谢谢，就为把电梯口拖干净了。被人看见的感觉，真好。"],
@@ -316,7 +316,7 @@ export function generateDailyPosts(
     const author = byChat.find((n) => !used.has(n.name) && personaOf(n).chattiness > 0.35);
     if (author) addPost(author, "weather", weatherPost(personaOf(author), weather, rng));
   }
-  // 3) APEC — Shenzhen only talks about its own summit; Huizhou hears echoes.
+  // 3) Summit — Shenzhen only talks about its own summit; Huizhou hears echoes.
   if (cityKey === "sz" && (isApecWeek(day) || (day >= 10 && day < 14) || day === 20)) {
     const lisa = NPCS.find((n) => n.name === "Lisa");
     const author = lisa && !used.has(lisa.name) && rng() < 0.8 ? lisa : byChat.find((n) => !used.has(n.name));
@@ -324,7 +324,7 @@ export function generateDailyPosts(
   } else if (cityKey === "hz" && isApecWeek(day) && rng() < 0.5) {
     const author = byChat.find((n) => !used.has(n.name));
     if (author) addPost(author, "apec", pick(rng, [
-      "深圳那边 APEC 开得热闹，惠州这边酒店都跟着住满了。湾区一家亲，沾光！"
+      "深圳那边 峰会开得热闹，惠州这边酒店都跟着住满了。湾区一家亲，沾光！"
       , "看新闻里深圳的会场，真气派。咱们惠州的日子也别闲着，海边一样有奔头。",
     ]));
   }
@@ -360,7 +360,7 @@ export const CHAT_PLAYER_LINES: Record<ChatAction, string> = {
   greet: "嗨，最近怎么样？",
   weather: "今天这天儿，你觉得怎么样？",
   work: "最近活儿忙不忙？",
-  apec: "APEC 这事儿，你怎么看？",
+  apec: "峰会这事儿，你怎么看？",
   joke: "跟你讲个笑话：为什么程序员分不清万圣节和圣诞节？因为 Oct 31 == Dec 25。",
   help: "看你忙的，需要搭把手吗？我来帮你。",
   gift: "这个送你，不值钱，就图个乐呵，别嫌弃。",
@@ -448,8 +448,8 @@ export function chatReply(
       if (npc.name === "Lisa") return { reply: "可别提了，流程表改到第 9 版了。不过 21 个经济体的人齐聚深圳，想想还是挺带劲的——这可是咱普通人离世界最近的一次。", relDelta: 3 };
       if (ctx.cityKey === "hz") return { reply: "深圳开大会，咱们惠州跟着沾光，游客多、生意好。湾区嘛，一头热，另一头也暖和。", relDelta: 2 };
       return { reply: pick(rng, [
-        "APEC 啊，大场面。咱普通人当志愿者、做会务、开车接送，也算参与了一把。",
-        "新闻天天报。领导人谈他们的，咱把日子过好，也是给这座城长脸。",
+        "峰会啊，大场面。咱普通人当志愿者、做会务、开车接送，也算参与了一把。",
+        "新闻天天报。与会嘉宾谈他们的，咱把日子过好，也是给这座城长脸。",
       ]), relDelta: 2 };
     }
     case "joke": {

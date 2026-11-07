@@ -24,6 +24,10 @@ export const players = sqliteTable("players", {
   // 防作弊 (0005): 1 = a heartbeat reported an implausible jump (money,
   // 职级 or stamps); such players are left off every leaderboard.
   suspect: integer("suspect").notNull().default(0),
+  // 公开编号 (0006): sha256(id) prefix. The id itself is the player's
+  // private key and is never sent to other clients; everything shown to
+  // others (chat, online list, boards, gifts, invite links) uses pub.
+  pub: text("pub").unique(),
   status: text("status", { enum: ["playing", "finished"] })
     .notNull()
     .default("playing"),

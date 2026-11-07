@@ -125,9 +125,30 @@ function serveStatic(req: IncomingMessage, res: ServerResponse) {
   createReadStream(file).pipe(res);
 }
 
+/* Per-IP throttle on /actions: a normal player sends well under one request
+   a second; a script hammering the API gets 429 instead of the database.
+   Behind a reverse proxy, set TRUST_PROXY=1 so X-Forwarded-For is used. */
+const RATE_WINDOW_MS = 10_000;
+const RATE_LIMIT = Number(process.env.RATE_LIMIT ?? 120);
+const hits = new Map<string, { n: number; at: number }>();
+const clientIp = (req: IncomingMessage) =>
+  (process.env.TRUST_PROXY === "1" ? String(req.headers["x-forwarded-for"] ?? "").split(",")[0]?.trim() : "") || req.socket.remoteAddress || "?";
+const throttled = (req: IncomingMessage): boolean => {
+  const ip = clientIp(req);
+  const now = Date.now();
+  const h = hits.get(ip);
+  if (!h || now - h.at > RATE_WINDOW_MS) { hits.set(ip, { n: 1, at: now }); return false; }
+  h.n += 1;
+  return h.n > RATE_LIMIT;
+};
+setInterval(() => { const now = Date.now(); for (const [ip, h] of hits) if (now - h.at > RATE_WINDOW_MS) hits.delete(ip); }, 60_000).unref();
+
 createServer((req, res) => {
   const path = (req.url ?? "/").split("?")[0]!;
-  if (req.method === "POST" && path.endsWith("/actions")) void handleAction(req, res);
+  if (req.method === "POST" && path.endsWith("/actions")) {
+    if (throttled(req)) send(res, 429, { ok: false, error: "too many requests" });
+    else void handleAction(req, res);
+  }
   else if (req.method === "GET" || req.method === "HEAD") serveStatic(req, res);
   else send(res, 405, { ok: false, error: "method not allowed" });
 }).listen(PORT, HOST, () => {

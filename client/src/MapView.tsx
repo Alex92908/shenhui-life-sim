@@ -906,7 +906,7 @@ export function MapView(p: Props) {
     buildingMats.push(...landmarks.litMats);
     neonMats.push(...landmarks.neonMats);
     if (cityKey === "sz") {
-      // (平安金融中心 is now the 平安银行大厦 location's own model)
+      // (某安金融中心 is now the 某安金融中心 location's own model)
       // (深圳湾大桥 and 深中通道 are decor landmarks in landmarks.ts)
       // 华侨城 ferris wheel by 欢乐谷: rim, spokes and cabins, on two legs
       const wheel = landmarks.wheel(2.6, 0xf472b6, 0xfacc15);
@@ -1155,8 +1155,8 @@ export function MapView(p: Props) {
       const b = document.createElement("button");
       b.type = "button";
       b.setAttribute("aria-label", `前往${l.name}`);
-      // scenic spots and APEC venues carry their English name under the
-      // Chinese one, so a visiting APEC guest can read the city off the map
+      // scenic spots and Summit venues carry their English name under the
+      // Chinese one, so a visiting Summit guest can read the city off the map
       const en = LOC_EN[l.name];
       if (en && (l.type === "scenic" || l.type === "fun" || l.type === "apec")) {
         b.innerHTML = `${l.emoji} ${l.short}<br><span style="font-size:8.5px;font-weight:600;opacity:.62;letter-spacing:.02em">${en}</span>`;

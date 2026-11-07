@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { SafeAreaTopScrim } from "@hatch/space-sdk/client";
 import { loadMeta, saveMeta, touchStreak, streakReward, bump, rollWeek, checkAchievements, dailyEvent, dateKey, ACHIEVEMENTS, WEEKLY_GOALS, type Meta, type CityEvent } from "./meta";
 import { api, type ApiResponse } from "./api";
+import { TERMS, PRIVACY, LEGAL_VERSION } from "./legal";
+import { getLang, setLangStored, installTranslator, LANGS, type Lang } from "./i18n";
 import { cloudCode, newCloudCode, setCloudCode, prettyCode, liteDefault, setQuality, readInvite, inviteLink, clearInviteParams, drawShareCard } from "./share";
 import {
 APPS, CAREERS, COMPANIES, companyAt, companyById, companyGaps, type Company, CITIES, FOODS, FURNITURE, IDENTITIES, NPCS, OFFERS, TEMPLATES,
@@ -203,9 +205,9 @@ if (gs.mood >= 70) badges.push("😊 心态大师");
 if (gs.careerIdx >= 2) badges.push("📈 升职达人");
 if (gs.careerIdx >= 4) badges.push("👑 城市合伙人");
 if (gs.network >= 5) badges.push("🤝 人脉渐广");
-if (gs.apecCount >= 3) badges.push("🌐 APEC 服务之星");
+if (gs.apecCount >= 3) badges.push("🌐 峰会服务之星");
 if ((gs.apecTasks ?? []).length >= APEC_TASKS.length) badges.push(APEC_CERT_NAME);
-else if ((gs.apecCheckins ?? []).length >= 3) badges.push("📍 APEC 三会场全打卡");
+else if ((gs.apecCheckins ?? []).length >= 3) badges.push("📍 峰会三会场全打卡");
 if (gs.furniture.length >= 3) badges.push("🛋️ 安家小能手");
 if (computeComfort(gs) >= 80) badges.push("🏠 舒适小窝");
 if ((gs.metroRides ?? 0) >= 5) badges.push(gs.cityKey === "hz" ? "🚆 城轨达人" : "🚇 地铁达人");
@@ -489,6 +491,18 @@ const metaRef = useRef(meta);
 metaRef.current = meta;
 const flashGiven = useRef("");
 const claimingGifts = useRef(new Set<number>());
+/* 公开编号：playerId 是只有本机知道的私钥；别人看到、邀请链接里用的都是
+   它的 sha256 前 16 位（和服务器 pubOf 一致）。 */
+const [myPub, setMyPub] = useState("");
+const myPubRef = useRef("");
+myPubRef.current = myPub;
+useEffect(() => {
+const id = profile?.playerId;
+if (!id || !crypto?.subtle) return;
+void crypto.subtle.digest("SHA-256", new TextEncoder().encode(id)).then((buf) => {
+setMyPub(Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, "0")).join("").slice(0, 16));
+}).catch(() => { /* the server's heartbeat reply fills it in */ });
+}, [profile?.playerId]);
 /* 分享 / 邀请 / 云存档 / 画质 */
 const [lite] = useState(() => liteDefault());
 const [invite] = useState(() => readInvite());
@@ -496,14 +510,29 @@ const [shareOpen, setShareOpen] = useState(false);
 const [shareImg, setShareImg] = useState<{ url: string; blob: Blob } | null>(null);
 const [cloudAt, setCloudAt] = useState("");
 const [restoreCode, setRestoreCode] = useState("");
+/* 语言 + 用户协议 / 隐私政策 */
+const [lang, setLangState] = useState<Lang>(() => getLang());
+const switchLang = (l: Lang) => {
+setLangStored(l);
+// back to Chinese: reload so every translated text node returns to its source
+if (l === "zh" && lang !== "zh") { window.location.reload(); return; }
+setLangState(l);
+};
+useEffect(() => { installTranslator(lang); }, [lang]);
+const langToggle = (cls = "") => (
+<span className={`inline-flex shrink-0 overflow-hidden rounded-full border border-[var(--line)] ${cls}`}>{LANGS.map((l) => <button key={l.id} type="button" aria-label={l.id === "zh" ? "切换到中文" : "Switch to English"} onClick={() => switchLang(l.id)} className={`px-2.5 py-1.5 text-[11px] font-black ${lang === l.id ? "bg-[var(--text)] text-[var(--bg)]" : "bg-[var(--surface)]"}`}>{l.label}</button>)}</span>
+);
+const [legalDoc, setLegalDoc] = useState<null | "terms" | "privacy">(null);
+const [agreed, setAgreed] = useState(() => { try { return localStorage.getItem("shhr-legal") === LEGAL_VERSION; } catch { return false; } });
+const setAgreedStored = (v: boolean) => { setAgreed(v); try { if (v) localStorage.setItem("shhr-legal", LEGAL_VERSION); else localStorage.removeItem("shhr-legal"); } catch { /* storage unavailable */ } };
 const [quiz, setQuiz] = useState<{ key: string; opts: string[]; picked: string | null } | null>(null);
 const [asideOpen, setAsideOpen] = useState(true);
-/* Top-area compaction: status detail / APEC activity / city intro all
+/* Top-area compaction: status detail / Summit activity / city intro all
    start folded away behind one-line bars so the map stays the hero. */
 const [fold, setFold] = useState<"hud" | "apec" | "intro" | null>(null);
 /* Whole-bar collapse: each of the three floating bars folds away
    VERTICALLY into the rail of small buttons down the screen's left edge
-   （状态 / APEC / 深圳/惠州）, freeing more of the map; tapping a rail
+   （状态 / Summit / 深圳/惠州）, freeing more of the map; tapping a rail
    button brings its bar back. All shown by default. */
 const [barsHidden, setBarsHidden] = useState(false);
 /* Map fullscreen: the map shell becomes a fixed full-viewport stage
@@ -551,7 +580,7 @@ const toggleMapFullscreen = () => {
   }
 };
 /* ---- 手游件：弹幕 / 奖励飘字 / 每日任务弹窗 / 升职特效 ----
-   弹幕借鉴直播间：联机动态、城市聊天、街坊发言飘过地图；APEC 上岗、
+   弹幕借鉴直播间：联机动态、城市聊天、街坊发言飘过地图；峰会上岗、
    打卡成功、升职这些时刻由街坊弹幕刷屏庆祝。可在地图左中开关。 */
 const [danmakuOn, setDanmakuOn] = useState(true);
 const [danmaku, setDanmaku] = useState<{ id: number; text: string; top: number; dur: number; color: string }[]>([]);
@@ -602,7 +631,9 @@ evRef.current = todayEvent;
 const worldQuery = useQuery({
 queryKey: ["world", cityKey],
 queryFn: () => api.getWorld({ cityKey}),
-refetchInterval: phase === "game"? 5000: 15000,
+// during play the 6 s heartbeat already returns the world snapshot; this
+// poll is only a fallback
+refetchInterval: phase === "game"? 20000: 15000,
 });
 const world: World | undefined = worldQuery.data?.world;
 
@@ -804,6 +835,7 @@ title: metaRef.current.title,
 });
 },
 onSuccess: (data) => {
+if (data.me && data.me !== myPubRef.current) setMyPub(data.me);
 for (const g of data.inbox ?? []) receiveGift(g);
 const s = gsRef.current;
 queryClient.setQueryData(["world", s?.cityKey?? "sz"], data);
@@ -1206,14 +1238,14 @@ name: prof.name, cityName: CITIES[st.cityKey].name, day: Math.min(30, st.day), m
 career: (CAREERS[st.careerIdx] ?? CAREERS[0]!).name, company: st.cityKey === "sz" ? co.short : "仲恺公司", companyEmoji: st.cityKey === "sz" ? co.emoji : "🏭",
 title: metaRef.current.title, stamps: metaRef.current.stamps.length, stampTotal: SZ_STATION_COUNT, places: metaRef.current.atlas.length,
 lines: metaRef.current.linesDone.length, achievements: metaRef.current.achievements.length, streak: metaRef.current.streak.count,
-event: `${evRef.current.emoji} ${evRef.current.name}`, link: inviteLink(prof.playerId, prof.name, st.employer),
+event: `${evRef.current.emoji} ${evRef.current.name}`, link: inviteLink(myPubRef.current, prof.name, st.employer),
 });
 if (blob) setShareImg((old) => { if (old) URL.revokeObjectURL(old.url); return { url: URL.createObjectURL(blob), blob }; });
 };
 const shareNative = async () => {
 const st = gsRef.current; const prof = profileRef.current;
 if (!st || !prof) return;
-const link = inviteLink(prof.playerId, prof.name, st.employer);
+const link = inviteLink(myPubRef.current, prof.name, st.employer);
 const text = `我在《深惠人生模拟》里过到第 ${Math.min(30, st.day)} 天，存款 ¥${Math.round(st.money).toLocaleString()}，集了 ${metaRef.current.stamps.length} 个地铁站章。来一起过日子：`;
 try {
 const file = shareImg ? new File([shareImg.blob], "shenhui-life.png", { type: "image/png" }) : null;
@@ -1225,7 +1257,7 @@ else { await navigator.clipboard.writeText(`${text}${link}`); showToast("分享�
 const copyInvite = async () => {
 const st = gsRef.current; const prof = profileRef.current;
 if (!st || !prof) return;
-try { await navigator.clipboard.writeText(inviteLink(prof.playerId, prof.name, st.employer)); showToast("邀请链接已复制：朋友点开就能进同一个世界，你会收到 ¥200 邀请奖励。"); }
+try { await navigator.clipboard.writeText(inviteLink(myPubRef.current, prof.name, st.employer)); showToast("邀请链接已复制：朋友点开就能进同一个世界，你会收到 ¥200 邀请奖励。"); }
 catch { showToast("复制失败，长按下面的链接手动复制。"); }
 };
 
@@ -1423,7 +1455,7 @@ const fitSave = s0.fit >= 3? 3: 0;
 const co0 = companyAt(s0.cityKey, loc.id);
 const ev = evRef.current;
 const co = co0 ? effCompany(co0, ev, s0.referrals) : null;
-const colleagues = co ? (world?.online ?? []).filter((p) => p.id !== profileRef.current?.playerId && p.employer === co.id && p.cityKey === "sz") : [];
+const colleagues = co ? (world?.online ?? []).filter((p) => p.id !== myPubRef.current && p.employer === co.id && p.cityKey === "sz") : [];
 let msg = "";
 const feeds: { kind: "career" | "apec" | "home" | "money" | "life"; text: string }[] = [];
 mutate((s) => {
@@ -1549,10 +1581,10 @@ const pay = Math.round(base * 0.9 * mul);
 s.money += pay; s.earned += pay; s.energy -= 22; s.xp += 2;
 if (isApecWeek(s.day)) {
 s.apecCount += 1;
-if (s.apecCount === 3) s.npcNews = [...(s.npcNews ?? []), { kind: "apec" as const, text: "在 APEC 会场服务满 3 场了", day: s.day }];
+if (s.apecCount === 3) s.npcNews = [...(s.npcNews ?? []), { kind: "apec" as const, text: "在 峰会会场服务满 3 场了", day: s.day }];
 if (mul >= 1.5) feeds.push({ kind: "apec", text: `在${loc.short}做了一场会务服务，+${fmt(pay)}` });
 }
-msg = `会务服务一场，+${fmt(pay)}${mul > 1? `（APEC ×${mul}）`: ""}，经验 +2。`;
+msg = `会务服务一场，+${fmt(pay)}${mul > 1? `（峰会 ×${mul}）`: ""}，经验 +2。`;
 break;
 }
 case "apec-host": {
@@ -1561,10 +1593,10 @@ const pay = Math.round(base * 1.25 * mul);
 s.money += pay; s.earned += pay; s.energy -= 20; s.xp += 3; s.network += 1;
 if (isApecWeek(s.day)) {
 s.apecCount += 1;
-if (s.apecCount === 3) s.npcNews = [...(s.npcNews ?? []), { kind: "apec" as const, text: "在 APEC 会场服务满 3 场了", day: s.day }];
+if (s.apecCount === 3) s.npcNews = [...(s.npcNews ?? []), { kind: "apec" as const, text: "在 峰会会场服务满 3 场了", day: s.day }];
 if (mul >= 1.5) feeds.push({ kind: "apec", text: `在${loc.short}接待了外宾团，+${fmt(pay)}，人脉 +1` });
 }
-msg = `外宾接待一场，+${fmt(pay)}${mul > 1? `（APEC ×${mul}）`: ""}，经验 +3，人脉 +1。`;
+msg = `外宾接待一场，+${fmt(pay)}${mul > 1? `（峰会 ×${mul}）`: ""}，经验 +3，人脉 +1。`;
 break;
 }
 case "apec-visit": {
@@ -1579,14 +1611,14 @@ else {
 s.apecCheckins = [...(s.apecCheckins ?? []), loc.id];
 s.mood += 6;
 const n = (s.apecCheckins ?? []).length;
-msg = `📸 在${loc.name}打卡成功！APEC 会场已打卡 ${n} / 3，心情 +6。${apecTaskOfDay(s.day)?.venueLocId === loc.id ? "今天的岗位任务就在这里，先打卡再上岗。" : ""}`;
-feeds.push({ kind: "apec", text: `在${loc.short}完成了 APEC 会场打卡（${n}/3）` });
+msg = `📸 在${loc.name}打卡成功！峰会会场已打卡 ${n} / 3，心情 +6。${apecTaskOfDay(s.day)?.venueLocId === loc.id ? "今天的岗位任务就在这里，先打卡再上岗。" : ""}`;
+feeds.push({ kind: "apec", text: `在${loc.short}完成了 峰会会场打卡（${n}/3）` });
 }
 break;
 }
 case "apec-task": {
 const task = apecTaskOfDay(s.day);
-if (!task || task.venueLocId !== loc.id) { msg = "今天这里没有领导人周的岗位任务——看看 APEC 活动卡，今天的班在另一个会场。"; break; }
+if (!task || task.venueLocId !== loc.id) { msg = "今天这里没有峰会周的岗位任务——看看 峰会活动卡，今天的班在另一个会场。"; break; }
 if ((s.apecTasks ?? []).includes(task.id)) { msg = `今天的任务「${task.title}」已经完成了，明天还有新的一班。`; break; }
 if (!(s.apecCheckins ?? []).includes(loc.id)) { msg = "先在会场打卡再上岗——点上方的「会场打卡」，这也是认会场、认深圳的一部分。"; break; }
 if (s.energy < task.energy) { msg = `这个岗位要站一整班，能量至少 ${task.energy}，先去吃点东西或者歇一会儿。`; break; }
@@ -1595,13 +1627,13 @@ s.money += pay; s.earned += pay; s.energy -= task.energy; s.xp += task.xp; s.net
 s.apecCount += 1;
 s.apecTasks = [...(s.apecTasks ?? []), task.id];
 const doneN = (s.apecTasks ?? []).length;
-if (s.apecCount === 3) s.npcNews = [...(s.npcNews ?? []), { kind: "apec" as const, text: "在 APEC 会场服务满 3 场了", day: s.day }];
-feeds.push({ kind: "apec", text: `以${task.role}身份完成了 APEC 任务「${task.title}」（${doneN}/${APEC_TASKS.length}），+${fmt(pay)}` });
+if (s.apecCount === 3) s.npcNews = [...(s.npcNews ?? []), { kind: "apec" as const, text: "在 峰会会场服务满 3 场了", day: s.day }];
+feeds.push({ kind: "apec", text: `以${task.role}身份完成了 峰会任务「${task.title}」（${doneN}/${APEC_TASKS.length}），+${fmt(pay)}` });
 if (doneN >= APEC_TASKS.length) {
-s.npcNews = [...(s.npcNews ?? []), { kind: "apec" as const, text: "拿到了 APEC 领导人周服务证书，六天任务全做完", day: s.day }];
-msg = `🏅 「${task.title}」完成，+${fmt(pay)}，经验 +${task.xp}，人脉 +${task.network}。六天的领导人周任务全部完成——${APEC_CERT_NAME}已经记在你的名下，结算时见！`;
+s.npcNews = [...(s.npcNews ?? []), { kind: "apec" as const, text: "拿到了湾区峰会服务证书，六天任务全做完", day: s.day }];
+msg = `🏅 「${task.title}」完成，+${fmt(pay)}，经验 +${task.xp}，人脉 +${task.network}。六天的峰会周任务全部完成——${APEC_CERT_NAME}已经记在你的名下，结算时见！`;
 } else {
-msg = `✅ APEC 任务「${task.title}」完成（${task.roleEmoji} ${task.role}），+${fmt(pay)}，经验 +${task.xp}，人脉 +${task.network}。进度 ${doneN} / ${APEC_TASKS.length}，明天继续。`;
+msg = `✅ 峰会任务「${task.title}」完成（${task.roleEmoji} ${task.role}），+${fmt(pay)}，经验 +${task.xp}，人脉 +${task.network}。进度 ${doneN} / ${APEC_TASKS.length}，明天继续。`;
 }
 break;
 }
@@ -1730,7 +1762,7 @@ if (dXp > 0) floatReward(`经验 +${dXp}`, "blue");
 if (dMood >= 6) floatReward(`心情 +${dMood}`, "green");
 }
 }
-/* 弹幕刷屏时刻：打卡成功 / APEC 打卡与上岗，街坊们发弹幕庆祝 */
+/* 弹幕刷屏时刻：打卡成功 / 峰会打卡与上岗，街坊们发弹幕庆祝 */
 if (msg && kind === "checkin" && !msg.includes("已经打过卡")) {
 const spot = scenicOf(s0.cityKey, selectedLoc);
 burstDanmaku([`📸 ${profileRef.current?.name ?? "你"} 在${spot?.name ?? loc.short}打卡成功！`, "阿琳：这张拍得真好 👍", "大芬姐：风景册又多一页啦", "子健：我也要去打卡 📍", "Lisa：Great shot! 🌟"]);
@@ -1744,10 +1776,10 @@ window.setTimeout(() => setLevelFx(null), 2600);
 burstDanmaku([`🤝 ${profileRef.current?.name ?? "你"}跳槽去${co.short}啦！`, "阿琳：大厂见！别忘了老同事 🥲", "老周：深圳打工人的高光时刻", "小美：请客请客 🍻", "子健：内推我一个呗"]);
 }
 if (msg && kind === "apec-checkin") {
-burstDanmaku([`🌐 APEC 会场打卡 +1！`, "Lisa：三个会场集齐有徽章哦", "老周：领导人周，深圳准备好了", "小美：志愿者辛苦啦 🎽"]);
+burstDanmaku([`🌐 峰会会场打卡 +1！`, "Lisa：三个会场集齐有徽章哦", "老周：峰会周，深圳准备好了", "小美：志愿者辛苦啦 🎽"]);
 }
 if (msg && kind === "apec-task") {
-burstDanmaku([`🎉 APEC 今日任务完成！`, "Lisa：干得漂亮，这就是深圳服务 🌐", "阿强：给 APEC 打工的人点赞", "陈伯：盛会办得好，街坊脸上有光", "王姨：辛苦啦，回来喝碗糖水"]);
+burstDanmaku([`🎉 峰会今日任务完成！`, "Lisa：干得漂亮，这就是深圳服务 🌐", "阿强：给 峰会打工的人点赞", "陈伯：盛会办得好，街坊脸上有光", "王姨：辛苦啦，回来喝碗糖水"]);
 }
 const animMap: Partial<Record<string, LifeKind>> = { work: "code", overtime: "overtime", eat: "eat", canteen: "eat", interview: "code", "campus-tour": "stroll", gym: "gym", wash: "wash", cook: "cook", "buy-groceries": "groceries", stroll: "stroll", "social-ktv": "gathering", "social-drink": "gathering", "mall-shop": "shopping", "mall-cloth": "shopping", fun: "stroll" };
 const ak = animMap[kind];
@@ -1796,7 +1828,7 @@ finishSeason("done");
 return;
 }
 /* NPC simulation: overnight, the neighbours post and comment on a new wall —
-   yesterday's player news (promotion, new home, APEC service) is what they
+   yesterday's player news (promotion, new home, Summit service) is what they
    talk about first. Moods drift with the new day. */
 {
 const gen = generateDailyPosts(
@@ -1873,6 +1905,7 @@ addLog(`${text}`);
   const joinMut = useMutation({
     mutationFn: api.joinWorld,
     onSuccess: (data, vars) => {
+      if (data.me) setMyPub(data.me);
       queryClient.setQueryData(["world", vars.cityKey], data);
     },
   });
@@ -1903,7 +1936,7 @@ addLog(`${text}`);
     };
     // Came in through a friend's invite link: welcome bonus + an intro
     // (内推) to the friend's company.
-    if (invite && invite.fromId !== prof.playerId) {
+    if (invite && invite.fromId !== myPubRef.current) {
       state.money += 100;
       if (invite.co && COMPANIES.some((c) => c.id === invite.co && c.id !== "startup")) state.referrals = [invite.co];
       state.log = [{ day: 1, text: `${invite.from}邀请你来${cityInfo.name}，见面礼 ¥100${state.referrals?.length ? `，还帮你内推了${companyById(invite.co ?? undefined).short}` : ""}。` }, ...state.log];
@@ -1920,7 +1953,7 @@ addLog(`${text}`);
     setPhase("game");
     joinMut.mutate({ playerId: prof.playerId, name, emoji: iden.emoji, color: iden.color, cityKey: city }, {
       onSuccess: () => {
-        if (invite && invite.fromId !== prof.playerId) void api.sendGift({ playerId: prof.playerId, toId: invite.fromId, kind: "invite" }).catch(() => {});
+        if (invite && invite.fromId !== myPubRef.current) void api.sendGift({ playerId: prof.playerId, toId: invite.fromId, kind: "invite" }).catch(() => {});
         clearInviteParams();
       },
     });
@@ -2024,7 +2057,7 @@ addLog(`${text}`);
     const mem = memOf(s0.npcMem ?? {}, npcChat);
     const repeatedToday = mem.lastDay === s0.day;
     const outcome = chatReply(npc, mem, action, dayCtx(), repeatedToday);
-    const topicOf: Record<ChatAction, string> = { greet: "", weather: "天气", work: "工作", apec: "APEC", joke: "开玩笑", help: "帮忙", gift: "送礼物" };
+    const topicOf: Record<ChatAction, string> = { greet: "", weather: "天气", work: "工作", apec: "峰会", joke: "开玩笑", help: "帮忙", gift: "送礼物" };
     mutate((s) => {
       const m = { ...memOf(s.npcMem ?? {}, npcChat) };
       m.talks += 1;
@@ -2047,7 +2080,7 @@ addLog(`${text}`);
       greet: "嗨，最近怎么样？",
       weather: "今天这天儿，你觉得怎么样？",
       work: "最近活儿忙不忙？",
-      apec: "APEC 这事儿，你怎么看？",
+      apec: "峰会这事儿，你怎么看？",
       joke: "跟你讲个笑话：为什么程序员分不清万圣节和圣诞节？因为 Oct 31 == Dec 25。",
       help: "看你忙的，需要搭把手吗？我来帮你。",
       gift: "这个送你（¥25 的小礼物），不值钱，就图个乐呵，别嫌弃。",
@@ -2142,7 +2175,8 @@ addLog(`${text}`);
 
   const sendChatMut = useMutation({
     mutationFn: (body: string) => api.postChat({ playerId: profileRef.current?.playerId ?? "", body }),
-    onSuccess: () => {
+    onSuccess: (r) => {
+      if (!r.ok) { showToast(r.error ?? "没发出去，稍后再试。"); return; }
       setChatInput("");
       queryClient.invalidateQueries({ queryKey: ["world", cityKey] });
     },
@@ -2212,7 +2246,7 @@ playLifeAnim("shopping");
   }
 
   /* A company HQ: work there if it is your employer, otherwise interview /
-     take the offer. Other place actions (e.g. 平安's 理财) stay underneath. */
+     take the offer. Other place actions (e.g. 某安's 理财) stay underneath. */
   const companyActions = (co0: Company, s: GameState): ActDef[] => {
     const co = effCompany(co0, todayEvent, s.referrals);
     const mates = (world?.online ?? []).filter((p) => p.id !== myId && p.employer === co.id && p.cityKey === "sz").map((p) => p.name);
@@ -2311,16 +2345,16 @@ playLifeAnim("shopping");
         ];
       case "apec": {
         const mul = apecVenueMul(s.day, loc.id);
-        const mulTxt = mul > 1 ? `，今天收入 ×${mul}` : "，领导人周（14–19 日）重点日收入 ×1.5";
+        const mulTxt = mul > 1 ? `，今天收入 ×${mul}` : "，峰会周（14–19 日）重点日收入 ×1.5";
         const task = apecTaskOfDay(s.day);
         const checked = (s.apecCheckins ?? []).includes(loc.id);
         const taskDone = task ? (s.apecTasks ?? []).includes(task.id) : false;
         return [
-          { kind: "apec-checkin", title: checked ? "会场打卡 ✓ 已完成" : "📸 会场打卡", emoji: "📸", desc: checked ? "这个会场已经在你的 APEC 打卡册里了" : `在${loc.short}地标前打卡，集齐三个会场（已打卡 ${(s.apecCheckins ?? []).length} / 3）`, cost: "心情 +6 · 免费", disabled: checked },
+          { kind: "apec-checkin", title: checked ? "会场打卡 ✓ 已完成" : "📸 会场打卡", emoji: "📸", desc: checked ? "这个会场已经在你的 峰会打卡册里了" : `在${loc.short}地标前打卡，集齐三个会场（已打卡 ${(s.apecCheckins ?? []).length} / 3）`, cost: "心情 +6 · 免费", disabled: checked },
           ...(task && task.venueLocId === loc.id ? [{ kind: "apec-task", title: taskDone ? `今日任务 ✓ ${task.title}` : `${task.roleEmoji} 今日任务：${task.title}`, emoji: task.roleEmoji, desc: taskDone ? "今天的班已经上完了，明天还有新任务" : `${task.dateLabel} · ${task.event}——你当${task.role}。${checked ? task.desc : "先打卡，再上岗。" + task.desc}`, cost: taskDone ? "已完成" : `+${fmt(Math.round(base * task.payMul))} · 能量 -${task.energy} · 经验 +${task.xp} · 人脉 +${task.network}`, disabled: taskDone || !checked || s.energy < task.energy }] : []),
           { kind: "apec-staff", title: "会务服务兼职", emoji: "🎪", desc: `布展、引导、物料分发——以工作人员身份参与${mulTxt}`, cost: `+${fmt(Math.round(base * 0.9 * mul))} · 能量 -22 · 经验 +2`, disabled: s.energy < 22 },
           { kind: "apec-host", title: "外宾接待引导", emoji: "🌐", desc: s.skill < 1 ? "需要技能 ≥1（先去图书馆/夜校学一课）" : `陪代表团参观、答疑、引导，最锻炼人也最长脸${mulTxt}`, cost: `+${fmt(Math.round(base * 1.25 * mul))} · 能量 -20 · 经验 +3 · 人脉 +1`, disabled: s.energy < 20 || s.skill < 1 },
-          { kind: "apec-visit", title: "参观主题展陈", emoji: "🎫", desc: "21 个成员经济体的展陈挨个看，集章、看会徽背后的故事", cost: "-¥20 · 心情 +10 · 可能 +人脉" },
+          { kind: "apec-visit", title: "参观主题展陈", emoji: "🎫", desc: "各方嘉宾带来的展陈挨个看，集章、看会徽背后的故事", cost: "-¥20 · 心情 +10 · 可能 +人脉" },
         ];
       }
       case "mall":
@@ -2355,7 +2389,7 @@ playLifeAnim("shopping");
         ];
         return [
           { kind: "tourist-map", title: "领一份中英文地图", emoji: "🗺️", desc: "地铁图、景点、医院和应急电话都印在上面，参会代表和游客都用得上", cost: "心情 +4 · 免费" },
-          { kind: "volunteer", title: "当一会儿志愿者", emoji: "🎽", desc: isApecWeek(s.day) ? "APEC 周人手紧：帮外宾指路、翻译、找地铁站" : "帮游客指路、答疑", cost: `能量 -10 · 人脉 +1 · 经验 +1${isApecWeek(s.day) ? " · 心情 +8" : ""}`, disabled: s.energy < 10 },
+          { kind: "volunteer", title: "当一会儿志愿者", emoji: "🎽", desc: isApecWeek(s.day) ? "峰会周人手紧：帮外宾指路、翻译、找地铁站" : "帮游客指路、答疑", cost: `能量 -10 · 人脉 +1 · 经验 +1${isApecWeek(s.day) ? " · 心情 +8" : ""}`, disabled: s.energy < 10 },
         ];
       case "bank":
         return [
@@ -2379,7 +2413,7 @@ playLifeAnim("shopping");
   };
 
 /* ---------- derived render data ---------- */
-const myId = profile?.playerId ?? profileRef.current?.playerId ?? "";
+const myId = myPub;
 const remotePlayers = (world?.online ?? [])
 .filter((pl) => pl.cityKey === cityKey && pl.id !== myId)
 .map((pl) => ({ id: pl.id, name: pl.name, emoji: pl.emoji, color: pl.color, locId: pl.locId }));
@@ -2602,7 +2636,7 @@ return (
 </div>
 ); })}
 </div>
-<p className="mt-3 text-[11px] leading-relaxed text-[var(--dim)]">他们每天还会在右侧「🧑‍🤝‍🧑 街坊墙」发动态、互相评论——天气、APEC、你升职这种大事，他们都会聊。聊天、帮忙、送礼物都会被记住，第二天打招呼就不一样。</p>
+<p className="mt-3 text-[11px] leading-relaxed text-[var(--dim)]">他们每天还会在右侧「🧑‍🤝‍🧑 街坊墙」发动态、互相评论——天气、峰会、你升职这种大事，他们都会聊。聊天、帮忙、送礼物都会被记住，第二天打招呼就不一样。</p>
 </div>
 );
 case "cal": {
@@ -2616,11 +2650,11 @@ return (
 {days.map((d) => (
 <div key={d} className={`rounded-[8px] border px-0 py-1.5 text-center text-xs font-bold ${d === s.day ? "border-[var(--accent)] bg-[var(--accent)] text-white" : isApecWeek(d) && s.cityKey === "sz" ? "border-[var(--gold)] bg-[#fdf3d0] text-[#7a5b00]" : "border-[var(--line)]"}`}>
 {d}
-<div className="text-[9px] font-normal opacity-80">{isSaturday(d) ? "交租" : isApecWeek(d) && s.cityKey === "sz" ? "APEC" : weekday(d).replace("周", "")}</div>
+<div className="text-[9px] font-normal opacity-80">{isSaturday(d) ? "交租" : isApecWeek(d) && s.cityKey === "sz" ? "峰会" : weekday(d).replace("周", "")}</div>
 </div>
 ))}
 </div>
-<p className="mt-2 text-xs text-[var(--dim)]">本月就是 11 月：14 日 APEC 领导人周开启，16 日太子湾欢迎晚宴，17–18 日前海 CEO 峰会，18–19 日香蜜湖领导人会议。每周六睡前交租。</p>
+<p className="mt-2 text-xs text-[var(--dim)]">本月就是 11 月：14 日湾区峰会周开启，16 日太子湾欢迎晚宴，17–18 日前海工商峰会，18–19 日香蜜湖峰会主会议。每周六睡前交租。</p>
 </div>
 );
 }
@@ -2662,7 +2696,7 @@ return (
 {[
 ["累计收入", fmt(s.earned)], ["已交房租", fmt(s.rentPaid)], ["装修 + 家具", fmt(s.homeSpent)],
 ["理财余额", fmt(s.invest)], ["上班次数", `${s.workCount} 次`], ["加班次数", `${s.otCount} 次`],
-["干饭次数", `${s.mealCount} 次`], ["最高存款", fmt(s.maxMoney)], ["APEC 服务", `${s.apecCount} 次`], [s.cityKey === "hz" ? "坐城轨/高铁" : "坐地铁", `${s.metroRides ?? 0} 次`], ["风景打卡", `${(s.visitedScenic ?? []).length} / ${scenicTotal(s.cityKey)} 处`],
+["干饭次数", `${s.mealCount} 次`], ["最高存款", fmt(s.maxMoney)], ["峰会服务", `${s.apecCount} 次`], [s.cityKey === "hz" ? "坐城轨/高铁" : "坐地铁", `${s.metroRides ?? 0} 次`], ["风景打卡", `${(s.visitedScenic ?? []).length} / ${scenicTotal(s.cityKey)} 处`],
 ].map(([k, v]) => (
 <p key={k} className="flex justify-between rounded-[10px] border border-[var(--line)] bg-[var(--bg)] px-3 py-2"><span className="text-[var(--dim)]">{k}</span><b>{v}</b></p>
 ))}
@@ -2693,7 +2727,7 @@ return (
 </p>
 ))}
 </div>
-<p className="mt-4 text-sm font-bold">🎉 领导人周活动 · {APEC_SLOGAN}</p>
+<p className="mt-4 text-sm font-bold">🎉 峰会周活动 · {APEC_SLOGAN}</p>
 <p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">每天一个任务：先坐地铁到会场打卡，再以志愿者 / 记者 / 司机身份上岗（闭门会议不对公众开放）。进度：任务 {(s.apecTasks ?? []).length} / {APEC_TASKS.length} · 打卡 {(s.apecCheckins ?? []).length} / 3{(s.apecTasks ?? []).length >= APEC_TASKS.length ? ` · ${APEC_CERT_NAME}已到手，结算时亮出来` : ""}</p>
 <div className="mt-2 grid gap-2">
 {APEC_TASKS.map((t) => {
@@ -2712,7 +2746,7 @@ return (
 );
 })}
 </div>
-<p className="mt-3 text-xs leading-relaxed text-[var(--dim)]">真实日程：第 33 届 APEC 领导人周 11 月 14 日开启；欢迎晚宴 16 日晚在南山太子湾 MGM；CEO 峰会 17–18 日在前海国际会议中心；领导人非正式会议 18–19 日在福田香蜜湖的深圳国际交流中心。主题「建设亚太共同体，促进共同繁荣」，21 个成员经济体，会徽 21 根羽毛。领导人周不对公众开放——游戏里你只能以志愿者、会务、接待、司机身份参与，这也是现实里普通人参与的方式。{s.cityKey === "hz" ? "惠州没有会场，但 APEC 周深圳游客多，温泉酒店和巽寮湾的兼职会更旺（×1.3）；想做活动任务，去深圳开一局。" : ""}</p>
+<p className="mt-3 text-xs leading-relaxed text-[var(--dim)]">日程：湾区国际峰会周 11 月 14 日开启；欢迎晚宴 16 日晚在南山太子湾海景酒店；工商峰会 17–18 日在前海国际会议中心；峰会主会议 18–19 日在福田香蜜湖的深圳国际交流中心。各方嘉宾云集（虚构活动，不代表任何真实会议）。峰会周不对公众开放——游戏里你只能以志愿者、会务、接待、司机身份参与，这也是现实里普通人参与的方式。{s.cityKey === "hz" ? "惠州没有会场，但峰会周深圳游客多，温泉酒店和巽寮湾的兼职会更旺（×1.3）；想做活动任务，去深圳开一局。" : ""}</p>
 </div>
 );
 }
@@ -2754,6 +2788,19 @@ return null;
 };
 
 /* ================= SETUP ================= */
+/* 用户协议 / 隐私政策弹窗：开始页和游戏里都用 */
+const legalModal = () => (legalDoc && (() => { const doc = (legalDoc === "terms" ? TERMS : PRIVACY)[lang]; return (
+<div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={doc.title}>
+<div className="rise max-h-[88vh] w-full max-w-lg overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] p-5 shadow-xl">
+<div className="flex items-center justify-between gap-2"><p className="text-lg font-black">{doc.title}</p><span className="flex gap-1">{(["zh", "en"] as const).map((l) => <button key={l} type="button" onClick={() => switchLang(l)} className={`rounded-full px-2.5 py-1 text-[11px] font-black ${lang === l ? "bg-[var(--text)] text-[var(--bg)]" : "border border-[var(--line)]"}`}>{l === "zh" ? "中文" : "EN"}</button>)}<button type="button" aria-label="关闭" onClick={() => setLegalDoc(null)} className="ml-1 rounded-full border border-[var(--line)] px-3 py-1 text-sm font-black">✕</button></span></div>
+{doc.sections.map((sec) => (
+<div key={sec.h} className="mt-3"><p className="text-sm font-black">{sec.h}</p>{sec.p.map((t, i) => <p key={i} className="mt-1 text-xs leading-relaxed text-[var(--dim)]">{t}</p>)}</div>
+))}
+<button type="button" onClick={() => setLegalDoc(null)} className="mt-4 w-full rounded-full bg-[var(--text)] py-2.5 text-sm font-black text-[var(--bg)]">{lang === "en" ? "Close" : "知道了"}</button>
+</div>
+</div>
+); })());
+
 if (phase === "setup" || !gs) {
 const szCount = world?.onlineSz ?? 0;
 const hzCount = world?.onlineHz ?? 0;
@@ -2764,18 +2811,18 @@ return (
 <p className="text-xs font-black tracking-[0.2em] text-[var(--accent)]">真人联机 · 同一座城</p>
 <h1 className="font-display mt-2 text-4xl font-black leading-tight">在深圳和惠州，<br />过完这个十一月</h1>
 <p className="mt-3 text-sm leading-relaxed text-[var(--dim)]">
-30 天生活模拟：选一座城、一个身份，在 3D 地图上打工、升职、吃饭、装修、攒钱。这次是<b className="text-[var(--text)]">真的联机</b>——其他打开游戏的人会以真身出现在你的地图上，你们共享一个城市频道、一份动态墙和一张排行榜。11 月 14–19 日是深圳 APEC 领导人周，三个真实会场等你打工。
+30 天生活模拟：选一座城、一个身份，在 3D 地图上打工、升职、吃饭、装修、攒钱。这次是<b className="text-[var(--text)]">真的联机</b>——其他打开游戏的人会以真身出现在你的地图上，你们共享一个城市频道、一份动态墙和一张排行榜。11 月 14–19 日是深圳湾区峰会周，三个真实会场等你打工。
 </p>
 <div className="mt-3 flex flex-wrap gap-2">
 <span className="chip"><span className="live-dot" /> 深圳在线 {szCount} 人</span>
 <span className="chip"><span className="live-dot" /> 惠州在线 {hzCount} 人</span>
 <span className="chip">🗺️ 双城 {getLocations("sz").length + getLocations("hz").length} 个地点 · 地铁/城际/高铁全线 · 大地图</span>
-<span className="chip">🌐 APEC 真实日程</span>
+<span className="chip">🌐 峰会日程</span>
 </div>
 
 <div className="mt-5 rounded-[16px] border-2 border-[var(--gold)] bg-[#fdf6da] p-4 text-[#5c4a00]">
 <p className="font-display text-xl font-black">🌐 {APEC_SLOGAN}</p>
-<p className="mt-1 text-xs leading-relaxed">公开上线活动：第 33 届 APEC 领导人周 11 月 14–19 日在深圳举行，游戏同步开活动，每天一个任务，按真实日程走——14 日领导人周开幕（高官会、工商咨询理事会）→ 16 日晚太子湾欢迎晚宴 → 17–18 日前海 CEO 峰会 → 18–19 日香蜜湖领导人会议。你以志愿者、记者、司机的身份参与（领导人周的闭门会议不对公众开放，游戏里也进不去），坐真实地铁线路去三个会场打卡上岗，六天任务全做完，领《APEC 领导人周服务证书》。</p>
+<p className="mt-1 text-xs leading-relaxed">公开上线活动：湾区国际峰会周 11 月 14–19 日在深圳举行，游戏同步开活动，每天一个任务，按日程走——14 日峰会周开幕（筹备会、工商论坛）→ 16 日晚太子湾欢迎晚宴 → 17–18 日前海工商峰会 → 18–19 日香蜜湖峰会主会议。你以志愿者、记者、司机的身份参与（峰会周的闭门会议不对公众开放，游戏里也进不去），坐真实地铁线路去三个会场打卡上岗，六天任务全做完，领《湾区峰会服务证书》。</p>
 <p className="mt-1.5 text-[11px] font-bold">⏰ 游戏第 N 天 = 11 月 N 日：13 日前先进城认地图、认地铁，14 日准时开幕。选深圳开局就能参加活动。</p>
 </div>
 
@@ -2791,13 +2838,14 @@ return (
 <button key={k} type="button" aria-label={`选择${c.name}`} onClick={() => setSetupCity(k)} className={`rounded-[16px] border-2 p-4 text-left ${active ? "border-[var(--border)] bg-[var(--surface)] shadow-[5px_5px_0_var(--border)]" : "border-[var(--line)] bg-[var(--surface)]"}`}>
 <p className="text-3xl">{c.emoji}</p>
 <p className="mt-1 text-lg font-black">{c.name}</p>
-<p className="text-xs leading-relaxed text-[var(--dim)]">{k === "sz" ? `${getLocations("sz").length} 个地点 · APEC 主场 · 周租贵、工资高` : `${getLocations("hz").length} 个地点 · 海边慢生活 · 周租便宜、工资低`}</p>
+<p className="text-xs leading-relaxed text-[var(--dim)]">{k === "sz" ? `${getLocations("sz").length} 个地点 · 峰会主场 · 周租贵、工资高` : `${getLocations("hz").length} 个地点 · 海边慢生活 · 周租便宜、工资低`}</p>
 <p className="mt-1 text-xs font-bold text-[var(--green)]">● {k === "sz" ? szCount : hzCount} 人正在这座城里</p>
 </button>
 );
 })}
 </div>
 
+<p className="mt-4 flex items-center gap-2 text-xs font-bold text-[var(--dim)]">🌐 Language / 语言 {langToggle()}</p>
 {invite && <p className="mt-4 rounded-[14px] border-2 border-[var(--accent)] bg-[var(--surface)] px-4 py-3 text-sm font-bold">🎉 {invite.from}邀请你来深惠过日子：开局多 ¥100{invite.co && invite.co !== "startup" ? `，还有${companyById(invite.co).short}的内推（面试门槛降低）` : ""}。</p>}
 <details className="mt-4 rounded-[14px] border border-[var(--line)] bg-[var(--surface)] px-4 py-3">
 <summary className="cursor-pointer text-sm font-black">☁️ 在别的设备玩过？用云存档码继续</summary>
@@ -2824,11 +2872,16 @@ return (
 })}
 </div>
 
-<button type="button" disabled={!setupName.trim()} onClick={() => startGame(setupName.trim(), setupCity, setupIden)} className="mt-6 w-full rounded-full bg-[var(--accent)] py-4 text-base font-black text-white shadow-[5px_5px_0_var(--border)] disabled:opacity-40">
+<label className="mt-5 flex items-start gap-2 text-xs leading-relaxed">
+<input type="checkbox" checked={agreed} onChange={(e) => setAgreedStored(e.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--accent)]" aria-label={lang === "en" ? "I agree to the Terms and Privacy Policy" : "同意用户协议和隐私政策"} />
+<span>{lang === "en" ? <>I have read and agree to the <button type="button" onClick={() => setLegalDoc("terms")} className="font-black underline">Terms of Service</button> and <button type="button" onClick={() => setLegalDoc("privacy")} className="font-black underline">Privacy Policy</button>. Companies and events in the game are fictional.</> : <>我已阅读并同意<button type="button" onClick={() => setLegalDoc("terms")} className="font-black underline">《用户协议》</button>和<button type="button" onClick={() => setLegalDoc("privacy")} className="font-black underline">《隐私政策》</button>。游戏中的公司与活动均为虚构。</>}</span>
+</label>
+<button type="button" disabled={!setupName.trim() || !agreed} onClick={() => startGame(setupName.trim(), setupCity, setupIden)} className="mt-6 w-full rounded-full bg-[var(--accent)] py-4 text-base font-black text-white shadow-[5px_5px_0_var(--border)] disabled:opacity-40">
 进城，开始过日子 →
 </button>
 <p className="mt-3 text-center text-xs leading-relaxed text-[var(--dim)]">规则：30 天，每天去不同地点行动消耗能量；每周六睡前交租，存款跌破 -¥500 会被房东请出门；第 30 天结束结算并登上全城排行榜。</p>
 </main>
+{legalModal()}
 </div>
 );
 }
@@ -2855,7 +2908,7 @@ return (
 ["最终存款", fmt(s.money)], ["存活天数", `${Math.min(s.day, 30)} 天`], ["上班", `${s.workCount} 次`],
 ["总收入", fmt(s.earned)], ["交租", fmt(s.rentPaid)], ["最终心情", `${Math.round(s.mood)}`],
 ["职级", (CAREERS[s.careerIdx] ?? CAREERS[0]!).name], ["技能", `${s.skill} 点`], ["人脉", `${s.network} 人`],
-["我的家", homeName(s)], ["舒适度", `${computeComfort(s)}`], ["APEC 服务", `${s.apecCount} 次`], [s.cityKey === "hz" ? "坐城轨/高铁" : "坐地铁", `${s.metroRides ?? 0} 次`], ["风景打卡", `${(s.visitedScenic ?? []).length} / ${scenicTotal(s.cityKey)} 处`],
+["我的家", homeName(s)], ["舒适度", `${computeComfort(s)}`], ["峰会服务", `${s.apecCount} 次`], [s.cityKey === "hz" ? "坐城轨/高铁" : "坐地铁", `${s.metroRides ?? 0} 次`], ["风景打卡", `${(s.visitedScenic ?? []).length} / ${scenicTotal(s.cityKey)} 处`],
 ].map(([k, v]) => (
 <div key={k} className="rounded-[12px] bg-[var(--surface2)] px-2 py-3">
 <p className="text-[11px] font-bold text-[var(--dim)]">{k}</p>
@@ -2922,6 +2975,7 @@ return (
 <button type="button" aria-label={`坐厦深高铁切换城市，去${s.cityKey === "sz" ? "惠州" : "深圳"}，车票 ¥${INTERCITY_FARE}`} title={`坐厦深高铁去${s.cityKey === "sz" ? "惠州" : "深圳"}：地图、天气、街坊全换，进度不变（车票 ¥${INTERCITY_FARE}，钱不够免费坐）`} onClick={switchCity} className="chip shrink-0 border-[var(--accent)] font-black text-[var(--accent)] transition hover:bg-[var(--surface2)]">🚄 去{s.cityKey === "sz" ? "惠州" : "深圳"} · ¥{INTERCITY_FARE}</button>
 <button type="button" title={todayEvent.desc} aria-label={`今日城市事件：${todayEvent.name}`} onClick={() => showToast(`${todayEvent.emoji} 今日城市事件「${todayEvent.name}」：${todayEvent.desc}`)} className="ml-auto chip">{todayEvent.emoji} {todayEvent.name}</button>
 <span className="chip"><span className="live-dot" /> {(world?.onlineSz ?? 0) + (world?.onlineHz ?? 0)} 人在线</span>
+{langToggle()}
 <button type="button" aria-label="打开每日任务" onClick={() => setDailyOpen(true)} className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-xs font-black transition hover:border-[var(--border)]">📋 任务</button>
 <button type="button" aria-label="分享战绩、邀请朋友" onClick={() => void openShare()} className="rounded-full bg-[var(--accent)] px-3 py-2 text-xs font-black text-white">📤 分享</button>
 <button type="button" aria-label="打开手机" onClick={() => { setPhoneApp(null); setPhoneOpen(true); }} className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-xs font-black transition hover:border-[var(--border)]">📱 手机</button>
@@ -2931,15 +2985,15 @@ return (
 
 <main className="relative w-full">
 {/* The map is the whole stage now — no fixed side panel squeezing it.
-    The status / APEC / city bars float over the map's top-left corner as
+    The status / Summit / city bars float over the map's top-left corner as
     a translucent stack (folded bars become a vertical rail of buttons
     down the left edge), and place/feed/wall/chat/board live in a
     floating translucent panel that collapses vertically into a slim
     strip on the right edge — never fully hidden, always one tap away. */}
 <section className="relative h-[calc(100dvh-61px)] min-h-[540px] w-full overflow-hidden">
 <div className="float-bars absolute left-3 top-[60px] z-20 w-[min(720px,calc(100vw-24px))]">
-{/* ONE merged card (was three stacked bars: status / APEC / city intro).
-    Row 1 = core stats; row 2 = slim APEC strip + three fold tabs that
+{/* ONE merged card (was three stacked bars: status / Summit / city intro).
+    Row 1 = core stats; row 2 = slim Summit strip + three fold tabs that
     open a single detail panel at a time. The whole card folds into the
     left-edge rail. */}
 {!barsHidden && (
@@ -2965,7 +3019,7 @@ return (
 </div>
 
 <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-[var(--line)] pt-2 text-[11px] font-bold">
-<span className="shrink-0 rounded-full border border-[var(--gold)] bg-[#fdf6da] px-2 py-0.5 font-black text-[#5c4a00]">🌐 APEC{s.cityKey === "sz" ? ` · ${s.day < 14 ? `还有 ${14 - s.day} 天` : s.day <= 19 ? "进行中" : "已结束"}` : " · 深圳 14–19 日"}</span>
+<span className="shrink-0 rounded-full border border-[var(--gold)] bg-[#fdf6da] px-2 py-0.5 font-black text-[#5c4a00]">🌐 峰会{s.cityKey === "sz" ? ` · ${s.day < 14 ? `还有 ${14 - s.day} 天` : s.day <= 19 ? "进行中" : "已结束"}` : " · 深圳 14–19 日"}</span>
 {s.cityKey === "sz" ? (
 <>
 <span className="shrink-0">任务 {(s.apecTasks ?? []).length}/{APEC_TASKS.length} · 打卡 {(s.apecCheckins ?? []).length}/3</span>
@@ -2983,8 +3037,8 @@ return (
 })()}
 </>
 ) : <span className="min-w-[60px] flex-1 basis-0 truncate text-[var(--dim)]">惠州兼职旺季 ×1.3</span>}
-<div className="ml-auto flex shrink-0 gap-1" role="tablist" title="展开：状态详情 / APEC 活动 / 城市速览" aria-label="展开详情">
-{([["hud", "状态"], ["apec", "APEC"], ["intro", "速览"]] as const).map(([k, label]) => (
+<div className="ml-auto flex shrink-0 gap-1" role="tablist" title="展开：状态详情 / 峰会活动 / 城市速览" aria-label="展开详情">
+{([["hud", "状态"], ["apec", "峰会"], ["intro", "速览"]] as const).map(([k, label]) => (
 <button key={k} type="button" role="tab" aria-selected={fold === k} aria-expanded={fold === k} onClick={() => setFold((f) => (f === k ? null : k))} className={`rounded-full border px-2.5 py-1 text-[11px] font-black transition ${fold === k ? "border-[var(--border)] bg-[var(--surface2)]" : "border-[var(--line)] hover:border-[var(--border)]"}`}>{label} {fold === k ? "▴" : "▾"}</button>
 ))}
 </div>
@@ -3013,8 +3067,8 @@ return (
 <span className="chip">技能 {s.skill}</span>
 <span className="chip">人脉 {s.network}</span>
 <span className="chip">体质 {s.fit}</span>
-<span className="chip">🌐 APEC 服务 {s.apecCount} 次</span>
-{s.cityKey === "sz" && <span className="chip">🎖️ APEC 任务 {(s.apecTasks ?? []).length}/{APEC_TASKS.length} · 打卡 {(s.apecCheckins ?? []).length}/3</span>}
+<span className="chip">🌐 峰会服务 {s.apecCount} 次</span>
+{s.cityKey === "sz" && <span className="chip">🎖️ 峰会任务 {(s.apecTasks ?? []).length}/{APEC_TASKS.length} · 打卡 {(s.apecCheckins ?? []).length}/3</span>}
 <span className="chip">🏠 舒适度 {computeComfort(s)}</span>
 <span className="chip">{s.cityKey === "hz" ? "🚆 已坐城轨/高铁" : "🚇 已坐地铁"} {s.metroRides ?? 0} 次</span>
 <span className="chip">{outfitOf(s.outfit).emoji} 穿着{outfitOf(s.outfit).name}</span>
@@ -3033,11 +3087,11 @@ return (
 <>
 <p className="text-xs leading-relaxed">{phaseApec.detail}</p>
 <div className="mt-2">
-<p className="text-xs font-black">🎉 APEC 领导人周活动 · {APEC_SLOGAN}</p>
+<p className="text-xs font-black">🎉 湾区峰会周活动 · {APEC_SLOGAN}</p>
 <p className="mt-0.5 text-[11px] font-bold">每日一任务（11 月 14–19 日）：任务进度 {(s.apecTasks ?? []).length} / {APEC_TASKS.length} · 会场打卡 {(s.apecCheckins ?? []).length} / 3{(s.apecTasks ?? []).length >= APEC_TASKS.length ? ` · ${APEC_CERT_NAME}已到手` : " · 六天全做完领服务证书"}</p>
 {(() => {
 const task = apecTaskOfDay(s.day) ?? (s.day < 14 ? APEC_TASKS[0]! : null);
-if (!task) return <p className="mt-1.5 text-xs leading-relaxed">领导人周活动已经结束。{(s.apecTasks ?? []).length >= APEC_TASKS.length ? "你六天的任务全做完了，证书在结算页等你。" : "错过的班次不能补，但这座城你已经认得差不多了。"}</p>;
+if (!task) return <p className="mt-1.5 text-xs leading-relaxed">峰会周活动已经结束。{(s.apecTasks ?? []).length >= APEC_TASKS.length ? "你六天的任务全做完了，证书在结算页等你。" : "错过的班次不能补，但这座城你已经认得差不多了。"}</p>;
 const venue = locById(task.venueLocId);
 const isToday = task.day === s.day;
 const done = (s.apecTasks ?? []).includes(task.id);
@@ -3063,8 +3117,8 @@ return (
 </>
 ) : (
 <>
-<p className="text-xs font-black">🌐 APEC 领导人周活动 · {APEC_SLOGAN}</p>
-<p className="mt-1 text-xs leading-relaxed">{s.day < 14 ? `第 33 届 APEC 领导人周 11 月 14 日在深圳开启：14 日开幕、16 日晚太子湾欢迎晚宴、17–18 日前海 CEO 峰会、18–19 日香蜜湖领导人会议，每天一个任务，玩家在深圳以志愿者、记者、司机身份去三个会场打卡上岗。` : "深圳 APEC 领导人周进行中（14–19 日）：每天一个任务，志愿者、记者、司机轮着当，三个会场坐地铁去打卡。"}惠州没有会场，这周温泉酒店、巽寮湾的兼职更旺（×1.3）——想上岗打卡，去深圳开一局就能参加。</p>
+<p className="text-xs font-black">🌐 湾区峰会周活动 · {APEC_SLOGAN}</p>
+<p className="mt-1 text-xs leading-relaxed">{s.day < 14 ? `湾区国际峰会周 11 月 14 日在深圳开启：14 日开幕、16 日晚太子湾欢迎晚宴、17–18 日前海工商峰会、18–19 日香蜜湖峰会主会议，每天一个任务，玩家在深圳以志愿者、记者、司机身份去三个会场打卡上岗。` : "深圳湾区峰会周进行中（14–19 日）：每天一个任务，志愿者、记者、司机轮着当，三个会场坐地铁去打卡。"}惠州没有会场，这周温泉酒店、巽寮湾的兼职更旺（×1.3）——想上岗打卡，去深圳开一局就能参加。</p>
 </>
 )}
 </div>
@@ -3404,7 +3458,7 @@ return (
 
 {asideTab === "feed" && (
 <div className="mt-3 grid max-h-[520px] gap-1.5 overflow-y-auto pr-0.5">
-{(world?.feed ?? []).length === 0 && <p className="text-sm text-[var(--dim)]">还没有动态。你进城的消息会出现在这里，其他玩家的晋升、APEC 服务和结算也会。</p>}
+{(world?.feed ?? []).length === 0 && <p className="text-sm text-[var(--dim)]">还没有动态。你进城的消息会出现在这里，其他玩家的晋升、峰会服务和结算也会。</p>}
 {(() => { const merged = new Map<string, { id: number; playerName: string; kind: string; text: string; createdAt: string; n: number }>(); for (const f of world?.feed ?? []) { const k = `${f.playerName}|${f.kind}|${f.text}`; const cur = merged.get(k); if (cur) cur.n += 1; else merged.set(k, { ...f, n: 1 }); } return [...merged.values()]; })().map((f) => (
 <div key={f.id} className="rounded-[10px] border border-[var(--line)] bg-[var(--bg)] px-3 py-2">
 <p className="break-words text-[13px] leading-relaxed"><span className="mr-1">{feedKindEmoji[f.kind] ?? "✨"}</span><b>{f.playerName}</b> {f.text}{f.n > 1 && <span className="chip ml-1.5 align-middle">同类 ×{f.n} · 已合并</span>}</p>
@@ -3416,13 +3470,13 @@ return (
 
 {asideTab === "wall" && (
 <div className="mt-3">
-<p className="text-[11px] leading-relaxed text-[var(--dim)]">街坊们每天自己发动态、互相评论：聊天气、聊 APEC、聊你升职和搬新家的事。你可以点赞、评论，他们会记住你、也可能回你。</p>
+<p className="text-[11px] leading-relaxed text-[var(--dim)]">街坊们每天自己发动态、互相评论：聊天气、聊峰会、聊你升职和搬新家的事。你可以点赞、评论，他们会记住你、也可能回你。</p>
 <div className="mt-2 grid max-h-[520px] gap-2 overflow-y-auto pr-0.5">
 {(s.npcFeed ?? []).length === 0 && <p className="text-sm text-[var(--dim)]">街坊墙还空着，睡一觉到明天，他们就会热闹起来。</p>}
 {(s.npcFeed ?? []).map((post) => {
 const author = NPCS.find((n) => n.name === post.author);
 const aMem = memOf(s.npcMem ?? {}, post.author);
-const kindTag: Record<NpcPost["kind"], string> = { weather: "🌦️ 天气", apec: "🌐 APEC", player: "📣 关于你", life: "🏠 日常", work: "💼 工作", food: "🍜 吃食" };
+const kindTag: Record<NpcPost["kind"], string> = { weather: "🌦️ 天气", apec: "🌐 峰会", player: "📣 关于你", life: "🏠 日常", work: "💼 工作", food: "🍜 吃食" };
 return (
 <div key={post.id} className="rounded-[12px] border border-[var(--line)] bg-[var(--bg)] px-3 py-2.5">
 <p className="flex flex-wrap items-center gap-1.5 text-[13px]"><span className="text-base">{author?.emoji ?? "🧑"}</span><b>{post.author}</b><span className="text-[11px] text-[var(--dim)]">{author?.job ?? ""} · 第 {post.day} 天</span><span className="chip ml-auto">{kindTag[post.kind]}</span></p>
@@ -3569,7 +3623,8 @@ return (
 </button>
 ); })}
 </div>
-<p className="mt-3 text-[11px] text-[var(--dim)]">进度存在这台设备的浏览器里。今天：{today}</p>
+<p className="mt-3 text-[11px] text-[var(--dim)]">进度存在这台设备的浏览器里（开了云存档也会存一份到服务器）。今天：{today}</p>
+<p className="mt-1 flex flex-wrap gap-3 text-[11px] font-bold text-[var(--dim)]"><button type="button" onClick={() => setLegalDoc("terms")} className="underline">用户协议 Terms</button><button type="button" onClick={() => setLegalDoc("privacy")} className="underline">隐私政策 Privacy</button><span>游戏中的公司与活动均为虚构</span></p>
 </div>
 );
 })()}
@@ -3757,6 +3812,8 @@ return (
 );
 })()}
 
+{legalModal()}
+
 {/* ===== 分享战绩 / 邀请朋友 ===== */}
 {shareOpen && (
 <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label="分享战绩">
@@ -3770,7 +3827,7 @@ return (
 {shareImg ? <a href={shareImg.url} download="深惠人生战绩.png" className="rounded-full bg-[var(--text)] py-3 text-center text-sm font-black text-[var(--bg)]">⬇️ 保存图片</a> : <span />}
 </div>
 <button type="button" onClick={() => void copyInvite()} className="mt-2 w-full rounded-full border-2 border-[var(--border)] py-2.5 text-sm font-black">🔗 复制邀请链接</button>
-<p className="mt-2 break-all rounded-[10px] bg-[var(--surface2)] px-3 py-2 text-[11px] text-[var(--dim)]">{profile && s ? inviteLink(profile.playerId, profile.name, s.employer) : ""}</p>
+<p className="mt-2 break-all rounded-[10px] bg-[var(--surface2)] px-3 py-2 text-[11px] text-[var(--dim)]">{profile && s && myPub ? inviteLink(myPub, profile.name, s.employer) : "（联网后生成）"}</p>
 <p className="mt-2 text-xs leading-relaxed text-[var(--dim)]">朋友用这个链接进来：开局多 ¥100{s && (s.employer ?? "startup") !== "startup" ? `，还自带${companyById(s.employer).short}的内推` : ""}；他报到后你收到 ¥200 邀请奖励。</p>
 </div>
 </div>
@@ -3832,7 +3889,7 @@ return (
 </div>)}
 {/* interactions */}
 {rideEntry === null && (<div className="grid grid-cols-2 gap-2 p-4 pt-3">
-<button type="button" aria-label="车厢里看手机" disabled={c.phoneUsed} onClick={() => { setCarriage({ ...c, phoneUsed: true }); setCarriageLog("📱 你打开手机刷了刷：APEC资讯、天气和同城动态都看了一眼，时间过得快了些，心情 +2（下车结算）。"); }} className="act-btn disabled:opacity-40"><span className="text-sm font-black">📱 看手机</span><span className="block text-xs text-[var(--dim)]">{c.phoneUsed ? "刚看过，信号在隧道里时断时续" : "刷资讯/动态，解闷，心情 +2"}</span></button>
+<button type="button" aria-label="车厢里看手机" disabled={c.phoneUsed} onClick={() => { setCarriage({ ...c, phoneUsed: true }); setCarriageLog("📱 你打开手机刷了刷：峰会资讯、天气和同城动态都看了一眼，时间过得快了些，心情 +2（下车结算）。"); }} className="act-btn disabled:opacity-40"><span className="text-sm font-black">📱 看手机</span><span className="block text-xs text-[var(--dim)]">{c.phoneUsed ? "刚看过，信号在隧道里时断时续" : "刷资讯/动态，解闷，心情 +2"}</span></button>
 <button type="button" aria-label="给需要的人让座" disabled={!c.seated || c.gaveSeat} onClick={() => { setCarriage({ ...c, gaveSeat: true, seated: false }); setCarriageLog("💺 你起身把座位让给了需要的人，对方连声道谢。站一会儿没关系，人脉 +1、心情 +4（下车结算）。"); }} className="act-btn disabled:opacity-40"><span className="text-sm font-black">💺 让座</span><span className="block text-xs text-[var(--dim)]">{!c.seated ? (c.gaveSeat ? "已经让过座了，你站着" : "现在没座位可让（你在站着）") : "让给老人/孕妇，人脉 +1"}</span></button>
 <button type="button" aria-label="扶好扶杆站稳" disabled={c.heldRail} onClick={() => { setCarriage({ ...c, heldRail: true }); setCarriageLog(c.crowdLevel >= 2 ? "🖐️ 你抓紧了扶杆。刚好一个急刹，人潮晃了一下——还好你站稳了，没踩到人也没被踩。" : "🖐️ 你扶好吊环，站得很稳。"); }} className="act-btn disabled:opacity-40"><span className="text-sm font-black">🖐️ 扶杆站稳</span><span className="block text-xs text-[var(--dim)]">{c.heldRail ? "已经扶稳了" : "人多时不扶杆，急刹容易摔"}</span></button>
 <button type="button" aria-label="听报站看路线" onClick={() => setCarriageLog(`🗺️ 路线图亮着灯：你在 ${curStation?.name}，还要坐 ${total - 1 - c.stopIdx} 站到 ${locById(c.toLoc).name}。${nextStation ? `下一站 ${nextStation.name}。` : ""}`)} className="act-btn"><span className="text-sm font-black">🗺️ 看路线图/听报站</span><span className="block text-xs text-[var(--dim)]">确认还有几站，别坐过站</span></button>
@@ -3925,7 +3982,7 @@ onLocate={(x, z, name) => { setMetroMapOpen(false); setMapFocus({ x, z, nonce: D
 ["greet", "👋 打招呼", "聊聊近况"],
 ["weather", "🌦️ 聊天气", "今天的天儿"],
 ["work", "💼 聊工作", "他这行的事"],
-...(s.cityKey === "sz" || npc.name === "Lisa" ? [["apec", "🌐 聊 APEC", "大会那些事"] as const] : []),
+...(s.cityKey === "sz" || npc.name === "Lisa" ? [["apec", "🌐 聊峰会", "大会那些事"] as const] : []),
 ["joke", "😂 开个玩笑", p.pride >= 0.6 && p.humor < 0.45 ? "⚠️ 他要面子，可能翻脸" : "逗他一乐"],
 ["help", "🤝 帮个忙", "能量 -6 · 人情 +12"],
 ["gift", "🎁 送小礼物", "¥25 · 关系 +8"],
@@ -4007,9 +4064,9 @@ return (
 </div>
 {apecTask && (
 <div className="mt-3 rounded-[12px] border-2 border-[var(--gold)] bg-[#fdf6da] px-3 py-2.5 text-[#5c4a00]">
-<p className="text-sm font-black">🌐 今日 APEC 任务 · {apecTask.dateLabel} {apecTask.event}</p>
+<p className="text-sm font-black">🌐 今日 峰会任务 · {apecTask.dateLabel} {apecTask.event}</p>
 <p className="mt-0.5 text-xs leading-relaxed">{apecTask.roleEmoji} 你当{apecTask.role}：{apecTask.title} —— 去{locById(apecTask.venueLocId).name}打卡上岗。{apecDone ? "✅ 今天已完成" : ""}</p>
-{!apecDone && <button type="button" aria-label="坐地铁去做今日APEC任务" onClick={() => { setDailyOpen(false); walkTo(apecTask.venueLocId, "metro"); }} className="mt-2 rounded-full bg-[#5c4a00] px-3.5 py-1.5 text-[11px] font-black text-white">🚇 坐地铁去会场</button>}
+{!apecDone && <button type="button" aria-label="坐地铁去做今日峰会任务" onClick={() => { setDailyOpen(false); walkTo(apecTask.venueLocId, "metro"); }} className="mt-2 rounded-full bg-[#5c4a00] px-3.5 py-1.5 text-[11px] font-black text-white">🚇 坐地铁去会场</button>}
 </div>
 )}
 <button type="button" onClick={() => setDailyOpen(false)} className="mt-4 w-full rounded-full bg-[var(--text)] py-3 text-sm font-black text-[var(--bg)]">开始今天的生活 →</button>

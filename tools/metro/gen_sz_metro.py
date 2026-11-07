@@ -113,7 +113,7 @@ def fetch(from_files: list[str] | None = None) -> None:
         for m in r["members"]:
             n = nodes.get(m["ref"]) if m["type"] == "node" and m["role"].startswith("stop") else None
             if n and n.get("tags", {}).get("name"):
-                stops.append({"name": n["tags"]["name"], "lat": n["lat"], "lon": n["lon"]})
+                stops.append({"name": n["tags"]["name"], "en": n["tags"].get("name:en"), "lat": n["lat"], "lon": n["lon"]})
         if len(stops) > len(routes.get(name, [])):
             routes[name] = stops
     SNAPSHOT.write_text(json.dumps({"source": "OpenStreetMap (ODbL) via Overpass API", "routes": routes}, ensure_ascii=False, indent=1))
@@ -299,6 +299,18 @@ def main() -> None:
     out.append("];")
     out.append("")
     out.append("/** Real station positions in km (east, south) for distance-based fares. */")
+    # official English station names (OSM name:en) for the English UI
+    en_of: dict[str, str] = {}
+    for osm_stops in snap.values():
+        for st in osm_stops:
+            nm = ALIAS.get(st["name"], st["name"])
+            if st.get("en") and nm not in en_of:
+                en_of[nm] = st["en"]
+    out.append("/** Official English station names (OSM name:en), for the English UI. */")
+    out.append("export const SZ_STATION_EN: Record<string, string> = {")
+    out.append("  " + ",".join(f'"{n}":"{en_of[n]}"' for n in sorted(en_of) if n in xy))
+    out.append("};")
+    out.append("")
     out.append("export const SZ_REAL_KM: Record<string, [number, number]> = {")
     used = sorted({n for seq in seqs.values() for n in seq})
     out.append("  " + ",".join(f'"{n}":[{km[n][0]:.2f},{km[n][1]:.2f}]' for n in used))

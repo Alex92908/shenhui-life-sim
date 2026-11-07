@@ -14,6 +14,26 @@ type Ctx,
 } from "@hatch/space-sdk";
 import { and, desc, eq, gte, sql } from "drizzle-orm";
 import * as schema from "./schema";
+import { createHash } from "node:crypto";
+import { cleanName, cleanText } from "./moderation";
+
+/** Public id: the player id is their private key (only their own browser
+    knows it); others only ever see this one-way hash of it. */
+const pubOf = (id: string) => createHash("sha256").update(id).digest("hex").slice(0, 16);
+
+/* World snapshot cache: every client polls it every few seconds, so build it
+   at most once per city per WORLD_TTL_MS; writes that others should see
+   right away (chat, feed, gifts, joins) clear it. */
+const WORLD_TTL_MS = 1500;
+const worldCache = new Map<string, { at: number; world: World }>();
+const dropWorldCache = () => worldCache.clear();
+async function loadWorldCached(ctx: Ctx, cityKey: string): Promise<World> {
+  const hit = worldCache.get(cityKey);
+  if (hit && Date.now() - hit.at < WORLD_TTL_MS) return hit.world;
+  const world = await loadWorld(ctx, cityKey);
+  worldCache.set(cityKey, { at: Date.now(), world });
+  return world;
+}
 
 const ONLINE_WINDOW_MS = 90_000;
 /** Generous ceiling on what one game day can earn (best identity × 职级 ×
@@ -138,7 +158,7 @@ async function loadWorld(ctx: Ctx, cityKey: string): Promise<World> {
     .limit(10);
   return {
     online: onlineRows.map((p) => ({
-      id: p.id,
+      id: p.pub ?? pubOf(p.id),
       name: p.name,
       emoji: p.emoji,
       color: p.color,
@@ -162,7 +182,7 @@ async function loadWorld(ctx: Ctx, cityKey: string): Promise<World> {
       .reverse()
       .map((m) => ({
         id: m.id,
-        playerId: m.playerId,
+        playerId: pubOf(m.playerId),
         playerName: m.playerName,
         cityKey: m.cityKey,
         body: m.body,
@@ -176,7 +196,7 @@ async function loadWorld(ctx: Ctx, cityKey: string): Promise<World> {
       createdAt: f.createdAt.toISOString(),
     })),
     leaderboard: boardRows.map((p) => ({
-      id: p.id,
+      id: p.pub ?? pubOf(p.id),
       name: p.name,
       emoji: p.emoji,
       cityKey: p.cityKey,
@@ -192,7 +212,7 @@ async function loadWorld(ctx: Ctx, cityKey: string): Promise<World> {
       .sort((a, b) => b.money - a.money),
     stampBoard: stampRows
       .filter((p) => p.stamps > 0)
-      .map((p) => ({ id: p.id, name: p.name, emoji: p.emoji, stamps: p.stamps, title: p.title })),
+      .map((p) => ({ id: p.pub ?? pubOf(p.id), name: p.name, emoji: p.emoji, stamps: p.stamps, title: p.title })),
   };
 }
 
@@ -272,10 +292,12 @@ export const Actions = {
     description:
       "Registers (or re-registers) a player in the shared Shenzhen/Huizhou city and returns the current world snapshot.",
     request: z.object({ ...profileArgs }),
-    response: z.object({ world: worldResponse }),
+    response: z.object({ world: worldResponse, me: z.string() }),
     async handler(ctx, args) {
       const db = ctx.db<typeof schema>();
       const now = new Date();
+      args = { ...args, name: cleanName(args.name) };
+      const pub = pubOf(args.playerId);
       const existing = await db
         .select()
         .from(schema.players)
@@ -289,6 +311,7 @@ export const Actions = {
           color: args.color,
           cityKey: args.cityKey,
           locId: "home",
+          pub,
           lastSeen: now,
           createdAt: now,
         });
@@ -338,13 +361,15 @@ export const Actions = {
             emoji: args.emoji,
             color: args.color,
             cityKey: args.cityKey,
+            pub,
             lastSeen: now,
             ...freshRun,
           })
           .where(eq(schema.players.id, args.playerId));
       }
+      dropWorldCache();
       ctx.invalidateQueries();
-      return { world: await loadWorld(ctx, args.cityKey) };
+      return { world: await loadWorldCached(ctx, args.cityKey), me: pub };
     },
   }),
 
@@ -363,7 +388,7 @@ export const Actions = {
       stamps: z.number().int().min(0).max(999).optional(),
       title: z.string().max(16).nullable().optional(),
     }),
-    response: z.object({ world: worldResponse, inbox: z.array(giftShape) }),
+    response: z.object({ world: worldResponse, inbox: z.array(giftShape), me: z.string() }),
     async handler(ctx, args) {
       const db = ctx.db<typeof schema>();
       /* 防作弊：the simulation runs on the client, so the server checks each
@@ -384,6 +409,7 @@ export const Actions = {
         .update(schema.players)
         .set({
           suspect,
+          pub: pubOf(args.playerId),
           cityKey: args.cityKey,
           locId: args.locId,
           gameDay: args.gameDay,
@@ -403,8 +429,9 @@ export const Actions = {
         .orderBy(desc(schema.gifts.id))
         .limit(10);
       return {
-        world: await loadWorld(ctx, args.cityKey),
-        inbox: inboxRows.map((g) => ({ id: g.id, fromId: g.fromId, fromName: g.fromName, kind: g.kind, company: g.company, createdAt: g.createdAt.toISOString() })),
+        world: await loadWorldCached(ctx, args.cityKey),
+        inbox: inboxRows.map((g) => ({ id: g.id, fromId: pubOf(g.fromId), fromName: g.fromName, kind: g.kind, company: g.company, createdAt: g.createdAt.toISOString() })),
+        me: pubOf(args.playerId),
       };
     },
   }),
@@ -420,9 +447,10 @@ export const Actions = {
     response: z.object({ ok: z.boolean(), error: z.string().optional() }),
     async handler(ctx, args): Promise<{ ok: boolean; error?: string }> {
       const db = ctx.db<typeof schema>();
-      if (args.playerId === args.toId) return { ok: false, error: "不能送给自己" };
+      // toId is the receiver's PUBLIC id (what the online list shows)
       const [me] = await db.select().from(schema.players).where(eq(schema.players.id, args.playerId)).limit(1);
-      const [to] = await db.select().from(schema.players).where(eq(schema.players.id, args.toId)).limit(1);
+      const [to] = await db.select().from(schema.players).where(eq(schema.players.pub, args.toId)).limit(1);
+      if (me && to && me.id === to.id) return { ok: false, error: "不能送给自己" };
       if (!me || !to) return { ok: false, error: "对方不在线了" };
       const dayAgo = new Date(Date.now() - 86_400_000);
       const sent = await db
@@ -444,6 +472,7 @@ export const Actions = {
       });
       const label = { tea: "一杯奶茶", breakfast: "一份早餐", hongbao: "一个红包", referral: "一次内推", invite: "一声谢谢：被邀请来深惠过日子" }[args.kind];
       await db.insert(schema.feedEvents).values({ playerId: me.id, playerName: me.name, kind: "life", text: `给${to.name}送了${label}`, createdAt: new Date() });
+      dropWorldCache();
       ctx.invalidateQueries();
       return { ok: true };
     },
@@ -462,7 +491,7 @@ export const Actions = {
         .limit(1);
       if (!g) return { ok: false, gift: null };
       await db.update(schema.gifts).set({ claimed: 1 }).where(eq(schema.gifts.id, g.id));
-      return { ok: true, gift: { id: g.id, fromId: g.fromId, fromName: g.fromName, kind: g.kind, company: g.company, createdAt: g.createdAt.toISOString() } };
+      return { ok: true, gift: { id: g.id, fromId: pubOf(g.fromId), fromName: g.fromName, kind: g.kind, company: g.company, createdAt: g.createdAt.toISOString() } };
     },
   }),
 
@@ -472,7 +501,7 @@ export const Actions = {
     request: z.object({ cityKey: z.enum(["sz", "hz"]) }),
     response: z.object({ world: worldResponse }),
     async handler(ctx, args) {
-      return { world: await loadWorld(ctx, args.cityKey) };
+      return { world: await loadWorldCached(ctx, args.cityKey) };
     },
   }),
 
@@ -551,6 +580,7 @@ export const Actions = {
               fetchedAt: new Date(),
             },
           });
+        dropWorldCache();
         ctx.invalidateQueries();
         return { ...stored, stale: false };
       } catch {
@@ -593,8 +623,8 @@ export const Actions = {
       playerId: z.string().min(4).max(64),
       body: z.string().trim().min(1).max(120),
     }),
-    response: z.object({ ok: z.literal(true) }),
-    async handler(ctx, args): Promise<{ ok: true }> {
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args): Promise<{ ok: boolean; error?: string }> {
       const db = ctx.db<typeof schema>();
       const rows = await db
         .select()
@@ -603,13 +633,25 @@ export const Actions = {
         .limit(1);
       const me = rows[0];
       if (!me) throw new Error("player not registered");
+      /* 限流：同一个人 2.5 秒内只能说一句、1 分钟最多 8 句、1 分钟内不能重复同一句 */
+      const recent = await db
+        .select()
+        .from(schema.chatMessages)
+        .where(and(eq(schema.chatMessages.playerId, me.id), gte(schema.chatMessages.createdAt, new Date(Date.now() - 60_000))))
+        .orderBy(desc(schema.chatMessages.id))
+        .limit(10);
+      const body = cleanText(args.body);
+      if (recent[0] && Date.now() - recent[0].createdAt.getTime() < 2500) return { ok: false, error: "说得太快了，歇两秒再发" };
+      if (recent.length >= 8) return { ok: false, error: "一分钟内发得太多了，稍后再聊" };
+      if (recent.some((m) => m.body === body)) return { ok: false, error: "刚刚已经发过这句了" };
       await db.insert(schema.chatMessages).values({
         playerId: me.id,
         playerName: me.name,
         cityKey: me.cityKey,
-        body: args.body,
+        body,
         createdAt: new Date(),
       });
+      dropWorldCache();
       ctx.invalidateQueries();
       return { ok: true };
     },
@@ -633,13 +675,19 @@ export const Actions = {
         .limit(1);
       const me = rows[0];
       if (!me) throw new Error("player not registered");
+      const lastHour = await db
+        .select({ n: sql<number>`count(*)` })
+        .from(schema.feedEvents)
+        .where(and(eq(schema.feedEvents.playerId, me.id), gte(schema.feedEvents.createdAt, new Date(Date.now() - 3_600_000))));
+      if (Number(lastHour[0]?.n ?? 0) >= 40) return { ok: true };
       await db.insert(schema.feedEvents).values({
         playerId: me.id,
         playerName: me.name,
         kind: args.kind,
-        text: args.text,
+        text: cleanText(args.text),
         createdAt: new Date(),
       });
+      dropWorldCache();
       ctx.invalidateQueries();
       return { ok: true };
     },
@@ -726,6 +774,7 @@ export const Actions = {
           text: `过完了 30 天，结局是「${args.resultTitle}」，存款 ¥${args.money.toLocaleString()}`,
           createdAt: new Date(),
         });
+        dropWorldCache();
         ctx.invalidateQueries();
       }
       return { ok: true };
