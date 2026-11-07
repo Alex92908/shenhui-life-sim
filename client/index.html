@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="color-scheme" content="light dark" />
+    <!-- Empty inline icon: stops the browser fetching /favicon.ico, which
+         lives outside the space's routes and fails auth. -->
+    <link rel="icon" href="data:," />
+    <title>深惠人生模拟电脑高配版</title>
+    <script src="./src/main.tsx" type="module"></script>
+  </head>
+  <body>
+    <div
+      data-generated-space-root=""
+      data-generated-space-slug="shen-hui-ren-sheng-mo-ni-dian-nao-gao-pei-ban"
+    ></div>
+    <!-- Boot watchdog: if the app bundle never mounts (old webview choking
+         on the script, a cached broken build, …) the panel would otherwise
+         sit fully white forever with no way out. After 9s with an empty
+         root, offer reload / clear-save-and-reload right here. -->
+    <script>
+      window.__shhrClearSaveAndReload = function () {
+        try { localStorage.removeItem("shhr-pc-save-v1"); } catch (e) { /* ignore */ }
+        window.location.reload();
+      };
+      window.setTimeout(function () {
+        var root = document.querySelector("[data-generated-space-root]");
+        if (!root || root.childElementCount > 0) return;
+        root.innerHTML =
+          '<div style="min-height:100dvh;display:grid;place-items:center;padding:24px;background:#faf6ef;color:#1a1512;font-family:system-ui,sans-serif">' +
+          '<div style="max-width:420px;text-align:center">' +
+          '<p style="font-size:40px;margin:0 0 8px">🧭</p>' +
+          '<h1 style="font-size:20px;margin:0 0 8px">页面没能加载出来</h1>' +
+          '<p style="font-size:14px;line-height:1.7;color:#6f6455;margin:0 0 20px">等了好一会儿还是空白，多半是这台设备缓存了旧版本的文件，或者旧存档和现在的游戏对不上号。先点「重新打开」试一次；还不行就清掉本地存档重新开始——联机数据在服务器上，不受影响。</p>' +
+          '<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">' +
+          '<button type="button" onclick="window.location.reload()" style="padding:10px 18px;border-radius:12px;border:2px solid #1a1512;background:#e63a1f;color:#fff;font-weight:700;cursor:pointer">重新打开</button>' +
+          '<button type="button" onclick="window.__shhrClearSaveAndReload()" style="padding:10px 18px;border-radius:12px;border:2px solid #1a1512;background:#fffdf8;color:#1a1512;font-weight:700;cursor:pointer">清除本地存档并重新开始</button>' +
+          "</div></div></div>";
+      }, 9000);
+    </script>
+  </body>
+</html>

@@ -1,0 +1,8 @@
+{
+  "runtime": "typescript",
+  "platformVersion": 28,
+  "entry": "client/dist/index.html",
+  "name": "深惠人生模拟电脑高配版",
+  "slug": "shen-hui-ren-sheng-mo-ni-dian-nao-gao-pei-ban",
+  "managedCronJobs": []
+}

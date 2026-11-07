@@ -1,0 +1,266 @@
+@import "tailwindcss";
+@import "tailwindcss-safe-area";
+
+@theme {
+  --text-xs: 12px;
+  --text-xs--line-height: 16px;
+  --text-sm: 14px;
+  --text-sm--line-height: 20px;
+  --text-base: 16px;
+  --text-base--line-height: 24px;
+  --text-lg: 18px;
+  --text-lg--line-height: 28px;
+  --text-xl: 20px;
+  --text-xl--line-height: 28px;
+  --text-2xl: 24px;
+  --text-2xl--line-height: 32px;
+  --text-3xl: 30px;
+  --text-3xl--line-height: 36px;
+  --text-4xl: 36px;
+  --text-4xl--line-height: 40px;
+}
+
+:root {
+  color-scheme: light;
+  --bg: #faf6ef;
+  --surface: #fffdf8;
+  --surface2: #f3ecdd;
+  --text: #1a1512;
+  --dim: #6f6455;
+  --border: #1a1512;
+  --line: #e3d9c6;
+  --accent: #e63a1f;
+  --accent2: #0369a1;
+  --gold: #c9a227;
+  --green: #15803d;
+  --radius: 14px;
+  --space-surface: var(--surface);
+  --space-surface-alt: var(--surface2);
+  --space-muted: var(--dim);
+  --space-border: var(--line);
+  --space-accent: var(--accent);
+}
+
+/* The page must never scroll sideways: a stray wide element (a map label,
+   a floating bar, a long unbroken string) used to push the whole view a
+   few pixels right, slicing the region panel's right edge and the map
+   chips at both screen edges. `clip` (not `hidden`) keeps position:sticky
+   working and simply cuts anything that would stick out. */
+html,
+body {
+  overflow-x: clip;
+  max-width: 100%;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #0b1622;
+    --surface: #122334;
+    --surface2: #1a3049;
+    --text: #f4f1ea;
+    --dim: #9db4c6;
+    --border: #f4f1ea;
+    --line: #27435e;
+    --accent: #ff5a36;
+    --accent2: #2dd4bf;
+    --gold: #f5b942;
+  }
+}
+
+/* ---- 全屏地图上的半透浮层：顶部状态条组 + 地区面板 ----
+   Translucent enough to see the map behind, opaque enough to read:
+   ~90% surface colour with a blur of whatever is underneath. */
+.float-bars .hard-card,
+.float-panel {
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.float-bars > div[class*="--gold"] {
+  /* the APEC activity bar keeps its gold identity, made translucent
+     (matched by class, not position — bars can be hidden/reordered) */
+  background: color-mix(in srgb, #fdf6da 88%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.float-bars > div[class*="--surface"] {
+  /* the city intro bar */
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.float-panel {
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+}
+
+.font-display {
+  font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
+}
+
+.hard-card {
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: 18px;
+  box-shadow: 5px 5px 0 var(--border);
+}
+
+.act-btn {
+  width: 100%;
+  text-align: left;
+  background: var(--surface);
+  border: 1.5px solid var(--line);
+  border-radius: 14px;
+  padding: 11px 13px;
+  transition: transform 0.08s ease, border-color 0.15s ease;
+}
+.act-btn:hover:not(:disabled) {
+  border-color: var(--border);
+}
+.act-btn:active:not(:disabled) {
+  transform: scale(0.99);
+}
+.act-btn:disabled {
+  opacity: 0.45;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--surface2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #22c55e;
+  animation: pulse-dot 1.6s ease infinite;
+}
+
+@keyframes rise-in {
+  from { transform: translateY(14px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+.rise {
+  animation: rise-in 0.25s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rise, .live-dot { animation: none; }
+}
+
+/* ---- 生活动画 (life scenes): warm cinematic stage, eased actor motion ---- */
+.life-stage {
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #ffe9c4 0%, #ffd9a0 34%, #f7b267 62%, #8a5a3b 62.2%, #6f4630 100%);
+}
+.life-stage.night {
+  background: linear-gradient(180deg, #16263f 0%, #1d3454 34%, #2b4a73 62%, #3a2f2a 62.2%, #2c2320 100%);
+}
+.life-stage.indoor {
+  background: linear-gradient(180deg, #fdf3dd 0%, #fbe8c8 34%, #eecfa3 62%, #b08954 62.2%, #96703f 100%);
+}
+.life-sun {
+  position: absolute; top: 14px; right: 18px; width: 54px; height: 54px; border-radius: 999px;
+  background: radial-gradient(circle, rgba(255,244,200,.95) 0%, rgba(255,205,110,.55) 55%, rgba(255,205,110,0) 78%);
+  animation: life-glow 3.2s ease-in-out infinite;
+}
+.life-bg { position: absolute; inset: 0; filter: blur(1.6px); opacity: .8; }
+.life-ground { position: absolute; left: 0; right: 0; bottom: 18%; height: 3px; background: rgba(60,35,15,.35); }
+.life-actor {
+  position: absolute; bottom: 19%; left: 8%; font-size: 58px; line-height: 1;
+  filter: drop-shadow(0 10px 8px rgba(50,25,5,.35));
+  animation: life-walk-across 1.5s cubic-bezier(.45,.05,.35,1) forwards;
+}
+.life-actor.stay { animation: life-bob 1.1s ease-in-out infinite; left: 42%; }
+.life-prop { position: absolute; bottom: 19%; font-size: 40px; filter: drop-shadow(0 6px 5px rgba(50,25,5,.3)); }
+@keyframes life-walk-across { from { transform: translateX(0) translateY(0); } 25% { transform: translateX(9vw) translateY(-7px); } 50% { transform: translateX(19vw) translateY(0); } 75% { transform: translateX(29vw) translateY(-7px); } to { transform: translateX(38vw) translateY(0); } }
+@keyframes life-bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@keyframes life-glow { 0%,100% { transform: scale(1); opacity: .9; } 50% { transform: scale(1.12); opacity: 1; } }
+.life-type { display: inline-block; animation: life-typing .28s ease-in-out infinite; }
+@keyframes life-typing { 0%,100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-4px) rotate(2.5deg); } }
+.life-steam { position: absolute; font-size: 24px; opacity: 0; animation: life-rise 1.6s ease-out infinite; }
+@keyframes life-rise { 0% { transform: translateY(6px) scale(.8); opacity: 0; } 35% { opacity: .9; } 100% { transform: translateY(-34px) scale(1.25); opacity: 0; } }
+.life-zzz { position: absolute; font-weight: 900; color: #dbeafe; animation: life-rise 2.2s ease-out infinite; text-shadow: 0 2px 6px rgba(10,20,40,.6); }
+.life-rain { position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(105deg, transparent 0 14px, rgba(190,220,255,.35) 14px 15.5px, transparent 15.5px 30px); animation: life-rainfall .5s linear infinite; }
+@keyframes life-rainfall { from { background-position: 0 0; } to { background-position: -18px 30px; } }
+.life-chew { display: inline-block; animation: life-chew .5s ease-in-out infinite; }
+@keyframes life-chew { 0%,100% { transform: translateY(0); } 50% { transform: translateY(3px); } }
+.life-lift { display: inline-block; animation: life-lift 1s cubic-bezier(.5,0,.3,1) infinite; }
+@keyframes life-lift { 0%,100% { transform: translateY(0); } 45% { transform: translateY(-12px); } }
+.life-shine { display: inline-block; animation: life-shine 1.3s ease-in-out infinite; }
+@keyframes life-shine { 0%,100% { opacity: .55; transform: scale(.92); } 50% { opacity: 1; transform: scale(1.12); } }
+.life-fade { animation: life-fadein .45s ease both; }
+@keyframes life-fadein { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.cine-grade {
+  pointer-events: none; position: absolute; inset: 0; z-index: 6;
+  background:
+    radial-gradient(ellipse 120% 95% at 50% 40%, transparent 58%, rgba(30,15,5,.38) 100%),
+    linear-gradient(180deg, rgba(255,170,80,.10), transparent 22%, transparent 82%, rgba(20,10,30,.18));
+  mix-blend-mode: multiply;
+}
+@media (prefers-reduced-motion: reduce) {
+  .life-actor, .life-actor.stay, .life-type, .life-steam, .life-zzz, .life-rain, .life-chew, .life-lift, .life-shine, .life-sun { animation: none; }
+}
+
+/* ---- 弹幕 (danmaku over the map) + 奖励飘字 + 升职特效 ---- */
+.danmaku-item {
+  position: absolute;
+  left: 102%;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  text-shadow: 0 1px 4px rgba(5, 12, 20, .85), 0 0 2px rgba(5, 12, 20, .7);
+  animation-name: danmaku-fly;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+  will-change: left;
+}
+@keyframes danmaku-fly {
+  from { left: 102%; }
+  to { left: -55%; }
+}
+.floater {
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: .02em;
+  text-shadow: 0 2px 6px rgba(5, 12, 20, .8), 0 0 2px rgba(5, 12, 20, .8);
+  animation: float-up 1.9s ease-out forwards;
+}
+.floater[data-tone="gold"] { color: #ffd34d; }
+.floater[data-tone="green"] { color: #7ef0c9; }
+.floater[data-tone="red"] { color: #ff9d8a; }
+.floater[data-tone="blue"] { color: #a8d8ff; }
+@keyframes float-up {
+  0% { opacity: 0; transform: translateY(12px) scale(.88); }
+  14% { opacity: 1; transform: translateY(0) scale(1.04); }
+  30% { transform: translateY(-8px) scale(1); }
+  100% { opacity: 0; transform: translateY(-52px) scale(1.02); }
+}
+.level-fx {
+  animation: level-pop 2.6s cubic-bezier(.2, .9, .3, 1) forwards;
+}
+@keyframes level-pop {
+  0% { opacity: 0; transform: scale(.6) translateY(26px); }
+  14% { opacity: 1; transform: scale(1.08) translateY(0); }
+  24% { transform: scale(1); }
+  78% { opacity: 1; transform: scale(1) translateY(0); }
+  100% { opacity: 0; transform: scale(.98) translateY(-14px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .danmaku-item, .floater, .level-fx { animation: none; }
+  .danmaku-item { display: none; }
+}
