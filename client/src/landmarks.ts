@@ -14,6 +14,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import type { CityKey, Loc } from "./data";
 import { SZ_METRO_LINES } from "./metro-sz";
 import { SZ_PLACES } from "./places-sz";
+import { HZ_PLACES } from "./places-hz";
 
 export interface BuiltLandmark {
   group: THREE.Group;
@@ -398,6 +399,45 @@ export function createLandmarks(winTex: THREE.Texture) {
       const cars = [0x2563eb, 0xffffff, 0xdc2626, 0x111827, 0x16a34a];
       for (let i = 0; i < 5; i++) k.box(solid(cars[i]!), 0.25, 0.12, 0.42, -0.9 + i * 0.4, 0.14, 0.95);
       return 2.8;
+    },
+    // 某CL科技园 (仲恺): HQ tower with a red crown band, panel-factory halls, dorms
+    "hz:co-tcl": (k) => {
+      plate(k, 1.4, CONCRETE);
+      tower(k, 0.9, 5.2, 0.9, 0x8fb3c9, -0.55, -0.45, 0.14);
+      k.box(neon(0xef4444), 0.94, 0.28, 0.94, -0.55, 4.9, -0.45);
+      for (let i = 0; i < 3; i++) k.box(solid(0xe5e7eb), 0.5, 0.6, 1.0, 0.25 + i * 0.5, 0.14, 0.15);
+      for (let i = 0; i < 2; i++) k.box(solid(0xf1e3c8), 0.9, 1.3, 0.35, -0.6 + i * 1.1, 0.14, 1.0);
+      return 5.6;
+    },
+    // 某赛西威 (仲恺): blue-glass R&D block over a looping test track
+    "hz:co-desay": (k) => {
+      plate(k, 1.2, PAVE);
+      k.torus(solid(0x374151), 0.95, 0.07, 0, 0.18, 0, Math.PI / 2);
+      tower(k, 1.0, 3.2, 0.6, 0x3b82f6, 0, -0.1, 0.14);
+      k.box(glass(0x93c5fd), 0.6, 0.6, 0.62, 0.15, 3.34, -0.1);
+      for (const [x, z, c] of [[0.85, 0.3, 0xffffff], [-0.6, 0.75, 0xdc2626]] as const) k.box(solid(c), 0.22, 0.1, 0.36, x, 0.22, z);
+      return 4.0;
+    },
+    // 某纬锂能 (潼湖): saw-tooth battery plants, a cooling tower, dorm block
+    "hz:co-eve": (k) => {
+      plate(k, 1.4, CONCRETE);
+      for (let i = 0; i < 4; i++) {
+        k.box(solid(0xe5e7eb), 0.42, 0.55, 1.3, -0.7 + i * 0.42, 0.14, -0.1);
+        k.add(new THREE.CylinderGeometry(0.3, 0.3, 1.3, 3, 1, false, Math.PI / 2), solid(0x16a34a, true), -0.7 + i * 0.42, 0.75, -0.1, Math.PI / 2, 0, 0, 1, 1, 0.6);
+      }
+      k.cyl(solid(0xd1d5db), 0.22, 0.3, 0.9, 0.95, 0.14, -0.6, 10);
+      k.box(solid(0xf1e3c8), 0.9, 1.4, 0.35, 0.6, 0.14, 0.95);
+      return 2.0;
+    },
+    // 某海油大亚湾石化区: distillation columns, sphere tanks, a flare stack
+    "hz:co-petro": (k) => {
+      plate(k, 1.6, CONCRETE);
+      for (const [x, z, h] of [[-0.8, -0.5, 3.0], [-0.45, -0.7, 2.4], [-0.1, -0.45, 3.6]] as const) k.cyl(STEEL, 0.14, 0.16, h, x, 0.14, z, 10);
+      for (const [x, z] of [[0.6, -0.6], [1.05, -0.1], [0.55, 0.35]] as const) { k.ball(solid(0xf3f4f6), 0.3, x, 0.5, z); for (const dx of [-0.18, 0.18]) k.cyl(STEEL, 0.03, 0.03, 0.25, x + dx, 0.14, z, 5); }
+      k.cyl(solid(0x9ca3af), 0.06, 0.08, 4.4, -1.1, 0.14, 0.6, 6);
+      k.ball(M(0xf97316, { emissive: 0xf97316 }), 0.13, -1.1, 4.62, 0.6);
+      for (let i = 0; i < 4; i++) k.cyl(solid(0xe5e7eb), 0.28, 0.28, 0.45, -0.5 + i * 0.5, 0.14, 1.05, 14);
+      return 4.8;
     },
     // 城中村握手楼
     "sz:home": (k) => handshakeVillage(k),
@@ -856,7 +896,7 @@ export function createLandmarks(winTex: THREE.Texture) {
 
   /** Free-standing skyline landmarks that are not playable locations. */
   function decor(cityKey: CityKey): DecorLandmark[] {
-    if (cityKey !== "sz") return [];
+    if (cityKey === "hz") return decorHz();
     const out: DecorLandmark[] = [];
     const st = (n: string) => { for (const l of SZ_METRO_LINES) { const s = l.stations.find((x) => x.name === n); if (s) return s; } return null; };
     const pl = (n: string) => SZ_PLACES.find((p) => p.name === n) ?? null;
@@ -959,6 +999,37 @@ export function createLandmarks(winTex: THREE.Texture) {
       g.add(holder);
       spin.push(wheel);
       return 6.3;
+    });
+    return out;
+  }
+
+  /** Huizhou skyline landmarks, placed from their real OSM spots (places-hz.ts). */
+  function decorHz(): DecorLandmark[] {
+    const out: DecorLandmark[] = [];
+    const pl = (n: string) => HZ_PLACES.find((p) => p.name === n) ?? null;
+    const add = (name: string, x: number, z: number, r: number, build: (k: Kit) => number) => {
+      const g = new THREE.Group(); const k = new Kit();
+      const top = build(k);
+      k.into(g);
+      out.push({ name, x, z, r, group: g, top, spin: [] });
+    };
+    // 惠州奥林匹克体育场: an open bowl ringed by a white sail roof
+    const oly = pl("惠州奥林匹克体育场");
+    if (oly) add("惠州奥林匹克体育场", oly.x + 1.2, oly.z + 0.9, 1.5, (k) => {
+      plate(k, 1.5, PAVE, 0.1);
+      k.cyl(GRASS, 0.75, 0.75, 0.12, 0, 0.1, 0, 20);
+      k.torus(WHITE, 1.05, 0.22, 0, 0.75, 0, Math.PI / 2, 28);
+      for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2; k.cyl(CONCRETE, 0.05, 0.05, 0.7, Math.cos(a) * 1.15, 0.1, Math.sin(a) * 1.15, 5); }
+      return 1.2;
+    });
+    // 惠州文化艺术中心: two white halls under a wave roof by the river
+    const art = pl("惠州文化艺术中心");
+    if (art) add("惠州文化艺术中心", art.x + 1.0, art.z - 1.0, 1.2, (k) => {
+      plate(k, 1.2, PAVE, 0.1);
+      k.box(WHITE, 0.9, 0.8, 0.8, -0.45, 0.1, 0);
+      k.box(WHITE, 0.8, 1.1, 0.8, 0.5, 0.1, 0.05);
+      k.add(new THREE.CylinderGeometry(1.2, 1.2, 1.9, 18, 1, false, 0, Math.PI), glass(0xbcd2e0), 0, 1.0, 0, 0, 0, Math.PI / 2, 0.45, 1, 0.55);
+      return 1.7;
     });
     return out;
   }

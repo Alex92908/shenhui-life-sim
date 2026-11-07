@@ -4,12 +4,12 @@
 // is shown (toggle, all, invert); tap a point for its details, then show it
 // on the 3D map or go there. Huizhou (no OSM places yet) uses game positions.
 import { useMemo, useState } from "react";
+import { getLang, trText } from "./i18n";
 import {
-  CITIES, PLACE_KINDS, getLocations, metroLinesForCity, placesForCity, realKmOf, resolveLoc,
+  CITIES, PLACE_KINDS, getLocations, metroLinesForCity, placesForCity, realKmOf, resolveLoc, stationRealKm,
   type CityKey, type LocType,
 } from "./data";
 import type { PlaceKind } from "./places-sz";
-import { SZ_REAL_KM } from "./metro-sz";
 
 type Group = "sight" | "nature" | "culture" | "shop" | "service" | "game";
 const GROUPS: { id: Group; label: string; emoji: string; kinds: PlaceKind[] }[] = [
@@ -34,10 +34,14 @@ interface Props {
   onLocate: (x: number, z: number, name: string) => void;
 }
 
+const en = getLang() !== "zh";
+/** Label text, already in the page language (the DOM translator can't see a
+    name once it's truncated), cut to fit. */
+const labelOf = (p: { name: string }) => { const t = trText(p.name); const max = en ? 22 : 10; return t.length > max ? `${t.slice(0, max)}…` : t; };
 const hex = (n: number) => `#${n.toString(16).padStart(6, "0")}`;
 
 export function PlacesMapModal({ cityKey, fromLocId, onClose, onGo, onLocate }: Props) {
-  const real = cityKey === "sz";
+  const real = true; // both cities have real coordinates (Huizhou: tools/hz/gen_hz_places.py)
   const points = useMemo<Pt[]>(() => {
     const out: Pt[] = [];
     for (const l of getLocations(cityKey)) {
@@ -50,14 +54,14 @@ export function PlacesMapModal({ cityKey, fromLocId, onClose, onGo, onLocate }: 
       const g = GROUPS.find((gr) => gr.kinds.includes(p.kind));
       if (!g) continue;
       const k = PLACE_KINDS[p.kind];
-      out.push({ id: `pl:${p.id}`, name: p.name, en: p.en, emoji: k.emoji, group: g.id, color: hex(k.color), kx: p.kx, ky: p.ky, mapX: p.x, mapZ: p.z, sub: `${k.label} · 近「${p.st}」站` });
+      out.push({ id: `pl:${p.id}`, name: p.name, en: p.en, emoji: k.emoji, group: g.id, color: hex(k.color), kx: p.kx, ky: p.ky, mapX: p.x, mapZ: p.z, sub: `${k.label} · 近「${p.st.replace(/站$/, "")}」站` });
     }
     return out;
   }, [cityKey, real]);
 
   // metro lines as faint polylines (real km), for orientation
   const lines = useMemo(() => (real ? metroLinesForCity(cityKey)
-    .map((l) => ({ color: l.colorCss, pts: l.stations.map((st) => SZ_REAL_KM[st.name]).filter((p): p is [number, number] => !!p) }))
+    .map((l) => ({ color: l.colorCss, pts: l.stations.map((st) => stationRealKm(cityKey, st.name)).filter((p): p is [number, number] => !!p) }))
     .filter((l) => l.pts.length > 1) : []), [cityKey, real]);
 
   const [shown, setShown] = useState<Set<Group>>(() => new Set<Group>(["game", "sight", "nature", "culture"]));
@@ -91,7 +95,7 @@ export function PlacesMapModal({ cityKey, fromLocId, onClose, onGo, onLocate }: 
     for (const p of order) {
       if (pick?.id === p.id) { ids.add(p.id); continue; }
       const fs = (p.group === "game" ? 13 : 11) / zoom;
-      const text = p.name.length > 10 ? 11 : p.name.length + 1.5;
+      const text = labelOf(p).length * (en ? 0.56 : 1) + 1.5;
       const x = px(p.kx) + 8 / zoom, y = py(p.ky);
       const b: [number, number, number, number] = [x, y - fs, x + text * fs * 1.05, y + fs * 0.35];
       if (boxes.some((o) => b[0] < o[2] && b[2] > o[0] && b[1] < o[3] && b[3] > o[1])) continue;
@@ -107,7 +111,7 @@ export function PlacesMapModal({ cityKey, fromLocId, onClose, onGo, onLocate }: 
       <div className="rise flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] shadow-xl">
         <div className="flex flex-wrap items-center gap-2 border-b border-[var(--line)] px-4 py-3">
           <p className="text-base font-black">🗺️ {CITIES[cityKey].name}景点分布图</p>
-          <span className="text-xs text-[var(--dim)]">{visible.length} 个地点 · 按真实位置绘制{real ? "，淡色线是地铁" : ""}</span>
+          <span className="text-xs text-[var(--dim)]">{`${visible.length} 个地点 · 按真实位置绘制，淡色线是${cityKey === "sz" ? "地铁" : "城轨和高铁"}`}</span>
           <button type="button" aria-label="关闭景点分布图" onClick={onClose} className="ml-auto rounded-full border border-[var(--line)] px-3 py-1 text-sm font-black">✕</button>
         </div>
         <div className="flex flex-wrap items-center gap-1.5 px-4 pt-3">
@@ -130,7 +134,7 @@ export function PlacesMapModal({ cityKey, fromLocId, onClose, onGo, onLocate }: 
                 <g key={p.id} onClick={() => setPick(p)} style={{ cursor: "pointer" }}>
                   <title>{p.name}{p.en ? ` · ${p.en}` : ""}</title>
                   <circle cx={px(p.kx)} cy={py(p.ky)} r={(isPick ? 9 : big ? 6.5 : 4.5) / Math.sqrt(zoom)} fill={p.color} stroke="#fff" strokeWidth={1.5} />
-                  {labelled.has(p.id) && <text x={px(p.kx) + 8 / zoom} y={py(p.ky) + 4 / zoom} fontSize={(big ? 13 : 11) / zoom} fontWeight={big ? 800 : 600} fill="#14202b" stroke="#fff" strokeWidth={3 / zoom} paintOrder="stroke">{p.emoji} {p.name.length > 10 ? `${p.name.slice(0, 10)}…` : p.name}</text>}
+                  {labelled.has(p.id) && <text x={px(p.kx) + 8 / zoom} y={py(p.ky) + 4 / zoom} fontSize={(big ? 13 : 11) / zoom} fontWeight={big ? 800 : 600} fill="#14202b" stroke="#fff" strokeWidth={3 / zoom} paintOrder="stroke">{`${p.emoji} ${labelOf(p)}`}</text>}
                 </g>
               );
             })}

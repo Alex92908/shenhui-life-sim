@@ -163,11 +163,15 @@ function hash(s: string): number {
   return h >>> 0;
 }
 /** Today's event — shared by everyone on the same date, city and game day. */
-export function dailyEvent(cityKey: CityKey, gameDay: number, companies: { id: string; short: string }[], stations: string[], date = dateKey()): CityEvent {
+export function dailyEvent(cityKey: CityKey, gameDay: number, companies: { id: string; short: string; city?: CityKey }[], stations: string[], date = dateKey()): CityEvent {
   const h = hash(`${date}|${cityKey}|${gameDay}`);
-  const base = EVENTS[h % EVENTS.length]!;
+  let base = EVENTS[h % EVENTS.length]!;
+  // Huizhou has no metro: no station flash mob there (a food festival instead),
+  // and the free-ride day is for the intercity rail
+  if (cityKey === "hz" && base.id === "flash") base = EVENTS[3]!;
+  if (cityKey === "hz" && base.id === "greenday") return { ...base, desc: "今天坐城轨全程免费。" };
   if (base.id === "openday") {
-    const pool = cityKey === "sz" ? companies.filter((c) => c.id !== "startup") : [];
+    const pool = companies.filter((c) => c.id !== "startup" && (c.city ?? "sz") === cityKey);
     if (pool.length === 0) return { ...EVENTS[2]!, };
     const co = pool[(h >>> 8) % pool.length]!;
     return { ...base, openDay: co.id, desc: `${co.short}今天开放日：面试门槛降低（技能 -1、经验 -4），园区参观还送经验。` };

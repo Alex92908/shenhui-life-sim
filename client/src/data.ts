@@ -9,6 +9,7 @@
 
 import { SZ_KM_PER_UNIT, SZ_METRO_LINES, SZ_REAL_KM } from "./metro-sz";
 import { SZ_PLACES, type CityPlace, type PlaceKind } from "./places-sz";
+import { HZ_LOC_KM, HZ_PLACES, HZ_REAL_KM } from "./places-hz";
 
 export type CityKey = "sz" | "hz";
 
@@ -95,9 +96,13 @@ export const CAREERS = [
    You start at the small 科技园公司. Every big company HQ on the map can be
    interviewed at; pass the bar (skill / xp / 职级) and you get an offer, take
    it and that company becomes where you clock in. Each pays and wears you
-   down differently. Shenzhen only — Huizhou keeps its single 仲恺公司. */
+   down differently. Each company belongs to one city (default Shenzhen);
+   Huizhou has its own: 仲恺's electronics and battery makers and the Daya
+   Bay petrochemical base. Huizhou's 仲恺公司 stays the walk-in job there. */
 export interface Company {
   id: string; name: string; short: string; emoji: string;
+  /** Which city's map it is on (default "sz"). */
+  city?: CityKey;
   /** Map locations you can work / interview at. */
   locIds: string[];
   /** Day-wage multiplier on top of identity × city × 职级. */
@@ -125,6 +130,10 @@ export const COMPANIES: Company[] = [
   { id: "pingan", name: "某安集团", short: "某安", emoji: "🏙️", locIds: ["bank"], payMul: 1.4, otMul: 1, energy: 28, mood: 0, needSkill: 2, needXp: 6, needCareer: 0, formal: true, culture: "在某安金融中心上班，深圳最高楼里看日落。面试要穿正装。" },
   { id: "vanke", name: "某科", short: "某科", emoji: "🏗️", locIds: ["co-vanke"], payMul: 1.35, otMul: 1, energy: 26, mood: 3, needSkill: 2, needXp: 6, needCareer: 0, culture: "在大梅沙海边上班，通勤远，但心情好。" },
   { id: "byd", name: "某亚迪", short: "某亚迪", emoji: "🔋", locIds: ["co-byd"], payMul: 1.2, otMul: 1.1, energy: 30, mood: 0, needSkill: 0, needXp: 2, needCareer: 0, canteen: true, culture: "新能源大厂招人多，门槛低，包吃，坪山离市区有点远。" },
+  { id: "tcl", city: "hz", name: "某CL集团", short: "某CL", emoji: "📺", locIds: ["co-tcl"], payMul: 1.25, otMul: 1.1, energy: 28, mood: 1, needSkill: 1, needXp: 4, needCareer: 0, canteen: true, culture: "仲恺的老牌电子大厂，电视、面板、手机一条龙，园区大、食堂便宜，惠州人眼里的「铁饭碗」。" },
+  { id: "desay", city: "hz", name: "某赛西威", short: "某赛", emoji: "🚗", locIds: ["co-desay"], payMul: 1.35, otMul: 1, energy: 27, mood: 2, needSkill: 2, needXp: 6, needCareer: 0, culture: "做智能座舱和车载电子的上市公司，研发楼对着测试车道，工程师文化，面试会考你懂不懂车。" },
+  { id: "eve", city: "hz", name: "某纬锂能", short: "某纬", emoji: "🔋", locIds: ["co-eve"], payMul: 1.2, otMul: 1.15, energy: 30, mood: 0, needSkill: 0, needXp: 2, needCareer: 0, canteen: true, culture: "锂电池大厂扩产快、招人多、门槛低，三班倒，加班费给得足。" },
+  { id: "petro", city: "hz", name: "某海油大亚湾石化", short: "某海油", emoji: "🛢️", locIds: ["co-petro"], payMul: 1.5, otMul: 1, energy: 30, mood: -1, needSkill: 2, needXp: 8, needCareer: 1, formal: true, culture: "大亚湾石化区的央企炼化基地，待遇在惠州数一数二，安全规矩极严，面试要穿正装。" },
 ];
 /** What the player still lacks for this company's hiring bar (empty = qualified). */
 export function companyGaps(co: Company, s: { skill: number; xp: number; careerIdx: number }): string[] {
@@ -135,9 +144,17 @@ export function companyGaps(co: Company, s: { skill: number; xp: number; careerI
   return out;
 }
 export const companyById = (id: string | undefined): Company => COMPANIES.find((c) => c.id === id) ?? COMPANIES[0]!;
-/** The company that has a workplace at this location (Shenzhen only). */
+/** The company that has a workplace at this location in this city. */
 export function companyAt(cityKey: CityKey, locId: string): Company | null {
-  return cityKey === "sz" ? COMPANIES.find((c) => c.locIds.includes(locId)) ?? null : null;
+  return COMPANIES.find((c) => (c.city ?? "sz") === cityKey && c.locIds.includes(locId)) ?? null;
+}
+/** The company you clock in at in this city: your employer when it is
+    here; otherwise the city's walk-in job (Shenzhen's 创业公司; Huizhou's
+    仲恺公司, which is a plain workplace — null). */
+export function employerHere(s: { employer?: string; cityKey: CityKey }): Company | null {
+  const co = companyById(s.employer);
+  if ((co.city ?? "sz") === s.cityKey) return co;
+  return s.cityKey === "sz" ? companyById("startup") : null;
 }
 
 export type NpcBehavior = "stay" | "patrol" | "wander" | "commute";
@@ -515,6 +532,10 @@ const HZ_LOCS: Loc[] = [
   { id: "xiayong", type: "market", emoji: "🦞", name: "霞涌海鲜街", short: "霞涌海鲜街", desc: "大亚湾霞涌的老海鲜街，现捞现称现加工。旅游旺季整条街都是人，帮工、摆摊、代客加工的活儿不断。", gigName: "海鲜街帮工 / 摆摊", x: 13, z: 13.5, color: 0xf59e0b, h: 1.6, w: 3.2 },
   { id: "dongjiangpark", type: "fun", emoji: "🌳", name: "东江公园", short: "东江公园", desc: "东江北岸的滨江公园，绿道沿着江走。晨练、放风筝、江边钓鱼，惠城人晚饭后的散步主场。", funName: "东江边散步放风筝", funCost: 0, funMood: 19, funDesc: "沿着江边绿道走，晚风把一天的闷热吹散", x: -1, z: 4, color: 0x10b981, h: 0.8, w: 3.2 },
   { id: "hzbotanic", type: "scenic", emoji: "🌿", name: "惠州植物园", short: "惠州植物园", desc: "惠城丰山脚下的植物园，温室、沙地植物区和山顶的丰山公园连成一片。本地人周末遛娃吸氧的地方。", funName: "植物园温室看花", funCost: 10, funMood: 21, funDesc: "钻进温室看热带植物，再爬上丰山看老城", x: -16, z: -10, color: 0x65a30d, h: 1.2, w: 3.2 },
+  { id: "co-tcl", type: "work", emoji: "📺", name: "某CL科技园", short: "某CL", desc: "仲恺高新区的某CL总部和液晶产业园：总部大楼、成排的厂房和员工宿舍，上下班高峰园区门口全是电动车。", x: -25, z: -5, color: 0xdc2626, h: 5, w: 2.8 },
+  { id: "co-desay", type: "work", emoji: "🚗", name: "某赛西威研发中心", short: "某赛", desc: "仲恺的某赛西威：蓝玻璃研发楼，楼下一条测试车道，智能座舱样车天天在跑。", x: -24, z: 0, color: 0x2563eb, h: 4, w: 2.4 },
+  { id: "co-eve", type: "work", emoji: "🔋", name: "某纬锂能产业园", short: "某纬", desc: "仲恺潼湖的锂电池产业园，锯齿屋顶的厂房一排排，三班倒，宿舍和食堂都在园区里。", x: -28.5, z: -1, color: 0x16a34a, h: 2.5, w: 2.8 },
+  { id: "co-petro", type: "work", emoji: "🛢️", name: "某海油大亚湾石化区", short: "某海油", desc: "大亚湾石化区：炼化塔、球罐和码头，夜里灯火通明像一座钢铁城。待遇好、规矩严。", x: 15, z: 6, color: 0x64748b, h: 4, w: 3.2 },
 ];
 
 export function getLocations(cityKey: CityKey): Loc[] {
@@ -555,35 +576,40 @@ export const PLACE_KINDS: Record<PlaceKind, PlaceKindMeta> = {
 };
 /** OSM places minus the ones the game already has as a hand-made location
     (same name, or one name containing the other, e.g. 深圳人才公园 / 人才公园). */
-let szPlacesDeduped: CityPlace[] | null = null;
+const placesDeduped: Partial<Record<CityKey, CityPlace[]>> = {};
 export function placesForCity(cityKey: CityKey): CityPlace[] {
-  if (cityKey !== "sz") return [];
-  if (!szPlacesDeduped) {
-    const clean = (n: string) => n.replace(/\s|·/g, "");
-    const core = (n: string) => clean(n).replace(/^深圳(市)?/, "");
-    const cores = new Set(SZ_LOCS.flatMap((l) => [core(l.name), core(l.short)]).filter((n) => n.length >= 3));
-    const fulls = SZ_LOCS.map((l) => clean(l.name)).filter((n) => n.length >= 5);
-    szPlacesDeduped = SZ_PLACES.filter((p) => !cores.has(core(p.name)) && !fulls.some((f) => clean(p.name).includes(f)));
-  }
-  return szPlacesDeduped;
+  const hit = placesDeduped[cityKey];
+  if (hit) return hit;
+  const locs = getLocations(cityKey);
+  const clean = (n: string) => n.replace(/\s|·/g, "");
+  const core = (n: string) => clean(n).replace(/^(深圳|惠州)(市)?/, "");
+  const cores = new Set(locs.flatMap((l) => [core(l.name), core(l.short)]).filter((n) => n.length >= 3));
+  const fulls = locs.map((l) => clean(l.name)).filter((n) => n.length >= 5);
+  const out = (cityKey === "sz" ? SZ_PLACES : HZ_PLACES).filter((p) => !cores.has(core(p.name)) && !fulls.some((f) => clean(p.name).includes(f)));
+  placesDeduped[cityKey] = out;
+  return out;
 }
-const placeById = new Map(SZ_PLACES.map((p) => [`${PLACE_PREFIX}${p.id}`, p]));
-/** Where a location really is, in km (same frame as SZ_REAL_KM). Real
-    places carry their own coordinates; game locations use the station they
-    are linked to (the hand-placed miniature is not to scale, so map
-    distance would point to the wrong neighbourhood); anything else falls
-    back to the nearest station on the map. */
+const placeById = new Map([...SZ_PLACES, ...HZ_PLACES].map((p) => [`${PLACE_PREFIX}${p.id}`, p]));
+const placeCity = (id: string): CityKey => (id.startsWith(`${PLACE_PREFIX}hz`) ? "hz" : "sz");
+/** Real km of a rail / metro station, in the city's frame. */
+export const stationRealKm = (cityKey: CityKey, name: string): [number, number] | undefined => (cityKey === "sz" ? SZ_REAL_KM : HZ_REAL_KM)[name];
+/** Where a location really is, in km (Shenzhen: same frame as SZ_REAL_KM;
+    Huizhou: east/south of 惠州西湖). Real places carry their own
+    coordinates; game locations use the station they are linked to (the
+    hand-placed miniature is not to scale, so map distance would point to
+    the wrong neighbourhood); anything else falls back to the nearest
+    station on the map. Huizhou's game locations have their real spot. */
 export function realKmOf(cityKey: CityKey, locId: string): [number, number] | null {
-  if (cityKey !== "sz") return null;
-  if (isPlaceLoc(locId)) { const p = placeById.get(locId); return p ? [p.kx, p.ky] : null; }
-  if (isStationLoc(locId)) return SZ_REAL_KM[locId.slice(STATION_PREFIX.length)] ?? null;
+  if (isPlaceLoc(locId)) { const p = placeById.get(locId); return p && placeCity(locId) === cityKey ? [p.kx, p.ky] : null; }
+  if (isStationLoc(locId)) return stationRealKm(cityKey, locId.slice(STATION_PREFIX.length)) ?? null;
+  if (cityKey === "hz" && HZ_LOC_KM[locId]) return HZ_LOC_KM[locId]!;
   const lines = metroLinesForCity(cityKey);
-  for (const l of lines) for (const st of l.stations) if (st.locId === locId && SZ_REAL_KM[st.name]) return SZ_REAL_KM[st.name]!;
+  for (const l of lines) for (const st of l.stations) { const k = stationRealKm(cityKey, st.name); if (st.locId === locId && k) return k; }
   const loc = getLocations(cityKey).find((l) => l.id === locId);
   if (!loc) return null;
   let best: [number, number] | null = null; let bd = Infinity;
   for (const l of lines) for (const st of l.stations) {
-    const k = SZ_REAL_KM[st.name]; if (!k) continue;
+    const k = stationRealKm(cityKey, st.name); if (!k) continue;
     const d = Math.hypot(st.x - loc.x, st.z - loc.z);
     if (d < bd) { bd = d; best = k; }
   }
@@ -622,12 +648,13 @@ export function resolveLoc(cityKey: CityKey, id: string): Loc | undefined {
   if (real) return real;
   if (isPlaceLoc(id)) {
     const p = placeById.get(id);
-    if (!p || cityKey !== "sz") return undefined;
+    if (!p || placeCity(id) !== cityKey) return undefined;
     const k = PLACE_KINDS[p.kind];
     const walkMin = Math.max(1, Math.round((p.stKm * 1.3) / 0.075));
+    const how = p.stKm < 0.3 ? "出站就到" : p.stKm <= 3 ? `约 ${p.stKm.toFixed(1)} 公里，步行 ${walkMin} 分钟左右` : `约 ${p.stKm.toFixed(1)} 公里，打车或坐公交过去`;
     return {
       id, type: k.type, emoji: k.emoji, name: p.name, short: p.name.length > 8 ? `${p.name.slice(0, 8)}…` : p.name,
-      desc: `${k.label}${p.en ? ` · ${p.en}` : ""}。最近的地铁站是「${p.st}」，${p.stKm < 0.3 ? "出站就到" : `约 ${p.stKm.toFixed(1)} 公里，步行 ${walkMin} 分钟左右`}。`,
+      desc: `${k.label}${p.en ? ` · ${p.en}` : ""}。最近的${cityKey === "sz" ? "地铁站" : "城轨 / 高铁站"}是「${p.st}」，${how}。`,
       x: p.x, z: p.z, color: k.color, h: 0, w: 0,
       funName: k.funName, funCost: k.funCost, funMood: k.funMood, funDesc: k.funDesc,
       placeKind: p.kind, en: p.en, tel: p.tel, addr: p.addr, hours: p.hours, er: p.er,
@@ -779,7 +806,7 @@ export const LOC_EN: Record<string, string> = {
   "世界之窗": "Window of the World", "锦绣中华 · 民俗村": "Splendid China Folk Village", "深圳野生动物园": "Shenzhen Safari Park", "东部华侨城": "OCT East", "青青世界": "Evergreen World", "海上田园": "Sea Garden Eco-Tourism Area", "光明农场大观园": "Guangming Farm Grand View Garden", "大鹏所城": "Dapeng Fortress", "欢乐海岸": "OCT Harbour", "观澜湖旅游休闲度假区": "Mission Hills Resort",
   "七娘山": "Qiniang Mountain", "杨梅坑": "Yangmeikeng Coastal Valley", "西涌海滩": "Xichong Beach", "中英街": "Chung Ying Street", "塘朗山郊野公园": "Tanglangshan Country Park", "凤凰山森林公园": "Fenghuangshan Forest Park", "深圳博物馆": "Shenzhen Museum", "海上世界文化艺术中心": "Sea World Culture & Arts Center", "深圳湾体育中心 · 春茧": "Shenzhen Bay Sports Center (Spring Cocoon)", "龙岗大运中心": "Longgang Universiade Center",
   "海龟湾自然保护区": "Sea Turtle Bay Nature Reserve", "三角洲岛": "Delta Island (Sanjiaozhou)", "惠州博物馆": "Huizhou Museum", "霞涌海鲜街": "Xiayong Seafood Street", "东江公园": "Dongjiang Park", "惠州植物园": "Huizhou Botanical Garden",
-  "罗浮山": "Luofu Mountain", "仲恺公司": "Zhongkai (Office)", "红花湖骑行站": "Honghuahu Lake Cycling", "惠州市图书馆": "Huizhou Library", "惠州西湖": "West Lake", "桥东二手市集": "Qiaodong Second-hand Market", "城轨站": "Intercity Rail Station", "港惠商场": "Ganghui Mall", "惠州市第一人民医院": "Huizhou First People's Hospital", "江北华贸天地": "Huamao Centre, Jiangbei", "惠州农商银行": "Huizhou Rural Commercial Bank", "老街夜市": "Old Street Night Market", "东江酒吧街": "Dongjiang Bar Street", "合江楼 · 东江夜游": "Hejiang Tower & Dongjiang Night Cruise", "惠州南站": "Huizhou South Station", "淡水老城": "Danshui Old Town", "大亚湾黄金海岸": "Daya Bay Golden Coast", "温泉酒店": "Hot Spring Hotel", "巽寮湾渔港": "Xunliao Bay Fishing Port", "海边出租屋": "Seaside Rental", "双月湾海边": "Shuangyue Bay Beach", "西湖青旅 · 湖畔民宿": "West Lake Hostel & B&B", "南昆山": "Nankun Mountain", "象头山": "Xiangtou Mountain", "高榜山 · 挂榜阁": "Gaobang Mountain & Guabang Pavilion", "惠州平潭机场": "Huizhou Pingtan Airport",
+  "罗浮山": "Luofu Mountain", "仲恺公司": "Zhongkai (Office)", "某CL科技园": "CL Tech Park", "某赛西威研发中心": "Saixiwei R&D Center", "某纬锂能产业园": "Wei Lithium Industrial Park", "某海油大亚湾石化区": "Daya Bay Petrochemical Zone", "红花湖骑行站": "Honghuahu Lake Cycling", "惠州市图书馆": "Huizhou Library", "惠州西湖": "West Lake", "桥东二手市集": "Qiaodong Second-hand Market", "城轨站": "Intercity Rail Station", "港惠商场": "Ganghui Mall", "惠州市第一人民医院": "Huizhou First People's Hospital", "江北华贸天地": "Huamao Centre, Jiangbei", "惠州农商银行": "Huizhou Rural Commercial Bank", "老街夜市": "Old Street Night Market", "东江酒吧街": "Dongjiang Bar Street", "合江楼 · 东江夜游": "Hejiang Tower & Dongjiang Night Cruise", "惠州南站": "Huizhou South Station", "淡水老城": "Danshui Old Town", "大亚湾黄金海岸": "Daya Bay Golden Coast", "温泉酒店": "Hot Spring Hotel", "巽寮湾渔港": "Xunliao Bay Fishing Port", "海边出租屋": "Seaside Rental", "双月湾海边": "Shuangyue Bay Beach", "西湖青旅 · 湖畔民宿": "West Lake Hostel & B&B", "南昆山": "Nankun Mountain", "象头山": "Xiangtou Mountain", "高榜山 · 挂榜阁": "Gaobang Mountain & Guabang Pavilion", "惠州平潭机场": "Huizhou Pingtan Airport",
 };
 
 export const LOC_GRADE: Record<string, string> = {

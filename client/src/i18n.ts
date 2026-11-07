@@ -15,7 +15,7 @@ import { COMPANIES, LOC_EN, PLACE_KINDS, getLocations, placesForCity } from "./d
 import { SZ_STATION_EN } from "./metro-sz";
 import { ACHIEVEMENTS, WEEKLY_GOALS } from "./meta";
 import { EN_EXACT, EN_TEMPLATES } from "./i18n-en";
-import { SZ_PLACE_EN_AUTO, SZ_STATION_EN_AUTO } from "./places-sz-en";
+import { HZ_PLACE_EN_AUTO, SZ_PLACE_EN_AUTO, SZ_STATION_EN_AUTO } from "./places-en";
 
 export type Lang = "zh" | "en";
 export const LANGS: { id: Lang; label: string }[] = [{ id: "zh", label: "中文" }, { id: "en", label: "EN" }];
@@ -34,7 +34,8 @@ export function setLangStored(l: Lang): void {
 
 /* ---- dictionary: exact strings (trimmed) ---- */
 const EN: Record<string, string> = {
-  "深圳国际交流中心": "Shenzhen International Exchange Center", "频道 ·": " channel ·", "频道": " channel", "人在线：": "online: ",
+  "某CL集团": "CL Group", "某赛西威": "Saixiwei", "某纬锂能": "Wei Lithium", "某海油大亚湾石化": "Daya Bay Petrochem", "仲恺的老牌电子大厂，电视、面板、手机一条龙，园区大、食堂便宜，惠州人眼里的「铁饭碗」。": "A long-established electronics giant in Zhongkai — TVs, panels and phones under one roof. Huge campus, cheap canteen; an \"iron rice bowl\" in Huizhou eyes.", "做智能座舱和车载电子的上市公司，研发楼对着测试车道，工程师文化，面试会考你懂不懂车。": "A listed maker of smart cockpits and car electronics. The R&D block faces a test track; engineering culture — the interview checks whether you know cars.", "锂电池大厂扩产快、招人多、门槛低，三班倒，加班费给得足。": "A lithium-battery giant expanding fast: lots of hiring, low bar, three shifts, generous overtime pay.", "大亚湾石化区的央企炼化基地，待遇在惠州数一数二，安全规矩极严，面试要穿正装。": "A state-owned refinery base in the Daya Bay petrochemical zone: among the best pay in Huizhou, very strict safety rules; formal wear for the interview.", "仲恺高新区的某CL总部和液晶产业园：总部大楼、成排的厂房和员工宿舍，上下班高峰园区门口全是电动车。": "CL's HQ and LCD industrial park in the Zhongkai Hi-Tech Zone: the HQ tower, rows of plants and staff dorms; at rush hour the gate is a sea of e-bikes.", "仲恺的某赛西威：蓝玻璃研发楼，楼下一条测试车道，智能座舱样车天天在跑。": "Saixiwei in Zhongkai: a blue-glass R&D building with a test track below, where smart-cockpit prototypes run every day.", "仲恺潼湖的锂电池产业园，锯齿屋顶的厂房一排排，三班倒，宿舍和食堂都在园区里。": "A lithium-battery park at Tonghu, Zhongkai: rows of saw-tooth-roof plants, three shifts, dorms and canteen on site.", "大亚湾石化区：炼化塔、球罐和码头，夜里灯火通明像一座钢铁城。待遇好、规矩严。": "The Daya Bay petrochemical zone: refinery columns, sphere tanks and a jetty, lit up at night like a steel city. Good pay, strict rules.",
+  "深圳国际交流中心": "Shenzhen International Exchange Center", "云山": "Yunshan", "今天坐城轨全程免费。": "Intercity rail is free today.", "频道 ·": " channel ·", "频道": " channel", "人在线：": "online: ",
   // header / chrome
   "深惠人生模拟电脑高配版": "Shenzhen–Huizhou Life Sim", "深惠人生模拟": "Shenzhen–Huizhou Life Sim",
   "📋 任务": "📋 Tasks", "📤 分享": "📤 Share", "📱 手机": "📱 Phone", "😴 回家睡觉": "😴 Go home & sleep", "人在线": "online",
@@ -220,6 +221,7 @@ const EN: Record<string, string> = {
 const COMPANY_EN: Record<string, string> = {
   startup: "Tech Park Startup", tencent: "Xun Tech", bytedance: "Yin Group", huawei: "Wei Tech", dji: "Jiang Robotics", baidu: "Du Tech",
   zte: "Xing Telecom", cmb: "Shang Bank", pingan: "An Group", vanke: "Ke Group", byd: "Di Auto",
+  tcl: "CL Group", desay: "Saixiwei", eve: "Wei Lithium", petro: "Daya Bay Petrochem",
 };
 const ACH_EN: Record<string, [string, string]> = {
   stamp1: ["Metro Rookie", "Collect your first station stamp"], stamp50: ["Commuter Pro", "Collect 50 station stamps"], stamp150: ["Walking Metro Map", "Collect 150 station stamps"],
@@ -273,6 +275,7 @@ function buildDataNames(): void {
   for (const [zh, en] of Object.entries(ROADS_EN)) EN[zh] ??= en;
   for (const [zh, en] of Object.entries(LOC_EN)) EN[zh] ??= en;
   for (const p of placesForCity("sz")) { const en = p.en ?? SZ_PLACE_EN_AUTO[p.name]; if (en) EN[p.name] ??= en; }
+  for (const p of placesForCity("hz")) { const en = p.en ?? HZ_PLACE_EN_AUTO[p.name]; if (en) EN[p.name] ??= en; }
   for (const c of COMPANIES) { const en = COMPANY_EN[c.id]; if (en) { EN[c.name] ??= en; EN[c.short] ??= en; } }
   for (const a of ACHIEVEMENTS) { const t = ACH_EN[a.id]; if (t) { EN[a.title] ??= t[0]; EN[a.desc] ??= t[1]; } }
   for (const g of WEEKLY_GOALS) { const en = GOAL_EN[g.id]; if (en) EN[g.name] ??= en; }
@@ -325,6 +328,9 @@ PATTERNS.push(
   [/^(.+) · Line (.+)$/, (_m, a, b) => `${nameEN(a!)} · Line ${b}`],
   [/^(.+)↔(.+)$/, (_m, a, b) => `${trOr(a!)}↔${trOr(b!)}`],
   [/^按顺序到达每一站自动打卡：每站 \+(.+?)，走完全程再 \+(.+?)。在地图上点地点名、或坐车过去都算到达。$/, "Reach each stop in order to check in automatically: +$1 per stop, and +$2 more for finishing. Tapping a place on the map or riding there both count."],
+  [/^(\d+) 个地点 · 按真实位置绘制，淡色线是(地铁|城轨和高铁)$/, (_m, n, l) => `${n} places · drawn at real positions; faint lines are ${l === "地铁" ? "metro lines" : "intercity & HSR lines"}`],
+  // company HQ: "<culture> 门槛还差：经验 0/2。 面试要穿正装。"
+  [/^(.+?)((?: 🏢 今天开放日，门槛降低！)?(?: 🤝 你有内推，门槛降低。)?) (?:门槛还差：(.+?)。|你的条件已经够了。)( 面试要穿正装。)?$/s, (_m, c, perks, gaps, formal) => `${trOr(c!)}${perks ? ` ${trOr(perks.trim())}` : ""} ${gaps ? `Still missing: ${trOr(gaps)}.` : "You meet the bar."}${formal ? " Formal wear for the interview." : ""}`],
   // player list / ranks: "Alex（你）"
   [/^(.+)（你）$/, (_m, n) => `${n} (you)`],
   // neighbours: "陈伯·小区保安 😐"
@@ -385,6 +391,14 @@ function translateNode(n: Node): void {
     if (v) { const tr = translateText(v); if (tr !== null && tr !== v) el.setAttribute(a, tr); }
   }
   for (const c of Array.from(el.childNodes)) translateNode(c);
+}
+
+/** A string in the current language (for text a component lays out itself,
+    e.g. SVG labels it measures or truncates). */
+export function trText(zh: string): string {
+  if (getLang() === "zh") return zh;
+  buildDataNames();
+  return EN[zh] ?? translateText(zh)?.trim() ?? zh;
 }
 
 let observer: MutationObserver | null = null;

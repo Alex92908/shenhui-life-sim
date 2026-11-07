@@ -7,7 +7,7 @@ import { TERMS, PRIVACY, LEGAL_VERSION } from "./legal";
 import { getLang, setLangStored, installTranslator, LANGS, type Lang } from "./i18n";
 import { cloudCode, newCloudCode, setCloudCode, prettyCode, liteDefault, setQuality, readInvite, inviteLink, clearInviteParams, drawShareCard } from "./share";
 import {
-APPS, CAREERS, COMPANIES, companyAt, companyById, companyGaps, type Company, CITIES, FOODS, FURNITURE, IDENTITIES, NPCS, OFFERS, TEMPLATES,
+APPS, CAREERS, COMPANIES, companyAt, companyById, companyGaps, employerHere, type Company, CITIES, FOODS, FURNITURE, IDENTITIES, NPCS, OFFERS, TEMPLATES,
 apecPhase, apecVenueMul, getLocations, isApecWeek, isSaturday, tplQuote,
 APEC_TASKS, apecTaskOfDay, APEC_SLOGAN, APEC_CERT_NAME,
 weatherOf, weekday, modesForCity, railWord, etaMinutes, modeById, SCENIC_SPOTS, scenicOf, taxiFare, busFare, bikeFare,
@@ -1244,10 +1244,9 @@ const openShare = async () => {
 const st = gsRef.current; const prof = profileRef.current;
 if (!st || !prof) return;
 setShareOpen(true);
-const co = companyById(st.employer);
 const blob = await drawShareCard({
 name: prof.name, cityName: CITIES[st.cityKey].name, day: Math.min(30, st.day), money: st.money, goal: st.goal,
-career: (CAREERS[st.careerIdx] ?? CAREERS[0]!).name, company: st.cityKey === "sz" ? co.short : "仲恺公司", companyEmoji: st.cityKey === "sz" ? co.emoji : "🏭",
+career: (CAREERS[st.careerIdx] ?? CAREERS[0]!).name, company: employerHere(st)?.short ?? "仲恺公司", companyEmoji: employerHere(st)?.emoji ?? "🏭",
 title: metaRef.current.title, stamps: metaRef.current.stamps.length, stampTotal: SZ_STATION_COUNT, places: metaRef.current.atlas.length,
 lines: metaRef.current.linesDone.length, achievements: metaRef.current.achievements.length, streak: metaRef.current.streak.count,
 event: `${evRef.current.emoji} ${evRef.current.name}`, link: inviteLink(myPubRef.current, prof.name, st.employer),
@@ -1467,7 +1466,7 @@ const fitSave = s0.fit >= 3? 3: 0;
 const co0 = companyAt(s0.cityKey, loc.id);
 const ev = evRef.current;
 const co = co0 ? effCompany(co0, ev, s0.referrals) : null;
-const colleagues = co ? (world?.online ?? []).filter((p) => p.id !== myPubRef.current && p.employer === co.id && p.cityKey === "sz") : [];
+const colleagues = co ? (world?.online ?? []).filter((p) => p.id !== myPubRef.current && p.employer === co.id && p.cityKey === s0.cityKey) : [];
 let msg = "";
 const feeds: { kind: "career" | "apec" | "home" | "money" | "life"; text: string }[] = [];
 mutate((s) => {
@@ -2261,11 +2260,11 @@ playLifeAnim("shopping");
      take the offer. Other place actions (e.g. 某安's 理财) stay underneath. */
   const companyActions = (co0: Company, s: GameState): ActDef[] => {
     const co = effCompany(co0, todayEvent, s.referrals);
-    const mates = (world?.online ?? []).filter((p) => p.id !== myId && p.employer === co.id && p.cityKey === "sz").map((p) => p.name);
+    const mates = (world?.online ?? []).filter((p) => p.id !== myId && p.employer === co.id && p.cityKey === s.cityKey).map((p) => p.name);
     const base = basePay(s);
     const fitSave = s.fit >= 3 ? 3 : 0;
     const career = CAREERS[s.careerIdx] ?? CAREERS[0]!;
-    if ((s.employer ?? "startup") === co.id) {
+    if (employerHere(s)?.id === co.id) {
       const cost = co.energy - fitSave;
       const otCost = co.energy + 14 - fitSave;
       return [
@@ -2542,12 +2541,12 @@ return (
 </button>
 </div>
 ) : <p className="mt-3 text-sm">👑 已是最高职级，城市合伙人。</p>}
-{s.cityKey === "sz" && (() => { const cur = companyById(s.employer); const base = basePay(s); return (
+{(() => { const cur = employerHere(s); const base = basePay(s); return (
 <div className="mt-4 border-t border-[var(--line)] pt-3">
-<p className="text-sm">现在在：<b>{cur.emoji} {cur.name}</b> · 日薪 {fmt(Math.round(base * cur.payMul))}</p>
+<p className="text-sm">现在在：<b>{cur ? `${cur.emoji} ${cur.name}` : "🏭 仲恺公司"}</b> · 日薪 {fmt(Math.round(base * (cur?.payMul ?? 1)))}{companyById(s.employer).id !== (cur?.id ?? "") && companyById(s.employer).id !== "startup" ? `（${companyById(s.employer).short}的工牌在${CITIES[companyById(s.employer).city ?? "sz"].name}用）` : ""}</p>
 <p className="mt-0.5 text-xs text-[var(--dim)]">想跳槽：去大厂总部「投简历 · 面试」，条件够就拿 offer，再点「接受 offer」入职。每家每天能面一次。</p>
 <div className="mt-2 grid gap-2">
-{COMPANIES.filter((c) => c.id !== cur.id && c.id !== "startup").map((c0) => { const c = effCompany(c0, todayEvent, s.referrals); const gaps = companyGaps(c, s); const offer = (s.offers ?? []).includes(c.id); const loc = locById(c.locIds[0]!); return (
+{COMPANIES.filter((c) => (c.city ?? "sz") === s.cityKey && c.id !== cur?.id && c.id !== "startup").map((c0) => { const c = effCompany(c0, todayEvent, s.referrals); const gaps = companyGaps(c, s); const offer = (s.offers ?? []).includes(c.id); const loc = locById(c.locIds[0]!); return (
 <div key={c.id} className="flex items-center gap-3 rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
 <div className="text-2xl">{c.emoji}</div>
 <div className="min-w-0 flex-1">
@@ -3023,7 +3022,7 @@ return (
 <span className="flex items-center gap-1 text-xs font-bold">⚡<span className="h-2 w-10 overflow-hidden rounded-full bg-[var(--surface2)]"><span className="block h-full bg-amber-500 transition-all" style={{ width: `${s.energy}%` }} /></span>{Math.round(s.energy)}</span>
 <span className="flex items-center gap-1 text-xs font-bold">😊<span className="h-2 w-10 overflow-hidden rounded-full bg-[var(--surface2)]"><span className="block h-full bg-emerald-500 transition-all" style={{ width: `${s.mood}%` }} /></span>{Math.round(s.mood)}</span>
 <span className="chip" title={iden.name}>{iden.emoji} {career.name} ×{career.mul}</span>
-{s.cityKey === "sz" && <span className="chip" title={companyById(s.employer).culture}>{companyById(s.employer).emoji} {companyById(s.employer).short}</span>}
+{(() => { const co = employerHere(s); return co ? <span className="chip" title={co.culture}>{co.emoji} {co.short}</span> : null; })()}
 {meta.title && <span className="chip" style={{ borderColor: "var(--gold)", color: "var(--gold)" }}>🏅 {meta.title}</span>}
 {isSaturday(s.day) && <span className="chip text-[var(--accent)]">🏠 今天交租 {fmt(s.rent)}</span>}
 {s.invest > 0 && <span className="chip">💹 {fmt(s.invest)}</span>}
@@ -3341,7 +3340,7 @@ return (
 </button>
 ))}
 </div>
-{s.cityKey === "sz" && (() => {
+{(() => {
 const svc = nearbyServices(s.cityKey, selLoc.id).filter((r) => r.id !== selLoc.id);
 if (svc.length === 0) return null;
 const er = svc.find((r) => r.place.kind === "hospital");
@@ -3357,7 +3356,7 @@ return (
 <button key={r.id} type="button" disabled={walking} onClick={() => walkTo(r.id, r.dist < 1.6 ? "walk" : undefined)} className="act-btn disabled:opacity-40">
 <span className="text-sm font-bold">{k.emoji} {r.place.name}{r.place.er ? " · 🚑 急诊" : ""}</span>
 {r.place.en && <span className="block text-[11px] text-[var(--dim)]">{r.place.en}</span>}
-<span className="block text-xs text-[var(--dim)]">{k.label} · 约 {Math.max(0.1, r.dist).toFixed(1)} 公里 · 近「{r.place.st}」站{r.place.tel ? ` · 📞 ${r.place.tel}` : ""}{r.place.addr ? ` · ${r.place.addr}` : ""}</span>
+<span className="block text-xs text-[var(--dim)]">{k.label} · 约 {Math.max(0.1, r.dist).toFixed(1)} 公里 · 近「{r.place.st.replace(/站$/, "")}」站{r.place.tel ? ` · 📞 ${r.place.tel}` : ""}{r.place.addr ? ` · ${r.place.addr}` : ""}</span>
 </button>
 ); })}
 </div>
@@ -3531,7 +3530,7 @@ return (
 <p className="text-xs font-black tracking-wide">🎁 给在线的玩家送点东西（对方上线就收到，每天最多 10 份）</p>
 {(world?.online ?? []).filter((p) => p.id !== myId).slice(0, 8).map((p) => (
 <div key={p.id} className="rounded-[12px] border border-[var(--line)] bg-[var(--bg)] px-3 py-2">
-<p className="flex flex-wrap items-center gap-1.5 text-xs font-bold">{p.emoji} {p.name}{p.title && <span className="chip" style={{ borderColor: "var(--gold)", color: "var(--gold)" }}>🏅 {p.title}</span>}<span className="text-[var(--dim)]">{p.cityKey === "sz" ? `深圳 · ${companyById(p.employer).short}` : "惠州"} · 🎫 {p.stamps} 站章</span>{p.employer === s.employer && p.cityKey === "sz" && s.cityKey === "sz" && <span className="chip">👥 同事</span>}</p>
+<p className="flex flex-wrap items-center gap-1.5 text-xs font-bold">{p.emoji} {p.name}{p.title && <span className="chip" style={{ borderColor: "var(--gold)", color: "var(--gold)" }}>🏅 {p.title}</span>}<span className="text-[var(--dim)]">{`${CITIES[p.cityKey === "hz" ? "hz" : "sz"].name}${(companyById(p.employer).city ?? "sz") === p.cityKey ? ` · ${companyById(p.employer).short}` : ""}`} · 🎫 {p.stamps} 站章</span>{p.employer === s.employer && p.cityKey === s.cityKey && (companyById(s.employer).city ?? "sz") === s.cityKey && <span className="chip">👥 同事</span>}</p>
 <div className="mt-1.5 flex flex-wrap gap-1">
 {(Object.keys(GIFTS) as GiftKind[]).filter((k) => k !== "invite").filter((k) => k !== "referral" || ((s.employer ?? "startup") !== "startup" && p.employer !== s.employer)).map((k) => (
 <button key={k} type="button" aria-label={`给${p.name}送${GIFTS[k].name}`} disabled={s.money < GIFTS[k].cost} onClick={() => sendGift(p.id, p.name, k)} className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1 text-[11px] font-black disabled:opacity-40">{GIFTS[k].emoji} {GIFTS[k].name}{GIFTS[k].cost ? ` ¥${GIFTS[k].cost}` : `（${companyById(s.employer).short}）`}</button>
@@ -3572,9 +3571,9 @@ return (
 </p>
 ))}
 <p className="text-[11px] leading-relaxed text-[var(--dim)]">按当前存款排序，进行中的玩家也会实时上榜；过完 30 天的成绩会标上结局称号。</p>
-<p className="mt-3 text-xs font-black tracking-wide">🏢 公司排行（最近 7 天在深圳上班的玩家，按存款合计）</p>
+<p className="mt-3 text-xs font-black tracking-wide">🏢 公司排行（最近 7 天在{city.name}上班的玩家，按存款合计）</p>
 {(world?.companyBoard ?? []).length === 0 && <p className="text-xs text-[var(--dim)]">还没数据。</p>}
-{(world?.companyBoard ?? []).map((c, i) => { const co = companyById(c.employer); return (
+{(world?.companyBoard ?? []).map((c) => ({ ...c, co: employerHere({ employer: c.employer, cityKey: s.cityKey }) })).filter((c) => c.co).map((c, i) => { const co = c.co!; return (
 <p key={c.employer} className={`flex items-center gap-2 rounded-[10px] px-3 py-1.5 text-sm ${c.employer === s.employer ? "bg-[var(--surface2)] font-black" : ""}`}><span className="w-6 font-black">{i + 1}</span><span>{co.emoji}</span><span className="min-w-0 flex-1 truncate">{co.name}{c.employer === s.employer ? "（你在这）" : ""}</span><span className="text-xs text-[var(--dim)]">{c.count} 人</span><span className="font-black">{fmt(c.money)}</span></p>
 ); })}
 <p className="mt-3 text-xs font-black tracking-wide">🎫 集章排行（跨局累计）</p>
@@ -4039,7 +4038,7 @@ onLocate={(x, z, name) => { setMetroMapOpen(false); setMapFocus({ x, z, nonce: D
 const signed = (s.signDay ?? 0) === s.day;
 const base = s.dayBase?.day === s.day ? s.dayBase : { day: s.day, work: s.workCount, meal: s.mealCount, scenic: (s.visitedScenic ?? []).length };
 const missions: { id: string; icon: string; name: string; reward: number; done: boolean; hint: string }[] = [
-{ id: "work", icon: "💼", name: "上班打卡一次", reward: 20, done: s.workCount > base.work, hint: s.cityKey === "sz" ? `去${companyById(s.employer).short}点「上班」` : "去公司点「上班」" },
+{ id: "work", icon: "💼", name: "上班打卡一次", reward: 20, done: s.workCount > base.work, hint: employerHere(s) ? `去${employerHere(s)!.short}点「上班」` : "去公司点「上班」" },
 { id: "meal", icon: "🍜", name: "好好吃一顿饭", reward: 15, done: s.mealCount > base.meal, hint: "夜市 / 饭店 / 自己做饭都算" },
 { id: "scenic", icon: "📸", name: "风景打卡一处", reward: 25, done: (s.visitedScenic ?? []).length > base.scenic, hint: "去任意景区点「拍照打卡」" },
 { id: "chat", icon: "💬", name: "和一位街坊聊聊", reward: 15, done: (s.greeted ?? []).length > 0, hint: "在手机「街坊社交」里找人聊天" },

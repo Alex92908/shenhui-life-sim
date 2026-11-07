@@ -148,7 +148,7 @@ async function loadWorld(ctx: Ctx, cityKey: string): Promise<World> {
       money: sql<number>`coalesce(sum(${schema.players.money}), 0)`,
     })
     .from(schema.players)
-    .where(and(gte(schema.players.lastSeen, weekAgo), eq(schema.players.cityKey, "sz"), eq(schema.players.suspect, 0)))
+    .where(and(gte(schema.players.lastSeen, weekAgo), eq(schema.players.cityKey, cityKey), eq(schema.players.suspect, 0)))
     .groupBy(schema.players.employer);
   const stampRows = await db
     .select()
