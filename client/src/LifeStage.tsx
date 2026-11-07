@@ -344,12 +344,14 @@ export function LifeStage3D(p: Props) {
     // emoji fallback below instead of crashing the animation overlay.
     let renderer: THREE.WebGLRenderer;
     try {
-      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
     } catch {
       setGlFailed(true);
       return;
     }
-    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    // 1.5x cap: on Retina (dpr 2) the full post chain at 2x is 4x the pixels
+    // of 1x — the single biggest per-frame GPU cost. 1.5x stays crisp.
+    renderer.setPixelRatio(Math.min(1.5, window.devicePixelRatio || 1));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -373,7 +375,7 @@ export function LifeStage3D(p: Props) {
     const sun = new THREE.DirectionalLight(night ? 0xffc98a : 0xffdfae, night ? 1.1 : 2.1);
     sun.position.set(4, 7, 5);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.mapSize.set(1024, 1024);
     sun.shadow.normalBias = 0.02;
     sun.shadow.camera.left = -8; sun.shadow.camera.right = 8;
     sun.shadow.camera.top = 8; sun.shadow.camera.bottom = -8;

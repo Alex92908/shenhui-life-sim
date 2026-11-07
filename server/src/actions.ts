@@ -12,10 +12,13 @@ z,
 type ActionsModule,
 type Ctx,
 } from "@hatch/space-sdk";
-import { and, desc, eq, gte } from "drizzle-orm";
+import { and, desc, eq, gte, sql } from "drizzle-orm";
 import * as schema from "./schema";
 
 const ONLINE_WINDOW_MS = 90_000;
+/** Generous ceiling on what one game day can earn (best identity × 职级 ×
+    company × bonus day, a full day of overtime, plus rewards). */
+const MAX_EARN_PER_DAY = 25_000;
 
 const playerShape = z.object({
   id: z.string(),
@@ -28,9 +31,22 @@ const playerShape = z.object({
   money: z.number(),
   careerIdx: z.number(),
   apecCount: z.number(),
+  employer: z.string(),
+  stamps: z.number(),
+  title: z.string().nullable(),
   status: z.string(),
   resultTitle: z.string().nullable(),
   lastSeen: z.string(),
+});
+
+const GIFT_KINDS = ["tea", "breakfast", "hongbao", "referral", "invite"] as const;
+const giftShape = z.object({
+  id: z.number(),
+  fromId: z.string(),
+  fromName: z.string(),
+  kind: z.string(),
+  company: z.string().nullable(),
+  createdAt: z.string(),
 });
 
 const worldResponse = z.object({
@@ -70,6 +86,10 @@ const worldResponse = z.object({
       resultTitle: z.string().nullable(),
     }),
   ),
+  /* 公司排行：最近 7 天活跃玩家按公司汇总（人数 / 存款合计） */
+  companyBoard: z.array(z.object({ employer: z.string(), count: z.number(), money: z.number() })),
+  /* 集章排行：跨局累计盖章最多的人 */
+  stampBoard: z.array(z.object({ id: z.string(), name: z.string(), emoji: z.string(), stamps: z.number(), title: z.string().nullable() })),
 });
 
 type World = z.infer<typeof worldResponse>;
@@ -97,8 +117,25 @@ async function loadWorld(ctx: Ctx, cityKey: string): Promise<World> {
   const boardRows = await db
     .select()
     .from(schema.players)
+    .where(eq(schema.players.suspect, 0))
     .orderBy(desc(schema.players.money))
     .limit(20);
+  const weekAgo = new Date(Date.now() - 7 * 86_400_000);
+  const companyRows = await db
+    .select({
+      employer: schema.players.employer,
+      count: sql<number>`count(*)`,
+      money: sql<number>`coalesce(sum(${schema.players.money}), 0)`,
+    })
+    .from(schema.players)
+    .where(and(gte(schema.players.lastSeen, weekAgo), eq(schema.players.cityKey, "sz"), eq(schema.players.suspect, 0)))
+    .groupBy(schema.players.employer);
+  const stampRows = await db
+    .select()
+    .from(schema.players)
+    .where(eq(schema.players.suspect, 0))
+    .orderBy(desc(schema.players.stamps))
+    .limit(10);
   return {
     online: onlineRows.map((p) => ({
       id: p.id,
@@ -111,6 +148,9 @@ async function loadWorld(ctx: Ctx, cityKey: string): Promise<World> {
       money: p.money,
       careerIdx: p.careerIdx,
       apecCount: p.apecCount,
+      employer: p.employer,
+      stamps: p.stamps,
+      title: p.title,
       status: p.status,
       resultTitle: p.resultTitle,
       lastSeen: p.lastSeen.toISOString(),
@@ -147,6 +187,12 @@ async function loadWorld(ctx: Ctx, cityKey: string): Promise<World> {
       status: p.status,
       resultTitle: p.resultTitle,
     })),
+    companyBoard: companyRows
+      .map((r) => ({ employer: r.employer, count: Number(r.count), money: Number(r.money) }))
+      .sort((a, b) => b.money - a.money),
+    stampBoard: stampRows
+      .filter((p) => p.stamps > 0)
+      .map((p) => ({ id: p.id, name: p.name, emoji: p.emoji, stamps: p.stamps, title: p.title })),
   };
 }
 
@@ -282,6 +328,7 @@ export const Actions = {
                 careerIdx: 0,
                 apecCount: 0,
                 locId: "home",
+                suspect: 0,
               }
             : {};
         await db
@@ -312,23 +359,110 @@ export const Actions = {
       money: z.number().int().min(-1000000).max(100000000),
       careerIdx: z.number().int().min(0).max(4),
       apecCount: z.number().int().min(0).max(999),
+      employer: z.string().min(1).max(24).optional(),
+      stamps: z.number().int().min(0).max(999).optional(),
+      title: z.string().max(16).nullable().optional(),
     }),
-    response: z.object({ world: worldResponse }),
+    response: z.object({ world: worldResponse, inbox: z.array(giftShape) }),
     async handler(ctx, args) {
       const db = ctx.db<typeof schema>();
+      /* 防作弊：the simulation runs on the client, so the server checks each
+         heartbeat against the last one. A jump no real play can produce
+         (money far beyond a day's best wage, two 职级 at once, dozens of
+         stamps in five seconds) flags the player, who then drops off every
+         leaderboard. Nothing is deleted or reset — see the EFCC lesson. */
+      const [prev] = await db.select().from(schema.players).where(eq(schema.players.id, args.playerId)).limit(1);
+      let suspect = prev?.suspect ?? 0;
+      if (prev && prev.status === "playing") {
+        const dayDelta = Math.max(0, args.gameDay - prev.gameDay);
+        const allowance = (dayDelta + 1) * MAX_EARN_PER_DAY + 30_000;
+        if (args.money > Math.max(prev.money, 0) + allowance) suspect = 1;
+        if (args.careerIdx > prev.careerIdx + 1) suspect = 1;
+        if (args.stamps !== undefined && args.stamps > prev.stamps + 60) suspect = 1;
+      }
       await db
         .update(schema.players)
         .set({
+          suspect,
           cityKey: args.cityKey,
           locId: args.locId,
           gameDay: args.gameDay,
           money: args.money,
           careerIdx: args.careerIdx,
           apecCount: args.apecCount,
+          ...(args.employer !== undefined ? { employer: args.employer } : {}),
+          ...(args.stamps !== undefined ? { stamps: args.stamps } : {}),
+          ...(args.title !== undefined ? { title: args.title } : {}),
           lastSeen: new Date(),
         })
         .where(eq(schema.players.id, args.playerId));
-      return { world: await loadWorld(ctx, args.cityKey) };
+      const inboxRows = await db
+        .select()
+        .from(schema.gifts)
+        .where(and(eq(schema.gifts.toId, args.playerId), eq(schema.gifts.claimed, 0)))
+        .orderBy(desc(schema.gifts.id))
+        .limit(10);
+      return {
+        world: await loadWorld(ctx, args.cityKey),
+        inbox: inboxRows.map((g) => ({ id: g.id, fromId: g.fromId, fromName: g.fromName, kind: g.kind, company: g.company, createdAt: g.createdAt.toISOString() })),
+      };
+    },
+  }),
+
+  /* ---- 送礼：给在线的真人玩家送奶茶 / 早餐 / 红包 / 内推 ---- */
+  sendGift: defineAction({
+    description: "Sends a small gift (tea, breakfast, red packet or job referral) to another player.",
+    request: z.object({
+      playerId: z.string().min(4).max(64),
+      toId: z.string().min(4).max(64),
+      kind: z.enum(GIFT_KINDS),
+    }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args): Promise<{ ok: boolean; error?: string }> {
+      const db = ctx.db<typeof schema>();
+      if (args.playerId === args.toId) return { ok: false, error: "不能送给自己" };
+      const [me] = await db.select().from(schema.players).where(eq(schema.players.id, args.playerId)).limit(1);
+      const [to] = await db.select().from(schema.players).where(eq(schema.players.id, args.toId)).limit(1);
+      if (!me || !to) return { ok: false, error: "对方不在线了" };
+      const dayAgo = new Date(Date.now() - 86_400_000);
+      const sent = await db
+        .select({ n: sql<number>`count(*)` })
+        .from(schema.gifts)
+        .where(and(eq(schema.gifts.fromId, me.id), gte(schema.gifts.createdAt, dayAgo)));
+      if (Number(sent[0]?.n ?? 0) >= 10) return { ok: false, error: "今天送得太多了，明天再送" };
+      if (args.kind === "invite") {
+        const dup = await db.select().from(schema.gifts).where(and(eq(schema.gifts.fromId, me.id), eq(schema.gifts.kind, "invite"))).limit(1);
+        if (dup.length > 0) return { ok: false, error: "已经报到过了" };
+      }
+      await db.insert(schema.gifts).values({
+        fromId: me.id,
+        fromName: me.name,
+        toId: to.id,
+        kind: args.kind,
+        company: args.kind === "referral" ? me.employer : null,
+        createdAt: new Date(),
+      });
+      const label = { tea: "一杯奶茶", breakfast: "一份早餐", hongbao: "一个红包", referral: "一次内推", invite: "一声谢谢：被邀请来深惠过日子" }[args.kind];
+      await db.insert(schema.feedEvents).values({ playerId: me.id, playerName: me.name, kind: "life", text: `给${to.name}送了${label}`, createdAt: new Date() });
+      ctx.invalidateQueries();
+      return { ok: true };
+    },
+  }),
+
+  claimGift: defineAction({
+    description: "Claims one of the player's unclaimed gifts; the client applies its effect.",
+    request: z.object({ playerId: z.string().min(4).max(64), giftId: z.number().int() }),
+    response: z.object({ ok: z.boolean(), gift: giftShape.nullable() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const [g] = await db
+        .select()
+        .from(schema.gifts)
+        .where(and(eq(schema.gifts.id, args.giftId), eq(schema.gifts.toId, args.playerId), eq(schema.gifts.claimed, 0)))
+        .limit(1);
+      if (!g) return { ok: false, gift: null };
+      await db.update(schema.gifts).set({ claimed: 1 }).where(eq(schema.gifts.id, g.id));
+      return { ok: true, gift: { id: g.id, fromId: g.fromId, fromName: g.fromName, kind: g.kind, company: g.company, createdAt: g.createdAt.toISOString() } };
     },
   }),
 
@@ -508,6 +642,43 @@ export const Actions = {
       });
       ctx.invalidateQueries();
       return { ok: true };
+    },
+  }),
+
+  /* ---- 云存档：换设备、清缓存都不丢进度 ---- */
+  cloudSave: defineAction({
+    description: "Stores the player's whole save and meta progress, guarded by their transfer code.",
+    request: z.object({
+      playerId: z.string().min(4).max(64),
+      secret: z.string().min(8).max(32),
+      save: z.string().min(2).max(600_000),
+      meta: z.string().min(2).max(200_000),
+    }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args): Promise<{ ok: boolean; error?: string }> {
+      const db = ctx.db<typeof schema>();
+      const [row] = await db.select().from(schema.cloudSaves).where(eq(schema.cloudSaves.playerId, args.playerId)).limit(1);
+      if (row && row.secret !== args.secret) return { ok: false, error: "存档码不匹配" };
+      if (!row) {
+        const clash = await db.select().from(schema.cloudSaves).where(eq(schema.cloudSaves.secret, args.secret)).limit(1);
+        if (clash.length > 0) return { ok: false, error: "存档码已被占用" };
+        await db.insert(schema.cloudSaves).values({ playerId: args.playerId, secret: args.secret, save: args.save, meta: args.meta, updatedAt: new Date() });
+      } else {
+        await db.update(schema.cloudSaves).set({ save: args.save, meta: args.meta, updatedAt: new Date() }).where(eq(schema.cloudSaves.playerId, args.playerId));
+      }
+      return { ok: true };
+    },
+  }),
+
+  cloudLoad: defineAction({
+    description: "Returns the save stored under a transfer code, to continue on another device.",
+    request: z.object({ secret: z.string().min(8).max(32) }),
+    response: z.object({ ok: z.boolean(), playerId: z.string().optional(), save: z.string().optional(), meta: z.string().optional(), updatedAt: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const [row] = await db.select().from(schema.cloudSaves).where(eq(schema.cloudSaves.secret, args.secret.trim().toUpperCase())).limit(1);
+      if (!row) return { ok: false };
+      return { ok: true, playerId: row.playerId, save: row.save, meta: row.meta, updatedAt: row.updatedAt.toISOString() };
     },
   }),
 

@@ -1,13 +1,15 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { SafeAreaTopScrim } from "@hatch/space-sdk/client";
+import { loadMeta, saveMeta, touchStreak, streakReward, bump, rollWeek, checkAchievements, dailyEvent, dateKey, ACHIEVEMENTS, WEEKLY_GOALS, type Meta, type CityEvent } from "./meta";
 import { api, type ApiResponse } from "./api";
+import { cloudCode, newCloudCode, setCloudCode, prettyCode, liteDefault, setQuality, readInvite, inviteLink, clearInviteParams, drawShareCard } from "./share";
 import {
-APPS, CAREERS, CITIES, FOODS, FURNITURE, IDENTITIES, NPCS, OFFERS, TEMPLATES,
+APPS, CAREERS, COMPANIES, companyAt, companyById, companyGaps, type Company, CITIES, FOODS, FURNITURE, IDENTITIES, NPCS, OFFERS, TEMPLATES,
 apecPhase, apecVenueMul, getLocations, isApecWeek, isSaturday, tplQuote,
 APEC_TASKS, apecTaskOfDay, APEC_SLOGAN, APEC_CERT_NAME,
 weatherOf, weekday, modesForCity, railWord, etaMinutes, modeById, SCENIC_SPOTS, scenicOf, taxiFare, busFare, bikeFare,
-findMetroRoute, planRailTrip, allMetroDestinations, linesForLoc, metroLinesForCity, crowdForRide, motoFare,
+findMetroRoute, findStationRoute, exitLocForStation, resolveLoc, partialFare, nearbyPlaces, placesForCity, PLACE_KINDS, type MetroLine, planRailTrip, allMetroDestinations, linesForLoc, metroLinesForCity, crowdForRide, motoFare,
 RESTAURANTS, DELIVERY_PLATFORMS, SHOP_VENUES, LODGINGS, rentFlatWeekly, OUTFITS, outfitOf, isRainy, HOME_ROOMS,
 LOC_EN, LOC_GRADE, CITY_INTRO,
 type AppId, type CityKey, type Loc, type TransportModeId, type MetroRoute
@@ -35,6 +37,27 @@ return [...m.entries()].map(([name, lines]) => ({ name, lines }));
 };
 
 type World = ApiResponse<typeof api, "getWorld">["world"];
+type InboxGift = ApiResponse<typeof api, "syncPresence">["inbox"][number];
+
+/* ---- 长线玩法 helpers (see meta.ts) ---- */
+const stationNamesOf = (ck: CityKey): string[] => [...new Set(metroLinesForCity(ck).flatMap((l) => l.stations.map((x) => x.name)).filter((n) => !n.endsWith("方向")))];
+const SZ_STATION_COUNT = stationNamesOf("sz").length;
+const isBeachLoc = (l: Loc) => l.emoji === "🏖️" || l.emoji === "🏝️";
+/** A company's hiring bar after today's 开放日 and any 内推 you hold. */
+const effCompany = (co: Company, ev: CityEvent, referrals: string[] | undefined): Company => {
+  let c = co;
+  if (ev.openDay === co.id) c = { ...c, needSkill: Math.max(0, c.needSkill - 1), needXp: Math.max(0, c.needXp - 4) };
+  if (referrals?.includes(co.id)) c = { ...c, needSkill: Math.max(0, c.needSkill - 2), needXp: Math.max(0, c.needXp - 6) };
+  return c;
+};
+const GIFTS = {
+  tea: { emoji: "🧋", name: "奶茶", cost: 18, effect: "心情 +8、能量 +5" },
+  breakfast: { emoji: "🥟", name: "早餐", cost: 12, effect: "能量 +15" },
+  hongbao: { emoji: "🧧", name: "红包", cost: 88, effect: "¥88" },
+  referral: { emoji: "🤝", name: "内推", cost: 0, effect: "你公司的面试门槛降低" },
+  invite: { emoji: "🎉", name: "邀请报到", cost: 0, effect: "¥200 邀请奖励" },
+} as const;
+type GiftKind = keyof typeof GIFTS;
 type RealWeather = ApiResponse<typeof api, "getRealWeather">;
 type Phase = "setup" | "game" | "result";
 
@@ -93,6 +116,12 @@ finished: boolean;
 signDay?: number;
 dayBase?: { day: number; work: number; meal: number; scenic: number };
 dayClaim?: string[];
+/* 大厂跳槽：现在在哪家上班（深圳）、拿到的 offer、面试记录（「天:公司」每家每天一次） */
+employer?: string;
+offers?: string[];
+interviews?: string[];
+/* 别的玩家送来的内推（公司 id）：面试门槛降低 */
+referrals?: string[];
 }
 
 interface Profile {
@@ -334,6 +363,13 @@ return (
 );
 }
 
+/** Check-in targets in a city: the curated scenic spots plus every real
+    park / beach / peak / landmark from the OSM place list. */
+function scenicTotal(ck: CityKey): number {
+  return SCENIC_SPOTS.filter((x) => x.cityKey === ck).length
+    + placesForCity(ck).filter((p) => PLACE_KINDS[p.kind].type === "scenic" || PLACE_KINDS[p.kind].type === "mountain").length;
+}
+
 function Fold({ title, summary, defaultOpen = false, groupKey, children, tone }: {
   title: string;
   summary?: string;
@@ -414,7 +450,7 @@ setRoadRideArrived(false);
 }, [roadRide, roadRideArrived, roadRideStep]);
 const [rideEntry, setRideEntry] = useState<number | null>(null);
 const [mapQuery, setMapQuery] = useState("");
-const [mapFocus, setMapFocus] = useState<{ locId: string; nonce: number } | null>(null);
+const [mapFocus, setMapFocus] = useState<{ locId?: string; x?: number; z?: number; nonce: number } | null>(null);
 const [metroMapOpen, setMetroMapOpen] = useState(false);
 const [navOpen, setNavOpen] = useState(false);
 const [metroMapDest, setMetroMapDest] = useState<string | null>(null);
@@ -424,6 +460,9 @@ const [sceneFlags, setSceneFlags] = useState<Record<string, boolean>>({});
 const walkTimer = useRef<number | null>(null);
 const pendingSleep = useRef(false);
 const pendingRide = useRef<string | null>(null);
+/* A station-to-station ride picked on the line map: walk to the boarding
+   station's exit location first, then board this exact route. */
+const pendingStationRide = useRef<{ route: MetroRoute; board: string; alight: string } | null>(null);
 /** Final walking leg of a staged rail trip: after the ride ends at the
     station nearest the destination, walk the rest of the way there. */
 const pendingAfterRide = useRef<string | null>(null);
@@ -434,19 +473,30 @@ const [toast, setToast] = useState<string | null>(null);
 const [activeEvent, setActiveEvent] = useState<GameEvent | null>(null);
 const [phoneApp, setPhoneApp] = useState<AppId | null>(null);
 const [phoneOpen, setPhoneOpen] = useState(false);
-const [asideTab, setAsideTab] = useState<"place" | "feed" | "wall" | "chat" | "board" | "guide">("place");
+const [asideTab, setAsideTab] = useState<"place" | "feed" | "wall" | "chat" | "board" | "guide" | "collect">("place");
+/* 长线进度：跨局保留（集章 / 图鉴 / 连续登录 / 本周目标 / 成就称号） */
+const [meta, setMetaState] = useState<Meta>(() => loadMeta());
+const metaRef = useRef(meta);
+metaRef.current = meta;
+const flashGiven = useRef("");
+const claimingGifts = useRef(new Set<number>());
+/* 分享 / 邀请 / 云存档 / 画质 */
+const [lite] = useState(() => liteDefault());
+const [invite] = useState(() => readInvite());
+const [shareOpen, setShareOpen] = useState(false);
+const [shareImg, setShareImg] = useState<{ url: string; blob: Blob } | null>(null);
+const [cloudAt, setCloudAt] = useState("");
+const [restoreCode, setRestoreCode] = useState("");
 const [quiz, setQuiz] = useState<{ key: string; opts: string[]; picked: string | null } | null>(null);
 const [asideOpen, setAsideOpen] = useState(true);
 /* Top-area compaction: status detail / APEC activity / city intro all
    start folded away behind one-line bars so the map stays the hero. */
-const [hudOpen, setHudOpen] = useState(false);
-const [apecOpen, setApecOpen] = useState(false);
-const [introOpen, setIntroOpen] = useState(false);
+const [fold, setFold] = useState<"hud" | "apec" | "intro" | null>(null);
 /* Whole-bar collapse: each of the three floating bars folds away
    VERTICALLY into the rail of small buttons down the screen's left edge
    （状态 / APEC / 深圳/惠州）, freeing more of the map; tapping a rail
    button brings its bar back. All shown by default. */
-const [barHidden, setBarHidden] = useState<{ hud: boolean; apec: boolean; intro: boolean }>({ hud: false, apec: false, intro: false });
+const [barsHidden, setBarsHidden] = useState(false);
 /* Map fullscreen: the map shell becomes a fixed full-viewport stage
    (plus the native Fullscreen API when the browser allows it). */
 const [mapFullscreen, setMapFullscreen] = useState(false);
@@ -519,6 +569,10 @@ const finishedSent = useRef(false);
 const toastTimer = useRef<number | null>(null);
 
 const cityKey: CityKey = gs?.cityKey?? "sz";
+/* 今日城市事件：同一天、同城、同游戏日的玩家看到的一样 */
+const todayEvent: CityEvent = useMemo(() => dailyEvent(gs?.cityKey ?? "sz", gs?.day ?? 1, COMPANIES, stationNamesOf(gs?.cityKey ?? "sz")), [gs?.cityKey, gs?.day]);
+const evRef = useRef(todayEvent);
+evRef.current = todayEvent;
 const worldQuery = useQuery({
 queryKey: ["world", cityKey],
 queryFn: () => api.getWorld({ cityKey}),
@@ -718,9 +772,13 @@ gameDay: Math.min(30, s.day),
 money: Math.round(s.money),
 careerIdx: s.careerIdx,
 apecCount: s.apecCount,
+employer: s.employer ?? "startup",
+stamps: Math.min(999, metaRef.current.stamps.length),
+title: metaRef.current.title,
 });
 },
 onSuccess: (data) => {
+for (const g of data.inbox ?? []) receiveGift(g);
 const s = gsRef.current;
 queryClient.setQueryData(["world", s?.cityKey?? "sz"], data);
 },
@@ -774,7 +832,9 @@ return { ...c, stopIdx: nextIdx, awaitingTransfer: true };
 setCarriageLog(nextIdx >= c.route.stations.length - 1 ? `🔔 ${st?.name ?? ""}站到了，这就是你的目的地，点「下车出站」下车。先下后上，别挡门。` : `📢 列车运行前方是 ${st?.name ?? ""} 站。${c.crowdLevel >= 2 && nextIdx % 2 === 0 ? "这一站上来不少人，车厢更挤了，你往里挪了挪。" : "有乘客上下车，车厢轻轻晃了一下。"}`);
 return { ...c, stopIdx: nextIdx };
 });
-}, 2300);
+/* The full network makes 20–30-stop rides common: keep a whole ride
+   under ~35 s by shortening each stop on long trips (2.3 s → 0.9 s). */
+}, Math.max(900, Math.min(2300, 35000 / Math.max(1, carriage.route.stations.length - 1))));
 return () => window.clearTimeout(tm);
 }, [carriage, rideEntry]);
 const doTransfer = () => {
@@ -858,6 +918,10 @@ finished: false,
 signDay: num(g.signDay, 0),
 dayBase: g.dayBase && typeof g.dayBase === "object" && !Array.isArray(g.dayBase) ? { day: num((g.dayBase as { day?: unknown }).day, 0), work: num((g.dayBase as { work?: unknown }).work, 0), meal: num((g.dayBase as { meal?: unknown }).meal, 0), scenic: num((g.dayBase as { scenic?: unknown }).scenic, 0) } : undefined,
 dayClaim: strArr(g.dayClaim),
+employer: typeof g.employer === "string" && COMPANIES.some((c) => c.id === g.employer) ? g.employer : "startup",
+offers: strArr(g.offers).filter((id) => COMPANIES.some((c) => c.id === id)),
+interviews: strArr(g.interviews),
+referrals: strArr(g.referrals),
 };
 return { profile: { playerId: prof.playerId, name: prof.name }, gs };
 };
@@ -898,14 +962,14 @@ cityKey: restored.cityKey,
 }, []);
 
 const locById = (id: string): Loc => {
-const locs = getLocations(gsRef.current?.cityKey?? "sz");
-return locs.find((l) => l.id === id)?? locs[0]!;
+const ck = gsRef.current?.cityKey ?? "sz";
+return resolveLoc(ck, id) ?? getLocations(ck)[0]!;
 };
 
 /* ---------- movement ---------- */
-const startMetroRide = (fromLocId: string, toLocId: string) => {
+const startMetroRide = (fromLocId: string, toLocId: string, routeOverride?: MetroRoute) => {
 const s0 = gsRef.current; if (!s0) return;
-const route = findMetroRoute(s0.cityKey, fromLocId, toLocId);
+const route = routeOverride ?? findMetroRoute(s0.cityKey, fromLocId, toLocId);
 if (!route) { showToast("这趟车暂时没规划出来，换个目的地试试。"); return; }
 if (s0.money < route.fare) { showToast(`车票 ¥${route.fare}，钱包不够，先打工攒点钱。`); return; }
 const crowd = crowdForRide(route.line.id, s0.day, s0.metroRides ?? 0);
@@ -915,15 +979,32 @@ setCarriageLog(`🚪 在${route.stations[0]?.name ?? ""}站刷卡进闸，上了
 setSelectedLoc(toLocId);
 setAsideTab("place");
 };
-const finishMetroRide = () => {
-const c = carriage; const s0 = gsRef.current; if (!c || !s0) return;
+const finishMetroRide = (earlyIdx?: number) => {
+const c0 = carriage; const s0 = gsRef.current; if (!c0 || !s0) return;
+/* Getting off before the destination: the trip ends at that station, the
+   fare covers only the distance ridden, and any planned onward walk is
+   dropped — the player chose to stop here. */
+const early = earlyIdx !== undefined && earlyIdx > 0 && earlyIdx < c0.route.stations.length - 1;
+let c = c0;
+if (early) {
+const st = c0.route.stations[earlyIdx]!;
+const exitId = exitLocForStation(s0.cityKey, st.name) ?? c0.toLoc;
+const stations = c0.route.stations.slice(0, earlyIdx + 1);
+c = { ...c0, toLoc: exitId, route: { ...c0.route, stations, stops: earlyIdx, fare: partialFare(c0.route, earlyIdx), transferStations: c0.route.transferStations.filter((n) => stations.slice(1, -1).some((x) => x.name === n)) } };
+pendingAfterRide.current = null;
+pendingSleep.current = false;
+}
 const isRail = c.route.legs.some((l) => ["szhz-rail", "guangshen", "hz-intercity", "ganshen-rail", "guangshan-rail"].includes(l.line.id));
-mutate((s) => { s.money -= c.route.fare; s.energy -= Math.max(3, Math.round(c.route.stops * 1.2)) + (c.gaveSeat ? 2 : 0); s.metroRides = (s.metroRides ?? 0) + 1; if (c.gaveSeat) { s.network += 1; s.mood += 4; } if (c.phoneUsed) s.mood += 2; });
+const fareNow = evRef.current.metroFree ? 0 : c.route.fare;
+mutate((s) => { s.money -= fareNow; s.energy -= Math.max(3, Math.round(c.route.stops * 1.2)) + (c.gaveSeat ? 2 : 0); s.metroRides = (s.metroRides ?? 0) + 1; if (c.gaveSeat) { s.network += 1; s.mood += 4; } if (c.phoneUsed) s.mood += 2; });
 setCurrentLoc(c.toLoc); currentLocRef.current = c.toLoc; setSelectedLoc(c.toLoc);
-showToast(`${isRail ? "🚄" : "🚇"} 到达${locById(c.toLoc).name}，车票 -¥${c.route.fare}，共 ${c.route.stops} 站${c.route.isTransfer ? `（换乘 ${c.route.transferStations.length} 次：${c.route.summary}）` : ""}${pendingAfterRide.current && pendingAfterRide.current !== c.toLoc ? `，出站再步行到${locById(pendingAfterRide.current).short}` : ""}。`);
-addLog(`坐 ${c.route.summary} 从${locById(c.fromLoc).short}到${locById(c.toLoc).short}，${c.route.stops}站${c.route.isTransfer ? `，在${c.route.transferStations.join("、")}换乘` : ""}${c.route.shuttleFrom.length > 0 ? `（${c.route.shuttleFrom.join("、")}坐接驳巴士）` : ""} -¥${c.route.fare}${c.gaveSeat ? "，车厢里让了个座，人脉+1" : ""}${pendingAfterRide.current && pendingAfterRide.current !== c.toLoc ? `，再步行到${locById(pendingAfterRide.current).short}` : ""}。`);
+const lastSt = c.route.stations[c.route.stations.length - 1]?.name ?? "";
+showToast(`${isRail ? "🚄" : "🚇"} 到达${lastSt && !locById(c.toLoc).name.includes(lastSt) ? `${lastSt}站，出站就是${locById(c.toLoc).short}` : locById(c.toLoc).name}，车票 ${fareNow ? `-¥${fareNow}` : "免费（绿色出行日）"}，共 ${c.route.stops} 站${c.route.isTransfer ? `（换乘 ${c.route.transferStations.length} 次：${c.route.summary}）` : ""}${pendingAfterRide.current && pendingAfterRide.current !== c.toLoc ? `，出站再步行到${locById(pendingAfterRide.current).short}` : ""}。`);
+addLog(`坐 ${c.route.summary} 从${locById(c.fromLoc).short}到${locById(c.toLoc).short}，${c.route.stops}站${c.route.isTransfer ? `，在${c.route.transferStations.join("、")}换乘` : ""}${c.route.shuttleFrom.length > 0 ? `（${c.route.shuttleFrom.join("、")}坐接驳巴士）` : ""} -¥${fareNow}${c.gaveSeat ? "，车厢里让了个座，人脉+1" : ""}${pendingAfterRide.current && pendingAfterRide.current !== c.toLoc ? `，再步行到${locById(pendingAfterRide.current).short}` : ""}。`);
 setRideEntry(null);
 setCarriage(null);
+stampStations([c.route.stations[0]?.name, c.route.stations[c.route.stations.length - 1]?.name, ...c.route.transferStations]);
+updMeta((m) => bump(m, "rides"));
 const finalWalk = pendingAfterRide.current;
 pendingAfterRide.current = null;
 playLifeAnim(isRail ? "alightRail" : "metro", finalWalk && finalWalk !== c.toLoc ? () => {
@@ -982,7 +1063,7 @@ if (mode === "metro" || mode === "rail") {
   showToast(`「${from.short}」到「${to.short}」走过去比坐车还近：坐车光是走到站、下车再走回来就比直达更远，这次直接步行。`);
 }
 let cost = 0; let energyCost = 0; let effMode: TransportModeId = "walk"; let modeLabel = "步行";
-if (mode === "taxi") { cost = taxiFare(dist); energyCost = 1; effMode = "taxi"; modeLabel = "打车"; if (s0.money < cost) { showToast(`打车要 ¥${cost}，钱不够，改步行了。`); cost = 0; energyCost = Math.round(dist * 0.5); effMode = "walk"; modeLabel = "步行"; } }
+if (mode === "taxi") { cost = Math.round(taxiFare(dist) * (evRef.current.taxiMul ?? 1)); energyCost = 1; effMode = "taxi"; modeLabel = "打车"; if (s0.money < cost) { showToast(`打车要 ¥${cost}，钱不够，改步行了。`); cost = 0; energyCost = Math.round(dist * 0.5); effMode = "walk"; modeLabel = "步行"; } }
 else if (mode === "moto") { cost = motoFare(dist); energyCost = Math.max(1, Math.round(dist * 0.18)); effMode = "moto"; modeLabel = "电动车"; if (s0.money < cost) { showToast(`电动车要 ¥${cost}，钱不够，改步行了。`); cost = 0; energyCost = Math.round(dist * 0.5); effMode = "walk"; modeLabel = "步行"; } else if (dist > 22) { showToast(`路太远，电动车电量告急，骑到一半推了一段——远途还是坐${railWord(s0.cityKey)}/打车吧。`); energyCost += 4; } }
 else if (mode === "bike") { cost = bikeFare(dist); energyCost = Math.round(dist * 0.3); effMode = "bike"; modeLabel = "骑行"; if (s0.money < cost) { cost = 0; showToast(`骑行去${to.short}要 ¥${bikeFare(dist)}，钱包不够——共享单车免押金，这趟先免费骑。任何地点都能骑到，别让钱拦路。`); } }
 else if (mode === "bus") { cost = busFare(dist); energyCost = Math.max(1, Math.round(dist * 0.12)); effMode = "bus"; modeLabel = "公交"; if (s0.money < cost) cost = 0; }
@@ -1017,7 +1098,14 @@ currentLocRef.current = locId;
 setWalking(false);
 /* 到站不直接掐断搭乘动画：只标记已到达，弹窗等四步演完再收起。 */
 setRoadRideArrived(true);
-if (pendingRide.current) {
+if (pendingStationRide.current) {
+const pr = pendingStationRide.current;
+pendingStationRide.current = null;
+if (pr.board === locId) {
+showToast(`到「${pr.route.stations[0]?.name ?? ""}」站了，进站上车：${pr.route.summary}。`);
+startMetroRide(pr.board, pr.alight, pr.route);
+}
+} else if (pendingRide.current) {
 const dest = pendingRide.current;
 pendingRide.current = null;
 const ck = gsRef.current?.cityKey ?? "sz";
@@ -1030,6 +1118,125 @@ startMetroRide(locId, dest);
 };
 
 useEffect(() => { walkToRef.current = walkTo; });
+
+/* 到了一个地方：车站盖章、真实地点进图鉴（跨局保留） */
+useEffect(() => {
+if (phase !== "game") return;
+const s0 = gsRef.current;
+if (!s0 || currentLoc === "home") return;
+const names: string[] = [];
+if (currentLoc.startsWith("st:")) names.push(currentLoc.slice(3));
+else for (const l of metroLinesForCity(s0.cityKey)) for (const st of l.stations) if (st.locId === currentLoc) names.push(st.name);
+if (names.length) stampStations(names);
+const atlasId = `${s0.cityKey}:${currentLoc}`;
+if (!currentLoc.startsWith("st:") && !metaRef.current.atlas.includes(atlasId)) {
+updMeta((m) => { m.atlas = [...m.atlas, atlasId]; bump(m, "places"); });
+floatReward(`📖 图鉴 +1`, "green");
+}
+// eslint-disable-next-line react-hooks/exhaustive-deps
+}, [currentLoc, phase]);
+/* 云存档：存档或进度变了、安静 12 秒后上传；切到后台时立刻上传 */
+const pushCloud = () => {
+const prof = profileRef.current; const st = gsRef.current;
+if (!prof || !st) return;
+void api.cloudSave({ playerId: prof.playerId, secret: cloudCode(), save: JSON.stringify({ profile: prof, gs: st }), meta: JSON.stringify(metaRef.current) })
+.then((r) => {
+if (r.ok) setCloudAt(new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }));
+else if (r.error === "存档码已被占用") setCloudCode(newCloudCode());
+}).catch(() => { /* offline: the next change retries */ });
+};
+useEffect(() => {
+if (phase !== "game") return;
+const t = window.setTimeout(pushCloud, 12000);
+return () => window.clearTimeout(t);
+// eslint-disable-next-line react-hooks/exhaustive-deps
+}, [gs, meta, phase]);
+useEffect(() => {
+const onHide = () => { if (document.visibilityState === "hidden" && phase === "game") pushCloud(); };
+document.addEventListener("visibilitychange", onHide);
+return () => document.removeEventListener("visibilitychange", onHide);
+// eslint-disable-next-line react-hooks/exhaustive-deps
+}, [phase]);
+const restoreFromCloud = async () => {
+const code = restoreCode.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+if (code.length !== 10) { showToast("存档码是 10 位字母数字，比如 ABCDE-FGH23。"); return; }
+try {
+const r = await api.cloudLoad({ secret: code });
+if (!r.ok || !r.save) { showToast("没找到这个存档码，检查一下有没有输错。"); return; }
+localStorage.setItem(LS_KEY, r.save);
+if (r.meta) localStorage.setItem("shhr-meta-v1", r.meta);
+setCloudCode(code);
+showToast("找到云存档了，正在载入…");
+window.setTimeout(() => window.location.reload(), 600);
+} catch { showToast("网络不太好，稍后再试。"); }
+};
+const openShare = async () => {
+const st = gsRef.current; const prof = profileRef.current;
+if (!st || !prof) return;
+setShareOpen(true);
+const co = companyById(st.employer);
+const blob = await drawShareCard({
+name: prof.name, cityName: CITIES[st.cityKey].name, day: Math.min(30, st.day), money: st.money, goal: st.goal,
+career: (CAREERS[st.careerIdx] ?? CAREERS[0]!).name, company: st.cityKey === "sz" ? co.short : "仲恺公司", companyEmoji: st.cityKey === "sz" ? co.emoji : "🏭",
+title: metaRef.current.title, stamps: metaRef.current.stamps.length, stampTotal: SZ_STATION_COUNT, places: metaRef.current.atlas.length,
+lines: metaRef.current.linesDone.length, achievements: metaRef.current.achievements.length, streak: metaRef.current.streak.count,
+event: `${evRef.current.emoji} ${evRef.current.name}`, link: inviteLink(prof.playerId, prof.name, st.employer),
+});
+if (blob) setShareImg((old) => { if (old) URL.revokeObjectURL(old.url); return { url: URL.createObjectURL(blob), blob }; });
+};
+const shareNative = async () => {
+const st = gsRef.current; const prof = profileRef.current;
+if (!st || !prof) return;
+const link = inviteLink(prof.playerId, prof.name, st.employer);
+const text = `我在《深惠人生模拟》里过到第 ${Math.min(30, st.day)} 天，存款 ¥${Math.round(st.money).toLocaleString()}，集了 ${metaRef.current.stamps.length} 个地铁站章。来一起过日子：`;
+try {
+const file = shareImg ? new File([shareImg.blob], "shenhui-life.png", { type: "image/png" }) : null;
+if (file && navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], text, url: link });
+else if (navigator.share) await navigator.share({ text, url: link });
+else { await navigator.clipboard.writeText(`${text}${link}`); showToast("分享文案和邀请链接已复制，粘贴给朋友就行。"); }
+} catch { /* user closed the share sheet */ }
+};
+const copyInvite = async () => {
+const st = gsRef.current; const prof = profileRef.current;
+if (!st || !prof) return;
+try { await navigator.clipboard.writeText(inviteLink(prof.playerId, prof.name, st.employer)); showToast("邀请链接已复制：朋友点开就能进同一个世界，你会收到 ¥200 邀请奖励。"); }
+catch { showToast("复制失败，长按下面的链接手动复制。"); }
+};
+
+/* 连续登录：按真实日历算，每天进游戏时滚动一次 */
+useEffect(() => {
+if (phase === "game") updMeta((m) => { touchStreak(m); });
+// eslint-disable-next-line react-hooks/exhaustive-deps
+}, [phase]);
+/* 今日城市事件：新的一天播报一次，并记进「见过的事件」 */
+useEffect(() => {
+if (phase !== "game") return;
+if (!metaRef.current.eventsSeen.includes(todayEvent.id)) updMeta((m) => { m.eventsSeen = [...m.eventsSeen, todayEvent.id]; });
+showToast(`${todayEvent.emoji} 今日城市事件「${todayEvent.name}」：${todayEvent.desc}`);
+// eslint-disable-next-line react-hooks/exhaustive-deps
+}, [phase, todayEvent.id, todayEvent.desc]);
+
+/* Ride exactly the route picked on the line map, between ANY two stations
+   (not only stations that are also game locations). Not at the boarding
+   station yet → walk to it first, then board automatically. */
+const rideStations = (fromName: string, toName: string) => {
+const s0 = gsRef.current;
+if (!s0 || walking || carriage) return;
+const route = findStationRoute(s0.cityKey, fromName, toName);
+const board = exitLocForStation(s0.cityKey, fromName);
+const alight = exitLocForStation(s0.cityKey, toName);
+if (!route || !board || !alight) { showToast("这两个站之间规划不出线路，换个站试试。"); return; }
+if (s0.money < route.fare) { showToast(`这趟车票 ¥${route.fare}（${route.summary}），钱包不够，先打工攒点钱再坐。`); return; }
+pendingRide.current = null;
+pendingAfterRide.current = null;
+if (board !== currentLocRef.current) {
+pendingStationRide.current = { route, board, alight };
+showToast(`先走到「${fromName}」站（${locById(board).short}旁）进站，再坐 ${route.summary} 到「${toName}」。`);
+walkTo(board, "walk");
+return;
+}
+startMetroRide(board, alight, route);
+};
 
 const goHomeAndSleep = () => {
 if (currentLocRef.current === "home" &&!walking) {
@@ -1094,6 +1301,92 @@ const career = CAREERS[s.careerIdx]?? CAREERS[0]!;
 return Math.round(iden.pay * CITIES[s.cityKey].payMul * career.mul);
 };
 
+/* ---------- 长线进度：集章 / 图鉴 / 周目标 / 成就 ---------- */
+const updMeta = (fn: (m: Meta) => void) => {
+const m: Meta = structuredClone(metaRef.current);
+rollWeek(m);
+fn(m);
+const fresh = checkAchievements(m, { totalStations: SZ_STATION_COUNT, totalPlaces: placesForCity("sz").length });
+metaRef.current = m;
+saveMeta(m);
+setMetaState(m);
+for (const a of fresh) {
+floatReward(`🏅 ${a.title}`, "gold");
+showToast(`🏅 解锁成就「${a.title}」：${a.desc}。在右侧「🎫 集章」里可以戴上这个称号。`);
+}
+};
+/** Stamp the stations you got on / off / changed at; finishing a line pays out. */
+const stampStations = (names: (string | undefined)[]) => {
+const clean = [...new Set(names.filter((n): n is string => !!n && !n.endsWith("方向")))];
+if (clean.length === 0) return;
+let fresh: string[] = [];
+const done: MetroLine[] = [];
+updMeta((m) => {
+fresh = clean.filter((n) => !m.stamps.includes(n));
+if (fresh.length === 0) return;
+m.stamps = [...m.stamps, ...fresh];
+bump(m, "stamps", fresh.length);
+for (const ck of ["sz", "hz"] as const) for (const line of metroLinesForCity(ck)) {
+if (m.linesDone.includes(line.id)) continue;
+const need = line.stations.map((x) => x.name).filter((n) => !n.endsWith("方向"));
+if (need.length > 1 && need.every((n) => m.stamps.includes(n))) { m.linesDone = [...m.linesDone, line.id]; done.push(line); }
+}
+});
+if (fresh.length > 0) floatReward(`🎫 新站章 ×${fresh.length}`, "blue");
+for (const line of done) {
+const reward = 100 + 10 * line.stations.length;
+mutate((x) => { x.money += reward; x.mood += 10; });
+showToast(`🏁 集齐「${line.name}」全部 ${line.stations.length} 个站章！奖励 ${fmt(reward)}、心情 +10。`);
+burstDanmaku([`🏁 ${profileRef.current?.name ?? "你"}集齐了${line.short}全部站章！`, "老周：这条线我坐了十年都没集齐", "阿琳：太强了 🎫", "子健：下一条线冲！"]);
+postFeed("life", `集齐了${line.short}全部站章`);
+}
+const ev = evRef.current;
+const flashKey = `${dateKey()}|${gsRef.current?.day ?? 0}|${ev.flashStation ?? ""}`;
+if (ev.flashStation && clean.includes(ev.flashStation) && flashGiven.current !== flashKey) {
+flashGiven.current = flashKey;
+mutate((x) => { x.money += 88; x.mood += 10; });
+floatReward("🎤 快闪 +¥88", "gold");
+showToast(`🎤 「${ev.flashStation}」站的快闪演出正好赶上了！大家跟着节奏拍手，奖励 ¥88、心情 +10。`);
+}
+};
+/* A gift another player sent: claim it on the server, then apply it here. */
+const receiveGift = (g: InboxGift) => {
+const prof = profileRef.current;
+if (!prof || claimingGifts.current.has(g.id)) return;
+claimingGifts.current.add(g.id);
+void api.claimGift({ playerId: prof.playerId, giftId: g.id }).then((r) => {
+if (!r.ok || !r.gift) return;
+const kind = r.gift.kind as GiftKind;
+const meta0 = GIFTS[kind];
+if (!meta0) return;
+mutate((x) => {
+if (kind === "tea") { x.mood += 8; x.energy += 5; }
+else if (kind === "breakfast") x.energy += 15;
+else if (kind === "hongbao") x.money += 88;
+else if (kind === "referral" && r.gift?.company) x.referrals = [...new Set([...(x.referrals ?? []), r.gift.company])];
+else if (kind === "invite") x.money += 200;
+});
+updMeta((m) => bump(m, "social"));
+const coName = kind === "referral" ? companyById(r.gift.company ?? undefined).short : "";
+floatReward(`${meta0.emoji} 来自${r.gift.fromName}`, "green");
+showToast(kind === "invite" ? `🎉 你邀请的${r.gift.fromName}来深惠过日子了！邀请奖励 ¥200 已到账。` : kind === "referral" ? `🤝 ${r.gift.fromName}把你内推进了${coName}：去${coName}面试，门槛降低（技能 -2、经验 -6）。` : `${meta0.emoji} ${r.gift.fromName}送了你一份${meta0.name}（${meta0.effect}）。在聊天页可以回赠。`);
+addLog(`收到${r.gift.fromName}送的${meta0.name}。`);
+}).catch(() => { claimingGifts.current.delete(g.id); });
+};
+const sendGift = (toId: string, toName: string, kind: GiftKind) => {
+const s0 = gsRef.current; const prof = profileRef.current;
+if (!s0 || !prof) return;
+const gm = GIFTS[kind];
+if (s0.money < gm.cost) { showToast(`${gm.name}要 ¥${gm.cost}，钱包不够。`); return; }
+if (kind === "referral" && (s0.employer ?? "startup") === "startup") { showToast("先进一家大厂，才能给别人内推。"); return; }
+void api.sendGift({ playerId: prof.playerId, toId, kind }).then((r) => {
+if (!r.ok) { showToast(r.error ?? "没送出去，稍后再试。"); return; }
+if (gm.cost) mutate((x) => { x.money -= gm.cost; x.mood += 3; });
+updMeta((m) => { m.giftsSent += 1; bump(m, "social"); });
+showToast(`${gm.emoji} 给${toName}送了${gm.name}${gm.cost ? `，-¥${gm.cost}` : ""}。对方下次上线就能收到。`);
+}).catch(() => showToast("网络不太好，礼物没送出去。"));
+};
+
 /* ---------- actions ---------- */
 const doAction = (kind: string, arg = 0) => {
 const s0 = gsRef.current;
@@ -1101,6 +1394,10 @@ if (!s0 || walking || currentLoc!== selectedLoc || activeEvent) return;
 const loc = locById(selectedLoc);
 const base = basePay(s0);
 const fitSave = s0.fit >= 3? 3: 0;
+const co0 = companyAt(s0.cityKey, loc.id);
+const ev = evRef.current;
+const co = co0 ? effCompany(co0, ev, s0.referrals) : null;
+const colleagues = co ? (world?.online ?? []).filter((p) => p.id !== profileRef.current?.playerId && p.employer === co.id && p.cityKey === "sz") : [];
 let msg = "";
 const feeds: { kind: "career" | "apec" | "home" | "money" | "life"; text: string }[] = [];
 mutate((s) => {
@@ -1110,19 +1407,63 @@ s.energy += 14 + (s.outfit === "pajamas" ? 6 : 0); s.mood += 8;
 msg = `歇了一会儿，能量 +${14 + (s.outfit === "pajamas" ? 6 : 0)}，心情 +8${s.outfit === "pajamas" ? "（穿睡衣躺平更舒服）" : ""}。`;
 break;
 case "work": {
-const cost = 28 - fitSave;
+const cost = (co?.energy ?? 28) - fitSave;
+const wage = Math.round(base * (co?.payMul ?? 1) * (ev.payMul ?? 1));
 const formalXp = s.outfit === "formal" ? 1 : 0;
-s.money += base; s.earned += base; s.energy -= cost; s.xp += 2 + formalXp; s.workCount += 1;
-msg = `上班一天，工资 +${fmt(base)}，经验 +${2 + formalXp}${formalXp ? "（正装加成 +1）" : ""}。`;
+const buddy = colleagues.length > 0 ? 3 : 0;
+s.money += wage; s.earned += wage; s.energy -= cost; s.xp += 2 + formalXp; s.workCount += 1; s.mood += (co?.mood ?? 0) + buddy;
+msg = `${co ? `在${co.short}` : ""}上班一天，工资 +${fmt(wage)}${ev.payMul ? "（今天发奖金 ×1.3）" : ""}，经验 +${2 + formalXp}${formalXp ? "（正装加成 +1）" : ""}${co?.mood ? `，心情 ${co.mood > 0 ? "+" : ""}${co.mood}` : ""}${buddy ? `，和同事${colleagues.map((p) => p.name).slice(0, 2).join("、")}一起上班心情 +3` : ""}。`;
 break;
 }
 case "overtime": {
-const cost = 42 - fitSave;
-const pay = Math.round(base * 1.75);
+const cost = (co ? co.energy + 14 : 42) - fitSave;
+const pay = Math.round(base * (co?.payMul ?? 1) * 1.75 * (co?.otMul ?? 1) * (ev.payMul ?? 1));
 s.money += pay; s.earned += pay; s.energy -= cost; s.mood -= 12; s.xp += 3; s.otCount += 1;
-msg = `加班到深夜，+${fmt(pay)}，经验 +3，心情 -12。`;
+msg = `${co ? `在${co.short}` : ""}加班到深夜，+${fmt(pay)}，经验 +3，心情 -12。`;
 break;
 }
+/* ---- 大厂：面试 → offer → 跳槽 ---- */
+case "interview": {
+if (!co) break;
+const key = `${s.day}:${co.id}`;
+if ((s.interviews ?? []).includes(key)) break;
+s.interviews = [...(s.interviews ?? []).slice(-60), key];
+s.energy -= 12;
+const gaps = companyGaps(co, s);
+if (co.formal && s.outfit !== "formal") {
+s.mood -= 4; s.xp += 1;
+msg = `${co.short}的面试官上下打量了你一眼：「我们这儿面试要穿正装。」这次没过。去商场买身正装再来，经验 +1。`;
+} else if (gaps.length > 0) {
+s.mood -= 3; s.xp += 1;
+msg = `${co.short}面试没过，还差：${gaps.join("、")}。面试官说「再沉淀沉淀」。多上班攒经验、去图书馆学技能，明天还能再来，经验 +1。`;
+} else {
+s.offers = [...new Set([...(s.offers ?? []), co.id])];
+s.mood += 10;
+msg = `🎉 ${co.short}面试通过，拿到 offer！日薪约 ${fmt(Math.round(base * co.payMul))}，点「接受 offer」就能入职。`;
+feeds.push({ kind: "career", text: `拿到了${co.short}的 offer` });
+}
+break;
+}
+case "join-company": {
+if (!co || !(s.offers ?? []).includes(co.id)) break;
+const from = companyById(s.employer);
+s.employer = co.id;
+s.offers = (s.offers ?? []).filter((x) => x !== co.id);
+s.mood += 8;
+s.npcNews = [...(s.npcNews ?? []), { kind: "career" as const, text: `跳槽去了${co.short}`, day: s.day }];
+msg = `🤝 从${from.short}跳槽到${co.short}！以后来这里上班，日薪 ×${co.payMul}。${co.culture}`;
+feeds.push({ kind: "career", text: `从${from.short}跳槽到${co.short}` });
+break;
+}
+case "canteen":
+s.money -= 12; s.energy += 22; s.mood += 4; s.mealCount += 1;
+msg = `在${co?.short ?? "公司"}食堂刷工卡吃了一顿，¥12 吃到饱，能量 +22。`;
+break;
+case "campus-tour":
+s.energy -= 3; s.mood += 6;
+if (co && ev.openDay === co.id) s.xp += 1;
+msg = `在${loc.short}园区里逛了一圈：咖啡厅、工牌、步履匆匆的打工人。心情 +6${co && ev.openDay === co.id ? "，开放日听了场分享，经验 +1" : ""}。`;
+break;
 case "gig": {
 let mul = 0.9 + Math.random() * 0.4;
 if (loc.id === "hotel" && isApecWeek(s.day)) mul *= 1.3;
@@ -1134,8 +1475,10 @@ break;
 case "eat": {
 const f = FOODS[s.cityKey][arg];
 if (!f) break;
-s.money -= f.cost; s.energy += f.energy; s.mood += f.mood; s.mealCount += 1;
-msg = `${f.name}下肚，能量 +${f.energy}，心情 +${f.mood}。`;
+const fc = Math.round(f.cost * (ev.eatMul ?? 1));
+const fm = f.mood + (ev.eatMood ?? 0);
+s.money -= fc; s.energy += f.energy; s.mood += fm; s.mealCount += 1;
+msg = `${f.name}下肚，能量 +${f.energy}，心情 +${fm}${ev.eatMul ? `（美食节价 ¥${fc}）` : ""}。`;
 break;
 }
 case "wash":
@@ -1159,8 +1502,9 @@ s.energy -= 4; s.mood += 12;
 msg = "慢慢散了会儿步，风很舒服，心情 +12。";
 break;
 case "fun": {
+if (ev.beachClosed && isBeachLoc(loc)) { msg = "🌀 台风预警，海边今天封闭了，改天再来。"; break; }
 const cost = loc.funCost?? CITIES[s.cityKey].funCost;
-const mood = loc.funMood?? CITIES[s.cityKey].moodFun;
+const mood = (loc.funMood?? CITIES[s.cityKey].moodFun) + (ev.funMood ?? 0);
 s.money -= cost; s.mood += mood;
 msg = `${loc.funName?? CITIES[s.cityKey].funName}，心情 +${mood}。`;
 break;
@@ -1235,14 +1579,18 @@ msg = `✅ APEC 任务「${task.title}」完成（${task.roleEmoji} ${task.role}
 }
 break;
 }
-case "mall-shop":
-s.money -= 120; s.mood += 14;
-msg = "逛了圈商场买了点小东西，心情 +14。";
+case "mall-shop": {
+const c = Math.round(120 * (ev.mallMul ?? 1));
+s.money -= c; s.mood += 14;
+msg = `逛了圈商场买了点小东西${ev.mallMul ? `（大促只花了 ¥${c}）` : ""}，心情 +14。`;
 break;
-case "mall-cloth":
-s.money -= 300; s.mood += 20; s.network += 1;
-msg = "换了身新行头，人精神了，心情 +20。";
+}
+case "mall-cloth": {
+const c = Math.round(300 * (ev.mallMul ?? 1));
+s.money -= c; s.mood += 20; s.network += 1;
+msg = `换了身新行头${ev.mallMul ? `（大促只花了 ¥${c}）` : ""}，人精神了，心情 +20。`;
 break;
+}
 case "mall-promo": {
 const pay = Math.round(base * 0.5);
 s.money += pay; s.earned += pay; s.energy -= 16; s.xp += 1;
@@ -1345,13 +1693,21 @@ if (msg && kind === "checkin" && !msg.includes("已经打过卡")) {
 const spot = scenicOf(s0.cityKey, selectedLoc);
 burstDanmaku([`📸 ${profileRef.current?.name ?? "你"} 在${spot?.name ?? loc.short}打卡成功！`, "阿琳：这张拍得真好 👍", "大芬姐：风景册又多一页啦", "子健：我也要去打卡 📍", "Lisa：Great shot! 🌟"]);
 }
+if (msg && kind === "work") updMeta((m) => bump(m, "work"));
+if (msg && kind === "interview") updMeta((m) => bump(m, "interviews"));
+if (msg && kind === "join-company" && co) updMeta((m) => { if (!m.companies.includes(co.id)) m.companies = [...m.companies, co.id]; });
+if (msg && kind === "join-company" && co) {
+setLevelFx({ name: `入职${co.short}`, nonce: Date.now() });
+window.setTimeout(() => setLevelFx(null), 2600);
+burstDanmaku([`🤝 ${profileRef.current?.name ?? "你"}跳槽去${co.short}啦！`, "阿琳：大厂见！别忘了老同事 🥲", "老周：深圳打工人的高光时刻", "小美：请客请客 🍻", "子健：内推我一个呗"]);
+}
 if (msg && kind === "apec-checkin") {
 burstDanmaku([`🌐 APEC 会场打卡 +1！`, "Lisa：三个会场集齐有徽章哦", "老周：领导人周，深圳准备好了", "小美：志愿者辛苦啦 🎽"]);
 }
 if (msg && kind === "apec-task") {
 burstDanmaku([`🎉 APEC 今日任务完成！`, "Lisa：干得漂亮，这就是深圳服务 🌐", "阿强：给 APEC 打工的人点赞", "陈伯：盛会办得好，街坊脸上有光", "王姨：辛苦啦，回来喝碗糖水"]);
 }
-const animMap: Partial<Record<string, LifeKind>> = { work: "code", overtime: "overtime", eat: "eat", gym: "gym", wash: "wash", cook: "cook", "buy-groceries": "groceries", stroll: "stroll", "social-ktv": "gathering", "social-drink": "gathering", "mall-shop": "shopping", "mall-cloth": "shopping", fun: "stroll" };
+const animMap: Partial<Record<string, LifeKind>> = { work: "code", overtime: "overtime", eat: "eat", canteen: "eat", interview: "code", "campus-tour": "stroll", gym: "gym", wash: "wash", cook: "cook", "buy-groceries": "groceries", stroll: "stroll", "social-ktv": "gathering", "social-drink": "gathering", "mall-shop": "shopping", "mall-cloth": "shopping", fun: "stroll" };
 const ak = animMap[kind];
 if (ak && msg && !(kind === "cook" && s0.groceries <= 0) && !(kind === "buy-groceries" && s0.money < 28)) playLifeAnim(ak);
 };
@@ -1437,6 +1793,7 @@ setResult(r);
 mutate((s) => { s.finished = true;});
 const prof = profileRef.current;
 if (prof) {
+updMeta((m) => { m.runs += 1; });
 void api.finishSeason({
 playerId: prof.playerId,
 money: Math.round(s0.money),
@@ -1500,7 +1857,15 @@ addLog(`${text}`);
       log: [{ day: 1, text: `来到${cityInfo.name}，住进${cityInfo.scene}。目标：30 天攒到 ${fmt(iden.id === "rich" ? 30000 : iden.id === "flat" ? 5000 : cityInfo.goal)}。` }],
       finished: false,
       signDay: 0, dayBase: { day: 1, work: 0, meal: 0, scenic: 0 }, dayClaim: [],
+      employer: "startup", offers: [], interviews: [], referrals: [],
     };
+    // Came in through a friend's invite link: welcome bonus + an intro
+    // (内推) to the friend's company.
+    if (invite && invite.fromId !== prof.playerId) {
+      state.money += 100;
+      if (invite.co && COMPANIES.some((c) => c.id === invite.co && c.id !== "startup")) state.referrals = [invite.co];
+      state.log = [{ day: 1, text: `${invite.from}邀请你来${cityInfo.name}，见面礼 ¥100${state.referrals?.length ? `，还帮你内推了${companyById(invite.co ?? undefined).short}` : ""}。` }, ...state.log];
+    }
     finishedSent.current = false;
     profileRef.current = prof;
     setProfile(prof);
@@ -1511,7 +1876,12 @@ addLog(`${text}`);
     saveLocal(prof, state);
     setResult(null);
     setPhase("game");
-    joinMut.mutate({ playerId: prof.playerId, name, emoji: iden.emoji, color: iden.color, cityKey: city });
+    joinMut.mutate({ playerId: prof.playerId, name, emoji: iden.emoji, color: iden.color, cityKey: city }, {
+      onSuccess: () => {
+        if (invite && invite.fromId !== prof.playerId) void api.sendGift({ playerId: prof.playerId, toId: invite.fromId, kind: "invite" }).catch(() => {});
+        clearInviteParams();
+      },
+    });
   };
 
   const restart = () => {
@@ -1572,7 +1942,7 @@ addLog(`${text}`);
     const s0 = gsRef.current;
     if (!s0) return;
     const fromL = locById(currentLocRef.current); const toL = locById(locId);
-    const fare = taxiFare(Math.hypot(toL.x - fromL.x, toL.z - fromL.z));
+    const fare = Math.round(taxiFare(Math.hypot(toL.x - fromL.x, toL.z - fromL.z)) * (evRef.current.taxiMul ?? 1));
     if (s0.money < fare) { showToast(`打车到${toL.short}要 ¥${fare}，钱不够。`); return; }
     mutate((s) => { s.money -= fare; });
     setPhoneOpen(false);
@@ -1799,7 +2169,48 @@ playLifeAnim("shopping");
     disabled?: boolean;
   }
 
+  /* A company HQ: work there if it is your employer, otherwise interview /
+     take the offer. Other place actions (e.g. 平安's 理财) stay underneath. */
+  const companyActions = (co0: Company, s: GameState): ActDef[] => {
+    const co = effCompany(co0, todayEvent, s.referrals);
+    const mates = (world?.online ?? []).filter((p) => p.id !== myId && p.employer === co.id && p.cityKey === "sz").map((p) => p.name);
+    const base = basePay(s);
+    const fitSave = s.fit >= 3 ? 3 : 0;
+    const career = CAREERS[s.careerIdx] ?? CAREERS[0]!;
+    if ((s.employer ?? "startup") === co.id) {
+      const cost = co.energy - fitSave;
+      const otCost = co.energy + 14 - fitSave;
+      return [
+        { kind: "work", title: "正经上班", emoji: co.emoji, desc: `${co.short}的一天 · 职级「${career.name}」 · 工资 ×${+(career.mul * co.payMul).toFixed(2)} · 经验 +2${mates.length ? ` · 👥 同事在线：${mates.slice(0, 3).join("、")}（一起上班心情 +3）` : ""}${todayEvent.payMul ? " · 💰 今天发奖金 ×1.3" : ""}`, cost: `+${fmt(Math.round(base * co.payMul))} · 能量 -${cost}${co.mood ? ` · 心情 ${co.mood > 0 ? "+" : ""}${co.mood}` : ""}`, disabled: s.energy < cost },
+        { kind: "overtime", title: "拼命加班", emoji: "🔥", desc: co.otMul > 1 ? "加班费比别家给得多，但人是真的累" : "老板画饼你吃饼，钱多但掉心情", cost: `+${fmt(Math.round(base * co.payMul * 1.75 * co.otMul))} · 能量 -${otCost} · 心情 -12`, disabled: s.energy < otCost },
+        ...(co.canteen ? [{ kind: "canteen", title: "员工食堂吃饭", emoji: "🍱", desc: "刷工卡，几块钱吃到饱，大厂福利之一", cost: "-¥12 · 能量 +22 · 心情 +4", disabled: s.money < 12 }] : []),
+      ];
+    }
+    const cur = companyById(s.employer);
+    const tried = (s.interviews ?? []).includes(`${s.day}:${co.id}`);
+    const gaps = companyGaps(co, s);
+    const payNow = Math.round(base * cur.payMul);
+    const payThere = Math.round(base * co.payMul);
+    return [
+      (s.offers ?? []).includes(co.id)
+        ? { kind: "join-company", title: `接受 offer · 入职${co.short}`, emoji: "🤝", desc: `从「${cur.short}」跳槽过来。${co.culture}`, cost: `日薪 ${fmt(payThere)}（现在 ${fmt(payNow)}）· 上班能量 -${co.energy - fitSave}` }
+        : { kind: "interview", title: tried ? `今天已经面过${co.short}了` : `投简历 · 面试${co.short}`, emoji: "📝", desc: `${co.culture}${todayEvent.openDay === co.id ? " 🏢 今天开放日，门槛降低！" : ""}${(s.referrals ?? []).includes(co.id) ? " 🤝 你有内推，门槛降低。" : ""}${gaps.length > 0 ? ` 门槛还差：${gaps.join("、")}。` : " 你的条件已经够了。"}${co.formal ? " 面试要穿正装。" : ""}`, cost: `能量 -12 · 日薪约 ${fmt(payThere)}（现在 ${fmt(payNow)}）· 每家每天一次`, disabled: tried || s.energy < 12 },
+      { kind: "campus-tour", title: "在园区逛逛", emoji: "👀", desc: "看看大厂的楼、咖啡厅和来来往往的打工人", cost: "能量 -3 · 心情 +6 · 免费" },
+    ];
+  };
   const actionsFor = (loc: Loc, s: GameState): ActDef[] => {
+    const co = companyAt(s.cityKey, loc.id);
+    const acts = co ? [...companyActions(co, s), ...(loc.type === "work" ? [] : baseActionsFor(loc, s))] : baseActionsFor(loc, s);
+    const ev = todayEvent;
+    return acts.map((a) => {
+      if (ev.beachClosed && isBeachLoc(loc) && (a.kind === "fun" || a.kind === "checkin" || a.kind === "stroll")) return { ...a, disabled: true, desc: "🌀 台风预警，海边今天封闭，改天再来" };
+      if (ev.mallMul && (a.kind === "mall-shop" || a.kind === "mall-cloth")) return { ...a, desc: `🛍️ 今日大促 6 折 · ${a.desc}` };
+      if (ev.eatMul && a.kind === "eat") return { ...a, desc: `🍢 美食节 7 折、心情 +5 · ${a.desc}` };
+      if (ev.funMood && a.kind === "fun") return { ...a, desc: `🎶 音乐会，心情额外 +8 · ${a.desc}` };
+      return a;
+    });
+  };
+  const baseActionsFor = (loc: Loc, s: GameState): ActDef[] => {
     const base = basePay(s);
     const city = CITIES[s.cityKey];
     const fitSave = s.fit >= 3 ? 3 : 0;
@@ -2030,6 +2441,24 @@ return (
 </button>
 </div>
 ) : <p className="mt-3 text-sm">👑 已是最高职级，城市合伙人。</p>}
+{s.cityKey === "sz" && (() => { const cur = companyById(s.employer); const base = basePay(s); return (
+<div className="mt-4 border-t border-[var(--line)] pt-3">
+<p className="text-sm">现在在：<b>{cur.emoji} {cur.name}</b> · 日薪 {fmt(Math.round(base * cur.payMul))}</p>
+<p className="mt-0.5 text-xs text-[var(--dim)]">想跳槽：去大厂总部「投简历 · 面试」，条件够就拿 offer，再点「接受 offer」入职。每家每天能面一次。</p>
+<div className="mt-2 grid gap-2">
+{COMPANIES.filter((c) => c.id !== cur.id && c.id !== "startup").map((c0) => { const c = effCompany(c0, todayEvent, s.referrals); const gaps = companyGaps(c, s); const offer = (s.offers ?? []).includes(c.id); const loc = locById(c.locIds[0]!); return (
+<div key={c.id} className="flex items-center gap-3 rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
+<div className="text-2xl">{c.emoji}</div>
+<div className="min-w-0 flex-1">
+<p className="text-sm font-bold">{c.name} <span className="text-[var(--accent)]">日薪约 {fmt(Math.round(base * c.payMul))}</span></p>
+<p className="text-xs text-[var(--dim)]">{offer ? "✅ 已拿到 offer，去总部点「接受 offer」" : gaps.length === 0 ? `✅ 条件够了，可以去面试${c.formal ? "（要穿正装）" : ""}` : `还差：${gaps.join("、")}`} · 上班能量 -{c.energy}{c.mood ? ` · 心情 ${c.mood > 0 ? "+" : ""}${c.mood}` : ""}</p>
+</div>
+<button type="button" aria-label={`去${loc.name}`} onClick={() => { setPhoneOpen(false); walkTo(loc.id); }} className="shrink-0 rounded-full bg-[var(--text)] px-3 py-2 text-xs font-black text-[var(--bg)]">去{c.short}</button>
+</div>
+); })}
+</div>
+</div>
+); })()}
 </div>
 );
 case "jobs":
@@ -2178,7 +2607,7 @@ return (
 {[
 ["累计收入", fmt(s.earned)], ["已交房租", fmt(s.rentPaid)], ["装修 + 家具", fmt(s.homeSpent)],
 ["理财余额", fmt(s.invest)], ["上班次数", `${s.workCount} 次`], ["加班次数", `${s.otCount} 次`],
-["干饭次数", `${s.mealCount} 次`], ["最高存款", fmt(s.maxMoney)], ["APEC 服务", `${s.apecCount} 次`], [s.cityKey === "hz" ? "坐城轨/高铁" : "坐地铁", `${s.metroRides ?? 0} 次`], ["风景打卡", `${(s.visitedScenic ?? []).length} / ${SCENIC_SPOTS.filter((x) => x.cityKey === s.cityKey).length} 处`],
+["干饭次数", `${s.mealCount} 次`], ["最高存款", fmt(s.maxMoney)], ["APEC 服务", `${s.apecCount} 次`], [s.cityKey === "hz" ? "坐城轨/高铁" : "坐地铁", `${s.metroRides ?? 0} 次`], ["风景打卡", `${(s.visitedScenic ?? []).length} / ${scenicTotal(s.cityKey)} 处`],
 ].map(([k, v]) => (
 <p key={k} className="flex justify-between rounded-[10px] border border-[var(--line)] bg-[var(--bg)] px-3 py-2"><span className="text-[var(--dim)]">{k}</span><b>{v}</b></p>
 ))}
@@ -2314,6 +2743,15 @@ return (
 })}
 </div>
 
+{invite && <p className="mt-4 rounded-[14px] border-2 border-[var(--accent)] bg-[var(--surface)] px-4 py-3 text-sm font-bold">🎉 {invite.from}邀请你来深惠过日子：开局多 ¥100{invite.co && invite.co !== "startup" ? `，还有${companyById(invite.co).short}的内推（面试门槛降低）` : ""}。</p>}
+<details className="mt-4 rounded-[14px] border border-[var(--line)] bg-[var(--surface)] px-4 py-3">
+<summary className="cursor-pointer text-sm font-black">☁️ 在别的设备玩过？用云存档码继续</summary>
+<div className="mt-2 flex gap-2">
+<input value={restoreCode} onChange={(e) => setRestoreCode(e.target.value.slice(0, 14))} placeholder="ABCDE-FGH23" aria-label="云存档码" className="min-w-0 flex-1 rounded-full border-2 border-[var(--border)] bg-[var(--bg)] px-4 py-2 text-sm font-bold tracking-widest outline-none" />
+<button type="button" onClick={() => void restoreFromCloud()} className="shrink-0 rounded-full bg-[var(--text)] px-4 py-2 text-sm font-black text-[var(--bg)]">载入</button>
+</div>
+<p className="mt-1 text-xs text-[var(--dim)]">存档码在游戏里右侧「🎫 集章」页最上面。</p>
+</details>
 <p className="mt-6 text-sm font-black">选一个身份</p>
 <div className="mt-2 grid gap-2 lg:grid-cols-2">
 {IDENTITIES.map((it) => {
@@ -2362,7 +2800,7 @@ return (
 ["最终存款", fmt(s.money)], ["存活天数", `${Math.min(s.day, 30)} 天`], ["上班", `${s.workCount} 次`],
 ["总收入", fmt(s.earned)], ["交租", fmt(s.rentPaid)], ["最终心情", `${Math.round(s.mood)}`],
 ["职级", (CAREERS[s.careerIdx] ?? CAREERS[0]!).name], ["技能", `${s.skill} 点`], ["人脉", `${s.network} 人`],
-["我的家", homeName(s)], ["舒适度", `${computeComfort(s)}`], ["APEC 服务", `${s.apecCount} 次`], [s.cityKey === "hz" ? "坐城轨/高铁" : "坐地铁", `${s.metroRides ?? 0} 次`], ["风景打卡", `${(s.visitedScenic ?? []).length} / ${SCENIC_SPOTS.filter((x) => x.cityKey === s.cityKey).length} 处`],
+["我的家", homeName(s)], ["舒适度", `${computeComfort(s)}`], ["APEC 服务", `${s.apecCount} 次`], [s.cityKey === "hz" ? "坐城轨/高铁" : "坐地铁", `${s.metroRides ?? 0} 次`], ["风景打卡", `${(s.visitedScenic ?? []).length} / ${scenicTotal(s.cityKey)} 处`],
 ].map(([k, v]) => (
 <div key={k} className="rounded-[12px] bg-[var(--surface2)] px-2 py-3">
 <p className="text-[11px] font-bold text-[var(--dim)]">{k}</p>
@@ -2420,14 +2858,18 @@ return (
 <div className="min-h-screen overflow-x-clip bg-[var(--bg)] text-[var(--text)]">
 <SafeAreaTopScrim backgroundColor="var(--bg)" />
 <header className="sticky top-0 z-30 border-b border-[var(--line)] bg-[var(--bg)]/95 pt-safe backdrop-blur">
-<div className="mx-auto flex w-full max-w-[2560px] items-center gap-2 px-4 py-2.5 2xl:px-8">
+<div className="mx-auto flex w-full max-w-[2560px] items-center gap-2 overflow-x-auto px-4 py-2.5 [scrollbar-width:none] 2xl:px-8 [&>*]:shrink-0 [&>*]:whitespace-nowrap">
 <span className="font-display text-lg font-black">第 {Math.min(s.day, 30)} 天</span>
-<span className="text-xs font-bold text-[var(--dim)]">11 月 {Math.min(s.day, 30)} 日 · {weekday(s.day)} · {nowWeatherText}</span>
+<span className="hidden text-xs font-bold text-[var(--dim)] lg:inline">11 月 {Math.min(s.day, 30)} 日 · {weekday(s.day)} · {nowWeatherText}</span>
 <button type="button" aria-label={`刷新${city.name}真实天气`} title={rwOk ? `${city.name}此刻真实天气（${realWeather!.sourceName}，${new Date(realWeather!.fetchedAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })} 更新）——游戏里的天色、云雨都跟着它走` : "真实天气暂时取不到"} onClick={() => weatherQuery.refetch()} className="chip">
 {weatherQuery.isLoading ? "🌡️ 实况加载中…" : rwOk ? `${RW_EMOJI[realWeather!.kind]} ${city.name}实况 ${realWeather!.description || RW_LABEL[realWeather!.kind]}${realWeather!.temperature != null ? ` ${Math.round(realWeather!.temperature)}°` : ""}${realWeather!.stale ? "（缓存）" : ""}` : "🌡️ 实况暂不可用"}
 </button>
 <button type="button" aria-label={`坐厦深高铁切换城市，去${s.cityKey === "sz" ? "惠州" : "深圳"}，车票 ¥${INTERCITY_FARE}`} title={`坐厦深高铁去${s.cityKey === "sz" ? "惠州" : "深圳"}：地图、天气、街坊全换，进度不变（车票 ¥${INTERCITY_FARE}，钱不够免费坐）`} onClick={switchCity} className="chip shrink-0 border-[var(--accent)] font-black text-[var(--accent)] transition hover:bg-[var(--surface2)]">🚄 去{s.cityKey === "sz" ? "惠州" : "深圳"} · ¥{INTERCITY_FARE}</button>
-<span className="ml-auto chip"><span className="live-dot" /> {(world?.onlineSz ?? 0) + (world?.onlineHz ?? 0)} 人在线</span>
+<button type="button" title={todayEvent.desc} aria-label={`今日城市事件：${todayEvent.name}`} onClick={() => showToast(`${todayEvent.emoji} 今日城市事件「${todayEvent.name}」：${todayEvent.desc}`)} className="ml-auto chip">{todayEvent.emoji} {todayEvent.name}</button>
+<span className="chip"><span className="live-dot" /> {(world?.onlineSz ?? 0) + (world?.onlineHz ?? 0)} 人在线</span>
+<button type="button" aria-label="打开每日任务" onClick={() => setDailyOpen(true)} className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-xs font-black transition hover:border-[var(--border)]">📋 任务</button>
+<button type="button" aria-label="分享战绩、邀请朋友" onClick={() => void openShare()} className="rounded-full bg-[var(--accent)] px-3 py-2 text-xs font-black text-white">📤 分享</button>
+<button type="button" aria-label="打开手机" onClick={() => { setPhoneApp(null); setPhoneOpen(true); }} className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-xs font-black transition hover:border-[var(--border)]">📱 手机</button>
 <button type="button" onClick={goHomeAndSleep} className="rounded-full bg-[var(--text)] px-3.5 py-2 text-xs font-black text-[var(--bg)]">😴 回家睡觉</button>
 </div>
 </header>
@@ -2440,37 +2882,64 @@ return (
     floating translucent panel that collapses vertically into a slim
     strip on the right edge — never fully hidden, always one tap away. */}
 <section className="relative h-[calc(100dvh-61px)] min-h-[540px] w-full overflow-hidden">
-<div className="float-bars absolute left-3 top-[60px] z-20 w-[min(620px,calc(100vw-24px))] space-y-2">
-{/* HUD — compact status bar: money / goal / energy / mood / career on
-    ONE line; every other stat folds out only when asked for. The whole
-    bar can also be folded away vertically into the left-edge rail. */}
-{!barHidden.hud && (
-<div className="hard-card px-3.5 py-3">
-<div className="flex flex-wrap items-center gap-x-3.5 gap-y-2">
+<div className="float-bars absolute left-3 top-[60px] z-20 w-[min(720px,calc(100vw-24px))]">
+{/* ONE merged card (was three stacked bars: status / APEC / city intro).
+    Row 1 = core stats; row 2 = slim APEC strip + three fold tabs that
+    open a single detail panel at a time. The whole card folds into the
+    left-edge rail. */}
+{!barsHidden && (
+<div className="hard-card px-3.5 py-2.5">
+<div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
 <div className="flex items-baseline gap-1.5">
 <span className="text-[11px] font-bold text-[var(--dim)]">存款</span>
-<span className={`font-display text-[26px] font-black leading-none ${s.money < 0 ? "text-[var(--accent)]" : ""}`}>{fmt(s.money)}</span>
-<span className="text-[11px] font-bold text-[var(--dim)]">/ 目标 {fmt(s.goal)}</span>
+<span className={`font-display text-[24px] font-black leading-none ${s.money < 0 ? "text-[var(--accent)]" : ""}`}>{fmt(s.money)}</span>
+<span className="text-[11px] font-bold text-[var(--dim)]">/ {fmt(s.goal)}</span>
 </div>
 <div className="flex items-center gap-1.5">
-<div className="h-2 w-20 overflow-hidden rounded-full bg-[var(--surface2)]" role="img" aria-label={`存钱目标进度 ${goalPct}%`}><div className="h-full rounded-full bg-[var(--accent)] transition-all" style={{ width: `${goalPct}%` }} /></div>
+<div className="h-2 w-16 overflow-hidden rounded-full bg-[var(--surface2)]" role="img" aria-label={`存钱目标进度 ${goalPct}%`}><div className="h-full rounded-full bg-[var(--accent)] transition-all" style={{ width: `${goalPct}%` }} /></div>
 <span className="text-[11px] font-black">{goalPct}%</span>
 </div>
-<span className="flex items-center gap-1.5 text-xs font-bold">⚡<span className="h-2 w-12 overflow-hidden rounded-full bg-[var(--surface2)]"><span className="block h-full bg-amber-500 transition-all" style={{ width: `${s.energy}%` }} /></span>{Math.round(s.energy)}</span>
-<span className="flex items-center gap-1.5 text-xs font-bold">😊<span className="h-2 w-12 overflow-hidden rounded-full bg-[var(--surface2)]"><span className="block h-full bg-emerald-500 transition-all" style={{ width: `${s.mood}%` }} /></span>{Math.round(s.mood)}</span>
-<span className="chip">{iden.emoji} {iden.name}</span>
-<span className="chip">📈 {career.name} ×{career.mul}</span>
-<span className="chip">🏠 周租 {fmt(s.rent)}{isSaturday(s.day) ? "（今天交租！）" : ""}</span>
-{s.invest > 0 && <span className="chip">💹 理财 {fmt(s.invest)}</span>}
-<button type="button" aria-label={hudOpen ? "收起状态详情" : "展开状态详情"} aria-expanded={hudOpen} onClick={() => setHudOpen((o) => !o)} className="ml-auto shrink-0 rounded-full border border-[var(--line)] px-3 py-1.5 text-[11px] font-black transition hover:border-[var(--border)]">{hudOpen ? "收起详情 ▴" : "状态详情 ▾"}</button>
-<button type="button" aria-label="竖着收起状态条，收成屏幕左侧的竖排按钮" title="竖着收起，收成屏幕左侧的竖排按钮，点一下就展开" onClick={() => setBarHidden((b) => ({ ...b, hud: true }))} className="shrink-0 rounded-full border border-[var(--line)] px-3 py-1.5 text-[11px] font-black transition hover:border-[var(--border)]">◂ 竖收起</button>
+<span className="flex items-center gap-1 text-xs font-bold">⚡<span className="h-2 w-10 overflow-hidden rounded-full bg-[var(--surface2)]"><span className="block h-full bg-amber-500 transition-all" style={{ width: `${s.energy}%` }} /></span>{Math.round(s.energy)}</span>
+<span className="flex items-center gap-1 text-xs font-bold">😊<span className="h-2 w-10 overflow-hidden rounded-full bg-[var(--surface2)]"><span className="block h-full bg-emerald-500 transition-all" style={{ width: `${s.mood}%` }} /></span>{Math.round(s.mood)}</span>
+<span className="chip" title={iden.name}>{iden.emoji} {career.name} ×{career.mul}</span>
+{s.cityKey === "sz" && <span className="chip" title={companyById(s.employer).culture}>{companyById(s.employer).emoji} {companyById(s.employer).short}</span>}
+{meta.title && <span className="chip" style={{ borderColor: "var(--gold)", color: "var(--gold)" }}>🏅 {meta.title}</span>}
+{isSaturday(s.day) && <span className="chip text-[var(--accent)]">🏠 今天交租 {fmt(s.rent)}</span>}
+{s.invest > 0 && <span className="chip">💹 {fmt(s.invest)}</span>}
+<button type="button" aria-label="竖着收起状态卡，收成屏幕左侧的竖排按钮" title="竖着收起，收成屏幕左侧的竖排按钮，点一下就展开" onClick={() => setBarsHidden(true)} className="ml-auto shrink-0 rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] font-black transition hover:border-[var(--border)]">◂ 收起</button>
+</div>
+
+<div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-[var(--line)] pt-2 text-[11px] font-bold">
+<span className="shrink-0 rounded-full border border-[var(--gold)] bg-[#fdf6da] px-2 py-0.5 font-black text-[#5c4a00]">🌐 APEC{s.cityKey === "sz" ? ` · ${s.day < 14 ? `还有 ${14 - s.day} 天` : s.day <= 19 ? "进行中" : "已结束"}` : " · 深圳 14–19 日"}</span>
+{s.cityKey === "sz" ? (
+<>
+<span className="shrink-0">任务 {(s.apecTasks ?? []).length}/{APEC_TASKS.length} · 打卡 {(s.apecCheckins ?? []).length}/3</span>
+{(() => {
+const task = apecTaskOfDay(s.day) ?? (s.day < 14 ? APEC_TASKS[0]! : null);
+if (!task) return null;
+const done = (s.apecTasks ?? []).includes(task.id);
+const venue = locById(task.venueLocId);
+return (
+<>
+<span className="min-w-[60px] flex-1 basis-0 truncate" title={`${task.title} · ${venue.name}`}>{task.day === s.day ? "今日" : task.dateLabel}：{task.roleEmoji} {task.title} · {venue.short}</span>
+{done ? <span className="shrink-0 font-black">✅</span> : currentLoc !== task.venueLocId ? <button type="button" aria-label={`坐地铁前往${venue.name}打卡`} onClick={() => walkTo(task.venueLocId, "metro")} className="shrink-0 rounded-full bg-[#5c4a00] px-2.5 py-0.5 font-black text-white">🚇 去打卡</button> : <span className="shrink-0 font-black">📍 在会场</span>}
+</>
+);
+})()}
+</>
+) : <span className="min-w-[60px] flex-1 basis-0 truncate text-[var(--dim)]">惠州兼职旺季 ×1.3</span>}
+<div className="ml-auto flex shrink-0 gap-1" role="tablist" title="展开：状态详情 / APEC 活动 / 城市速览" aria-label="展开详情">
+{([["hud", "状态"], ["apec", "APEC"], ["intro", "速览"]] as const).map(([k, label]) => (
+<button key={k} type="button" role="tab" aria-selected={fold === k} aria-expanded={fold === k} onClick={() => setFold((f) => (f === k ? null : k))} className={`rounded-full border px-2.5 py-1 text-[11px] font-black transition ${fold === k ? "border-[var(--border)] bg-[var(--surface2)]" : "border-[var(--line)] hover:border-[var(--border)]"}`}>{label} {fold === k ? "▴" : "▾"}</button>
+))}
+</div>
 </div>
 {s.energy < 25 && <p className="mt-2 text-xs font-bold text-[var(--accent)]">能量快见底了：去夜市吃点东西，或者回家睡觉。</p>}
 {nowRainy && s.outfit !== "raincoat" && (
 <p className="mt-2 flex flex-wrap items-center gap-2 text-xs font-bold text-[var(--accent2)]">🌧️ 今天下雨，出门容易淋湿——衣柜里有雨衣的话先换上。
 <button type="button" aria-label="下雨天换上雨衣" onClick={() => buyOutfit("raincoat")} className="rounded-full bg-[var(--accent2)] px-3 py-1 text-[11px] font-black text-white">{s.ownedOutfits.includes("raincoat") ? "换上雨衣 🧥" : `${fmt(outfitOf("raincoat").price)} 买雨衣穿上`}</button></p>
 )}
-{hudOpen && (
+{fold === "hud" && (
 <div className="mt-3 border-t border-[var(--line)] pt-3">
 <div className="grid grid-cols-2 gap-3">
 <div>
@@ -2483,6 +2952,8 @@ return (
 </div>
 </div>
 <p className="mt-3 flex flex-wrap gap-1.5">
+<span className="chip">🏠 周租 {fmt(s.rent)}</span>
+<span className="chip">{iden.emoji} {iden.name}</span>
 <span className="chip">经验 {s.xp}</span>
 <span className="chip">技能 {s.skill}</span>
 <span className="chip">人脉 {s.network}</span>
@@ -2501,33 +2972,10 @@ return (
 </div>
 </div>
 )}
-</div>
-)}
-
-{/* APEC banner — one-line activity bar by default: phase, progress and
-    today's task with its go-there button; the full briefing folds out. */}
-{!barHidden.apec && (s.cityKey === "sz" ? (
-<div className="mt-2.5 rounded-[14px] border-2 border-[var(--gold)] bg-[#fdf6da] px-3 py-2 text-[#5c4a00]">
-<div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
-<p className="text-[13px] font-black">🌐 APEC · {phaseApec.label} <span className="text-[11px] font-bold">{s.day < 14 ? `还有 ${14 - s.day} 天` : s.day <= 19 ? "进行中" : "已结束"}</span></p>
-<span className="text-[11px] font-bold">任务 {(s.apecTasks ?? []).length} / {APEC_TASKS.length} · 打卡 {(s.apecCheckins ?? []).length} / 3</span>
-{(() => {
-const task = apecTaskOfDay(s.day) ?? (s.day < 14 ? APEC_TASKS[0]! : null);
-if (!task) return <span className="text-[11px] font-bold">领导人周已结束{(s.apecTasks ?? []).length >= APEC_TASKS.length ? " · 证书已到手 🎖️" : ""}</span>;
-const done = (s.apecTasks ?? []).includes(task.id);
-const venue = locById(task.venueLocId);
-return (
+{fold === "apec" && (
+<div className="mt-3 rounded-[12px] border border-[var(--gold)] bg-[#fdf6da] p-2.5 text-[#5c4a00]">
+{s.cityKey === "sz" ? (
 <>
-<span className="min-w-0 text-[11px] font-bold">{task.day === s.day ? "今日任务" : `${task.dateLabel} 第一班`}：{task.roleEmoji} {task.title} · {venue.emoji} {venue.short}</span>
-{done ? <span className="text-[11px] font-black">✅ 已完成</span> : currentLoc !== task.venueLocId ? <button type="button" aria-label={`坐地铁前往${venue.name}打卡`} onClick={() => walkTo(task.venueLocId, "metro")} className="rounded-full bg-[#5c4a00] px-3 py-1 text-[11px] font-black text-white">🚇 去会场打卡</button> : <span className="text-[11px] font-black">你就在会场 · 展开看上岗按钮 ↓</span>}
-</>
-);
-})()}
-<button type="button" aria-label={apecOpen ? "收起APEC活动详情" : "展开APEC活动详情"} aria-expanded={apecOpen} onClick={() => setApecOpen((o) => !o)} className="ml-auto shrink-0 rounded-full border border-[#5c4a00]/40 bg-white/50 px-3 py-1 text-[11px] font-black">{apecOpen ? "收起 ▴" : "活动详情 ▾"}</button>
-<button type="button" aria-label="竖着收起APEC活动条，收成屏幕左侧的竖排按钮" title="竖着收起，收成屏幕左侧的竖排按钮，点一下就展开" onClick={() => setBarHidden((b) => ({ ...b, apec: true }))} className="shrink-0 rounded-full border border-[#5c4a00]/40 bg-white/50 px-3 py-1 text-[11px] font-black">◂ 竖收起</button>
-</div>
-{apecOpen && (
-<div className="mt-2 border-t border-[#e8d189] pt-2">
 <p className="text-xs leading-relaxed">{phaseApec.detail}</p>
 <div className="mt-2">
 <p className="text-xs font-black">🎉 APEC 领导人周活动 · {APEC_SLOGAN}</p>
@@ -2557,33 +3005,19 @@ return (
 );
 })()}
 </div>
-</div>
+</>
+) : (
+<>
+<p className="text-xs font-black">🌐 APEC 领导人周活动 · {APEC_SLOGAN}</p>
+<p className="mt-1 text-xs leading-relaxed">{s.day < 14 ? `第 33 届 APEC 领导人周 11 月 14 日在深圳开启：14 日开幕、16 日晚太子湾欢迎晚宴、17–18 日前海 CEO 峰会、18–19 日香蜜湖领导人会议，每天一个任务，玩家在深圳以志愿者、记者、司机身份去三个会场打卡上岗。` : "深圳 APEC 领导人周进行中（14–19 日）：每天一个任务，志愿者、记者、司机轮着当，三个会场坐地铁去打卡。"}惠州没有会场，这周温泉酒店、巽寮湾的兼职更旺（×1.3）——想上岗打卡，去深圳开一局就能参加。</p>
+</>
 )}
 </div>
-) : (
-<div className="mt-2.5 rounded-[14px] border-2 border-[var(--gold)] bg-[#fdf6da] px-3 py-2 text-[#5c4a00]">
-<div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
-<p className="text-[13px] font-black">🌐 APEC 领导人周活动 · {APEC_SLOGAN}</p>
-<span className="text-[11px] font-bold">深圳 11 月 14–19 日 · 惠州兼职旺季 ×1.3 · 惠州没有会场</span>
-<button type="button" aria-label={apecOpen ? "收起APEC活动详情" : "展开APEC活动详情"} aria-expanded={apecOpen} onClick={() => setApecOpen((o) => !o)} className="ml-auto shrink-0 rounded-full border border-[#5c4a00]/40 bg-white/50 px-3 py-1 text-[11px] font-black">{apecOpen ? "收起 ▴" : "活动详情 ▾"}</button>
-<button type="button" aria-label="竖着收起APEC活动条，收成屏幕左侧的竖排按钮" title="竖着收起，收成屏幕左侧的竖排按钮，点一下就展开" onClick={() => setBarHidden((b) => ({ ...b, apec: true }))} className="shrink-0 rounded-full border border-[#5c4a00]/40 bg-white/50 px-3 py-1 text-[11px] font-black">◂ 竖收起</button>
-</div>
-{apecOpen && <p className="mt-2 border-t border-[#e8d189] pt-2 text-xs leading-relaxed">{s.day < 14 ? `第 33 届 APEC 领导人周 11 月 14 日在深圳开启：14 日开幕、16 日晚太子湾欢迎晚宴、17–18 日前海 CEO 峰会、18–19 日香蜜湖领导人会议，每天一个任务，玩家在深圳以志愿者、记者、司机身份去三个会场打卡上岗。` : "深圳 APEC 领导人周进行中（14–19 日）：每天一个任务，志愿者、记者、司机轮着当，三个会场坐地铁去打卡。"}惠州没有会场，这周温泉酒店、巽寮湾的兼职更旺（×1.3）——想上岗打卡，去深圳开一局就能参加。</p>}
-</div>
-))}
-
-{/* City intro — one-line bar by default; facts + map-scale note fold out */}
-{!barHidden.intro && (
-<div className="mt-2.5 rounded-[14px] border border-[var(--line)] bg-[var(--surface)] px-3 py-2">
-<div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+)}
+{fold === "intro" && (
+<div className="mt-3 border-t border-[var(--line)] pt-3">
 <p className="text-[13px] font-black">🗺️ {CITY_INTRO[s.cityKey].title} · <span className="text-[var(--accent2)]">{CITY_INTRO[s.cityKey].en}</span></p>
-<span className="hidden text-[11px] font-bold text-[var(--dim)] lg:inline">城市速览与地图说明，点开看</span>
-<button type="button" aria-label={introOpen ? `收起${CITY_INTRO[s.cityKey].title}` : `展开${CITY_INTRO[s.cityKey].title}`} aria-expanded={introOpen} onClick={() => setIntroOpen((o) => !o)} className="ml-auto shrink-0 rounded-full border border-[var(--line)] px-3 py-1 text-[11px] font-black transition hover:border-[var(--border)]">{introOpen ? "收起 ▴" : "城市速览 ▾"}</button>
-<button type="button" aria-label="竖着收起城市介绍条，收成屏幕左侧的竖排按钮" title="竖着收起，收成屏幕左侧的竖排按钮，点一下就展开" onClick={() => setBarHidden((b) => ({ ...b, intro: true }))} className="shrink-0 rounded-full border border-[var(--line)] px-3 py-1 text-[11px] font-black transition hover:border-[var(--border)]">◂ 竖收起</button>
-</div>
-{introOpen && (
-<div className="mt-2 border-t border-[var(--line)] pt-2">
-<p className="text-xs leading-relaxed text-[var(--dim)]">{CITY_INTRO[s.cityKey].facts}</p>
+<p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">{CITY_INTRO[s.cityKey].facts}</p>
 <p className="mt-1.5 rounded-[10px] bg-[var(--surface2)] px-2.5 py-1.5 text-[11px] font-bold leading-relaxed">🗺️ 地图说明：游戏地图是按真实地理方位排布的<b>示意微缩模型</b>——地点之间的方向、片区、海岸与山峦的相对位置都按真实地理，但距离和面积经过压缩，<b>不是等比例测绘地图</b>。靠它认方向、认城市没问题；真实距离请以导航为准。</p>
 </div>
 )}
@@ -2591,17 +3025,6 @@ return (
 )}
 </div>
 
-{/* Collapsed bars live on as a VERTICAL rail of small buttons down the
-    screen's left edge — never a horizontal row of pills. The rail hangs
-    just below the left-mid nav cluster so the two never overlap; tap a
-    rail button to bring its bar back. */}
-{(barHidden.hud || barHidden.apec || barHidden.intro) && (
-<div className="absolute left-0 z-20 flex flex-col gap-1.5" style={{ top: "calc(50% + 58px)" }}>
-{barHidden.hud && <button type="button" aria-label="展开状态条" title="展开状态条" onClick={() => setBarHidden((b) => ({ ...b, hud: false }))} className="flex flex-col items-center gap-1 rounded-r-[12px] border border-l-0 border-[var(--line)] bg-[var(--surface)]/90 px-1.5 py-2.5 text-xs font-black shadow-lg backdrop-blur-md transition hover:border-[var(--border)]"><span aria-hidden="true">💰</span><span className="[writing-mode:vertical-rl]">状态</span></button>}
-{barHidden.apec && <button type="button" aria-label="展开APEC活动条" title="展开APEC活动条" onClick={() => setBarHidden((b) => ({ ...b, apec: false }))} className="flex flex-col items-center gap-1 rounded-r-[12px] border border-l-0 border-[var(--gold)] bg-[#fdf6da]/90 px-1.5 py-2.5 text-xs font-black text-[#5c4a00] shadow-lg backdrop-blur-md"><span aria-hidden="true">🌐</span><span className="[writing-mode:vertical-rl]">APEC</span></button>}
-{barHidden.intro && <button type="button" aria-label="展开城市介绍条" title="展开城市介绍条" onClick={() => setBarHidden((b) => ({ ...b, intro: false }))} className="flex flex-col items-center gap-1 rounded-r-[12px] border border-l-0 border-[var(--line)] bg-[var(--surface)]/90 px-1.5 py-2.5 text-xs font-black shadow-lg backdrop-blur-md transition hover:border-[var(--border)]"><span aria-hidden="true">🗺️</span><span className="[writing-mode:vertical-rl]">{s.cityKey === "sz" ? "深圳" : "惠州"}</span></button>}
-</div>
-)}
 
 {/* Map — the hero, and now the whole stage: it fills the section
     edge-to-edge at all times. ⛶ 全屏 still offers the native
@@ -2609,13 +3032,16 @@ return (
 <div ref={mapShellRef} className={mapFullscreen ? "fixed inset-0 z-[90] flex flex-col bg-[var(--bg)] p-3 pt-safe" : "absolute inset-0 flex flex-col p-2.5"}>
 <div className="relative px-1.5 pb-2.5">
 <div className="flex gap-2">
-<input value={mapQuery} onChange={(e) => setMapQuery(e.target.value)} placeholder={s.cityKey === "hz" ? "🔍 搜地点或城轨/高铁站：西湖、老街、惠州南…" : "🔍 搜地点或地铁站：华强北、老街、大梅沙…"} aria-label={`搜索地点或${railWord(s.cityKey)}站`} className="min-w-0 flex-1 rounded-full border border-[var(--line)] bg-[var(--surface)] px-3.5 py-2 text-sm outline-none focus:border-[var(--border)]" />
+<input value={mapQuery} onChange={(e) => setMapQuery(e.target.value)} placeholder={s.cityKey === "hz" ? "🔍 搜地点或城轨/高铁站：西湖、老街、惠州南…" : "🔍 搜地点或地铁站：公园、商场、医院、博物馆、海滩…"} aria-label={`搜索地点或${railWord(s.cityKey)}站`} className="min-w-0 flex-1 rounded-full border border-[var(--line)] bg-[var(--surface)] px-3.5 py-2 text-sm outline-none focus:border-[var(--border)]" />
 <button type="button" aria-label={s.cityKey === "hz" ? "打开惠州城际高铁线网图" : "打开地铁线路图"} onClick={() => { setMetroMapDest(null); setMetroMapOpen(true); }} className="shrink-0 rounded-full bg-[var(--accent2)] px-3.5 py-2 text-xs font-black text-white">{s.cityKey === "hz" ? "🚆 城际/高铁线网图" : "🚇 地铁线路图"}</button>
 <button type="button" aria-label={mapFullscreen ? "退出地图全屏" : "地图全屏"} aria-pressed={mapFullscreen} onClick={toggleMapFullscreen} className={`shrink-0 rounded-full px-3.5 py-2 text-xs font-black text-white ${mapFullscreen ? "bg-[var(--accent)]" : "bg-[#14202b]"}`}>{mapFullscreen ? "⛶ 退出全屏" : "⛶ 全屏看地图"}</button>
 </div>
 {mapQuery.trim() !== "" && (() => {
 const q = mapQuery.trim();
-const locResults = getLocations(s.cityKey).filter((l) => l.name.includes(q) || l.short.includes(q) || (LOC_EN[l.name] ?? "").toLowerCase().includes(q.toLowerCase())).slice(0, 6);
+const locResults = [
+...getLocations(s.cityKey).filter((l) => l.name.includes(q) || l.short.includes(q) || (LOC_EN[l.name] ?? "").toLowerCase().includes(q.toLowerCase())).slice(0, 6),
+...placesForCity(s.cityKey).filter((p) => p.name.includes(q) || (p.en ?? "").toLowerCase().includes(q.toLowerCase())).slice(0, 8).map((p) => locById(`pl:${p.id}`)),
+];
 const stationResults = stationIndexOf(s.cityKey).filter((st) => st.name.includes(q)).slice(0, 6);
 return (
 <div className="absolute inset-x-1.5 top-full z-30 max-h-72 overflow-y-auto rounded-[14px] border-2 border-[var(--border)] bg-[var(--surface)] p-1.5 shadow-xl">
@@ -2641,7 +3067,7 @@ return (
 );
 })()}
 </div>
-<MapView fill cityKey={s.cityKey} selfLocId={selectedLoc} selfEmoji={iden.emoji} selfColor={iden.color} selfName={profile?.name ?? "我"} remotePlayers={remotePlayers} selfOutfitId={s.outfit} travelModeId={travelMode} weatherKind={rwOk ? realWeather!.kind : "unknown"} npcMoodEmoji={Object.fromEntries(NPCS.map((n) => [n.name, moodEmoji(memOf(s.npcMem ?? {}, n.name).mood)]))} apecDay={isApecWeek(s.day)} focusLocId={mapFocus?.locId} focusNonce={mapFocus?.nonce} destLocId={selectedLoc} onSelect={walkTo} navOverlay={(
+<MapView lite={lite} fill paused={!!(roadRide || carriage || lifeAnim)} cityKey={s.cityKey} selfLocId={selectedLoc} selfEmoji={iden.emoji} selfColor={iden.color} selfName={profile?.name ?? "我"} remotePlayers={remotePlayers} selfOutfitId={s.outfit} travelModeId={travelMode} weatherKind={rwOk ? realWeather!.kind : "unknown"} npcMoodEmoji={Object.fromEntries(NPCS.map((n) => [n.name, moodEmoji(memOf(s.npcMem ?? {}, n.name).mood)]))} apecDay={isApecWeek(s.day)} focusLocId={mapFocus?.locId} focusX={mapFocus?.x} focusZ={mapFocus?.z} focusNonce={mapFocus?.nonce} destLocId={selectedLoc} onSelect={walkTo} navOverlay={(
 <>
 {/* 弹幕层：联机动态 / 聊天 / 街坊发言飘过地图上半区 */}
 {danmakuOn && (
@@ -2736,13 +3162,13 @@ return (
 {asideOpen && (
 <>
 <button type="button" aria-label="点空白处把地区面板竖着收起成右侧竖条" onClick={() => setAsideOpen(false)} className="fixed inset-0 z-[35] cursor-default bg-black/15" />
-<div className="float-panel fixed bottom-[76px] right-3 top-[76px] z-40 flex w-[430px] max-w-[calc(100vw-24px)] flex-col overflow-y-auto overflow-x-hidden rounded-[18px] border-2 border-[var(--border)] p-4 shadow-2xl">
+<div className="float-panel fixed bottom-3 right-3 top-[76px] z-40 flex w-[430px] max-w-[calc(100vw-24px)] flex-col overflow-y-auto overflow-x-hidden rounded-[18px] border-2 border-[var(--border)] p-4 shadow-2xl">
 <div className="mb-2.5 flex items-center justify-between gap-2">
 <p className="text-xs font-black tracking-wide text-[var(--dim)]">🗺️ 地区面板 · {selLoc.emoji} {selLoc.short}一带</p>
 <button type="button" aria-label="竖着收起地区面板，收成屏幕右侧的竖条，点竖条随时展开" title="竖着收起成右侧竖条，一直留在屏幕边上，点一下就展开" onClick={() => setAsideOpen(false)} className="shrink-0 rounded-full border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-[11px] font-black transition hover:border-[var(--border)]">竖收起 »</button>
 </div>
 <div className="grid grid-cols-6 gap-1 rounded-full bg-[var(--surface2)] p-1" role="tablist" aria-label="地点与联机面板">
-{([["place", "📍 地点"], ["feed", "🏘️ 动态"], ["wall", "🧑‍🤝‍🧑 街坊墙"], ["chat", "💬 聊天"], ["board", "🏆 排行"], ["guide", "📖 图鉴"]] as const).map(([k, label]) => (
+{([["place", "📍 地点"], ["collect", "🎫 集章"], ["feed", "🏘️ 动态"], ["wall", "🧑‍🤝‍🧑 街坊墙"], ["chat", "💬 聊天"], ["board", "🏆 排行"], ["guide", "📖 图鉴"]] as const).map(([k, label]) => (
 <button key={k} type="button" role="tab" aria-selected={asideTab === k} onClick={() => setAsideTab(k)} className={`min-w-0 rounded-full px-0.5 py-2 text-center text-[11px] font-black leading-tight min-[420px]:text-xs ${asideTab === k ? "bg-[var(--text)] text-[var(--bg)]" : "text-[var(--dim)]"}`}>{label}</button>
 ))}
 </div>
@@ -2783,6 +3209,22 @@ return (
 </button>
 ))}
 </div>
+{(() => {
+const near = nearbyPlaces(s.cityKey, selLoc.x, selLoc.z, 6).filter((r) => r.id !== selLoc.id);
+if (near.length === 0) return null;
+return (
+<Fold title="🧭 附近可去" summary={near.slice(0, 3).map((r) => r.place.name).join("、")} groupKey={`near-${selLoc.id}`} defaultOpen={selLoc.type === "transit"}>
+<div className="grid gap-2">
+{near.map((r) => { const k = PLACE_KINDS[r.place.kind]; const km = r.dist; return (
+<button key={r.id} type="button" disabled={walking} onClick={() => walkTo(r.id, km < 1.6 ? "walk" : undefined)} className="act-btn disabled:opacity-40">
+<span className="text-sm font-bold">{k.emoji} {r.place.name}</span>
+<span className="block text-xs text-[var(--dim)]">{k.label} · 离这里约 {km < 0.1 ? "0.1" : km.toFixed(1)} 公里 · {km < 1.6 ? `步行约 ${Math.max(1, Math.round(km * 1.3 / 0.075))} 分钟` : "用下方选好的出行方式过去"}</span>
+</button>
+); })}
+</div>
+</Fold>
+);
+})()}
 {arrived && selLoc.type === "transit" || arrived && selLoc.type === "port" ? (
 <Fold title={s.cityKey === "hz" ? "🚆 城际 · 高铁线路与出发" : "🚇 线路与坐车出发"} summary={`${linesForLoc(s.cityKey, selLoc.id).length} 条线经过 · 点开选目的地进车厢`} groupKey={`transit-${selLoc.id}`} defaultOpen>
 <p className="text-sm font-bold">{s.cityKey === "hz" ? "🚆" : "🚇"} 这里经过的线路</p>
@@ -2852,7 +3294,7 @@ return (
 {arrived && scenicOf(s.cityKey, selLoc.id) ? (
 <div className="mt-3 rounded-[12px] bg-[var(--surface2)] px-3 py-2.5">
 <p className="text-sm font-bold">📸 风景打卡 · {scenicOf(s.cityKey, selLoc.id)?.name} <span className="chip">{scenicOf(s.cityKey, selLoc.id)?.tag}</span> {(s.visitedScenic ?? []).includes(`${s.cityKey}:${selLoc.id}`) ? <span className="chip">✅ 已打卡</span> : <span className="chip">未打卡</span>}</p>
-<p className="mt-1 text-xs text-[var(--dim)]">{scenicOf(s.cityKey, selLoc.id)?.tip} · 本城已打卡 {(s.visitedScenic ?? []).filter((k) => k.startsWith(s.cityKey + ":")).length} / {SCENIC_SPOTS.filter((x) => x.cityKey === s.cityKey).length} 处，用上方「拍照打卡」集齐风景册。</p>
+<p className="mt-1 text-xs text-[var(--dim)]">{scenicOf(s.cityKey, selLoc.id)?.tip} · 本城已打卡 {(s.visitedScenic ?? []).filter((k) => k.startsWith(s.cityKey + ":")).length} / {scenicTotal(s.cityKey)} 处，用上方「拍照打卡」集齐风景册。</p>
 </div>
 ) : null}
 {selLoc.type === "home" && arrived && (
@@ -2928,6 +3370,21 @@ return (
 {asideTab === "chat" && (
 <div className="mt-3">
 <p className="text-xs font-bold text-[var(--dim)]">{city.name}频道 · {onlineHere.length} 人在线：{onlineHere.map((pl) => pl.name).join("、") || "就你自己"}</p>
+{(world?.online ?? []).filter((p) => p.id !== myId).length > 0 && (
+<div className="mt-2 grid gap-1.5">
+<p className="text-xs font-black tracking-wide">🎁 给在线的玩家送点东西（对方上线就收到，每天最多 10 份）</p>
+{(world?.online ?? []).filter((p) => p.id !== myId).slice(0, 8).map((p) => (
+<div key={p.id} className="rounded-[12px] border border-[var(--line)] bg-[var(--bg)] px-3 py-2">
+<p className="flex flex-wrap items-center gap-1.5 text-xs font-bold">{p.emoji} {p.name}{p.title && <span className="chip" style={{ borderColor: "var(--gold)", color: "var(--gold)" }}>🏅 {p.title}</span>}<span className="text-[var(--dim)]">{p.cityKey === "sz" ? `深圳 · ${companyById(p.employer).short}` : "惠州"} · 🎫 {p.stamps} 站章</span>{p.employer === s.employer && p.cityKey === "sz" && s.cityKey === "sz" && <span className="chip">👥 同事</span>}</p>
+<div className="mt-1.5 flex flex-wrap gap-1">
+{(Object.keys(GIFTS) as GiftKind[]).filter((k) => k !== "invite").filter((k) => k !== "referral" || ((s.employer ?? "startup") !== "startup" && p.employer !== s.employer)).map((k) => (
+<button key={k} type="button" aria-label={`给${p.name}送${GIFTS[k].name}`} disabled={s.money < GIFTS[k].cost} onClick={() => sendGift(p.id, p.name, k)} className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1 text-[11px] font-black disabled:opacity-40">{GIFTS[k].emoji} {GIFTS[k].name}{GIFTS[k].cost ? ` ¥${GIFTS[k].cost}` : `（${companyById(s.employer).short}）`}</button>
+))}
+</div>
+</div>
+))}
+</div>
+)}
 <div className="mt-2 grid max-h-[380px] gap-1.5 overflow-y-auto pr-0.5">
 {(world?.chat ?? []).length === 0 && <p className="text-sm text-[var(--dim)]">频道里还很安静，发第一条消息吧。</p>}
 {(world?.chat ?? []).map((m) => (
@@ -2959,8 +3416,76 @@ return (
 </p>
 ))}
 <p className="text-[11px] leading-relaxed text-[var(--dim)]">按当前存款排序，进行中的玩家也会实时上榜；过完 30 天的成绩会标上结局称号。</p>
+<p className="mt-3 text-xs font-black tracking-wide">🏢 公司排行（最近 7 天在深圳上班的玩家，按存款合计）</p>
+{(world?.companyBoard ?? []).length === 0 && <p className="text-xs text-[var(--dim)]">还没数据。</p>}
+{(world?.companyBoard ?? []).map((c, i) => { const co = companyById(c.employer); return (
+<p key={c.employer} className={`flex items-center gap-2 rounded-[10px] px-3 py-1.5 text-sm ${c.employer === s.employer ? "bg-[var(--surface2)] font-black" : ""}`}><span className="w-6 font-black">{i + 1}</span><span>{co.emoji}</span><span className="min-w-0 flex-1 truncate">{co.name}{c.employer === s.employer ? "（你在这）" : ""}</span><span className="text-xs text-[var(--dim)]">{c.count} 人</span><span className="font-black">{fmt(c.money)}</span></p>
+); })}
+<p className="mt-3 text-xs font-black tracking-wide">🎫 集章排行（跨局累计）</p>
+{(world?.stampBoard ?? []).length === 0 && <p className="text-xs text-[var(--dim)]">还没人盖章，去坐地铁吧。</p>}
+{(world?.stampBoard ?? []).map((b, i) => (
+<p key={b.id} className={`flex items-center gap-2 rounded-[10px] px-3 py-1.5 text-sm ${b.id === myId ? "bg-[var(--surface2)] font-black" : ""}`}><span className="w-6 font-black">{i + 1}</span><span>{b.emoji}</span><span className="min-w-0 flex-1 truncate">{b.name}{b.title ? ` · 🏅${b.title}` : ""}</span><span className="font-black">{b.stamps} 站</span></p>
+))}
 </div>
 )}
+{asideTab === "collect" && (() => {
+const ck = s.cityKey;
+const today = dateKey();
+const lines = metroLinesForCity(ck).filter((l, i, arr) => arr.findIndex((x) => x.id === l.id) === i);
+const stTotal = stationNamesOf(ck);
+const stGot = stTotal.filter((n) => meta.stamps.includes(n)).length;
+const kinds = Object.entries(PLACE_KINDS).map(([k, km]) => { const all = placesForCity(ck).filter((p) => p.kind === k); return { k, km, total: all.length, got: all.filter((p) => meta.atlas.includes(`${ck}:pl:${p.id}`)).length }; }).filter((x) => x.total > 0);
+const ownLocs = getLocations(ck).filter((l) => l.id !== "home");
+const ownGot = ownLocs.filter((l) => meta.atlas.includes(`${ck}:${l.id}`)).length;
+const bar = (got: number, total: number, color = "var(--accent)") => <span className="mt-1 block h-1.5 overflow-hidden rounded-full bg-[var(--surface2)]"><span className="block h-full rounded-full" style={{ width: `${total ? Math.round((got / total) * 100) : 0}%`, background: color }} /></span>;
+return (
+<div className="mt-3 max-h-[calc(100vh-190px)] min-w-0 overflow-y-auto overflow-x-hidden pr-1">
+<div className="rounded-[14px] border-2 border-[var(--border)] bg-[var(--surface)] p-3">
+<p className="flex flex-wrap items-center gap-2 text-sm font-black">🔥 连续上线 {meta.streak.count} 天 <span className="chip">最长 {meta.streak.best} 天</span> <span className="chip">已过完 {meta.runs} 局</span>{meta.title && <span className="chip" style={{ borderColor: "var(--gold)", color: "var(--gold)" }}>🏅 {meta.title}</span>}</p>
+<p className="mt-1 text-xs text-[var(--dim)]">站章、图鉴、成就跨局保留：这一局 30 天过完，下一局接着集。</p>
+<p className="mt-2 flex flex-wrap items-center gap-2 rounded-[10px] bg-[var(--surface2)] px-3 py-2 text-xs font-bold">☁️ 云存档码 <span className="font-mono text-sm tracking-widest">{prettyCode(cloudCode())}</span><button type="button" onClick={() => { void navigator.clipboard?.writeText(cloudCode()).then(() => showToast("存档码已复制。换手机、换电脑时在开始页输入它，就能接着玩。")); }} className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-2 py-0.5 text-[11px] font-black">复制</button><span className="text-[var(--dim)]">{cloudAt ? `已同步 ${cloudAt}` : "自动同步中"} · 别给陌生人</span></p>
+<p className="mt-2 flex flex-wrap items-center gap-2 text-xs font-bold">⚙️ 画质：<button type="button" aria-pressed={!lite} onClick={() => { setQuality(false); window.location.reload(); }} className={`rounded-full px-2.5 py-1 text-[11px] font-black ${!lite ? "bg-[var(--text)] text-[var(--bg)]" : "border border-[var(--line)]"}`}>高画质</button><button type="button" aria-pressed={lite} onClick={() => { setQuality(true); window.location.reload(); }} className={`rounded-full px-2.5 py-1 text-[11px] font-black ${lite ? "bg-[var(--text)] text-[var(--bg)]" : "border border-[var(--line)]"}`}>省电（手机）</button><span className="text-[var(--dim)]">切换会刷新页面</span></p>
+<p className="mt-2 rounded-[10px] bg-[var(--surface2)] px-3 py-2 text-xs font-bold">{todayEvent.emoji} 今日城市事件「{todayEvent.name}」：{todayEvent.desc}</p>
+</div>
+<p className="mt-4 text-xs font-black tracking-wide">🎯 本周目标（每周一重置）</p>
+<div className="mt-2 grid gap-1.5">
+{WEEKLY_GOALS.map((g) => { const got = meta.week.prog[g.id] ?? 0; const done = got >= g.target; const claimed = meta.week.claimed.includes(g.id); return (
+<div key={g.id} className="flex items-center gap-2 rounded-[12px] border border-[var(--line)] bg-[var(--bg)] px-3 py-2">
+<span className="text-lg">{g.emoji}</span>
+<span className="min-w-0 flex-1 text-xs font-bold">{g.name} <span className="text-[var(--dim)]">{Math.min(got, g.target)}/{g.target}</span>{bar(Math.min(got, g.target), g.target, "var(--green)")}</span>
+<button type="button" disabled={!done || claimed} onClick={() => { mutate((x) => { x.money += g.reward; }); updMeta((m) => { m.week.claimed = [...m.week.claimed, g.id]; }); floatReward(`+${fmt(g.reward)} 周目标`, "gold"); }} className="shrink-0 rounded-full bg-[var(--text)] px-2.5 py-1 text-[11px] font-black text-[var(--bg)] disabled:opacity-35">{claimed ? "已领" : `领 ¥${g.reward}`}</button>
+</div>
+); })}
+</div>
+<p className="mt-4 text-xs font-black tracking-wide">🎫 地铁集章 · {stGot}/{stTotal.length} 站（上下车、换乘、到站自动盖章）</p>
+{bar(stGot, stTotal.length)}
+<div className="mt-2 grid gap-1">
+{lines.map((l) => { const names = [...new Set(l.stations.map((x) => x.name).filter((n) => !n.endsWith("方向")))]; const got = names.filter((n) => meta.stamps.includes(n)).length; const done = meta.linesDone.includes(l.id); return (
+<details key={l.id} className="rounded-[10px] bg-[var(--bg)] px-2.5 py-1.5">
+<summary className="flex cursor-pointer items-center gap-2 text-xs font-bold"><span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: l.colorCss }} /><span className="min-w-0 flex-1 truncate">{l.short}</span><span className="text-[var(--dim)]">{got}/{names.length}</span>{done && <span>🏁</span>}</summary>
+<p className="mt-1 flex flex-wrap gap-1">{names.map((n) => <span key={n} className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${meta.stamps.includes(n) ? "text-white" : "border border-[var(--line)] text-[var(--dim)]"}`} style={meta.stamps.includes(n) ? { background: l.colorCss } : {}}>{n}</span>)}</p>
+</details>
+); })}
+</div>
+<p className="mt-4 text-xs font-black tracking-wide">📖 城市图鉴 · 去过就记下</p>
+<div className="mt-2 grid grid-cols-2 gap-1.5">
+<div className="rounded-[10px] bg-[var(--bg)] px-2.5 py-1.5 text-xs font-bold">🗺️ 游戏地点 <span className="text-[var(--dim)]">{ownGot}/{ownLocs.length}</span>{bar(ownGot, ownLocs.length, "var(--accent2)")}</div>
+{kinds.map((x) => <div key={x.k} className="rounded-[10px] bg-[var(--bg)] px-2.5 py-1.5 text-xs font-bold">{x.km.emoji} {x.km.label} <span className="text-[var(--dim)]">{x.got}/{x.total}</span>{bar(x.got, x.total, "var(--accent2)")}</div>)}
+</div>
+<p className="mt-4 text-xs font-black tracking-wide">🏅 成就 · 点已解锁的戴上称号（别的玩家能看到）</p>
+<div className="mt-2 grid gap-1.5">
+{ACHIEVEMENTS.map((a) => { const got = meta.achievements.includes(a.id); const worn = meta.title === a.title; return (
+<button key={a.id} type="button" disabled={!got} onClick={() => updMeta((m) => { m.title = worn ? null : a.title; })} className={`flex items-center gap-2 rounded-[12px] border px-3 py-2 text-left ${worn ? "border-[var(--gold)] bg-[var(--surface2)]" : "border-[var(--line)] bg-[var(--bg)]"} ${got ? "" : "opacity-45"}`}>
+<span className="text-lg">{got ? a.emoji : "🔒"}</span>
+<span className="min-w-0 flex-1"><span className="block text-xs font-black">{a.title}</span><span className="block text-[11px] text-[var(--dim)]">{a.desc}</span></span>
+{got && <span className="shrink-0 text-[11px] font-black text-[var(--accent2)]">{worn ? "已佩戴 ✓" : "戴上"}</span>}
+</button>
+); })}
+</div>
+<p className="mt-3 text-[11px] text-[var(--dim)]">进度存在这台设备的浏览器里。今天：{today}</p>
+</div>
+);
+})()}
 {asideTab === "guide" && (
 <div className="mt-3 max-h-[calc(100vh-190px)] min-w-0 overflow-y-auto overflow-x-hidden pr-1">
 {(() => { const tour = tourForCity(s.cityKey); const active = s.tourKey === tour.id; const idx = active ? (s.tourIdx ?? 0) : 0; const done = active && !!s.tourDone; return (
@@ -3034,8 +3559,11 @@ return (
     全屏，不被面板挤占。 */}
 {!asideOpen && (
 <div className="float-panel fixed right-0 top-1/2 z-40 flex -translate-y-1/2 flex-col items-center gap-1 rounded-l-[14px] border-2 border-r-0 border-[var(--border)] px-1 py-2 shadow-2xl">
+{/* 状态卡的开关也收在这条竖条上（原来是左边单独一个「状态」竖钮） */}
+<button type="button" aria-label={barsHidden ? "展开状态卡" : "收起状态卡"} title={barsHidden ? "展开状态卡" : "收起状态卡"} aria-pressed={!barsHidden} onClick={() => setBarsHidden((h) => !h)} className={`flex w-9 flex-col items-center gap-0.5 rounded-[10px] px-0.5 py-1.5 text-base leading-none transition hover:bg-[var(--surface2)] ${barsHidden ? "" : "bg-[var(--surface2)]"}`}><span aria-hidden="true">💰</span><span className="text-[10px] font-black [writing-mode:vertical-rl]">状态</span></button>
+<span className="my-0.5 h-px w-6 bg-[var(--line)]" aria-hidden="true" />
 <span className="px-0.5 pb-1 pt-0.5 text-[11px] font-black tracking-widest text-[var(--dim)] [writing-mode:vertical-rl]" aria-hidden="true">地区面板</span>
-{([["place", "📍", "地点"], ["feed", "🏘️", "动态"], ["wall", "🧑‍🤝‍🧑", "街坊墙"], ["chat", "💬", "聊天"], ["board", "🏆", "排行"], ["guide", "📖", "图鉴"]] as const).map(([k, icon, label]) => (
+{([["place", "📍", "地点"], ["collect", "🎫", "集章"], ["feed", "🏘️", "动态"], ["wall", "🧑‍🤝‍🧑", "街坊墙"], ["chat", "💬", "聊天"], ["board", "🏆", "排行"], ["guide", "📖", "图鉴"]] as const).map(([k, icon, label]) => (
 <button key={k} type="button" aria-label={`展开地区面板 · ${label}`} title={`展开地区面板 · ${label}`} onClick={() => { setAsideTab(k); setAsideOpen(true); }} className={`flex w-9 flex-col items-center gap-0.5 rounded-[10px] px-0.5 py-1.5 text-base leading-none transition hover:bg-[var(--surface2)] ${asideTab === k ? "bg-[var(--surface2)]" : ""}`}><span aria-hidden="true">{icon}</span><span className="text-[10px] font-black [writing-mode:vertical-rl]">{label}</span></button>
 ))}
 </div>
@@ -3045,7 +3573,7 @@ return (
 
 {/* ===== VENUE SCENES: dine / shop / stay ===== */}
 {venueScene && venueScene.kind === "dine" && (() => { const r = RESTAURANTS.find((x) => x.id === venueScene.id); if (!r) return null; const ck = `dine-${r.id}`; return (
-<div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-[2px] p-3 sm:items-center" role="dialog" aria-label={r.name}>
+<div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={r.name}>
 <div className="rise max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] shadow-xl">
 <div className="bg-[#7c2d12] p-4 text-white"><p className="text-xs font-black">{r.emoji} {r.cuisine} · {r.region} · 人均档位 {r.tier}</p><p className="font-display mt-1 text-2xl font-black">{r.name} · 店内</p><p className="mt-0.5 text-xs opacity-90">座位：{r.tables}</p></div>
 <div className="p-4">
@@ -3066,7 +3594,7 @@ return (
 <button type="button" onClick={() => setVenueScene(null)} className="mt-4 w-full rounded-full bg-[var(--text)] py-3 text-sm font-black text-[var(--bg)]">买单离开 →</button>
 </div></div></div> ); })()}
 {venueScene && venueScene.kind === "shop" && (() => { const v = SHOP_VENUES.find((x) => x.id === venueScene.id); if (!v) return null; const ck = `shop-${v.id}`; return (
-<div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-[2px] p-3 sm:items-center" role="dialog" aria-label={v.name}>
+<div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={v.name}>
 <div className="rise max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] shadow-xl">
 <div className="bg-[#831843] p-4 text-white"><p className="text-xs font-black">{v.emoji} {v.kind}</p><p className="font-display mt-1 text-2xl font-black">{v.name} · 店内</p></div>
 <div className="p-4">
@@ -3084,7 +3612,7 @@ return (
 <button type="button" onClick={() => setVenueScene(null)} className="mt-4 w-full rounded-full bg-[var(--text)] py-3 text-sm font-black text-[var(--bg)]">离开 →</button>
 </div></div></div> ); })()}
 {venueScene && venueScene.kind === "stay" && (() => { const l = LODGINGS.find((x) => x.id === venueScene.id); if (!l) return null; return (
-<div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-[2px] p-3 sm:items-center" role="dialog" aria-label={l.name}>
+<div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={l.name}>
 <div className="rise max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] shadow-xl">
 <div className="bg-[#1e3a5f] p-4 text-white"><p className="text-xs font-black">{l.emoji} {l.kind} · ¥{l.id === "rent-flat" ? rentFlatWeekly(s.cityKey) : l.price}/{l.priceUnit}</p><p className="font-display mt-1 text-2xl font-black">{l.name} · 房间里</p></div>
 <div className="p-4">
@@ -3118,7 +3646,7 @@ const steps: { pose: LifePose; caption: string; sub: string }[] = isBus ? [
 const step = steps[Math.min(roadRideStep, steps.length - 1)]!;
 const outfitR = outfitOf(s.outfit);
 return (
-<div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-[2px] p-3 sm:items-center" role="dialog" aria-label={isBus ? "公交车厢" : "出租车车厢"}>
+<div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={isBus ? "公交车厢" : "出租车车厢"}>
 <div className="rise w-full max-w-lg overflow-hidden rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] shadow-xl">
 <div className="p-4 pb-3 text-white" style={{ background: isBus ? "#2563eb" : "#b45309" }}>
 <p className="flex items-center justify-between text-xs font-black"><span>{isBus ? "🚌 公交车厢" : "🚕 出租车里"}</span><span>{rr.fare > 0 ? `车费 ¥${rr.fare}` : "免费乘车"}</span></p>
@@ -3142,6 +3670,25 @@ return (
 );
 })()}
 
+{/* ===== 分享战绩 / 邀请朋友 ===== */}
+{shareOpen && (
+<div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label="分享战绩">
+<div className="rise max-h-[92vh] w-full max-w-md overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] p-4 shadow-xl">
+<div className="flex items-center justify-between"><p className="text-lg font-black">📤 分享战绩 · 邀请朋友</p><button type="button" aria-label="关闭分享" onClick={() => setShareOpen(false)} className="rounded-full border border-[var(--line)] px-3 py-1 text-sm font-black">✕</button></div>
+<div className="mt-3 overflow-hidden rounded-[14px] border border-[var(--line)] bg-[var(--bg)]">
+{shareImg ? <img src={shareImg.url} alt="我的深惠人生战绩卡" className="block w-full" /> : <p className="p-8 text-center text-sm text-[var(--dim)]">正在生成战绩卡…</p>}
+</div>
+<div className="mt-3 grid grid-cols-2 gap-2">
+<button type="button" onClick={() => void shareNative()} className="rounded-full bg-[var(--accent)] py-3 text-sm font-black text-white">📲 分享给朋友</button>
+{shareImg ? <a href={shareImg.url} download="深惠人生战绩.png" className="rounded-full bg-[var(--text)] py-3 text-center text-sm font-black text-[var(--bg)]">⬇️ 保存图片</a> : <span />}
+</div>
+<button type="button" onClick={() => void copyInvite()} className="mt-2 w-full rounded-full border-2 border-[var(--border)] py-2.5 text-sm font-black">🔗 复制邀请链接</button>
+<p className="mt-2 break-all rounded-[10px] bg-[var(--surface2)] px-3 py-2 text-[11px] text-[var(--dim)]">{profile && s ? inviteLink(profile.playerId, profile.name, s.employer) : ""}</p>
+<p className="mt-2 text-xs leading-relaxed text-[var(--dim)]">朋友用这个链接进来：开局多 ¥100{s && (s.employer ?? "startup") !== "startup" ? `，还自带${companyById(s.employer).short}的内推` : ""}；他报到后你收到 ¥200 邀请奖励。</p>
+</div>
+</div>
+)}
+
 {/* ===== METRO CARRIAGE SCENE ===== */}
 {carriage && (() => {
 const c = carriage;
@@ -3157,7 +3704,7 @@ const stageKey = rideEntry !== null ? `entry-${rideEntry}` : c.awaitingTransfer 
 const curStation = c.route.stations[c.stopIdx];
 const nextStation = c.route.stations[c.stopIdx + 1];
 return (
-<div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-[2px] p-3 sm:items-center" role="dialog" aria-label={`${curLine.name}车厢`}>
+<div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={`${curLine.name}车厢`}>
 <div className="rise max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] p-0 shadow-xl">
 {/* carriage header: line strip */}
 <div className="p-4 pb-3 text-white" style={{ background: curLine.colorCss }}>
@@ -3209,9 +3756,14 @@ return (
 ) : c.awaitingTransfer ? (
 <button type="button" onClick={doTransfer} className="w-full rounded-full bg-[var(--accent)] py-3.5 text-sm font-black text-white">{c.route.shuttleFrom.includes(curStation?.name ?? "") ? `🚌 在${curStation?.name}下车 · 坐接驳巴士到${nextStation?.name ?? "对面站"}换乘 ${(c.route.legs[c.legIdx + 1]?.line.short) ?? "下一条线"}` : `🔁 在${curStation?.name}换乘上车 → ${(c.route.legs[c.legIdx + 1]?.line.name) ?? "下一条线"}`}</button>
 ) : (
-<button type="button" disabled={!arrivedC} onClick={finishMetroRide} className="w-full rounded-full bg-[var(--accent)] py-3.5 text-sm font-black text-white disabled:opacity-40">{arrivedC ? `🔔 到站了，下车出站 → ${locById(c.toLoc).name}（票 ¥${c.route.fare}）` : `行驶中… 还有 ${total - 1 - c.stopIdx} 站（自动报站中）`}</button>
+<>
+<button type="button" disabled={!arrivedC} onClick={() => finishMetroRide()} className="w-full rounded-full bg-[var(--accent)] py-3.5 text-sm font-black text-white disabled:opacity-40">{arrivedC ? `🔔 到站了，下车出站 → ${locById(c.toLoc).name}（票 ¥${c.route.fare}）` : `行驶中… 还有 ${total - 1 - c.stopIdx} 站（自动报站中）`}</button>
+{!arrivedC && c.stopIdx > 0 && curStation && (
+<button type="button" onClick={() => finishMetroRide(c.stopIdx)} className="mt-2 w-full rounded-full border-2 border-[var(--border)] bg-[var(--surface)] py-2.5 text-sm font-black">🚪 就在「{curStation.name}」下车（票 ¥{partialFare(c.route, c.stopIdx)}）</button>
 )}
-<p className="mt-2 text-center text-[11px] text-[var(--dim)]">{s.cityKey === "hz" ? "真实城轨/高铁乘车体验" : "真实深圳地铁体验"}：屏蔽门、先下后上、换乘站广播、早高峰挤车厢。坐过站？不存在的——到站才能下车。</p>
+</>
+)}
+<p className="mt-2 text-center text-[11px] text-[var(--dim)]">{s.cityKey === "hz" ? "真实城轨/高铁乘车体验" : "真实深圳地铁体验"}：屏蔽门、先下后上、换乘站广播、早高峰挤车厢。车停稳时可以随时在本站下车，按实际坐的里程扣费。</p>
 </div>
 </div>
 </div>
@@ -3219,19 +3771,14 @@ return (
 })()}
 
 {metroMapOpen && (
-<MetroMapModal cityKey={s.cityKey} fromLocId={currentLoc} initialDest={metroMapDest} onClose={() => setMetroMapOpen(false)} onRide={(toLocId) => {
-setMetroMapOpen(false);
-// walkTo's rail planning handles every case now: standing at a station
-// boards directly; anywhere else it walks to the nearest station first
-// (pendingRide auto-continues into the ride on arrival), and walks the
-// last leg if the destination's anchor station is not the destination.
-walkTo(toLocId, "metro");
-}} />
+<MetroMapModal cityKey={s.cityKey} fromLocId={currentLoc} initialDest={metroMapDest} onClose={() => setMetroMapOpen(false)}
+onRide={(fromName, toName) => { setMetroMapOpen(false); rideStations(fromName, toName); }}
+onLocate={(x, z, name) => { setMetroMapOpen(false); setMapFocus({ x, z, nonce: Date.now() }); showToast(`📍 已在地图上定位到「${name}」站。`); }} />
 )}
 
 {/* ===== LIFE ANIMATION SCENE ===== */}
 {lifeAnim && (() => { const scene = LIFE_SCENES[lifeAnim.kind]; const rawStep = scene.steps[Math.min(lifeAnim.idx, scene.steps.length - 1)]!; /* Huizhou has no metro: in the day montage the 换乘地铁 beat is a 城轨 beat there */ const step = s.cityKey === "hz" && rawStep.caption === "换乘地铁" ? { ...rawStep, caption: "换乘城轨", prop: "🚆", bg: "🚆 👥 👥" } : rawStep; const rainyDay = nowRainy; return (
-<div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/65 backdrop-blur-[3px] p-3 sm:items-center" role="dialog" aria-label={`生活动画：${scene.title}`}>
+<div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/65 p-3 sm:items-center" role="dialog" aria-label={`生活动画：${scene.title}`}>
 <div className="rise w-full max-w-lg overflow-hidden rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] shadow-2xl">
 <div className="flex items-center gap-2 px-4 pt-3.5">
 <span className="chip">📷 真实照片里的 3D 演绎 · Real photo × live 3D</span>
@@ -3257,7 +3804,7 @@ walkTo(toLocId, "metro");
 
 {/* ===== NPC CHAT ===== */}
 {npcChat && (() => { const npc = NPCS.find((n) => n.name === npcChat); if (!npc) return null; const mem = memOf(s.npcMem ?? {}, npcChat); const p = personaOf(npc); return (
-<div className="fixed inset-0 z-[65] flex items-end justify-center bg-black/60 backdrop-blur-[2px] p-3 sm:items-center" role="dialog" aria-label={`和${npc.name}聊天`}>
+<div className="fixed inset-0 z-[65] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={`和${npc.name}聊天`}>
 <div className="rise flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] shadow-xl">
 <div className="flex items-start gap-3 p-4 pb-3 text-white" style={{ background: hexCss(npc.color) }}>
 <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-white/25 text-3xl">{npc.emoji}</span>
@@ -3306,25 +3853,8 @@ walkTo(toLocId, "metro");
 </div>
 </div> ); })()}
 
-{/* 手游式底部导航：地图 / 地点 / 导航 / 每日任务 / 手机 / 睡觉，一只手全够得着 */}
-<nav aria-label="游戏主导航" className="fixed bottom-3 left-1/2 z-40 flex w-[min(560px,94vw)] -translate-x-1/2 items-stretch justify-between gap-0.5 rounded-full border-2 border-[var(--border)] bg-[var(--surface)] px-1.5 py-1.5 shadow-[4px_4px_0_var(--border)]">
-{([
-["🗺️", "地图", () => { setNavOpen(false); window.scrollTo({ top: 0, behavior: "smooth" }); }],
-["📍", "地点", () => { setAsideTab("place"); setAsideOpen(true); }],
-["🧭", "导航", () => setNavOpen((o) => !o)],
-["📋", "每日任务", () => setDailyOpen(true)],
-["📱", "手机", () => { setPhoneApp(null); setPhoneOpen(true); }],
-["😴", "睡觉", () => goHomeAndSleep()],
-] as const).map(([emoji, label, fn]) => (
-<button key={label} type="button" aria-label={`底部导航：${label}`} onClick={fn} className="flex flex-1 flex-col items-center gap-0 rounded-full px-1 py-1 text-[15px] leading-none transition hover:bg-[var(--surface2)]">
-<span>{emoji}</span>
-<span className="mt-0.5 text-[10px] font-black">{label}</span>
-</button>
-))}
-</nav>
-
 {/* toast */}
-{toast && <div className="rise fixed bottom-24 left-1/2 z-50 w-[92%] max-w-md -translate-x-1/2 rounded-[14px] border-2 border-[var(--border)] bg-[var(--text)] px-4 py-3 text-center text-sm font-bold text-[var(--bg)] shadow-lg">{toast}</div>}
+{toast && <div className="rise fixed bottom-6 left-1/2 z-50 w-[92%] max-w-md -translate-x-1/2 rounded-[14px] border-2 border-[var(--border)] bg-[var(--text)] px-4 py-3 text-center text-sm font-bold text-[var(--bg)] shadow-lg">{toast}</div>}
 
 {/* 升职特效 */}
 {levelFx && (
@@ -3343,7 +3873,7 @@ walkTo(toLocId, "metro");
 const signed = (s.signDay ?? 0) === s.day;
 const base = s.dayBase?.day === s.day ? s.dayBase : { day: s.day, work: s.workCount, meal: s.mealCount, scenic: (s.visitedScenic ?? []).length };
 const missions: { id: string; icon: string; name: string; reward: number; done: boolean; hint: string }[] = [
-{ id: "work", icon: "💼", name: "上班打卡一次", reward: 20, done: s.workCount > base.work, hint: "去公司点「上班」" },
+{ id: "work", icon: "💼", name: "上班打卡一次", reward: 20, done: s.workCount > base.work, hint: s.cityKey === "sz" ? `去${companyById(s.employer).short}点「上班」` : "去公司点「上班」" },
 { id: "meal", icon: "🍜", name: "好好吃一顿饭", reward: 15, done: s.mealCount > base.meal, hint: "夜市 / 饭店 / 自己做饭都算" },
 { id: "scenic", icon: "📸", name: "风景打卡一处", reward: 25, done: (s.visitedScenic ?? []).length > base.scenic, hint: "去任意景区点「拍照打卡」" },
 { id: "chat", icon: "💬", name: "和一位街坊聊聊", reward: 15, done: (s.greeted ?? []).length > 0, hint: "在手机「街坊社交」里找人聊天" },
@@ -3351,7 +3881,7 @@ const missions: { id: string; icon: string; name: string; reward: number; done: 
 const apecTask = s.cityKey === "sz" ? apecTaskOfDay(s.day) : null;
 const apecDone = apecTask ? (s.apecTasks ?? []).includes(apecTask.id) : false;
 return (
-<div className="fixed inset-0 z-[65] flex items-end justify-center bg-black/55 p-3 backdrop-blur-[2px] sm:items-center" role="dialog" aria-label="每日任务">
+<div className="fixed inset-0 z-[65] flex items-end justify-center bg-black/55 p-3 sm:items-center" role="dialog" aria-label="每日任务">
 <div className="rise max-h-[92vh] w-full max-w-md overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] shadow-xl">
 <div className="flex items-start justify-between bg-[var(--text)] p-4 text-[var(--bg)]">
 <div>
@@ -3362,6 +3892,14 @@ return (
 <button type="button" aria-label="关闭每日任务" onClick={() => setDailyOpen(false)} className="rounded-full bg-white/15 px-3 py-1.5 text-sm font-black">✕</button>
 </div>
 <div className="p-4">
+{(() => { const today = dateKey(); const r = streakReward(meta.streak.count); const got = meta.streak.claimed === today; return (
+<div className="mb-2 rounded-[14px] border-2 border-[var(--border)] bg-[var(--surface2)] p-3">
+<p className="text-sm font-black">🔥 连续上线第 {meta.streak.count} 天 <span className="text-xs font-bold text-[var(--dim)]">（真实日历，断一天从 1 重来，第 7 天起奖励最高）</span></p>
+<div className="mt-1.5 flex gap-1">{[1, 2, 3, 4, 5, 6, 7].map((d) => <span key={d} className={`grid h-7 flex-1 place-items-center rounded-[8px] text-[10px] font-black ${d <= Math.min(7, meta.streak.count) ? "bg-[var(--accent)] text-white" : "bg-[var(--surface)] text-[var(--dim)]"}`}>{d === 7 ? "🎁" : `D${d}`}</span>)}</div>
+<button type="button" disabled={got} onClick={() => { mutate((x) => { x.money += r.money; x.energy += r.energy; }); updMeta((m) => { m.streak.claimed = today; }); floatReward(`+${fmt(r.money)} 连登`, "gold"); }} className="mt-2 w-full rounded-full bg-[var(--accent)] py-2 text-xs font-black text-white disabled:opacity-40">{got ? "✅ 今天的连续上线奖励已领" : `领取连续上线奖励 · ${fmt(r.money)}${r.energy ? ` + 能量 ${r.energy}` : ""}`}</button>
+<p className="mt-2 text-xs font-bold">{todayEvent.emoji} 今日城市事件「{todayEvent.name}」：<span className="font-normal">{todayEvent.desc}</span></p>
+</div>
+); })()}
 <button type="button" disabled={signed} aria-label={signed ? "今日已签到" : "每日签到领奖励"} onClick={() => { mutate((x) => { x.signDay = s.day; x.money += 30; x.energy += 10; }); floatReward("+¥30 签到", "gold"); floatReward("能量 +10", "green"); burstDanmaku(["🧧 今天的签到红包到账啦", "陈伯：早啊，又是新的一天", "小美：签到打卡，元气满满 ☀️"]); showToast("签到成功：+¥30，能量 +10。今天的任务在下面，顺手就做了。"); }} className="w-full rounded-[14px] bg-[var(--accent)] py-3.5 text-sm font-black text-white disabled:bg-[var(--surface2)] disabled:text-[var(--dim)]">
 {signed ? "✅ 今日已签到（明天再来）" : "🧧 每日签到 · 领 ¥30 + 能量 10"}
 </button>
@@ -3396,7 +3934,7 @@ return (
 
 {/* event modal */}
 {activeEvent && (
-<div className="fixed inset-0 z-50 flex items-end justify-center bg-black/55 backdrop-blur-[2px] p-3 sm:items-center" role="dialog" aria-label={activeEvent.title}>
+<div className="fixed inset-0 z-50 flex items-end justify-center bg-black/55 p-3 sm:items-center" role="dialog" aria-label={activeEvent.title}>
 <div className="rise w-full max-w-md rounded-[20px] border-2 border-[var(--border)] bg-[var(--surface)] p-5">
 <span className="inline-block rounded-full bg-[var(--gold)] px-2.5 py-1 text-xs font-black text-[#3d2f00]">{activeEvent.tag}</span>
 <h3 className="font-display mt-3 text-2xl font-black leading-snug">{activeEvent.title}</h3>
@@ -3413,7 +3951,7 @@ return (
 
 {/* phone modal */}
 {phoneOpen && (
-<div className="fixed inset-0 z-50 flex items-end justify-center bg-black/55 backdrop-blur-[2px] p-3 sm:items-center" role="dialog" aria-label="手机">
+<div className="fixed inset-0 z-50 flex items-end justify-center bg-black/55 p-3 sm:items-center" role="dialog" aria-label="手机">
 <div className="rise max-h-[86vh] w-full max-w-md overflow-y-auto rounded-[24px] border-2 border-[var(--border)] bg-[var(--surface)] p-5">
 <div className="flex items-center gap-2">
 {phoneApp && <button type="button" aria-label="返回手机桌面" onClick={() => setPhoneApp(null)} className="rounded-full bg-[var(--surface2)] px-3 py-1.5 text-sm font-black">←</button>}

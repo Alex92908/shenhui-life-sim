@@ -7,6 +7,9 @@
 // 深圳国际交流中心 (香蜜湖). The 30-day season is November, so game day N is
 // November N.
 
+import { SZ_KM_PER_UNIT, SZ_METRO_LINES, SZ_REAL_KM } from "./metro-sz";
+import { SZ_PLACES, type CityPlace, type PlaceKind } from "./places-sz";
+
 export type CityKey = "sz" | "hz";
 
 export interface CityInfo {
@@ -87,6 +90,55 @@ export const CAREERS = [
   { name: "部门经理", mul: 2.05, needXp: 26, needSkill: 5 },
   { name: "城市合伙人", mul: 2.6, needXp: 42, needSkill: 8 },
 ];
+
+/* ---- 公司 / 大厂：面试、拿 offer、跳槽 ----
+   You start at the small 科技园公司. Every big company HQ on the map can be
+   interviewed at; pass the bar (skill / xp / 职级) and you get an offer, take
+   it and that company becomes where you clock in. Each pays and wears you
+   down differently. Shenzhen only — Huizhou keeps its single 仲恺公司. */
+export interface Company {
+  id: string; name: string; short: string; emoji: string;
+  /** Map locations you can work / interview at. */
+  locIds: string[];
+  /** Day-wage multiplier on top of identity × city × 职级. */
+  payMul: number;
+  /** Overtime pay multiplier (on top of the usual ×1.75). */
+  otMul: number;
+  /** Energy a normal workday costs, and its mood change. */
+  energy: number; mood: number;
+  needSkill: number; needXp: number; needCareer: number;
+  /** The interviewer wants 正装. */
+  formal?: boolean;
+  /** Has a staff canteen: cheap meal for employees. */
+  canteen?: boolean;
+  culture: string;
+}
+export const COMPANIES: Company[] = [
+  { id: "startup", name: "科技园创业公司", short: "创业公司", emoji: "🏢", locIds: ["work"], payMul: 1, otMul: 1, energy: 28, mood: 0, needSkill: 0, needXp: 0, needCareer: 0, culture: "小公司什么都要干，工资一般，但没人管你几点到。" },
+  { id: "tencent", name: "腾讯", short: "腾讯", emoji: "🐧", locIds: ["co-tencent", "co-penguin"], payMul: 1.6, otMul: 1, energy: 30, mood: -1, needSkill: 3, needXp: 10, needCareer: 1, canteen: true, culture: "福利好、食堂出名，滨海大厦和企鹅岛两个园区都能上班。" },
+  { id: "bytedance", name: "抖音集团（字节跳动）", short: "字节", emoji: "🎵", locIds: ["co-bytedance"], payMul: 1.8, otMul: 1.1, energy: 34, mood: -4, needSkill: 3, needXp: 8, needCareer: 1, canteen: true, culture: "钱给得最多，节奏也最快，加班是常态。" },
+  { id: "huawei", name: "华为", short: "华为", emoji: "📶", locIds: ["co-huawei"], payMul: 1.7, otMul: 1.25, energy: 34, mood: -3, needSkill: 4, needXp: 12, needCareer: 1, canteen: true, culture: "奋斗者文化：加班多，但加班费和年终也给得足。" },
+  { id: "dji", name: "大疆", short: "大疆", emoji: "🚁", locIds: ["co-dji"], payMul: 1.65, otMul: 1, energy: 32, mood: -2, needSkill: 4, needXp: 10, needCareer: 1, canteen: true, culture: "对产品要求极高，面试看技术，进去能玩到最新的无人机。" },
+  { id: "baidu", name: "百度", short: "百度", emoji: "🔎", locIds: ["co-baidu"], payMul: 1.45, otMul: 1, energy: 29, mood: -1, needSkill: 2, needXp: 6, needCareer: 0, culture: "老牌大厂，节奏比新贵们稳一些。" },
+  { id: "zte", name: "中兴通讯", short: "中兴", emoji: "📡", locIds: ["co-zte"], payMul: 1.3, otMul: 1, energy: 28, mood: 0, needSkill: 1, needXp: 4, needCareer: 0, canteen: true, culture: "通信老厂，稳定，门槛比互联网大厂低。" },
+  { id: "cmb", name: "招商银行", short: "招行", emoji: "🏦", locIds: ["co-cmb"], payMul: 1.45, otMul: 0.9, energy: 26, mood: 1, needSkill: 2, needXp: 6, needCareer: 1, formal: true, culture: "金融业的体面工作：准点下班多，但面试必须穿正装。" },
+  { id: "pingan", name: "中国平安", short: "平安", emoji: "🏙️", locIds: ["bank"], payMul: 1.4, otMul: 1, energy: 28, mood: 0, needSkill: 2, needXp: 6, needCareer: 0, formal: true, culture: "在平安金融中心上班，深圳最高楼里看日落。面试要穿正装。" },
+  { id: "vanke", name: "万科", short: "万科", emoji: "🏗️", locIds: ["co-vanke"], payMul: 1.35, otMul: 1, energy: 26, mood: 3, needSkill: 2, needXp: 6, needCareer: 0, culture: "在大梅沙海边上班，通勤远，但心情好。" },
+  { id: "byd", name: "比亚迪", short: "比亚迪", emoji: "🔋", locIds: ["co-byd"], payMul: 1.2, otMul: 1.1, energy: 30, mood: 0, needSkill: 0, needXp: 2, needCareer: 0, canteen: true, culture: "新能源大厂招人多，门槛低，包吃，坪山离市区有点远。" },
+];
+/** What the player still lacks for this company's hiring bar (empty = qualified). */
+export function companyGaps(co: Company, s: { skill: number; xp: number; careerIdx: number }): string[] {
+  const out: string[] = [];
+  if (s.skill < co.needSkill) out.push(`技能 ${s.skill}/${co.needSkill}`);
+  if (s.xp < co.needXp) out.push(`经验 ${s.xp}/${co.needXp}`);
+  if (s.careerIdx < co.needCareer) out.push(`职级要到「${CAREERS[co.needCareer]?.name ?? ""}」`);
+  return out;
+}
+export const companyById = (id: string | undefined): Company => COMPANIES.find((c) => c.id === id) ?? COMPANIES[0]!;
+/** The company that has a workplace at this location (Shenzhen only). */
+export function companyAt(cityKey: CityKey, locId: string): Company | null {
+  return cityKey === "sz" ? COMPANIES.find((c) => c.locIds.includes(locId)) ?? null : null;
+}
 
 export type NpcBehavior = "stay" | "patrol" | "wander" | "commute";
 export type NpcAccessory = "cap" | "apron" | "tie" | "vest" | "bag" | "helmet" | "none";
@@ -359,7 +411,18 @@ const SZ_LOCS: Loc[] = [
   { id: "airport", type: "transit", emoji: "✈️", name: "宝安国际机场", short: "机场", desc: "T3 航站楼人流昼夜不停。机场摆渡、行李寄存、接机跑腿的单子多，APEC 周外宾抵离高峰更缺人。", gigName: "机场摆渡 / 接机跑腿", x: -27, z: -3, color: 0x38bdf8, h: 2.2, w: 4.2 },
   { id: "apec-qianhai", type: "apec", emoji: "🏙️", name: "前海国际会议中心", short: "前海会议中心", desc: "APEC 工商领导人峰会（CEO 峰会，11 月 17–18 日）的举办地。各国企业高管云集，会务、接待、同传协助都缺人。", x: -21, z: 5, color: 0xb91c1c, h: 3.6, w: 3.6 },
   { id: "happyvalley", type: "fun", emoji: "🎢", name: "欢乐谷", short: "欢乐谷", desc: "过山车的尖叫声隔着一条街都听得见。深漂的快乐老家，一张门票换一天不管不顾。", funName: "欢乐谷玩一整天", funCost: 120, funMood: 30, funDesc: "排最长的队，坐最快的过山车，下来腿软心飞", x: -19, z: -6, color: 0xe879f9, h: 3, w: 3.4 },
-  { id: "work", type: "work", emoji: "🏢", name: "科技园公司", short: "公司", desc: "南山科技园，灯火通明到深夜。上班和加班都在这儿，工资和职级也在这儿。", x: -17, z: 0, color: 0x3b82f6, h: 6, w: 3.2 },
+  { id: "work", type: "work", emoji: "🏢", name: "科技园公司", short: "公司", desc: "南山科技园里一家几十人的创业公司，灯火通明到深夜。你在深圳的第一份工；想跳槽，就去各大厂总部面试。", x: -17, z: 0, color: 0x3b82f6, h: 6, w: 3.2 },
+  /* 大厂总部：都能面试、拿 offer、跳槽过去上班（见 COMPANIES）。位置按真实地铁站摆放。 */
+  { id: "co-tencent", type: "work", emoji: "🐧", name: "腾讯滨海大厦", short: "腾讯", desc: "后海的腾讯总部：两栋塔楼用三座空中连廊连在一起，微信和 QQ 在这里长大。", x: -15.6, z: 7.8, color: 0x2563eb, h: 6, w: 2.6 },
+  { id: "co-penguin", type: "work", emoji: "🏝️", name: "腾讯企鹅岛 · 大铲湾总部", short: "企鹅岛", desc: "宝安大铲湾填海建起的腾讯新总部园区，2025 年 10 月起试运营，规划能容纳 8–10 万人，滨海栈道和红树林对市民开放。", x: -24, z: 3.9, color: 0x0ea5e9, h: 3, w: 2.8 },
+  { id: "co-bytedance", type: "work", emoji: "🎵", name: "抖音集团 · 后海中心", short: "字节", desc: "字节跳动在深圳的第一座自建总部，后海约 150 米高的塔楼。", x: -17.3, z: 5, color: 0x111827, h: 5.5, w: 2.4 },
+  { id: "co-baidu", type: "work", emoji: "🔎", name: "百度国际大厦", short: "百度", desc: "后海的百度深圳总部，东西两座塔楼。", x: -14, z: 1.8, color: 0x2563eb, h: 5, w: 2.4 },
+  { id: "co-dji", type: "work", emoji: "🚁", name: "大疆天空之城", short: "大疆", desc: "西丽留仙洞的大疆总部：两座塔楼之间悬挑出一层层平台，无人机在楼顶试飞。", x: -12.7, z: -0.8, color: 0x1f2937, h: 6, w: 2.4 },
+  { id: "co-huawei", type: "work", emoji: "📶", name: "华为坂田基地", short: "华为", desc: "龙岗坂田的华为总部园区，大片低层研发楼、湖和绿地，地铁 10 号线有一站就叫「华为」。", x: 6.2, z: -11.9, color: 0xdc2626, h: 2, w: 3.0 },
+  { id: "co-zte", type: "work", emoji: "📡", name: "中兴通讯大厦", short: "中兴", desc: "南山科技园的中兴总部，深南大道边的老牌通信大厂。", x: -19.3, z: 2.4, color: 0x0284c7, h: 4.5, w: 2.4 },
+  { id: "co-cmb", type: "work", emoji: "🏦", name: "招商银行大厦", short: "招行", desc: "福田深南大道上的招商银行总部，银行的规矩多，面试要穿正装。", x: -3.8, z: 0.7, color: 0xb91c1c, h: 6.5, w: 2.4 },
+  { id: "co-vanke", type: "work", emoji: "🏗️", name: "万科中心", short: "万科", desc: "大梅沙海边的「水平摩天楼」：整栋楼架在空中，下面是公园，开窗就是海。", x: 29.3, z: 8, color: 0xf97316, h: 1.6, w: 3.0 },
+  { id: "co-byd", type: "work", emoji: "🔋", name: "比亚迪坪山总部", short: "比亚迪", desc: "坪山的比亚迪总部和工厂，新能源车和电池，招工量大，门槛低。", x: 35, z: -6.4, color: 0x16a34a, h: 2.5, w: 3.0 },
   { id: "talent", type: "fun", emoji: "🏃", name: "人才公园", short: "人才公园", desc: "海边跑道和求贤阁。晨跑的人、看海的人、聊 offer 的人，都在这儿。", funName: "沿海边跑道散步", funCost: 10, funMood: 20, funDesc: "跑道灯光一路亮到海边，跑完一身轻", x: -16, z: 11, color: 0x14b8a6, h: 0.8, w: 3 },
   { id: "mall", type: "mall", emoji: "🛍️", name: "海岸城商场", short: "商场", desc: "逛街、买衣服、看人花钱。也能接周末促销兼职，站柜台赚点外快。", x: -14, z: 5, color: 0xec4899, h: 3.4, w: 3.4 },
   { id: "home", type: "home", emoji: "🏠", name: "城中村握手楼", short: "出租屋", desc: "你租的小单间，窗户对着隔壁楼——握手楼名不虚传。睡觉、躺平都在这儿。", x: -13, z: -4, color: 0xff6b4a, h: 2.4, w: 2.8 },
@@ -447,6 +510,91 @@ const HZ_LOCS: Loc[] = [
 
 export function getLocations(cityKey: CityKey): Loc[] {
   return cityKey === "sz" ? SZ_LOCS : HZ_LOCS;
+}
+/** A metro station with no game location of its own is still a place the
+    player can stand: its id is "st:<站名>". These are resolved on demand
+    and never added to getLocations(), so place lists stay short. */
+export const STATION_PREFIX = "st:";
+export const stationLocId = (name: string) => `${STATION_PREFIX}${name}`;
+export const isStationLoc = (id: string) => id.startsWith(STATION_PREFIX);
+
+/* ---- 城市地点 (OSM): parks, malls, hospitals, museums, beaches … ----
+   Real places from OpenStreetMap (places-sz.ts), id "pl:<osm id>". Like
+   stations they resolve on demand and stay out of getLocations(); each
+   kind maps to an existing place type so it gets that type's actions. */
+export const PLACE_PREFIX = "pl:";
+export const isPlaceLoc = (id: string) => id.startsWith(PLACE_PREFIX);
+export interface PlaceKindMeta { label: string; emoji: string; type: LocType; color: number; funName?: string; funCost?: number; funMood?: number; funDesc?: string; }
+export const PLACE_KINDS: Record<PlaceKind, PlaceKindMeta> = {
+  park: { label: "公园", emoji: "🌳", type: "scenic", color: 0x22c55e, funName: "逛公园", funCost: 0, funMood: 14, funDesc: "深圳的公园免费开放：绿道、湖边、草坪，走一圈整个人松下来" },
+  nature: { label: "湿地 / 保护区", emoji: "🦢", type: "scenic", color: 0x15803d, funName: "看红树林和候鸟", funCost: 0, funMood: 18, funDesc: "带上望远镜，冬天能看到成群的候鸟" },
+  beach: { label: "海滩", emoji: "🏖️", type: "scenic", color: 0x38bdf8, funName: "去海边玩水", funCost: 30, funMood: 24, funDesc: "踩沙、吹海风、看日落，周末人多要早点去" },
+  peak: { label: "山峰", emoji: "⛰️", type: "mountain", color: 0x4d7c0f, funName: "登顶看全城", funCost: 0, funMood: 22, funDesc: "沿登山道一路往上，山顶能看到海和城市" },
+  mall: { label: "商场", emoji: "🛍️", type: "mall", color: 0xf472b6 },
+  hospital: { label: "医院", emoji: "🏥", type: "health", color: 0xef4444 },
+  university: { label: "大学", emoji: "🎓", type: "learn", color: 0x6366f1 },
+  library: { label: "图书馆", emoji: "📚", type: "learn", color: 0x8b5cf6 },
+  museum: { label: "博物馆 / 美术馆", emoji: "🏛️", type: "fun", color: 0xd97706, funName: "看一场展览", funCost: 0, funMood: 14, funDesc: "深圳大部分公立博物馆、美术馆免费，提前在公众号预约" },
+  theatre: { label: "剧院 / 音乐厅", emoji: "🎭", type: "fun", color: 0xbe185d, funName: "看一场演出", funCost: 180, funMood: 26, funDesc: "话剧、音乐会、儿童剧，周末场次多，学生票更便宜" },
+  stadium: { label: "体育场馆", emoji: "🏟️", type: "gym", color: 0x0ea5e9 },
+  themepark: { label: "主题乐园", emoji: "🎢", type: "fun", color: 0xe879f9, funName: "玩一整天", funCost: 150, funMood: 30, funDesc: "排队、尖叫、拍照，玩到闭园" },
+  attraction: { label: "景点", emoji: "📍", type: "scenic", color: 0xf59e0b, funName: "慢慢逛一圈", funCost: 0, funMood: 16, funDesc: "边走边看，顺手查查这里的故事" },
+  historic: { label: "古迹 / 纪念地", emoji: "🏯", type: "scenic", color: 0x92400e, funName: "看看历史遗迹", funCost: 0, funMood: 12, funDesc: "读一读碑文和介绍，深圳不只有四十年" },
+};
+/** OSM places minus the ones the game already has as a hand-made location
+    (same name, or one name containing the other, e.g. 深圳人才公园 / 人才公园). */
+let szPlacesDeduped: CityPlace[] | null = null;
+export function placesForCity(cityKey: CityKey): CityPlace[] {
+  if (cityKey !== "sz") return [];
+  if (!szPlacesDeduped) {
+    const clean = (n: string) => n.replace(/\s|·/g, "");
+    const core = (n: string) => clean(n).replace(/^深圳(市)?/, "");
+    const cores = new Set(SZ_LOCS.flatMap((l) => [core(l.name), core(l.short)]).filter((n) => n.length >= 3));
+    const fulls = SZ_LOCS.map((l) => clean(l.name)).filter((n) => n.length >= 5);
+    szPlacesDeduped = SZ_PLACES.filter((p) => !cores.has(core(p.name)) && !fulls.some((f) => clean(p.name).includes(f)));
+  }
+  return szPlacesDeduped;
+}
+const placeById = new Map(SZ_PLACES.map((p) => [`${PLACE_PREFIX}${p.id}`, p]));
+/** The real places closest to a map point (e.g. around a station). */
+export function nearbyPlaces(cityKey: CityKey, x: number, z: number, n = 4, maxDist = 2.6): { place: CityPlace; id: string; dist: number }[] {
+  return placesForCity(cityKey)
+    .map((p) => ({ place: p, id: `${PLACE_PREFIX}${p.id}`, dist: Math.hypot(p.x - x, p.z - z) }))
+    .filter((r) => r.dist <= maxDist)
+    .sort((a, b) => a.dist - b.dist)
+    .slice(0, n);
+}
+const stationLocCache = new Map<string, Loc>();
+export function resolveLoc(cityKey: CityKey, id: string): Loc | undefined {
+  const real = getLocations(cityKey).find((l) => l.id === id);
+  if (real) return real;
+  if (isPlaceLoc(id)) {
+    const p = placeById.get(id);
+    if (!p || cityKey !== "sz") return undefined;
+    const k = PLACE_KINDS[p.kind];
+    const walkMin = Math.max(1, Math.round((p.stKm * 1.3) / 0.075));
+    return {
+      id, type: k.type, emoji: k.emoji, name: p.name, short: p.name.length > 8 ? `${p.name.slice(0, 8)}…` : p.name,
+      desc: `${k.label}${p.en ? ` · ${p.en}` : ""}。最近的地铁站是「${p.st}」，${p.stKm < 0.3 ? "出站就到" : `约 ${p.stKm.toFixed(1)} 公里，步行 ${walkMin} 分钟左右`}。`,
+      x: p.x, z: p.z, color: k.color, h: 0, w: 0,
+      funName: k.funName, funCost: k.funCost, funMood: k.funMood, funDesc: k.funDesc,
+    };
+  }
+  if (!isStationLoc(id)) return undefined;
+  const key = `${cityKey}|${id}`;
+  const hit = stationLocCache.get(key);
+  if (hit) return hit;
+  const name = id.slice(STATION_PREFIX.length);
+  const lines = metroLinesForCity(cityKey).filter((l) => l.stations.some((x) => x.name === name));
+  const st = lines[0]?.stations.find((x) => x.name === name);
+  if (!st || !lines[0]) return undefined;
+  const loc: Loc = {
+    id, type: "transit", emoji: "🚇", name: `${name}站`, short: name,
+    desc: `地铁站：${lines.map((l) => l.short).join("、")}。出站就是街区，可以从这里步行、骑车、打车去别处，或者再进站坐车。`,
+    x: st.x, z: st.z, color: lines[0].color, h: 0, w: 0,
+  };
+  stationLocCache.set(key, loc);
+  return loc;
 }
 
 export const APPS = [
@@ -574,7 +722,7 @@ export const SCENIC_SPOTS: ScenicSpot[] = [
    锦绣中华/欢乐谷）与欢乐海岸、观澜湖为 5A，东部华侨城、青青世界、野生动物园、
    海上田园、光明农场大观园、仙湖植物园、大梅沙、大鹏所城为 4A。 */
 export const LOC_EN: Record<string, string> = {
-  "宝安国际机场": "Bao'an International Airport", "前海国际会议中心": "Qianhai Int'l Convention Center", "欢乐谷": "Happy Valley", "科技园公司": "Science & Technology Park", "人才公园": "Talent Park", "海岸城商场": "Coastal City Mall", "城中村握手楼": "Urban Village Rental", "社区健身房": "Community Gym", "太子湾 · MGM 欢迎晚宴": "Prince Bay · MGM Welcome Banquet", "蛇口邮轮母港": "Shekou Cruise Homeport", "深圳湾口岸": "Shenzhen Bay Port", "深圳湾公园": "Shenzhen Bay Park", "深圳国际交流中心 · 香蜜湖": "Shenzhen Int'l Exchange Center, Xiangmihu", "莲花山公园": "Lianhuashan Park", "深圳图书馆 · 夜校": "Shenzhen Library & Night School", "深圳北站": "Shenzhen North Station", "平安银行大厦": "Ping An Bank Tower", "地铁站": "Metro Station", "华强北电子市场": "Huaqiangbei Electronics Market", "东门夜市食街": "Dongmen Night Market", "深圳市人民医院": "Shenzhen People's Hospital", "酒吧街 · KTV": "Bar Street & KTV", "罗湖口岸": "Luohu Port", "大芬油画村": "Dafen Oil Painting Village", "大梅沙海滨公园": "Dameisha Beach Park", "深圳湾滨海酒店 · 青旅": "Shenzhen Bay Hotel & Hostel", "皇岗口岸": "Huanggang Port", "梧桐山": "Wutong Mountain", "福田口岸": "Futian Port", "莲塘口岸": "Liantang Port", "仙湖植物园 · 弘法寺": "Fairy Lake Botanical Garden & Hongfa Temple", "盐田海滨栈道": "Yantian Seaside Boardwalk",
+  "宝安国际机场": "Bao'an International Airport", "前海国际会议中心": "Qianhai Int'l Convention Center", "欢乐谷": "Happy Valley", "科技园公司": "Science & Technology Park", "腾讯滨海大厦": "Tencent Binhai Mansion", "腾讯企鹅岛 · 大铲湾总部": "Tencent Penguin Island", "抖音集团 · 后海中心": "Douyin Houhai Center", "百度国际大厦": "Baidu International Building", "大疆天空之城": "DJI Sky City", "华为坂田基地": "Huawei Bantian Base", "中兴通讯大厦": "ZTE Building", "招商银行大厦": "China Merchants Bank Tower", "万科中心": "Vanke Center", "比亚迪坪山总部": "BYD Headquarters", "人才公园": "Talent Park", "海岸城商场": "Coastal City Mall", "城中村握手楼": "Urban Village Rental", "社区健身房": "Community Gym", "太子湾 · MGM 欢迎晚宴": "Prince Bay · MGM Welcome Banquet", "蛇口邮轮母港": "Shekou Cruise Homeport", "深圳湾口岸": "Shenzhen Bay Port", "深圳湾公园": "Shenzhen Bay Park", "深圳国际交流中心 · 香蜜湖": "Shenzhen Int'l Exchange Center, Xiangmihu", "莲花山公园": "Lianhuashan Park", "深圳图书馆 · 夜校": "Shenzhen Library & Night School", "深圳北站": "Shenzhen North Station", "平安银行大厦": "Ping An Bank Tower", "地铁站": "Metro Station", "华强北电子市场": "Huaqiangbei Electronics Market", "东门夜市食街": "Dongmen Night Market", "深圳市人民医院": "Shenzhen People's Hospital", "酒吧街 · KTV": "Bar Street & KTV", "罗湖口岸": "Luohu Port", "大芬油画村": "Dafen Oil Painting Village", "大梅沙海滨公园": "Dameisha Beach Park", "深圳湾滨海酒店 · 青旅": "Shenzhen Bay Hotel & Hostel", "皇岗口岸": "Huanggang Port", "梧桐山": "Wutong Mountain", "福田口岸": "Futian Port", "莲塘口岸": "Liantang Port", "仙湖植物园 · 弘法寺": "Fairy Lake Botanical Garden & Hongfa Temple", "盐田海滨栈道": "Yantian Seaside Boardwalk",
   "世界之窗": "Window of the World", "锦绣中华 · 民俗村": "Splendid China Folk Village", "深圳野生动物园": "Shenzhen Safari Park", "东部华侨城": "OCT East", "青青世界": "Evergreen World", "海上田园": "Sea Garden Eco-Tourism Area", "光明农场大观园": "Guangming Farm Grand View Garden", "大鹏所城": "Dapeng Fortress", "欢乐海岸": "OCT Harbour", "观澜湖旅游休闲度假区": "Mission Hills Resort",
   "七娘山": "Qiniang Mountain", "杨梅坑": "Yangmeikeng Coastal Valley", "西涌海滩": "Xichong Beach", "中英街": "Chung Ying Street", "塘朗山郊野公园": "Tanglangshan Country Park", "凤凰山森林公园": "Fenghuangshan Forest Park", "深圳博物馆": "Shenzhen Museum", "海上世界文化艺术中心": "Sea World Culture & Arts Center", "深圳湾体育中心 · 春茧": "Shenzhen Bay Sports Center (Spring Cocoon)", "龙岗大运中心": "Longgang Universiade Center",
   "海龟湾自然保护区": "Sea Turtle Bay Nature Reserve", "三角洲岛": "Delta Island (Sanjiaozhou)", "惠州博物馆": "Huizhou Museum", "霞涌海鲜街": "Xiayong Seafood Street", "东江公园": "Dongjiang Park", "惠州植物园": "Huizhou Botanical Garden",
@@ -607,28 +755,24 @@ export function scenicOf(cityKey: CityKey, locId: string): ScenicSpot | undefine
 export interface MetroStation { name: string; x: number; z: number; locId?: string; }
 export interface MetroLine { id: string; name: string; short: string; color: number; colorCss: string; city: CityKey | "both"; stations: MetroStation[]; }
 const S = (name: string, x: number, z: number, locId?: string): MetroStation => ({ name, x, z, locId });
+/* Shenzhen: the full metro / tram / APM network plus 穗深城际, generated
+   from OpenStreetMap by tools/metro/gen_sz_metro.py (see metro-sz.ts).
+   Below: the hand-made Huizhou intercity + high-speed rail lines. */
+/** A generated Shenzhen station by name (keeps rail lines that stop there
+    exactly on the metro station's position). */
+const szSt = (name: string): MetroStation => {
+  for (const l of SZ_METRO_LINES) { const st = l.stations.find((x) => x.name === name); if (st) return { name, x: st.x, z: st.z }; }
+  throw new Error(`station ${name} missing from metro-sz.ts`);
+};
 export const METRO_LINES: MetroLine[] = [
-  { id: "1", name: "1号线（罗宝线）", short: "1号线", color: 0x008c2e, colorCss: "#008C2E", city: "sz", stations: [S("罗湖",15,-2,"luohu"),S("老街",11,0),S("科学馆",4,-3),S("华强路",6,-6,"hq"),S("会展中心",0,-1),S("车公庙",-9,-1),S("世界之窗",-19,-4),S("高新园",-17,0,"work"),S("深大",-15,2),S("前海湾",-21,5,"apec-qianhai"),S("宝安中心",-23,1),S("机场东",-27,-3,"airport")] },
-  { id: "2", name: "2号线（蛇口线）", short: "2号线", color: 0xf39800, colorCss: "#F39800", city: "sz", stations: [S("赤湾",-27,11,"port"),S("海上世界",-22,12,"apec-taiziwan"),S("后海",-14,5,"mall"),S("世界之窗",-19,-4),S("侨城北",-12,-6),S("香蜜",-4,-7,"apec-xiangmihu"),S("市民中心",0,-4,"library"),S("华强北",6,-6,"hq"),S("黄贝岭",11,-4),S("莲塘",19,-5,"liantangport"),S("仙湖路",12,-12,"xianhuhu")] },
-  { id: "3", name: "3号线（龙岗线）", short: "3号线", color: 0x0096d6, colorCss: "#0096D6", city: "sz", stations: [S("福保",-1,10),S("福田",0,-1),S("少年宫",-2,-6),S("华新",3,-6),S("老街",11,0),S("布吉",14,-8),S("大芬",17,-10,"dafen"),S("大运",22,-8),S("双龙",26,-6)] },
-  { id: "4", name: "4号线（龙华线）", short: "4号线", color: 0xe60012, colorCss: "#E60012", city: "sz", stations: [S("福田口岸",-1,16,"futianport"),S("福民",0,6),S("会展中心",0,-1),S("市民中心",0,-4,"library"),S("少年宫",-2,-6),S("上梅林",-1,-10),S("深圳北站",1,-15,"north"),S("红山",3,-17),S("龙华",5,-18),S("清湖",7,-19)] },
-  { id: "5", name: "5号线（环中线）", short: "5号线", color: 0x7b2d8b, colorCss: "#7B2D8B", city: "sz", stations: [S("赤湾",-27,11,"port"),S("前海湾",-21,5,"apec-qianhai"),S("宝安中心",-23,1),S("翻身",-19,-2),S("西丽",-10,-9),S("深圳北站",1,-15,"north"),S("布吉",14,-8),S("黄贝岭",11,-4),S("太安",13,-2)] },
-  { id: "6", name: "6号线（光明线）", short: "6号线", color: 0x1aa17a, colorCss: "#1AA17A", city: "sz", stations: [S("科学馆",4,-3),S("通新岭",4,-6),S("八卦岭",6,-9),S("梅林关",0,-12),S("深圳北站",1,-15,"north"),S("红山",3,-17),S("光明",-6,-19),S("松岗",-16,-14)] },
-  { id: "6b", name: "6号线支线", short: "6号线支线", color: 0x1aa17a, colorCss: "#1AA17A", city: "sz", stations: [S("光明",-6,-19),S("圳美",-8,-18),S("中山大学",-9,-17),S("深理工",-10,-16)] },
-  { id: "7", name: "7号线（西丽线）", short: "7号线", color: 0x003f87, colorCss: "#003F87", city: "sz", stations: [S("西丽湖",-12,-10),S("茶光",-11,-6),S("安托山",-8,-4),S("车公庙",-9,-1),S("上沙",-4,4),S("皇岗村",1,3),S("华新",3,-6),S("黄木岗",6,-8),S("太安",13,-2)] },
-  { id: "8", name: "8号线（盐田线）", short: "8号线", color: 0xf39800, colorCss: "#F39800", city: "sz", stations: [S("黄贝岭",11,-4),S("莲塘",19,-5,"liantangport"),S("仙湖路",12,-12,"xianhuhu"),S("梧桐山南",21,-13,"wutongshan"),S("沙头角",20,-4),S("海山",22,0),S("盐田港西",23,3,"yantian"),S("深外高中",24,5),S("小梅沙",25,7),S("大梅沙",26,8,"dameisha")] },
-  { id: "9", name: "9号线（梅林线）", short: "9号线", color: 0x8b7d6b, colorCss: "#8B7D6B", city: "sz", stations: [S("前湾",-21,5,"apec-qianhai"),S("梦海",-18,6),S("南油",-15,4),S("粤海门",-14,5,"mall"),S("深大南",-15,1),S("下沙",-7,3),S("香梅",-4,-7,"apec-xiangmihu"),S("景田",-3,-10),S("梅景",0,-11),S("孖岭",4,-9),S("红岭",6,-6,"hq")] },
-  { id: "10", name: "10号线（坂田线）", short: "10号线", color: 0xf5a9b8, colorCss: "#F5A9B8", city: "sz", stations: [S("福田口岸",-1,16,"futianport"),S("福民",0,6),S("岗厦",2,0),S("莲花村",-1,-7),S("冬瓜岭",1,-11),S("五和",6,-14),S("坂田",8,-15),S("贝尔路",9,-16),S("平湖",12,-18)] },
-  { id: "11", name: "11号线（机场线）", short: "11号线", color: 0x6c1d45, colorCss: "#6C1D45", city: "sz", stations: [S("岗厦北",2,0),S("福田",0,-1),S("车公庙",-9,-1),S("后海",-14,5,"mall"),S("南山",-16,2),S("前海湾",-21,5,"apec-qianhai"),S("宝安",-24,0),S("碧海湾",-26,-1),S("机场",-27,-3,"airport"),S("机场北",-28,-6),S("松岗",-24,-12)] },
-  { id: "12", name: "12号线（南宝线）", short: "12号线", color: 0x009b8c, colorCss: "#009B8C", city: "sz", stations: [S("左炮台东",-25,12),S("太子湾",-22,12,"apec-taiziwan"),S("海上世界",-22,11),S("南油",-15,4),S("南山",-16,2),S("桃园",-15,-1),S("中山公园",-13,-4),S("灵芝",-18,-3),S("上川",-21,-2),S("松岗",-24,-12)] },
-  { id: "13", name: "13号线（石岩线·在建开通段）", short: "13号线", color: 0xe8b400, colorCss: "#E8B400", city: "sz", stations: [S("深圳湾口岸",-18,15,"szbayport"),S("人才公园",-16,11,"talent"),S("后海",-14,5,"mall"),S("石鼓",-12,-2),S("留仙洞",-10,-9),S("应人石",-8,-14),S("石岩",-6,-17)] },
-  { id: "14", name: "14号线（东部快线）", short: "14号线", color: 0xe6007e, colorCss: "#E6007E", city: "sz", stations: [S("岗厦北",2,0),S("黄木岗",6,-8),S("罗湖北",12,-6),S("布吉",14,-8),S("石芽岭",16,-10),S("大运",22,-8),S("坪山围",28,-6),S("沙田",32,-4)] },
-  { id: "16", name: "16号线（龙坪线）", short: "16号线", color: 0x0072bc, colorCss: "#0072BC", city: "sz", stations: [S("大运",22,-8),S("大运中心",23,-9),S("龙城公园",24,-10),S("黄阁坑",25,-11),S("坪山站",24,-9),S("新和",32,-7),S("田心",34,-6)] },
-  { id: "20", name: "20号线（会展线）", short: "20号线", color: 0x7fb3e8, colorCss: "#7FB3E8", city: "sz", stations: [S("机场北",-28,-6),S("国展",-30,-9),S("国展北",-31,-11),S("会展城",-32,-13)] },
-  { id: "apm", name: "坪山云巴1号线（APM）", short: "云巴", color: 0x00a0a0, colorCss: "#00A0A0", city: "sz", stations: [S("坪山站",24,-9),S("文化聚落",31,-7),S("坪山中心",32,-6),S("燕子岭",33,-5)] },
-  { id: "guangshen", name: "广深城际（穗深城际）", short: "广深城际", color: 0xc1272d, colorCss: "#C1272D", city: "both", stations: [S("深圳机场",-27,-3,"airport"),S("福海西",-25,-7),S("沙井西",-23,-10),S("松岗",-21,-13),S("新桥",-18,-15),S("东莞西",-8,-18),S("广州南·新塘方向",2,-19)] },
+  ...SZ_METRO_LINES,
   { id: "hz-intercity", name: "莞惠城际 · 惠州城轨", short: "惠州城轨", color: 0x0ea5e9, colorCss: "#0EA5E9", city: "hz", stations: [S("仲恺",-20,-3,"work"),S("沥林北",-17,-4),S("陈江南",-15,-5),S("惠环",-13,-5),S("龙丰",-11,-3),S("惠州西湖",-13,1,"xihu"),S("云山",-9,-4),S("江北·小金口",-3,-14,"huamao"),S("惠州北",0,-16)] },
-  { id: "szhz-rail", name: "厦深高铁（深圳北↔惠州南）", short: "高铁", color: 0x6366f1, colorCss: "#6366F1", city: "both", stations: [S("深圳北站",1,-15,"north"),S("坪山站",24,-9),S("惠州南站",2,7,"hzsouth"),S("惠东站",18,2)] },
+  /* 厦深高铁 crosses between the two cities' maps, which use different
+     coordinate frames — so each city draws only its own end, ending in a
+     direction stub (a name ending in 方向: drawn, not ridable; changing city is the
+     高铁 trip in 切换城市). */
+  { id: "szhz-rail", name: "厦深高铁（深圳北↔惠州南）", short: "高铁", color: 0x6366f1, colorCss: "#6366F1", city: "sz", stations: [S("深圳北站",1,-15,"north"),szSt("坪山站"),S("惠州南·惠州方向",37.5,-6.5)] },
+  { id: "szhz-rail", name: "厦深高铁（深圳北↔惠州南）", short: "高铁", color: 0x6366f1, colorCss: "#6366F1", city: "hz", stations: [S("深圳北·深圳方向",-8,9),S("惠州南站",2,7,"hzsouth"),S("惠东站",18,2)] },
   /* Huizhou has NO metro — its rail is intercity + high-speed rail only.
      赣深高铁 serves 惠州北/仲恺 (transfers with 莞惠城际 at both), 广汕高铁
      serves 惠州南 (transfers with 厦深高铁 there). */
@@ -639,7 +783,7 @@ export function metroLinesForCity(cityKey: CityKey): MetroLine[] {
   return METRO_LINES.filter((l) => l.city === cityKey || l.city === "both");
 }
 export function linesForLoc(cityKey: CityKey, locId: string): MetroLine[] {
-  return metroLinesForCity(cityKey).filter((l) => l.stations.some((s) => s.locId === locId));
+  return metroLinesForCity(cityKey).filter((l) => l.stations.some((s) => s.locId === locId || stationLocId(s.name) === locId));
 }
 export interface MetroLeg { line: MetroLine; stations: MetroStation[]; stops: number; }
 export interface MetroRoute { line: MetroLine; fromIdx: number; toIdx: number; stops: number; fare: number; stations: MetroStation[]; legs: MetroLeg[]; transferStations: string[]; shuttleFrom: string[]; isTransfer: boolean; summary: string; }
@@ -649,70 +793,96 @@ export interface MetroRoute { line: MetroLine; fromIdx: number; toIdx: number; s
  * without this link the Huizhou intercity network and the high-speed rail
  * network would be two disconnected islands. */
 export const SHUTTLE_LINKS: [string, string][] = [["惠州北", "惠州南站"]];
-/** BFS over the station graph: ride along a line, change lines at a
- * same-name station, or cross between the paired stations in SHUTTLE_LINKS
- * by shuttle bus. Returns the fewest-stops route, with legs split at each
- * transfer so the carriage can announce and perform the change. */
-export function findMetroRoute(cityKey: CityKey, fromLocId: string, toLocId: string): MetroRoute | null {
-  if (fromLocId === toLocId) return null;
+/** Relative time cost per map unit for each line: express / rail lines
+ * cover ground much faster than an all-stops metro (11号线 runs at
+ * 120 km/h vs 80 km/h; intercity / high-speed rail faster still). */
+const LINE_SPEED: Record<string, number> = { "11": 0.6, "14": 0.7, tram1: 1.6, tram2: 1.6, apm: 1.3, guangshen: 0.45, "szhz-rail": 0.3, "ganshen-rail": 0.3, "guangshan-rail": 0.3, "hz-intercity": 0.5 };
+/** Cost of changing lines (walk between platforms + wait), in map units —
+ * roughly 8–10 minutes, so the router never ping-pongs between lines to
+ * shave a little distance off a schematic that is not to scale. */
+const TRANSFER_COST = 15;
+/** Intercity / high-speed rail: priced by the old flat stop formula. */
+const RAIL_LINE_IDS = new Set(["guangshen", "szhz-rail", "hz-intercity", "ganshen-rail", "guangshan-rail"]);
+/** 深圳地铁里程计价: first 4 km ¥2; 4–12 km +¥1 per 4 km; 12–24 km +¥1 per
+ * 6 km; beyond 24 km +¥1 per 8 km. Distance = the ridden stations' real
+ * (OSM) positions, falling back to map distance for any station without one. */
+function metroFare(stations: MetroStation[]): number {
+  let km = 0;
+  for (let i = 1; i < stations.length; i++) {
+    const a = stations[i - 1]!, b = stations[i]!;
+    const ra = SZ_REAL_KM[a.name], rb = SZ_REAL_KM[b.name];
+    km += ra && rb ? Math.hypot(rb[0] - ra[0], rb[1] - ra[1]) : Math.hypot(b.x - a.x, b.z - a.z) * SZ_KM_PER_UNIT;
+  }
+  // track runs ~1.25× the straight line between stations
+  km *= 1.25;
+  if (km <= 4) return 2;
+  if (km <= 12) return 2 + Math.ceil((km - 4) / 4);
+  if (km <= 24) return 4 + Math.ceil((km - 12) / 6);
+  return 6 + Math.ceil((km - 24) / 8);
+}
+/** Cost of an out-of-station shuttle-bus hop. */
+const SHUTTLE_COST = 8;
+/** Shortest-time route over the station graph (Dijkstra): ride along a line
+ * (cost = distance × line speed), change lines at a same-name station, or
+ * cross between the paired stations in SHUTTLE_LINKS by shuttle bus. The
+ * schematic lists lines at very different station densities, so ranking by
+ * stop count would mislead; distance × speed + transfer penalty does not.
+ * Legs are split at each transfer so the carriage can announce the change. */
+function routeWhere(cityKey: CityKey, isStart: (st: MetroStation) => boolean, isGoal: (st: MetroStation) => boolean): MetroRoute | null {
   const lines = metroLinesForCity(cityKey);
   const keyOf = (lineId: string, name: string) => `${lineId}::${name}`;
-  // station name -> lines serving it (transfer index)
   const byName = new Map<string, { line: MetroLine; idx: number }[]>();
   for (const line of lines) line.stations.forEach((st, idx) => {
     const arr = byName.get(st.name) ?? []; arr.push({ line, idx }); byName.set(st.name, arr);
   });
-  // station name -> shuttle-bus partner station names
   const shuttleTo = new Map<string, string[]>();
   for (const [a, b] of SHUTTLE_LINKS) {
     shuttleTo.set(a, [...(shuttleTo.get(a) ?? []), b]);
     shuttleTo.set(b, [...(shuttleTo.get(b) ?? []), a]);
   }
-  // node keys that were first reached via a shuttle-bus hop (for copy/legs)
   const shuttleEdges = new Set<string>();
-  const starts: { line: MetroLine; idx: number }[] = [];
+  const startKeys = new Set<string>();
   const goals = new Set<string>();
-  for (const line of lines) line.stations.forEach((st, idx) => {
-    if (st.locId === fromLocId) starts.push({ line, idx });
-    if (st.locId === toLocId) goals.add(keyOf(line.id, st.name));
-  });
-  if (starts.length === 0 || goals.size === 0) return null;
   type Prev = { prevKey: string; line: MetroLine; station: MetroStation } | null;
   const dist = new Map<string, number>();
   const prev = new Map<string, Prev>();
-  const queue: string[] = [];
+  const done = new Set<string>();
   const nodeStation = new Map<string, MetroStation>();
   const nodeLine = new Map<string, MetroLine>();
-  for (const s of starts) {
-    const k = keyOf(s.line.id, s.line.stations[s.idx]!.name);
-    if (!dist.has(k)) { dist.set(k, 0); prev.set(k, null); queue.push(k); nodeStation.set(k, s.line.stations[s.idx]!); nodeLine.set(k, s.line); }
-  }
+  for (const line of lines) line.stations.forEach((st) => {
+    const k = keyOf(line.id, st.name);
+    if (isStart(st)) { startKeys.add(k); dist.set(k, 0); prev.set(k, null); nodeStation.set(k, st); nodeLine.set(k, line); }
+    if (isGoal(st)) goals.add(k);
+  });
+  if (startKeys.size === 0 || goals.size === 0) return null;
+  const relax = (from: string, line: MetroLine, st: MetroStation, cost: number, viaShuttle = false) => {
+    const nk = keyOf(line.id, st.name);
+    if (done.has(nk)) return;
+    if (cost < (dist.get(nk) ?? Infinity)) {
+      dist.set(nk, cost); prev.set(nk, { prevKey: from, line, station: st }); nodeStation.set(nk, st); nodeLine.set(nk, line);
+      if (viaShuttle) shuttleEdges.add(nk); else shuttleEdges.delete(nk);
+    }
+  };
   let goalKey: string | null = null;
-  while (queue.length > 0) {
-    const k = queue.shift()!;
-    if (goals.has(k) && (dist.get(k) ?? 0) > 0) { goalKey = k; break; }
+  for (;;) {
+    let k: string | null = null; let best = Infinity;
+    for (const [nk, d] of dist) if (!done.has(nk) && d < best) { best = d; k = nk; }
+    if (k === null) break;
+    done.add(k);
+    if (goals.has(k) && !startKeys.has(k)) { goalKey = k; break; }
     const line = nodeLine.get(k)!; const st = nodeStation.get(k)!;
     const idx = line.stations.findIndex((x) => x.name === st.name);
-    const d = dist.get(k) ?? 0;
-    // ride to neighbours on the same line
+    const speed = LINE_SPEED[line.id] ?? 1;
     for (const ni of [idx - 1, idx + 1]) {
       const nst = line.stations[ni]; if (!nst) continue;
-      const nk = keyOf(line.id, nst.name);
-      if (!dist.has(nk)) { dist.set(nk, d + 1); prev.set(nk, { prevKey: k, line, station: nst }); queue.push(nk); nodeStation.set(nk, nst); nodeLine.set(nk, line); }
+      relax(k, line, nst, best + Math.hypot(nst.x - st.x, nst.z - st.z) * speed + 1);
     }
-    // transfer to other lines at the same station name (free, same node distance)
     for (const alt of byName.get(st.name) ?? []) {
       if (alt.line.id === line.id) continue;
-      const nst = alt.line.stations[alt.idx]!; const nk = keyOf(alt.line.id, nst.name);
-      if (!dist.has(nk)) { dist.set(nk, d); prev.set(nk, { prevKey: k, line: alt.line, station: nst }); queue.unshift(nk); nodeStation.set(nk, nst); nodeLine.set(nk, alt.line); }
+      relax(k, alt.line, alt.line.stations[alt.idx]!, best + (startKeys.has(k) ? 0 : TRANSFER_COST));
     }
-    // shuttle-bus hop to a paired station across town (costs extra stops, so
-    // the router only uses it when it is the bridge between two networks)
     for (const partnerName of shuttleTo.get(st.name) ?? []) {
-      for (const alt of byName.get(partnerName) ?? []) {
-        const nst = alt.line.stations[alt.idx]!; const nk = keyOf(alt.line.id, nst.name);
-        if (!dist.has(nk)) { dist.set(nk, d + 2); prev.set(nk, { prevKey: k, line: alt.line, station: nst }); queue.push(nk); nodeStation.set(nk, nst); nodeLine.set(nk, alt.line); shuttleEdges.add(nk); }
-      }
+      for (const alt of byName.get(partnerName) ?? []) relax(k, alt.line, alt.line.stations[alt.idx]!, best + SHUTTLE_COST, true);
     }
   }
   if (!goalKey) return null;
@@ -763,10 +933,43 @@ export function findMetroRoute(cityKey: CityKey, fromLocId: string, toLocId: str
     }
   }
   const stops = fullStations.length - 1;
-  const fare = Math.min(14, 2 + stops + transferStations.length);
+  const fare = legs.every((l) => !RAIL_LINE_IDS.has(l.line.id))
+    ? metroFare(fullStations)
+    : Math.min(14, 2 + stops + transferStations.length);
   const firstLine = legs[0]?.line ?? nodeLine.get(goalKey)!;
   const summary = legs.map((l) => l.line.short).join(" → ");
   return { line: firstLine, fromIdx: 0, toIdx: fullStations.length - 1, stops, fare, stations: fullStations, legs, transferStations, shuttleFrom, isTransfer: legs.length > 1, summary };
+}
+/** Fare for riding a route only as far as station index `uptoIdx` (getting
+    off early). Metro-only trips use the distance tariff; rail trips scale. */
+export function partialFare(route: MetroRoute, uptoIdx: number): number {
+  const last = route.stations.length - 1;
+  if (uptoIdx >= last) return route.fare;
+  if (route.legs.every((l) => !RAIL_LINE_IDS.has(l.line.id))) return metroFare(route.stations.slice(0, uptoIdx + 1));
+  return Math.max(2, Math.round((route.fare * uptoIdx) / Math.max(1, last)));
+}
+/** Route between two game locations (each must be a station location). */
+export function findMetroRoute(cityKey: CityKey, fromLocId: string, toLocId: string): MetroRoute | null {
+  if (fromLocId === toLocId) return null;
+  const at = (id: string) => (st: MetroStation) => st.locId === id || stationLocId(st.name) === id;
+  return routeWhere(cityKey, at(fromLocId), at(toLocId));
+}
+/** Route between ANY two stations by name — stations need no game location. */
+export function findStationRoute(cityKey: CityKey, fromName: string, toName: string): MetroRoute | null {
+  if (fromName === toName) return null;
+  return routeWhere(cityKey, (st) => st.name === fromName, (st) => st.name === toName);
+}
+/** Where the player stands after exiting a station: the station's own game
+    location when it has one, otherwise the station itself ("st:<站名>"). */
+export function exitLocForStation(cityKey: CityKey, stationName: string): string | null {
+  const locs = getLocations(cityKey);
+  let st: MetroStation | undefined;
+  for (const line of metroLinesForCity(cityKey)) {
+    const hit = line.stations.find((x) => x.name === stationName);
+    if (hit && hit.locId && locs.some((l) => l.id === hit.locId)) return hit.locId;
+    st ??= hit;
+  }
+  return st ? stationLocId(st.name) : null;
 }
 export function allMetroDestinations(cityKey: CityKey, fromLocId: string): { locId: string; route: MetroRoute }[] {
   const out: { locId: string; route: MetroRoute }[] = [];
@@ -818,12 +1021,23 @@ export interface RailTripPlan {
 export function planRailTrip(cityKey: CityKey, fromLocId: string, toLocId: string): RailTripPlan | null {
   if (fromLocId === toLocId) return null;
   const locs = getLocations(cityKey);
-  const from = locs.find((l) => l.id === fromLocId);
-  const to = locs.find((l) => l.id === toLocId);
+  const from = resolveLoc(cityKey, fromLocId);
+  const to = resolveLoc(cityKey, toLocId);
   if (!from || !to) return null;
   const anchors = stationLocIds(cityKey)
     .map((id) => locs.find((l) => l.id === id))
     .filter((l): l is Loc => Boolean(l));
+  // Every station is a possible boarding / alighting point: stations with no
+  // game location of their own join as "st:<站名>", so a trip boards at the
+  // station truly nearest you and alights at the one nearest the target.
+  const anchorIds = new Set(anchors.map((a) => a.id));
+  for (const line of metroLinesForCity(cityKey)) for (const st of line.stations) {
+    if (st.name.endsWith("方向") || (st.locId && anchorIds.has(st.locId))) continue;
+    const id = stationLocId(st.name);
+    if (anchorIds.has(id)) continue;
+    const l = resolveLoc(cityKey, id);
+    if (l) { anchors.push(l); anchorIds.add(id); }
+  }
   if (anchors.length === 0) return null;
   const near = (p: Loc, n: number) =>
     anchors

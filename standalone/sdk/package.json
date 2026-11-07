@@ -1,0 +1,11 @@
+{
+  "name": "@hatch/space-sdk",
+  "version": "0.0.0-standalone",
+  "private": true,
+  "type": "module",
+  "description": "Local stand-in for the Muse space SDK: only the surface this game uses (defineAction / z / Ctx on the server, createActionClient / spaceQueryClient / SafeAreaTopScrim on the client).",
+  "exports": {
+    ".": "./index.ts",
+    "./client": "./client.tsx"
+  }
+}

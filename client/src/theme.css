@@ -69,29 +69,16 @@ body {
 }
 
 /* ---- 全屏地图上的半透浮层：顶部状态条组 + 地区面板 ----
-   Translucent enough to see the map behind, opaque enough to read:
-   ~90% surface colour with a blur of whatever is underneath. */
+   Nearly opaque surface colour, NO backdrop-filter: the 3D map under
+   these panels changes every frame, so a backdrop blur forces the
+   browser to re-blur the panel area every frame — a major frame-time
+   cost. A slightly more opaque plain fill reads the same. */
 .float-bars .hard-card,
 .float-panel {
-  background: color-mix(in srgb, var(--surface) 90%, transparent);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-.float-bars > div[class*="--gold"] {
-  /* the APEC activity bar keeps its gold identity, made translucent
-     (matched by class, not position — bars can be hidden/reordered) */
-  background: color-mix(in srgb, #fdf6da 88%, transparent);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-.float-bars > div[class*="--surface"] {
-  /* the city intro bar */
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: color-mix(in srgb, var(--surface) 95%, transparent);
 }
 .float-panel {
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
 }
 
 .font-display {

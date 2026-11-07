@@ -9,7 +9,8 @@
 // the player. Clicking a building (or its label chip) walks there.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import * as THREE from "three";
-import { LOC_EN, NPCS, getLocations, metroLinesForCity, modeById, outfitOf, type CityKey, type TransportModeId } from "./data";
+import { createLandmarks, mergeStatic } from "./landmarks";
+import { LOC_EN, NPCS, getLocations, resolveLoc, placesForCity, PLACE_KINDS, stationLocId, metroLinesForCity, modeById, outfitOf, type CityKey, type TransportModeId } from "./data";
 import { makePostFx, type PostFx } from "./postfx";
 
 export interface RemotePlayer {
@@ -23,6 +24,8 @@ export interface RemotePlayer {
 interface Props {
   cityKey: CityKey;
   selfLocId: string;
+  /** 省电画质（手机 / 低配）：1x 像素、无阴影、无后期、树更少。只在建图时读取。 */
+  lite?: boolean;
   selfEmoji: string;
   selfColor: number;
   selfName: string;
@@ -39,6 +42,9 @@ interface Props {
   /** Search focus: when focusNonce changes, the camera pans to focusLocId
       for a few seconds so a searched place is actually shown on the map. */
   focusLocId?: string;
+  /** Focus a raw map point instead (e.g. a metro station with no location). */
+  focusX?: number;
+  focusZ?: number;
   focusNonce?: number;
   /** The place the player has selected / is heading to: drawn on the
       minimap as the pulsing destination marker while it differs from
@@ -51,6 +57,10 @@ interface Props {
   /** Fullscreen mode: the map fills its (fixed, viewport-sized) parent
       instead of using the fixed responsive heights. */
   fill?: boolean;
+  /** True while a full-screen overlay (life-stage / ride scenes, which run
+      their own WebGL scene) covers the map: the frame loop keeps ticking
+      but skips simulation + rendering so two 3D scenes never render at once. */
+  paused?: boolean;
 }
 
 interface Actor {
@@ -279,6 +289,10 @@ interface Chip {
   locId?: string;
   self?: boolean;
   metro?: boolean;
+  /** A metro station name tag — shown only when zoomed in close. */
+  station?: boolean;
+  /** A real place (park, mall, museum …) — shown only when zoomed in. */
+  place?: boolean;
   w: number;
   h: number;
   lastText: string;
@@ -397,12 +411,22 @@ export function MapView(p: Props) {
 
   // A searched place takes the camera for a few seconds.
   useEffect(() => {
-    if (!p.focusLocId || !p.focusNonce) return;
-    const loc = getLocations(p.cityKey).find((l) => l.id === p.focusLocId);
+    if (!p.focusNonce) return;
+    if (p.focusX !== undefined && p.focusZ !== undefined) {
+      lookRef.current = { x: p.focusX, z: p.focusZ, until: performance.now() + 5000 };
+      return;
+    }
+    if (!p.focusLocId) return;
+    const loc = p.focusLocId ? resolveLoc(p.cityKey, p.focusLocId) : undefined;
     if (loc) lookRef.current = { x: loc.x, z: loc.z, until: performance.now() + 4500 };
-  }, [p.focusLocId, p.focusNonce, p.cityKey]);
+  }, [p.focusLocId, p.focusX, p.focusZ, p.focusNonce, p.cityKey]);
 
   // Sync the actor set with props (self, remote players, NPCs).
+  // App rebuilds remotePlayers / npcMoodEmoji as fresh objects on EVERY
+  // render, so depending on them by identity re-ran this sync constantly;
+  // depend on their content instead.
+  const remoteKey = p.remotePlayers.map((rp) => `${rp.id}|${rp.name}|${rp.emoji}|${rp.color}|${rp.locId}`).join(";");
+  const moodKey = p.npcMoodEmoji ? Object.entries(p.npcMoodEmoji).map(([k, v]) => `${k}=${v}`).join(";") : "";
   useEffect(() => {
     const locs = getLocations(p.cityKey);
     const byId = new Map(locs.map((l) => [l.id, l]));
@@ -411,7 +435,7 @@ export function MapView(p: Props) {
     const upsert = (a: Omit<Actor, "x" | "z" | "tx" | "tz"> & { startLoc: string }) => {
       want.add(a.key);
       const cur = actors.get(a.key);
-      const loc = byId.get(a.startLoc) ?? locs[0];
+      const loc = byId.get(a.startLoc) ?? resolveLoc(p.cityKey, a.startLoc) ?? locs[0];
       if (!cur) {
         actors.set(a.key, {
           ...a,
@@ -456,7 +480,7 @@ export function MapView(p: Props) {
     for (const key of Array.from(actors.keys())) {
       if (!want.has(key)) actors.delete(key);
     }
-  }, [p.cityKey, p.selfLocId, p.selfEmoji, p.selfColor, p.selfName, p.remotePlayers, p.selfOutfitId, p.npcMoodEmoji, p.travelModeId]);
+  }, [p.cityKey, p.selfLocId, p.selfEmoji, p.selfColor, p.selfName, remoteKey, p.selfOutfitId, moodKey, p.travelModeId]);
 
   // Build/rebuild the whole 3D scene when the city changes.
   useEffect(() => {
@@ -467,7 +491,7 @@ export function MapView(p: Props) {
     const locs = getLocations(cityKey);
     const roads = ROADS[cityKey];
     const flagGroups: THREE.Group[] = [];
-    const wheelGroups: THREE.Mesh[] = [];
+    const wheelGroups: THREE.Object3D[] = [];
     const rnd = mulberry(cityKey === "sz" ? 2026 : 2077);
 
     // WebGL can be unavailable or refuse a context in some webviews (the
@@ -475,13 +499,16 @@ export function MapView(p: Props) {
     // list below, never throw and unmount the whole game.
     let renderer: THREE.WebGLRenderer;
     try {
-      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
     } catch {
       setGlFailed(true);
       return;
     }
-    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
-    renderer.shadowMap.enabled = true;
+    // 1.5x cap: on Retina (dpr 2) the full post chain at 2x is 4x the pixels
+    // of 1x — the single biggest per-frame GPU cost. 1.5x stays crisp.
+    const lite = !!propsRef.current.lite;
+    renderer.setPixelRatio(lite ? 1 : Math.min(1.5, window.devicePixelRatio || 1));
+    renderer.shadowMap.enabled = !lite;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -498,13 +525,13 @@ export function MapView(p: Props) {
     // Cinematic post chain (PC high-end): bloom for lit windows / neon /
     // streetlights, warm grade + tilt-shift depth of field over the
     // miniature. Falls back to the plain renderer if it can't initialise.
-    const fx: PostFx | null = makePostFx(renderer, scene, camera, { bloomStrength: 0.33, bloomThreshold: 0.8, blur: 0.0038 });
+    const fx: PostFx | null = lite ? null : makePostFx(renderer, scene, camera, { bloomStrength: 0.33, bloomThreshold: 0.8, blur: 0.0038 });
 
     const hemi = new THREE.HemisphereLight(0xdff2ff, 0x8a7a5a, 0.9);
     scene.add(hemi);
     const sun = new THREE.DirectionalLight(0xfff2d8, 2.2);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(4096, 4096);
+    sun.shadow.mapSize.set(2048, 2048);
     sun.shadow.camera.left = -55;
     sun.shadow.camera.right = 55;
     sun.shadow.camera.top = 55;
@@ -655,49 +682,127 @@ export function MapView(p: Props) {
       scene.add(bulbs);
     }
 
-    /* ---- metro / intercity lines ---- */
+    /* ---- metro / intercity lines ----
+       ~380 stations on ~20 lines: track segments and station markers are
+       instanced (3 draw calls in total) instead of 2 meshes per station. */
+    const stationMarks: { name: string; x: number; z: number; hasLoc: boolean }[] = [];
     {
       const lines = metroLinesForCity(cityKey);
+      const m4 = new THREE.Matrix4();
+      const q = new THREE.Quaternion();
+      const eul = new THREE.Euler();
+      const scl = new THREE.Vector3();
+      const pos = new THREE.Vector3();
+      const col = new THREE.Color();
+      const nSeg = lines.reduce((n, l) => n + Math.max(0, l.stations.length - 1), 0);
+      const segs = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.06, 0.42), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.55 }), Math.max(1, nSeg));
+      let si = 0;
+      const marks = new Map<string, { x: number; z: number; color: number; n: number; hasLoc: boolean }>();
       for (const line of lines) {
-        const pts = line.stations.map((s) => new THREE.Vector3(s.x, LAND + 0.22, s.z));
+        const pts = line.stations.map((st) => new THREE.Vector3(st.x, LAND + 0.22, st.z));
         if (pts.length > 1) {
-          const geo = new THREE.BufferGeometry().setFromPoints(pts);
-          const mat = new THREE.LineBasicMaterial({ color: line.color, transparent: true, opacity: 0.92 });
-          const ln = new THREE.Line(geo, mat);
-          scene.add(ln);
-          // thicker underlay using small boxes between stations for visibility
+          scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: line.color, transparent: true, opacity: 0.92 })));
           for (let i = 0; i < pts.length - 1; i++) {
             const a = pts[i]!; const b = pts[i + 1]!;
             const len = Math.hypot(b.x - a.x, b.z - a.z);
-            const ang = Math.atan2(b.z - a.z, b.x - a.x);
-            const seg = new THREE.Mesh(new THREE.BoxGeometry(len, 0.06, 0.42), new THREE.MeshBasicMaterial({ color: line.color, transparent: true, opacity: 0.55 }));
-            seg.position.set((a.x + b.x) / 2, LAND + 0.16, (a.z + b.z) / 2);
-            seg.rotation.y = -ang;
-            scene.add(seg);
+            q.setFromEuler(eul.set(0, -Math.atan2(b.z - a.z, b.x - a.x), 0));
+            m4.compose(pos.set((a.x + b.x) / 2, LAND + 0.16, (a.z + b.z) / 2), q, scl.set(len, 1, 1));
+            segs.setMatrixAt(si, m4);
+            segs.setColorAt(si, col.setHex(line.color));
+            si++;
           }
         }
         for (const st of line.stations) {
-          const isHub = !!st.locId;
-          const dot = new THREE.Mesh(
-            new THREE.CylinderGeometry(isHub ? 0.42 : 0.24, isHub ? 0.42 : 0.24, 0.22, 12),
-            new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4, emissive: line.color, emissiveIntensity: isHub ? 0.35 : 0.08 }),
-          );
-          dot.position.set(st.x, LAND + 0.28, st.z);
-          scene.add(dot);
-          const ring = new THREE.Mesh(new THREE.RingGeometry(isHub ? 0.44 : 0.26, isHub ? 0.58 : 0.36, 16), new THREE.MeshBasicMaterial({ color: line.color, side: THREE.DoubleSide }));
-          ring.rotation.x = -Math.PI / 2;
-          ring.position.set(st.x, LAND + 0.3, st.z);
-          scene.add(ring);
+          if (st.name.endsWith("方向")) continue; // direction stub, not a station
+          const cur = marks.get(st.name);
+          if (cur) { cur.n++; cur.hasLoc ||= !!st.locId; }
+          else marks.set(st.name, { x: st.x, z: st.z, color: line.color, n: 1, hasLoc: !!st.locId });
         }
       }
+      segs.count = si;
+      scene.add(segs);
+      const ringGeo = new THREE.RingGeometry(0.72, 1, 16);
+      ringGeo.rotateX(-Math.PI / 2);
+      const dots = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1, 0.22, 12), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 }), Math.max(1, marks.size));
+      const rings = new THREE.InstancedMesh(ringGeo, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }), Math.max(1, marks.size));
+      let mi = 0;
+      q.identity();
+      for (const [name, mk] of marks) {
+        const r = mk.hasLoc ? 0.42 : mk.n > 1 ? 0.33 : 0.22;
+        m4.compose(pos.set(mk.x, LAND + 0.28, mk.z), q, scl.set(r, 1, r));
+        dots.setMatrixAt(mi, m4);
+        m4.compose(pos.set(mk.x, LAND + 0.3, mk.z), q, scl.set(r * 1.4, 1, r * 1.4));
+        rings.setMatrixAt(mi, m4);
+        rings.setColorAt(mi, col.setHex(mk.n > 1 ? 0x1f2937 : mk.color));
+        stationMarks.push({ name, x: mk.x, z: mk.z, hasLoc: mk.hasLoc });
+        mi++;
+      }
+      dots.count = mi;
+      rings.count = mi;
+      scene.add(dots);
+      scene.add(rings);
+    }
+
+    /* ---- real places (OSM): one instanced pin per park / mall / museum … ---- */
+    const cityPlaces = placesForCity(cityKey);
+    if (cityPlaces.length > 0) {
+      const pinGeo = new THREE.ConeGeometry(0.2, 0.55, 8);
+      pinGeo.rotateX(Math.PI);
+      const pins = new THREE.InstancedMesh(pinGeo, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 }), cityPlaces.length);
+      const m4 = new THREE.Matrix4();
+      const col = new THREE.Color();
+      cityPlaces.forEach((pl, i) => {
+        m4.makeTranslation(pl.x, LAND + 0.55, pl.z);
+        pins.setMatrixAt(i, m4);
+        pins.setColorAt(i, col.setHex(PLACE_KINDS[pl.kind].color));
+      });
+      scene.add(pins);
     }
 
     /* ---- location buildings ---- */
     const winTex = windowsTexture();
     const pickMeshes: THREE.Object3D[] = [];
     const flagMats: THREE.MeshStandardMaterial[] = [];
+    /* Real-place miniatures (landmarks.ts): a location with a model gets it
+       instead of the generic box + roof. Label height follows the model. */
+    const landmarks = createLandmarks(winTex);
+    const labelTop = new Map<string, number>();
+    const decorSpots = landmarks.decor(cityKey);
+    const landmarkRoots: THREE.Object3D[] = [];
+    const pickMat = new THREE.MeshBasicMaterial({ visible: false });
     for (const l of locs) {
       const g = new THREE.Group();
+      const built = landmarks.forLoc(cityKey, l);
+      if (built) {
+        g.add(built.group);
+        wheelGroups.push(...built.spin);
+        landmarkRoots.push(g);
+        // the model itself gets merged city-wide below; clicks hit this
+        // invisible box (raycasting ignores visibility)
+        const pick = new THREE.Mesh(new THREE.BoxGeometry(l.w, built.top, l.w), pickMat);
+        pick.position.y = built.top / 2;
+        pick.userData.locId = l.id;
+        g.add(pick);
+        pickMeshes.push(pick);
+        labelTop.set(l.id, built.top);
+        if (l.type === "apec") {
+          const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.4), new THREE.MeshStandardMaterial({ color: 0x222222 }));
+          pole.position.y = built.top + 1.2;
+          pole.userData.keep = true;
+          g.add(pole);
+          const flagMat = new THREE.MeshStandardMaterial({ color: 0xe63a1f, side: THREE.DoubleSide, emissive: 0xe63a1f, emissiveIntensity: 0.25 });
+          const flag = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.9), flagMat);
+          flag.position.set(0.78, built.top + 1.95, 0);
+          flag.userData.keep = true;
+          g.add(flag);
+          flagMats.push(flagMat);
+          (g.userData as { flag?: THREE.Mesh }).flag = flag;
+          flagGroups.push(g);
+        }
+        g.position.set(l.x, LAND, l.z);
+        scene.add(g);
+        continue;
+      }
       const h = l.h * 1.7;
       const base = new THREE.Mesh(
         new THREE.BoxGeometry(l.w, 0.5, l.w),
@@ -790,38 +895,30 @@ export function MapView(p: Props) {
     }
 
     /* ---- landmarks & filler ---- */
-    const addBox = (x: number, z: number, w: number, h: number, d: number, color: number, y = LAND) => {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ color, roughness: 0.9 }));
-      m.position.set(x, y + h / 2, z);
-      m.castShadow = true;
-      m.receiveShadow = true;
-      scene.add(m);
-      return m;
-    };
+    // skyline landmarks that are not playable places (春笋, 京基100, 地王, 湾区之光)
+    for (const d of decorSpots) {
+      d.group.position.set(d.x, LAND, d.z);
+      d.group.rotation.y = d.ry ?? 0;
+      scene.add(d.group);
+      wheelGroups.push(...d.spin);
+    }
+    mergeStatic([...landmarkRoots, ...decorSpots.map((d) => d.group)], scene, new Set(wheelGroups));
+    buildingMats.push(...landmarks.litMats);
+    neonMats.push(...landmarks.neonMats);
     if (cityKey === "sz") {
-      // Ping An Finance Centre spire near the bank
-      const tower = addBox(3.6, -1.8, 2.2, 26, 2.2, 0x9db8c8);
-      const spire = new THREE.Mesh(new THREE.ConeGeometry(0.5, 5, 6), new THREE.MeshStandardMaterial({ color: 0xd7e6ee, roughness: 0.4, metalness: 0.5 }));
-      spire.position.set(3.6, LAND + 26 + 2.5, -1.8);
-      spire.castShadow = true;
-      scene.add(spire);
-      tower.castShadow = true;
-      // Shenzhen Bay Bridge sweeping over the water
-      const bridgeMat = new THREE.MeshStandardMaterial({ color: 0xe8e4da, roughness: 0.6 });
-      const deck = new THREE.Mesh(new THREE.BoxGeometry(26, 0.5, 2.6), bridgeMat);
-      deck.position.set(-26, 1.7, 21.5);
-      deck.rotation.y = 0.32;
-      deck.castShadow = true;
-      scene.add(deck);
-      const pylon = new THREE.Mesh(new THREE.BoxGeometry(0.7, 7, 0.7), bridgeMat);
-      pylon.position.set(-26, 3.5, 21.5);
-      scene.add(pylon);
-      // Happy Valley ferris-wheel silhouette: torus + spokes hub
-      const wheel = new THREE.Mesh(new THREE.TorusGeometry(3.4, 0.16, 8, 40), new THREE.MeshStandardMaterial({ color: 0xf472b6, roughness: 0.5 }));
-      wheel.position.set(-21.5, LAND + 4.4, -9.5);
-      wheel.castShadow = true;
+      // (平安金融中心 is now the 平安银行大厦 location's own model)
+      // (深圳湾大桥 and 深中通道 are decor landmarks in landmarks.ts)
+      // 华侨城 ferris wheel by 欢乐谷: rim, spokes and cabins, on two legs
+      const wheel = landmarks.wheel(2.6, 0xf472b6, 0xfacc15);
+      wheel.position.set(-21.5, LAND + 3.4, -9.5);
       scene.add(wheel);
       wheelGroups.push(wheel);
+      for (const s of [-1, 1]) {
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.12, 3.6, 0.12), new THREE.MeshStandardMaterial({ color: 0xc9d3da, roughness: 0.4, metalness: 0.5 }));
+        leg.position.set(-21.5 + s * 0.5, LAND + 1.7, -9.5);
+        leg.rotation.z = s * 0.15;
+        scene.add(leg);
+      }
     } else {
       // Sizhou pagoda beside West Lake
       const pagoda = new THREE.Group();
@@ -874,7 +971,9 @@ export function MapView(p: Props) {
     }
 
     // filler buildings (instanced)
-    const nearLoc = (x: number, z: number) => locs.some((l) => Math.abs(l.x - x) < 3.4 && Math.abs(l.z - z) < 3.4);
+    const nearLoc = (x: number, z: number) =>
+      locs.some((l) => Math.abs(l.x - x) < 3.4 && Math.abs(l.z - z) < 3.4) ||
+      decorSpots.some((d) => Math.hypot(d.x - x, d.z - z) < d.r + 1.4);
     const nearMountain = (x: number, z: number) =>
       MOUNTAINS[cityKey].some((range) => range.peaks.some((pk) => Math.hypot(x - pk.x, z - pk.z) < pk.r + 0.8));
     const nearLake = (x: number, z: number) =>
@@ -919,7 +1018,7 @@ export function MapView(p: Props) {
 
     // trees (instanced cones)
     const treeSpots: { x: number; z: number; s: number }[] = [];
-    for (let i = 0; i < 1500 && treeSpots.length < 430; i++) {
+    for (let i = 0; i < 1500 && treeSpots.length < (lite ? 160 : 430); i++) {
       const x = -37 + rnd() * 74;
       const z = -21 + rnd() * 36;
       if (z > coastZ(cityKey, x) - 0.6) continue;
@@ -1107,7 +1206,7 @@ export function MapView(p: Props) {
         "position:absolute;left:0;top:0;transform:translate(-50%,-100%);white-space:nowrap;pointer-events:auto;cursor:pointer;font:700 11px 'Noto Sans SC',sans-serif;line-height:1.3;padding:3px 8px;border-radius:10px;border:1px solid rgba(20,26,32,.55);background:rgba(255,253,248,.93);color:#14202b;box-shadow:0 1px 4px rgba(10,20,30,.25);";
       b.addEventListener("click", () => propsRef.current.onSelect(l.id));
       labels.appendChild(b);
-      chips.push({ el: b, kind: "loc", locId: l.id, w: 0, h: 0, lastText: "", visible: true, clampDx: 0, clampDy: 0, getPos: () => ({ x: l.x, y: LAND + l.h * 1.7 + 2.6, z: l.z }) });
+      chips.push({ el: b, kind: "loc", locId: l.id, w: 0, h: 0, lastText: "", visible: true, clampDx: 0, clampDy: 0, getPos: () => ({ x: l.x, y: LAND + (labelTop.get(l.id) ?? l.h * 1.7 + 1.2) + 1.4, z: l.z }) });
     }
     for (const range of MOUNTAINS[cityKey]) {
       if (!range.label || range.lx === undefined || range.lz === undefined) continue;
@@ -1137,6 +1236,27 @@ export function MapView(p: Props) {
       d.title = `${line.short} · ${line.stations[0]?.name ?? ""}↔${line.stations[line.stations.length - 1]?.name ?? ""}`;
       d.style.cssText += `font:800 9.5px 'Noto Sans SC',sans-serif;padding:2px 7px;border-radius:999px;background:${line.colorCss};color:#fff;box-shadow:0 1px 4px rgba(0,0,0,.35);`;
       chips.push({ el: d, kind: "road", metro: true, w: 0, h: 0, lastText: "", visible: true, clampDx: 0, clampDy: 0, getPos: () => ({ x: mid.x, y: LAND + 1.1, z: mid.z }) });
+    }
+    // Station names: only shown zoomed in, lowest priority (places with a
+    // location already carry their own label).
+    for (const st of stationMarks) {
+      if (st.hasLoc) continue;
+      const d = mkChip("", "");
+      d.textContent = `🚇 ${st.name}`;
+      d.title = `${st.name}站 · 点一下去这个站`;
+      d.style.cssText += "pointer-events:auto;cursor:pointer;font:700 9px 'Noto Sans SC',sans-serif;padding:1px 5px;border-radius:6px;color:#fff;background:rgba(15,23,42,.72);";
+      d.addEventListener("click", () => propsRef.current.onSelect(stationLocId(st.name)));
+      chips.push({ el: d, kind: "road", station: true, w: 0, h: 0, lastText: "", visible: true, clampDx: 0, clampDy: 0, getPos: () => ({ x: st.x, y: LAND + 0.8, z: st.z }) });
+    }
+    // Real places: clickable name tags, shown when zoomed in.
+    for (const pl of cityPlaces) {
+      const k = PLACE_KINDS[pl.kind];
+      const d = mkChip("", "");
+      d.textContent = `${k.emoji} ${pl.name}`;
+      d.title = `${pl.name} · ${k.label} · 最近站：${pl.st}`;
+      d.style.cssText += `pointer-events:auto;cursor:pointer;font:700 9px 'Noto Sans SC',sans-serif;padding:1px 6px;border-radius:7px;color:#14202b;background:rgba(255,253,248,.88);border:1px solid #${k.color.toString(16).padStart(6, "0")};`;
+      d.addEventListener("click", () => propsRef.current.onSelect(`pl:${pl.id}`));
+      chips.push({ el: d, kind: "road", place: true, w: 0, h: 0, lastText: "", visible: true, clampDx: 0, clampDy: 0, getPos: () => ({ x: pl.x, y: LAND + 1.0, z: pl.z }) });
     }
 
     /* ---- actors (3D) ---- */
@@ -1411,6 +1531,19 @@ export function MapView(p: Props) {
     const sunDay = new THREE.Color(0xfff2d8);
     const sunDusk = new THREE.Color(0xff9a4d);
     const tmpColor = new THREE.Color();
+    // frame-loop scratch objects + colour constants, allocated once (the loop
+    // used to new() these every frame → steady GC pressure / hitches)
+    const C_GREY = new THREE.Color(0x8d9aa3);
+    const C_WATER_NIGHT = new THREE.Color(0x14324e);
+    const C_CLOUD_NIGHT = new THREE.Color(0x5a6c85);
+    const C_CLOUD_DUSK = new THREE.Color(0xffb37a);
+    const C_CLOUD_GREY = new THREE.Color(0x707c85);
+    const C_MOTE_NIGHT = new THREE.Color(0xffd98a);
+    const carMat4 = new THREE.Matrix4();
+    const carQuat = new THREE.Quaternion();
+    const carScl = new THREE.Vector3(1, 1, 1);
+    const carEuler = new THREE.Euler();
+    const shirtTmp = new THREE.Color();
 
     const v3 = new THREE.Vector3();
     let raf = 0;
@@ -1420,6 +1553,10 @@ export function MapView(p: Props) {
 
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
+      if (propsRef.current.paused) {
+        last = now;
+        return;
+      }
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       const tSec = (now - clockStart) / 1000;
@@ -1445,7 +1582,7 @@ export function MapView(p: Props) {
       // server's live weather for the played city (App prop).
       const wk = propsRef.current.weatherKind ?? "unknown";
       const greyF = wk === "storm" ? 0.55 : wk === "overcast" || wk === "fog" ? 0.5 : wk === "rain" ? 0.45 : wk === "cloudy" ? 0.22 : wk === "partly" ? 0.08 : 0;
-      if (greyF > 0) tmpColor.lerp(new THREE.Color(0x8d9aa3), greyF * (0.3 + 0.7 * dayF));
+      if (greyF > 0) tmpColor.lerp(C_GREY, greyF * (0.3 + 0.7 * dayF));
       (scene.background as THREE.Color).copy(tmpColor);
       scene.fog!.color.copy(tmpColor);
       sun.intensity *= 1 - greyF * 0.65;
@@ -1457,7 +1594,7 @@ export function MapView(p: Props) {
         rainPts.position.x = Math.sin(tSec * 0.7) * 0.6;
       }
       const nightF = 1 - dayF;
-      waterMat.color.setHex(0x2e7fb8).lerp(new THREE.Color(0x14324e), nightF * 0.8);
+      waterMat.color.setHex(0x2e7fb8).lerp(C_WATER_NIGHT, nightF * 0.8);
       waterMat.roughness = 0.35 - dayF * 0.12 + nightF * 0.1;
       // ---- drive every animated material off the day cycle ----
       renderer.toneMappingExposure = 1.08 - nightF * 0.16 + duskF * 0.04;
@@ -1477,11 +1614,11 @@ export function MapView(p: Props) {
         const m = av.material as THREE.MeshStandardMaterial;
         m.emissiveIntensity = nightF > 0.25 && Math.sin(tSec * 2 + i * 1.3) > 0 ? 2.4 : 0.15;
       });
-      cloudMat.color.setHex(0xffffff).lerp(new THREE.Color(0x5a6c85), nightF * 0.75).lerp(new THREE.Color(0xffb37a), duskF * 0.4);
-      if (greyF > 0.15) cloudMat.color.lerp(new THREE.Color(0x707c85), greyF * 0.7);
+      cloudMat.color.setHex(0xffffff).lerp(C_CLOUD_NIGHT, nightF * 0.75).lerp(C_CLOUD_DUSK, duskF * 0.4);
+      if (greyF > 0.15) cloudMat.color.lerp(C_CLOUD_GREY, greyF * 0.7);
       cloudMat.opacity = Math.min(0.97, 0.88 - nightF * 0.3 + greyF * 0.35);
       moteMat.opacity = 0.22 + nightF * 0.4;
-      moteMat.color.setHex(0xfff3cf).lerp(new THREE.Color(0xffd98a), nightF);
+      moteMat.color.setHex(0xfff3cf).lerp(C_MOTE_NIGHT, nightF);
       motes.rotation.y = tSec * 0.006;
       motes.position.y = Math.sin(tSec * 0.25) * 0.35;
       for (const s of smokeSprites) {
@@ -1506,9 +1643,6 @@ export function MapView(p: Props) {
 
       // traffic
       {
-        const mat4 = new THREE.Matrix4();
-        const quat = new THREE.Quaternion();
-        const scl = new THREE.Vector3(1, 1, 1);
         cars.forEach((car, i) => {
           car.t += car.speed * dt * car.dir;
           if (car.t > 1) car.t -= 1;
@@ -1517,9 +1651,9 @@ export function MapView(p: Props) {
           const ang = Math.atan2(r.z2 - r.z1, r.x2 - r.x1);
           const pxv = r.x1 + (r.x2 - r.x1) * car.t + Math.sin(ang) * car.lane;
           const pzv = r.z1 + (r.z2 - r.z1) * car.t - Math.cos(ang) * car.lane;
-          quat.setFromEuler(new THREE.Euler(0, -ang + (car.dir < 0 ? Math.PI : 0), 0));
-          mat4.compose(v3.set(pxv, LAND + 0.38, pzv), quat, scl);
-          carMesh.setMatrixAt(i, mat4);
+          carQuat.setFromEuler(carEuler.set(0, -ang + (car.dir < 0 ? Math.PI : 0), 0));
+          carMat4.compose(v3.set(pxv, LAND + 0.38, pzv), carQuat, carScl);
+          carMesh.setMatrixAt(i, carMat4);
         });
         carMesh.instanceMatrix.needsUpdate = true;
       }
@@ -1648,7 +1782,7 @@ export function MapView(p: Props) {
         const mats = (view.userData as { mats?: { shirt: THREE.MeshStandardMaterial; dark: THREE.MeshStandardMaterial; pants: THREE.MeshStandardMaterial } }).mats;
         if (mats) {
           mats.shirt.color.setHex(a.shirt);
-          mats.dark.color.setHex(new THREE.Color(a.shirt).multiplyScalar(0.78).getHex());
+          mats.dark.color.copy(shirtTmp.setHex(a.shirt).multiplyScalar(0.78));
           mats.pants.color.setHex(a.pants);
         }
         const acc = (view.userData as { acc?: THREE.Group }).acc;
@@ -1690,8 +1824,7 @@ export function MapView(p: Props) {
           // · MOVING — the camera travels WITH the player like a real map:
           //   the target tracks the figure's live position (not just the
           //   destination), easing at a rate that keeps up at vehicle
-          //   speeds, and in cinematic mode the azimuth slowly swings
-          //   behind the direction of travel, so turns rotate the world.
+          //   speeds, and the map's orientation never changes on its own.
           // · STILL at overview distance — the frame re-anchors on the
           //   LAND's centre so the whole city stays the picture (pure
           //   player-follow pushed the city into the top half whenever
@@ -1705,19 +1838,12 @@ export function MapView(p: Props) {
           const ease = movingNow ? Math.min(1, dt * 4.2) : Math.min(1, dt * 2.2);
           cam.tx += (THREE.MathUtils.clamp(fx, -37, 37) - cam.tx) * ease;
           cam.tz += (THREE.MathUtils.clamp(fz, -23, 23) - cam.tz) * ease;
-          if (cineRef.current && self.blend > 0.4 && now - cam.lastUser > 2500) {
-            // swing the camera behind the direction of travel (shortest arc)
-            const wantAz = self.heading + Math.PI;
-            let dAz = wantAz - cam.az;
-            while (dAz > Math.PI) dAz -= Math.PI * 2;
-            while (dAz < -Math.PI) dAz += Math.PI * 2;
-            cam.az += dAz * Math.min(1, dt * 0.85);
-          }
+          // No automatic azimuth swing: like a real map app the city keeps
+          // its orientation while you travel; only the user rotates it.
         }
       }
       if (focusRef.current > 0) focusRef.current = Math.max(0, focusRef.current - dt * 0.45);
       const pulse = cineRef.current ? Math.sin(Math.min(1, focusRef.current) * Math.PI) : 0;
-      if (cineRef.current && now - cam.lastUser > 7000 && !dragging) cam.az += dt * 0.016;
       if (cam.cut > 0) cam.cut = Math.max(0, cam.cut - dt * 1.3);
       const cutEase = cam.cut * cam.cut;
       const wantDist = cam.dist * (1 - pulse * 0.16) * (1 - cutEase * 0.1);
@@ -1781,6 +1907,13 @@ export function MapView(p: Props) {
           }
         } else if (chip.kind === "loc") {
           prio = (chip.locId !== undefined && chip.locId === propsRef.current.selfLocId ? 1 : 3) + dCam / 60;
+        } else if (chip.station || chip.place) {
+          if (overview || dCam > (chip.place ? 18 : 14)) {
+            chip.visible = false;
+            chip.el.style.display = "none";
+            continue;
+          }
+          prio = (chip.place ? 9.3 : 9.5) + dCam / 40;
         } else if (chip.metro) {
           prio = 8;
         } else {
@@ -1917,7 +2050,7 @@ export function MapView(p: Props) {
       const actors = actorsRef.current;
       const self = actors.get("self");
       // destination: pulsing red target while it differs from where you stand
-      const dest = propsRef.current.destLocId ? locs.find((l) => l.id === propsRef.current.destLocId) : undefined;
+      const dest = propsRef.current.destLocId ? resolveLoc(cityKey, propsRef.current.destLocId) : undefined;
       if (dest && (!self || Math.hypot(dest.x - self.x, dest.z - self.z) > 2)) {
         const pulse = 7 + Math.sin(performance.now() / 280) * 2.5;
         g.strokeStyle = "#ff4d2e"; g.lineWidth = 3;
@@ -2024,13 +2157,10 @@ export function MapView(p: Props) {
       <p className="pointer-events-none absolute left-3 top-3 z-10 rounded-full bg-[#0b1622]/70 px-3 py-1.5 text-[11px] font-bold text-white/90">
         拖动旋转 · 滚轮/＋－缩放（右下角显示比例） · 点建筑或标签前往 · 左下小地图看全城、点它定位镜头 · 天色按当地真实时间、云雨按真实天气走 · 右下 ☀️🌇🌙 预览时间 · 🕐 回到真实时间 · 🎥 延时演示 · 🎬 电影镜头
       </p>
-      <p className="pointer-events-none absolute left-3 z-10 max-w-[52%] rounded-full bg-[#0b1622]/70 px-3 py-1.5 text-[11px] font-bold text-white/90" style={{ bottom: miniOpen ? 252 : 124 }}>
-        🗺️ 示意微缩模型 · 按真实地理方位排布 · 距离经压缩，非等比例测绘
-      </p>
       {/* LOL-style minimap: whole-city thumbnail, live-linked to the big map */}
-      <div className="absolute bottom-[76px] left-3 z-10">
+      <div className="absolute bottom-3 left-3 z-10">
         {miniOpen ? (
-          <div className="overflow-hidden rounded-[12px] border border-black/50 bg-[#0b1622]/85 shadow-xl backdrop-blur-sm">
+          <div className="overflow-hidden rounded-[12px] border border-black/50 bg-[#0b1622]/85 shadow-xl">
             <div className="flex items-center gap-1 px-2 py-1">
               <span className="min-w-0 flex-1 truncate text-[11px] font-black text-white/90">🗺️ 小地图 · {p.cityKey === "sz" ? "深圳" : "惠州"}全城</span>
               <button type="button" aria-label="收起小地图" onClick={() => setMiniOpen(false)} className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-black text-white/85 transition hover:bg-white/20">收起 ▾</button>
@@ -2047,7 +2177,7 @@ export function MapView(p: Props) {
             <p className="px-2 py-1 text-[10px] font-bold leading-tight text-white/70">⚪ 你 · 🟡 NPC/玩家 · 🔴 目的地 · 点图定位镜头</p>
           </div>
         ) : (
-          <button type="button" aria-label="展开小地图" onClick={() => setMiniOpen(true)} className="rounded-full border border-black/50 bg-[#0b1622]/85 px-3.5 py-2 text-xs font-black text-white shadow-xl backdrop-blur-sm transition hover:bg-[#0b1622]">🗺️ 小地图 ▸</button>
+          <button type="button" aria-label="展开小地图" onClick={() => setMiniOpen(true)} className="rounded-full border border-black/50 bg-[#0b1622]/85 px-3.5 py-2 text-xs font-black text-white shadow-xl transition hover:bg-[#0b1622]">🗺️ 小地图 ▸</button>
         )}
       </div>
       {p.navOverlay}

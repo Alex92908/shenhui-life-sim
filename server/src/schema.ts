@@ -17,6 +17,13 @@ export const players = sqliteTable("players", {
   money: integer("money").notNull().default(0),
   careerIdx: integer("career_idx").notNull().default(0),
   apecCount: integer("apec_count").notNull().default(0),
+  // 大厂跳槽 / 集章 / 称号 (0004): shown to other players and on the boards
+  employer: text("employer").notNull().default("startup"),
+  stamps: integer("stamps").notNull().default(0),
+  title: text("title"),
+  // 防作弊 (0005): 1 = a heartbeat reported an implausible jump (money,
+  // 职级 or stamps); such players are left off every leaderboard.
+  suspect: integer("suspect").notNull().default(0),
   status: text("status", { enum: ["playing", "finished"] })
     .notNull()
     .default("playing"),
@@ -59,6 +66,34 @@ export const feedEvents = sqliteTable("feed_events", {
   kind: text("kind").notNull().default("life"),
   text: text("text").notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+// Gifts between real players (0004): a 奶茶 / 早餐 / 红包 / 内推 sent to someone
+// online; the receiver claims it on their next heartbeat and the client
+// applies the effect. company is the sender's employer (for 内推).
+export const gifts = sqliteTable("gifts", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  fromId: text("from_id").notNull(),
+  fromName: text("from_name").notNull(),
+  toId: text("to_id").notNull(),
+  kind: text("kind").notNull(),
+  company: text("company"),
+  claimed: integer("claimed").notNull().default(0),
+  createdAt: integer("created_at", { mode: "timestamp_ms" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+// 云存档 (0005): the whole local save + meta progress, keyed by player and
+// unlocked on another device with the player's transfer code (secret).
+export const cloudSaves = sqliteTable("cloud_saves", {
+  playerId: text("player_id").primaryKey(),
+  secret: text("secret").notNull().unique(),
+  save: text("save").notNull(),
+  meta: text("meta").notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" })
     .notNull()
     .$defaultFn(() => new Date()),
 });
