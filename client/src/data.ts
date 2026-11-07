@@ -386,7 +386,9 @@ export const APEC_CERT_NAME = "🎖️ APEC 领导人周服务证书";
 /* ---- 地点：深圳 25 + 惠州 21 = 46，坐标按双城真实地理方位铺在大地图上 ---- */
 export type LocType =
   | "home" | "work" | "learn" | "market" | "apec" | "health" | "gym"
-  | "transit" | "mall" | "bank" | "fun" | "food" | "social" | "scenic" | "port" | "mountain" | "lodging";
+  | "transit" | "mall" | "bank" | "fun" | "food" | "social" | "scenic" | "port" | "mountain" | "lodging"
+  /** 公共服务：派出所、药店、游客中心 */
+  | "service";
 
 export interface Loc {
   id: string;
@@ -405,6 +407,13 @@ export interface Loc {
   funCost?: number;
   funMood?: number;
   funDesc?: string;
+  /** Real places only (OSM): what kind, and practical details when mapped. */
+  placeKind?: PlaceKind;
+  en?: string;
+  tel?: string;
+  addr?: string;
+  hours?: string;
+  er?: boolean;
 }
 
 const SZ_LOCS: Loc[] = [
@@ -540,6 +549,9 @@ export const PLACE_KINDS: Record<PlaceKind, PlaceKindMeta> = {
   themepark: { label: "主题乐园", emoji: "🎢", type: "fun", color: 0xe879f9, funName: "玩一整天", funCost: 150, funMood: 30, funDesc: "排队、尖叫、拍照，玩到闭园" },
   attraction: { label: "景点", emoji: "📍", type: "scenic", color: 0xf59e0b, funName: "慢慢逛一圈", funCost: 0, funMood: 16, funDesc: "边走边看，顺手查查这里的故事" },
   historic: { label: "古迹 / 纪念地", emoji: "🏯", type: "scenic", color: 0x92400e, funName: "看看历史遗迹", funCost: 0, funMood: 12, funDesc: "读一读碑文和介绍，深圳不只有四十年" },
+  police: { label: "派出所 / 警务", emoji: "🚓", type: "service", color: 0x1d4ed8 },
+  pharmacy: { label: "药店", emoji: "💊", type: "service", color: 0x0d9488 },
+  info: { label: "游客 / 志愿服务中心", emoji: "ℹ️", type: "service", color: 0x0891b2 },
 };
 /** OSM places minus the ones the game already has as a hand-made location
     (same name, or one name containing the other, e.g. 深圳人才公园 / 人才公园). */
@@ -556,13 +568,53 @@ export function placesForCity(cityKey: CityKey): CityPlace[] {
   return szPlacesDeduped;
 }
 const placeById = new Map(SZ_PLACES.map((p) => [`${PLACE_PREFIX}${p.id}`, p]));
-/** The real places closest to a map point (e.g. around a station). */
-export function nearbyPlaces(cityKey: CityKey, x: number, z: number, n = 4, maxDist = 2.6): { place: CityPlace; id: string; dist: number }[] {
+/** Where a location really is, in km (same frame as SZ_REAL_KM). Real
+    places carry their own coordinates; game locations use the station they
+    are linked to (the hand-placed miniature is not to scale, so map
+    distance would point to the wrong neighbourhood); anything else falls
+    back to the nearest station on the map. */
+export function realKmOf(cityKey: CityKey, locId: string): [number, number] | null {
+  if (cityKey !== "sz") return null;
+  if (isPlaceLoc(locId)) { const p = placeById.get(locId); return p ? [p.kx, p.ky] : null; }
+  if (isStationLoc(locId)) return SZ_REAL_KM[locId.slice(STATION_PREFIX.length)] ?? null;
+  const lines = metroLinesForCity(cityKey);
+  for (const l of lines) for (const st of l.stations) if (st.locId === locId && SZ_REAL_KM[st.name]) return SZ_REAL_KM[st.name]!;
+  const loc = getLocations(cityKey).find((l) => l.id === locId);
+  if (!loc) return null;
+  let best: [number, number] | null = null; let bd = Infinity;
+  for (const l of lines) for (const st of l.stations) {
+    const k = SZ_REAL_KM[st.name]; if (!k) continue;
+    const d = Math.hypot(st.x - loc.x, st.z - loc.z);
+    if (d < bd) { bd = d; best = k; }
+  }
+  return best;
+}
+type Near = { place: CityPlace; id: string; dist: number };
+/** Real places around a location, by real distance in km. */
+function placesAround(cityKey: CityKey, locId: string): Near[] {
+  const at = realKmOf(cityKey, locId);
+  if (!at) return [];
   return placesForCity(cityKey)
-    .map((p) => ({ place: p, id: `${PLACE_PREFIX}${p.id}`, dist: Math.hypot(p.x - x, p.z - z) }))
-    .filter((r) => r.dist <= maxDist)
-    .sort((a, b) => a.dist - b.dist)
-    .slice(0, n);
+    .map((p) => ({ place: p, id: `${PLACE_PREFIX}${p.id}`, dist: Math.hypot(p.kx - at[0], p.ky - at[1]) }))
+    .filter((r) => r.id !== locId)
+    .sort((a, b) => a.dist - b.dist);
+}
+/** 附近服务：the nearest real hospital (24h emergency first), pharmacy,
+    police station and visitor centre, by real distance — for anyone who
+    needs help, APEC delegates and volunteers included. */
+export function nearbyServices(cityKey: CityKey, locId: string): Near[] {
+  const all = placesAround(cityKey, locId);
+  const pick = (kind: PlaceKind, n: number, pref?: (p: CityPlace) => boolean) => {
+    const of = all.filter((r) => r.place.kind === kind);
+    const best = pref ? of.filter((r) => pref(r.place) && r.dist < 8).slice(0, 1) : [];
+    return [...best, ...of.filter((r) => !best.includes(r))].slice(0, n);
+  };
+  // hospitals always show (however far); smaller services only when close
+  return [...pick("hospital", 2, (p) => !!p.er), ...[...pick("pharmacy", 1), ...pick("police", 1), ...pick("info", 1)].filter((r) => r.dist <= 5)];
+}
+/** Places worth visiting around a location (not services), real km. */
+export function nearbyPlaces(cityKey: CityKey, locId: string, n = 4, maxKm = 3): Near[] {
+  return placesAround(cityKey, locId).filter((r) => r.dist <= maxKm && PLACE_KINDS[r.place.kind].type !== "service" && r.place.kind !== "hospital").slice(0, n);
 }
 const stationLocCache = new Map<string, Loc>();
 export function resolveLoc(cityKey: CityKey, id: string): Loc | undefined {
@@ -578,6 +630,7 @@ export function resolveLoc(cityKey: CityKey, id: string): Loc | undefined {
       desc: `${k.label}${p.en ? ` · ${p.en}` : ""}。最近的地铁站是「${p.st}」，${p.stKm < 0.3 ? "出站就到" : `约 ${p.stKm.toFixed(1)} 公里，步行 ${walkMin} 分钟左右`}。`,
       x: p.x, z: p.z, color: k.color, h: 0, w: 0,
       funName: k.funName, funCost: k.funCost, funMood: k.funMood, funDesc: k.funDesc,
+      placeKind: p.kind, en: p.en, tel: p.tel, addr: p.addr, hours: p.hours, er: p.er,
     };
   }
   if (!isStationLoc(id)) return undefined;

@@ -9,7 +9,7 @@ APPS, CAREERS, COMPANIES, companyAt, companyById, companyGaps, type Company, CIT
 apecPhase, apecVenueMul, getLocations, isApecWeek, isSaturday, tplQuote,
 APEC_TASKS, apecTaskOfDay, APEC_SLOGAN, APEC_CERT_NAME,
 weatherOf, weekday, modesForCity, railWord, etaMinutes, modeById, SCENIC_SPOTS, scenicOf, taxiFare, busFare, bikeFare,
-findMetroRoute, findStationRoute, exitLocForStation, resolveLoc, partialFare, nearbyPlaces, placesForCity, PLACE_KINDS, type MetroLine, planRailTrip, allMetroDestinations, linesForLoc, metroLinesForCity, crowdForRide, motoFare,
+findMetroRoute, findStationRoute, exitLocForStation, resolveLoc, partialFare, nearbyPlaces, nearbyServices, placesForCity, PLACE_KINDS, type MetroLine, planRailTrip, allMetroDestinations, linesForLoc, metroLinesForCity, crowdForRide, motoFare,
 RESTAURANTS, DELIVERY_PLATFORMS, SHOP_VENUES, LODGINGS, rentFlatWeekly, OUTFITS, outfitOf, isRainy, HOME_ROOMS,
 LOC_EN, LOC_GRADE, CITY_INTRO,
 type AppId, type CityKey, type Loc, type TransportModeId, type MetroRoute
@@ -1688,6 +1688,22 @@ case "flight":
 s.money -= 420; s.mood += 26; s.energy -= 14;
 msg = "坐飞机出门远行一天，落地看陌生城市的灯，心情 +26。回来继续好好过日子。";
 break;
+case "buy-medicine":
+s.money -= 35; s.energy += 10; s.mood += 2;
+msg = "在药店买了常备药，药师顺便叮嘱了用法。能量 +10。";
+break;
+case "ask-help":
+s.mood += 3;
+msg = loc.placeKind === "police" ? "民警耐心给你指了路，还提醒有急事直接打 110。心情 +3。" : "药师说小问题不用跑医院，真不舒服就去最近的急诊。心情 +3。";
+break;
+case "tourist-map":
+s.mood += 4;
+msg = "领了一份中英文地图：地铁线网、景点、医院和 120/110 应急电话都在上面。心情 +4。";
+break;
+case "volunteer":
+s.energy -= 10; s.network += 1; s.xp += 1; if (isApecWeek(s.day)) s.mood += 8;
+msg = `当了一会儿志愿者，帮${isApecWeek(s.day) ? "外宾" : "游客"}指路找地铁站，人脉 +1、经验 +1${isApecWeek(s.day) ? "、心情 +8" : ""}。`;
+break;
 case "hike":
 s.energy -= 16; s.mood += 20; s.fit += 1;
 msg = `登山徒步一趟，体质 +1（已练 ${s.fit} 次），心情 +20。`;
@@ -2327,6 +2343,19 @@ playLifeAnim("shopping");
         return [
           { kind: "rest", title: "在大堂坐坐", emoji: "🛋️", desc: "蹭个沙发和空调，看看住客来来往往", cost: "能量 +14 · 心情 +8 · 免费" },
           { kind: "gig", title: loc.gigName ?? "酒店帮工 / 行李员", emoji: "🧳", desc: "帮住客搬行李、做接待，旺季单多", cost: `+${fmt(Math.round(base * 0.55))} 起 · 能量 -18`, disabled: s.energy < 18 },
+        ];
+      case "service":
+        if (loc.placeKind === "pharmacy") return [
+          { kind: "buy-medicine", title: "买点常备药", emoji: "💊", desc: "感冒药、肠胃药、创可贴、防晒，药师会帮你挑；外籍人士可以把症状写在手机上给药师看", cost: "-¥35 · 能量 +10 · 心情 +2", disabled: s.money < 35 },
+          { kind: "ask-help", title: "问问药师", emoji: "🧑‍⚕️", desc: "小毛病先问药师，要不要去医院、去哪家近，药师门儿清", cost: "心情 +3 · 免费" },
+        ];
+        if (loc.placeKind === "police") return [
+          { kind: "ask-help", title: "问路 / 求助", emoji: "🚓", desc: "迷路、丢东西、遇到麻烦都可以进来；紧急情况直接打 110", cost: "心情 +3 · 免费" },
+          { kind: "rest", title: "在门口歇会儿", emoji: "🪑", desc: "派出所门口最安心", cost: "能量 +14 · 心情 +8 · 免费" },
+        ];
+        return [
+          { kind: "tourist-map", title: "领一份中英文地图", emoji: "🗺️", desc: "地铁图、景点、医院和应急电话都印在上面，参会代表和游客都用得上", cost: "心情 +4 · 免费" },
+          { kind: "volunteer", title: "当一会儿志愿者", emoji: "🎽", desc: isApecWeek(s.day) ? "APEC 周人手紧：帮外宾指路、翻译、找地铁站" : "帮游客指路、答疑", cost: `能量 -10 · 人脉 +1 · 经验 +1${isApecWeek(s.day) ? " · 心情 +8" : ""}`, disabled: s.energy < 10 },
         ];
       case "bank":
         return [
@@ -3215,6 +3244,14 @@ return (
 <p className="mt-0.5 text-xs leading-relaxed text-[var(--dim)]">
 {selLoc.type === "home" ? `你现在的家：周租 ${fmt(s.rent)}，舒适度 ${computeComfort(s)}，已买家具 ${s.furniture.length} 件。睡觉回能量，也能在这儿按 ZhuyaHome 的样子装修。` : selLoc.desc}
 </p>
+{(selLoc.er || selLoc.tel || selLoc.addr || selLoc.hours) && (
+<p className="mt-1.5 flex flex-wrap gap-1.5 text-[11px] font-bold">
+{selLoc.er && <span className="chip" style={{ borderColor: "#dc2626", color: "#dc2626" }}>🚑 24 小时急诊 · Emergency</span>}
+{selLoc.tel && <a href={`tel:${selLoc.tel.replace(/[^+\d]/g, "")}`} className="chip">📞 {selLoc.tel}</a>}
+{selLoc.addr && <span className="chip">📍 {selLoc.addr}</span>}
+{selLoc.hours && <span className="chip">🕐 {selLoc.hours}</span>}
+</p>
+)}
 </div>
 <span className={`shrink-0 text-xs font-black ${arrived ? "text-[var(--green)]" : "text-[var(--accent)]"}`}>{walking ? "🚶 赶路中…" : arrived ? "● 你在这里" : "未到达"}</span>
 </div>
@@ -3235,8 +3272,32 @@ return (
 </button>
 ))}
 </div>
+{s.cityKey === "sz" && (() => {
+const svc = nearbyServices(s.cityKey, selLoc.id).filter((r) => r.id !== selLoc.id);
+if (svc.length === 0) return null;
+const er = svc.find((r) => r.place.kind === "hospital");
+return (
+<Fold title="🆘 附近服务 · Emergency & Services" summary={`急救 120 · 报警 110${er ? ` · 最近医院：${er.place.name}` : ""}`} groupKey={`svc-${selLoc.id}`} defaultOpen={selLoc.type === "apec"}>
+<div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+{([["120", "🚑", "急救", "Ambulance"], ["110", "🚓", "报警", "Police"], ["119", "🚒", "火警", "Fire"], ["12345", "☎️", "市民热线", "City hotline"]] as const).map(([n, e, zh, en]) => (
+<a key={n} href={`tel:${n}`} className="rounded-[10px] border border-[var(--line)] bg-[var(--bg)] px-2 py-1.5 text-center"><span className="block text-sm font-black">{e} {n}</span><span className="block text-[10px] font-bold text-[var(--dim)]">{zh} · {en}</span></a>
+))}
+</div>
+<div className="mt-2 grid gap-1.5">
+{svc.map((r) => { const k = PLACE_KINDS[r.place.kind]; return (
+<button key={r.id} type="button" disabled={walking} onClick={() => walkTo(r.id, r.dist < 1.6 ? "walk" : undefined)} className="act-btn disabled:opacity-40">
+<span className="text-sm font-bold">{k.emoji} {r.place.name}{r.place.er ? " · 🚑 急诊" : ""}</span>
+{r.place.en && <span className="block text-[11px] text-[var(--dim)]">{r.place.en}</span>}
+<span className="block text-xs text-[var(--dim)]">{k.label} · 约 {Math.max(0.1, r.dist).toFixed(1)} 公里 · 近「{r.place.st}」站{r.place.tel ? ` · 📞 ${r.place.tel}` : ""}{r.place.addr ? ` · ${r.place.addr}` : ""}</span>
+</button>
+); })}
+</div>
+<p className="mt-2 text-[11px] leading-relaxed text-[var(--dim)]">医院、药店、派出所的位置和电话来自 OpenStreetMap，可能有变动；身体不适或紧急情况请直接拨打 120 / 110。Locations from OpenStreetMap; in an emergency call 120 (ambulance) or 110 (police).</p>
+</Fold>
+);
+})()}
 {(() => {
-const near = nearbyPlaces(s.cityKey, selLoc.x, selLoc.z, 6).filter((r) => r.id !== selLoc.id);
+const near = nearbyPlaces(s.cityKey, selLoc.id, 6);
 if (near.length === 0) return null;
 return (
 <Fold title="🧭 附近可去" summary={near.slice(0, 3).map((r) => r.place.name).join("、")} groupKey={`near-${selLoc.id}`} defaultOpen={selLoc.type === "transit"}>

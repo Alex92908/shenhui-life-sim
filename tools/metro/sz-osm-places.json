@@ -52,6 +52,16 @@
 "area": 0.0
 },
 {
+"id": "n1719396423",
+"tags": {
+"amenity": "pharmacy",
+"name": "万泽大药房"
+},
+"lat": 22.5673835,
+"lon": 114.0298878,
+"area": 0.0
+},
+{
 "id": "n1722037599",
 "tags": {
 "historic": "memorial",
@@ -101,6 +111,9 @@
 {
 "id": "n2380714209",
 "tags": {
+"addr:city": "深圳",
+"addr:housenumber": "33号",
+"addr:street": "文心五路",
 "name": "后海天虹",
 "name:en": "Rainbow Shopping Centre Houhai",
 "shop": "mall"
@@ -253,6 +266,27 @@
 "area": 0.0
 },
 {
+"id": "n3002816140",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行",
+"name:en": "Naber Drugstore"
+},
+"lat": 22.560039,
+"lon": 114.0265726,
+"area": 0.0
+},
+{
+"id": "n3176643461",
+"tags": {
+"amenity": "pharmacy",
+"name": "国大药房"
+},
+"lat": 22.5501543,
+"lon": 114.1431681,
+"area": 0.0
+},
+{
 "id": "n3217905797",
 "tags": {
 "name": "石人山",
@@ -298,6 +332,10 @@
 {
 "id": "n3687781771",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "2",
+"addr:street": "景田东一街",
 "amenity": "library",
 "name": "福田区图书馆 艺术分馆",
 "name:en": "Futian District Library (Art Branch)"
@@ -317,10 +355,26 @@
 "area": 0.0
 },
 {
+"id": "n3759874487",
+"tags": {
+"information": "office",
+"name": "中国电信",
+"tourism": "information"
+},
+"lat": 22.6908507,
+"lon": 113.7972703,
+"area": 0.0
+},
+{
 "id": "n3829834370",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:street": "福中三路",
 "name": "深圳博物馆历史民俗馆",
 "name:en": "Shenzhen Museum History and Culture Museum",
+"opening_hours": "Tu-Su 10:00-18:00; Mo off; PH 10:00-18:00; PH +1 day off",
+"phone": "+86 755 8210 5550",
 "tourism": "museum",
 "wikidata": "Q2088192",
 "wikipedia": "zh:深圳博物馆"
@@ -403,6 +457,16 @@
 "area": 0.0
 },
 {
+"id": "n3893560526",
+"tags": {
+"amenity": "pharmacy",
+"name": "宝华药行"
+},
+"lat": 22.6545849,
+"lon": 114.0612104,
+"area": 0.0
+},
+{
 "id": "n3923052712",
 "tags": {
 "name": "君尚百货中心店",
@@ -450,6 +514,19 @@
 },
 "lat": 22.5363332,
 "lon": 113.9666187,
+"area": 0.0
+},
+{
+"id": "n4382016338",
+"tags": {
+"addr:housenumber": "168",
+"addr:street": "工业八路",
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5030623,
+"lon": 113.927586,
 "area": 0.0
 },
 {
@@ -515,13 +592,27 @@
 {
 "id": "n4811280624",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:street": "福中三路",
 "name": "深圳市工业展览馆",
 "name:en": "Shenzhen Industrial Museum",
+"opening_hours": "\"reservation\"",
 "tourism": "museum",
 "wikidata": "Q22098635"
 },
 "lat": 22.5460296,
 "lon": 114.0539504,
+"area": 0.0
+},
+{
+"id": "n4898987111",
+"tags": {
+"amenity": "police",
+"name": "莲城社区警务室"
+},
+"lat": 22.5477829,
+"lon": 113.9216299,
 "area": 0.0
 },
 {
@@ -555,6 +646,16 @@
 "area": 0.0
 },
 {
+"id": "n4923815640",
+"tags": {
+"amenity": "police",
+"name": "派出所"
+},
+"lat": 22.6551314,
+"lon": 114.0455317,
+"area": 0.0
+},
+{
 "id": "n4923857715",
 "tags": {
 "historic": "monument",
@@ -562,6 +663,16 @@
 },
 "lat": 22.6623892,
 "lon": 114.0466534,
+"area": 0.0
+},
+{
+"id": "n4948656421",
+"tags": {
+"amenity": "police",
+"name": "高新中社区警务室"
+},
+"lat": 22.5329588,
+"lon": 113.9384735,
 "area": 0.0
 },
 {
@@ -594,6 +705,16 @@
 },
 "lat": 22.520655,
 "lon": 113.949122,
+"area": 0.0
+},
+{
+"id": "n5190079851",
+"tags": {
+"amenity": "police",
+"name": "广州铁路公安局深圳西站派出所"
+},
+"lat": 22.531632,
+"lon": 113.9025514,
 "area": 0.0
 },
 {
@@ -683,6 +804,16 @@
 "area": 0.0
 },
 {
+"id": "n5356262819",
+"tags": {
+"amenity": "police",
+"name": "白石洲社区警务室"
+},
+"lat": 22.5358871,
+"lon": 113.9635367,
+"area": 0.0
+},
+{
 "id": "n5360135167",
 "tags": {
 "name": "沙河天虹商场",
@@ -693,10 +824,22 @@
 "area": 0.0
 },
 {
+"id": "n5360209113",
+"tags": {
+"amenity": "police",
+"name": "公安值班室",
+"name:en": "Police duty office"
+},
+"lat": 22.7258381,
+"lon": 114.0744813,
+"area": 0.0
+},
+{
 "id": "n5480644621",
 "tags": {
 "amenity": "hospital",
-"name": "罗湖区疾病预防控制中心"
+"name": "罗湖区疾病预防控制中心",
+"opening_hours": "Mo-Fr 08:30-12:00, 14:00-17:30"
 },
 "lat": 22.5645255,
 "lon": 114.1217163,
@@ -755,6 +898,16 @@
 },
 "lat": 22.520713,
 "lon": 114.5838142,
+"area": 0.0
+},
+{
+"id": "n5715279445",
+"tags": {
+"amenity": "police",
+"name": "宝民派出所"
+},
+"lat": 22.5719213,
+"lon": 113.8913748,
 "area": 0.0
 },
 {
@@ -836,7 +989,8 @@
 "tags": {
 "amenity": "library",
 "name": "无人值守图书馆",
-"name:en": "SZ Autonomous Library"
+"name:en": "SZ Autonomous Library",
+"opening_hours": "24/7"
 },
 "lat": 22.6034509,
 "lon": 113.994006,
@@ -871,6 +1025,29 @@
 },
 "lat": 22.6051921,
 "lon": 114.417804,
+"area": 0.0
+},
+{
+"id": "n6154963853",
+"tags": {
+"amenity": "police",
+"name": "深圳市公安局 罗湖分局 东晓派出所"
+},
+"lat": 22.5860923,
+"lon": 114.1132288,
+"area": 0.0
+},
+{
+"id": "n6155154334",
+"tags": {
+"addr:housenumber": "2012",
+"addr:street": "深南东路",
+"amenity": "police",
+"name": "深圳市公安局 交通警察局 罗湖大队",
+"name:en": "Shenzhen Municipal Public Security Bureau Luohu Traffic Police Brigade"
+},
+"lat": 22.5478293,
+"lon": 114.1226448,
 "area": 0.0
 },
 {
@@ -914,6 +1091,16 @@
 },
 "lat": 22.5326205,
 "lon": 113.980372,
+"area": 0.0
+},
+{
+"id": "n6327328521",
+"tags": {
+"amenity": "police",
+"name": "招商派出所四海社区警务室"
+},
+"lat": 22.5030837,
+"lon": 113.9190626,
 "area": 0.0
 },
 {
@@ -1288,6 +1475,16 @@
 "area": 0.0
 },
 {
+"id": "n6469067887",
+"tags": {
+"amenity": "pharmacy",
+"name": "kypil yau"
+},
+"lat": 22.5458621,
+"lon": 114.0833749,
+"area": 0.0
+},
+{
 "id": "n6514005447",
 "tags": {
 "historic": "memorial",
@@ -1339,6 +1536,17 @@
 },
 "lat": 22.6115692,
 "lon": 114.4473294,
+"area": 0.0
+},
+{
+"id": "n6635081323",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.6629544,
+"lon": 114.0633911,
 "area": 0.0
 },
 {
@@ -1465,6 +1673,16 @@
 "area": 0.0
 },
 {
+"id": "n7068587091",
+"tags": {
+"amenity": "police",
+"name": "万象社区警务室"
+},
+"lat": 22.5413343,
+"lon": 114.1014669,
+"area": 0.0
+},
+{
 "id": "n7092309445",
 "tags": {
 "name": "急水龙尾",
@@ -1486,6 +1704,20 @@
 "area": 0.0
 },
 {
+"id": "n7120558634",
+"tags": {
+"addr:housenumber": "209;211",
+"addr:street": "吉祥路",
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar",
+"shop": "chemist"
+},
+"lat": 22.7173891,
+"lon": 114.2330709,
+"area": 0.0
+},
+{
 "id": "n7121869831",
 "tags": {
 "historic": "memorial",
@@ -1493,6 +1725,41 @@
 },
 "lat": 22.6311452,
 "lon": 114.2702519,
+"area": 0.0
+},
+{
+"id": "n7126153061",
+"tags": {
+"addr:housenumber": "350",
+"addr:street": "吉祥路",
+"amenity": "pharmacy",
+"name": "同仁堂",
+"name:en": "TongRenTang Pharmacy"
+},
+"lat": 22.7201019,
+"lon": 114.2340297,
+"area": 0.0
+},
+{
+"id": "n7126153067",
+"tags": {
+"addr:housenumber": "87",
+"addr:street": "清林路",
+"amenity": "pharmacy",
+"name": "桐济堂大药房"
+},
+"lat": 22.722096,
+"lon": 114.2346949,
+"area": 0.0
+},
+{
+"id": "n7131264628",
+"tags": {
+"amenity": "pharmacy",
+"name": "国大药房"
+},
+"lat": 22.7297425,
+"lon": 114.2430878,
 "area": 0.0
 },
 {
@@ -1675,6 +1942,29 @@
 },
 "lat": 22.5060911,
 "lon": 114.0464771,
+"area": 0.0
+},
+{
+"id": "n7903565070",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar",
+"shop": "chemist"
+},
+"lat": 22.722638,
+"lon": 114.2353177,
+"area": 0.0
+},
+{
+"id": "n7982032667",
+"tags": {
+"amenity": "police",
+"name": "坪山公安分局北门",
+"name:en": "North Gate to Pingshan Branch Bureau of Public Security"
+},
+"lat": 22.7028799,
+"lon": 114.347745,
 "area": 0.0
 },
 {
@@ -2170,8 +2460,12 @@
 {
 "id": "n8566301410",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙岗区",
+"addr:street": "永香路",
 "name": "湾畔MALL",
 "name:en": "Wanpan Mall",
+"opening_hours": "07:00-22:00",
 "shop": "mall"
 },
 "lat": 22.6234646,
@@ -2188,6 +2482,16 @@
 },
 "lat": 22.8048358,
 "lon": 113.9460128,
+"area": 0.0
+},
+{
+"id": "n8755731699",
+"tags": {
+"amenity": "police",
+"name": "深圳市公安局大亚湾分局"
+},
+"lat": 22.596916,
+"lon": 114.5340573,
 "area": 0.0
 },
 {
@@ -2376,7 +2680,9 @@
 "id": "n9045249835",
 "tags": {
 "amenity": "library",
-"name": "葵涌图书馆"
+"name": "葵涌图书馆",
+"opening_hours": "Tu-Fr 09:00-17:30",
+"phone": "075584206156"
 },
 "lat": 22.6367259,
 "lon": 114.4246448,
@@ -3237,6 +3543,18 @@
 "area": 0.0
 },
 {
+"id": "n9419613994",
+"tags": {
+"amenity": "pharmacy",
+"name": "永祥藥房連鎖",
+"opening_hours": "Mo-Su 08:00-22:30",
+"phone": "+86 137 1530 7568"
+},
+"lat": 22.6377489,
+"lon": 114.4023677,
+"area": 0.0
+},
+{
 "id": "n9424312278",
 "tags": {
 "ele": "662",
@@ -3399,6 +3717,17 @@
 },
 "lat": 22.7858859,
 "lon": 115.1069404,
+"area": 0.0
+},
+{
+"id": "n9608441514",
+"tags": {
+"information": "office",
+"name": "访客中心",
+"tourism": "information"
+},
+"lat": 22.514038,
+"lon": 114.0366637,
 "area": 0.0
 },
 {
@@ -3572,6 +3901,18 @@
 "area": 0.0
 },
 {
+"id": "n9929532376",
+"tags": {
+"information": "office",
+"name": "游客服务中心",
+"name:en": "Service Center for Visitors",
+"tourism": "information"
+},
+"lat": 22.5463511,
+"lon": 114.0172906,
+"area": 0.0
+},
+{
 "id": "n9929532422",
 "tags": {
 "amenity": "library",
@@ -3585,6 +3926,10 @@
 {
 "id": "n9929532424",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "30",
+"addr:street": "农园路",
 "amenity": "library",
 "name": "福田区儿童图书馆香蜜分馆",
 "name:en": "Futian District Children’s Library Xiangmi Branch"
@@ -3623,6 +3968,16 @@
 },
 "lat": 22.4804322,
 "lon": 113.8864599,
+"area": 0.0
+},
+{
+"id": "n10224523022",
+"tags": {
+"amenity": "police",
+"name": "深圳市深汕特别合作区公安分局"
+},
+"lat": 22.8306603,
+"lon": 115.0378482,
 "area": 0.0
 },
 {
@@ -3971,6 +4326,8 @@
 {
 "id": "n10965191881",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙岗区",
 "amenity": "library",
 "name": "龙岗图书馆天安云谷科学艺术分馆"
 },
@@ -4023,8 +4380,13 @@
 {
 "id": "n11095296404",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "罗湖区",
+"addr:housenumber": "4089",
+"addr:street": "罗沙公路",
 "name": "莲塘口岸商业城",
 "name:en": "Liantang Checkpoint Commercial City",
+"phone": "+86 755 8555 5566",
 "shop": "mall"
 },
 "lat": 22.5568133,
@@ -4219,6 +4581,10 @@
 {
 "id": "n11196333068",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙华区",
+"addr:housenumber": "567",
+"addr:street": "民治大道",
 "name": "优城",
 "shop": "mall"
 },
@@ -4277,6 +4643,23 @@
 },
 "lat": 22.5854762,
 "lon": 114.02737,
+"area": 0.0
+},
+{
+"id": "n11212228913",
+"tags": {
+"addr:city": "深圳市",
+"addr:district": "龙华区",
+"addr:housenumber": "10-10",
+"addr:street": "华繁路",
+"amenity": "pharmacy",
+"name": "兴康药行",
+"name:en": "Xingkang Pharmacy",
+"opening_hours": "09:00-22:00",
+"phone": "+86 755 2377 7826"
+},
+"lat": 22.668363,
+"lon": 113.9890258,
 "area": 0.0
 },
 {
@@ -6410,10 +6793,25 @@
 "area": 0.0
 },
 {
+"id": "n11498809713",
+"tags": {
+"amenity": "police",
+"name": "龙岗交警大队横岗扣车场"
+},
+"lat": 22.6524181,
+"lon": 114.1764455,
+"area": 0.0
+},
+{
 "id": "n11510347253",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "184",
+"addr:street": "福中路",
 "name": "深圳改革开放展览馆",
 "name:en": "Shenzhen Reform and Opening-up Exhibition Hall",
+"opening_hours": "Tu-Su 10:00-18:00",
 "tourism": "museum"
 },
 "lat": 22.5480802,
@@ -6565,14 +6963,59 @@
 "area": 0.0
 },
 {
+"id": "n11536935936",
+"tags": {
+"amenity": "pharmacy",
+"name": "万泽大药房"
+},
+"lat": 22.5563924,
+"lon": 114.1522469,
+"area": 0.0
+},
+{
 "id": "n11580478555",
 "tags": {
+"addr:housenumber": "1",
+"addr:street": "罗租育才路",
 "amenity": "library",
 "name": "宝安图书馆石岩街道分馆",
-"name:en": "Bao'an Library Shiyan Sub-District Branch"
+"name:en": "Bao'an Library Shiyan Sub-District Branch",
+"opening_hours": "PH,Tu-Su 09:00-21:00",
+"phone": "+86 755 2905 9990"
 },
 "lat": 22.6746321,
 "lon": 113.9389594,
+"area": 0.0
+},
+{
+"id": "n11581530313",
+"tags": {
+"amenity": "pharmacy",
+"name": "一德堂药房"
+},
+"lat": 22.5253037,
+"lon": 114.0570374,
+"area": 0.0
+},
+{
+"id": "n11581530322",
+"tags": {
+"amenity": "pharmacy",
+"name": "万泽大药房",
+"name:en": "Wanze Pharmacy"
+},
+"lat": 22.5261723,
+"lon": 114.0571906,
+"area": 0.0
+},
+{
+"id": "n11581555769",
+"tags": {
+"amenity": "pharmacy",
+"name": "民心大药房"
+},
+"lat": 22.5257191,
+"lon": 114.0600876,
 "area": 0.0
 },
 {
@@ -6628,6 +7071,7 @@
 {
 "id": "n11648651635",
 "tags": {
+"addr:street": "紫荆道创想科技大厦一楼",
 "name": "三丰艺术馆",
 "name:en": "sanfeng museum of art",
 "tourism": "museum"
@@ -6657,6 +7101,29 @@
 "area": 0.0
 },
 {
+"id": "n11727901025",
+"tags": {
+"addr:housenumber": "1-15",
+"addr:street": "民旺路",
+"amenity": "pharmacy",
+"name": "中联大药房"
+},
+"lat": 22.6253214,
+"lon": 114.0356764,
+"area": 0.0
+},
+{
+"id": "n11734339447",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.6639065,
+"lon": 114.0111634,
+"area": 0.0
+},
+{
 "id": "n11735965421",
 "tags": {
 "name": "大浪麒麟博物馆",
@@ -6665,6 +7132,30 @@
 },
 "lat": 22.6964669,
 "lon": 113.9942935,
+"area": 0.0
+},
+{
+"id": "n11736387172",
+"tags": {
+"addr:housenumber": "6-1",
+"addr:street": "华繁路",
+"amenity": "police",
+"name": "同胜社区警务室",
+"name:en": "Tongsheng Community Policing Room"
+},
+"lat": 22.6674373,
+"lon": 113.9885945,
+"area": 0.0
+},
+{
+"id": "n11771992972",
+"tags": {
+"amenity": "police",
+"name": "大浪派出所",
+"name:en": "Dalang Local Police Station"
+},
+"lat": 22.682792,
+"lon": 114.0037979,
 "area": 0.0
 },
 {
@@ -6987,6 +7478,37 @@
 "area": 0.0
 },
 {
+"id": "n12155073429",
+"tags": {
+"amenity": "police",
+"name": "社区警务室",
+"name:en": "Commiunity Policing Room"
+},
+"lat": 22.8038115,
+"lon": 113.9617825,
+"area": 0.0
+},
+{
+"id": "n12190068802",
+"tags": {
+"amenity": "police",
+"name": "南科大警务室"
+},
+"lat": 22.6027707,
+"lon": 113.9961285,
+"area": 0.0
+},
+{
+"id": "n12384702281",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.5439397,
+"lon": 114.1208664,
+"area": 0.0
+},
+{
 "id": "n12430762304",
 "tags": {
 "name": "锦鲤园",
@@ -7069,6 +7591,31 @@
 "area": 0.0
 },
 {
+"id": "n12483962536",
+"tags": {
+"addr:district": "宝安中心区",
+"addr:housenumber": "泰华·君逸世家",
+"addr:street": "罗田路",
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5640264,
+"lon": 113.8764582,
+"area": 0.0
+},
+{
+"id": "n12483962579",
+"tags": {
+"information": "office",
+"name": "宝体青年志愿服务站",
+"tourism": "information"
+},
+"lat": 22.563673,
+"lon": 113.8765794,
+"area": 0.0
+},
+{
 "id": "n12484004009",
 "tags": {
 "amenity": "library",
@@ -7076,6 +7623,26 @@
 },
 "lat": 22.667283,
 "lon": 113.8159661,
+"area": 0.0
+},
+{
+"id": "n12486024950",
+"tags": {
+"amenity": "police",
+"name": "海裕社区义工义警之家"
+},
+"lat": 22.5653698,
+"lon": 113.876709,
+"area": 0.0
+},
+{
+"id": "n12486024951",
+"tags": {
+"amenity": "police",
+"name": "海裕警务室"
+},
+"lat": 22.565202,
+"lon": 113.8768693,
 "area": 0.0
 },
 {
@@ -7087,6 +7654,53 @@
 },
 "lat": 22.4963434,
 "lon": 113.9136627,
+"area": 0.0
+},
+{
+"id": "n12526265259",
+"tags": {
+"addr:housenumber": "10",
+"addr:street": "华繁路",
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.6681567,
+"lon": 113.9888697,
+"area": 0.0
+},
+{
+"id": "n12526505091",
+"tags": {
+"addr:housenumber": "46-5",
+"amenity": "pharmacy",
+"name": "南北明华药行",
+"name:en": "Nanbei Minghua Pharmacy"
+},
+"lat": 22.6683146,
+"lon": 113.9943796,
+"area": 0.0
+},
+{
+"id": "n12531280864",
+"tags": {
+"amenity": "pharmacy",
+"name": "兴康药房",
+"name:en": "Xingkang Pharmacy",
+"opening_hours": "Mo-Su,PH 07:30-22:30"
+},
+"lat": 22.6684685,
+"lon": 113.9895268,
+"area": 0.0
+},
+{
+"id": "n12601262860",
+"tags": {
+"amenity": "police",
+"name": "福保派出所"
+},
+"lat": 22.5122543,
+"lon": 114.0491592,
 "area": 0.0
 },
 {
@@ -7118,6 +7732,16 @@
 },
 "lat": 22.6744898,
 "lon": 113.8341625,
+"area": 0.0
+},
+{
+"id": "n12661914679",
+"tags": {
+"amenity": "pharmacy",
+"name": "立丰药房"
+},
+"lat": 22.5707676,
+"lon": 113.8914557,
 "area": 0.0
 },
 {
@@ -7192,6 +7816,16 @@
 },
 "lat": 22.6556471,
 "lon": 114.2360355,
+"area": 0.0
+},
+{
+"id": "n12864908241",
+"tags": {
+"amenity": "pharmacy",
+"name": "仁康大药房"
+},
+"lat": 22.5335845,
+"lon": 114.1132627,
 "area": 0.0
 },
 {
@@ -7287,6 +7921,8 @@
 {
 "id": "n13132386039",
 "tags": {
+"addr:housenumber": "1",
+"addr:street": "宝华路",
 "name": "湾区民俗馆",
 "tourism": "museum"
 },
@@ -7336,6 +7972,16 @@
 "area": 0.0
 },
 {
+"id": "n13178378873",
+"tags": {
+"amenity": "police",
+"name": "石井派出所大学城警务室"
+},
+"lat": 22.7058732,
+"lon": 114.3962601,
+"area": 0.0
+},
+{
 "id": "n13197509934",
 "tags": {
 "historic": "memorial",
@@ -7377,6 +8023,145 @@
 "area": 0.0
 },
 {
+"id": "n13227199189",
+"tags": {
+"amenity": "police",
+"name": "海旺警务室"
+},
+"lat": 22.5603791,
+"lon": 113.8827708,
+"area": 0.0
+},
+{
+"id": "n13227242201",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5486464,
+"lon": 113.8923365,
+"area": 0.0
+},
+{
+"id": "n13227242202",
+"tags": {
+"amenity": "pharmacy",
+"name": "大参林",
+"name:en": "dashenlin"
+},
+"lat": 22.5488,
+"lon": 113.8921024,
+"area": 0.0
+},
+{
+"id": "n13227242203",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.5505232,
+"lon": 113.8921472,
+"area": 0.0
+},
+{
+"id": "n13227242207",
+"tags": {
+"addr:district": "宝安中心区",
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5667895,
+"lon": 113.8776031,
+"area": 0.0
+},
+{
+"id": "n13227242210",
+"tags": {
+"addr:district": "宝安中心区",
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.5651536,
+"lon": 113.8772111,
+"area": 0.0
+},
+{
+"id": "n13227264772",
+"tags": {
+"amenity": "pharmacy",
+"name": "惠民药店"
+},
+"lat": 22.5639952,
+"lon": 113.889018,
+"area": 0.0
+},
+{
+"id": "n13227264776",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.5657077,
+"lon": 113.8843416,
+"area": 0.0
+},
+{
+"id": "n13227512015",
+"tags": {
+"addr:district": "宝安中心区",
+"addr:street": "裕安一路",
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.5623702,
+"lon": 113.881604,
+"area": 0.0
+},
+{
+"id": "n13227518631",
+"tags": {
+"addr:housenumber": "幸福海岸",
+"amenity": "pharmacy",
+"name": "民心大药房"
+},
+"lat": 22.5619143,
+"lon": 113.8744592,
+"area": 0.0
+},
+{
+"id": "n13227518637",
+"tags": {
+"addr:district": "宝安中心区",
+"amenity": "pharmacy",
+"name": "瑞草堂大药房"
+},
+"lat": 22.566269,
+"lon": 113.8774656,
+"area": 0.0
+},
+{
+"id": "n13227596274",
+"tags": {
+"amenity": "pharmacy",
+"name": "华太医大药房"
+},
+"lat": 22.5601855,
+"lon": 113.8825529,
+"area": 0.0
+},
+{
+"id": "n13227596286",
+"tags": {
+"amenity": "pharmacy",
+"name": "宝华药行"
+},
+"lat": 22.5591689,
+"lon": 113.8856745,
+"area": 0.0
+},
+{
 "id": "n13227596287",
 "tags": {
 "amenity": "library",
@@ -7384,6 +8169,57 @@
 },
 "lat": 22.5587034,
 "lon": 113.8852864,
+"area": 0.0
+},
+{
+"id": "n13229847786",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.5586262,
+"lon": 113.8870734,
+"area": 0.0
+},
+{
+"id": "n13229847792",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.5556277,
+"lon": 113.8903442,
+"area": 0.0
+},
+{
+"id": "n13230361353",
+"tags": {
+"amenity": "pharmacy",
+"name": "瑞药堂大药房"
+},
+"lat": 22.5664528,
+"lon": 113.8759718,
+"area": 0.0
+},
+{
+"id": "n13230389534",
+"tags": {
+"amenity": "police",
+"name": "灵芝社区警务室"
+},
+"lat": 22.5760612,
+"lon": 113.90679,
+"area": 0.0
+},
+{
+"id": "n13230389545",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5757652,
+"lon": 113.9041862,
 "area": 0.0
 },
 {
@@ -7398,6 +8234,133 @@
 "area": 0.0
 },
 {
+"id": "n13230389568",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.5811087,
+"lon": 113.8990765,
+"area": 0.0
+},
+{
+"id": "n13230389569",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5827559,
+"lon": 113.8976731,
+"area": 0.0
+},
+{
+"id": "n13230502198",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.565961,
+"lon": 113.8616247,
+"area": 0.0
+},
+{
+"id": "n13230509505",
+"tags": {
+"amenity": "police",
+"name": "上川社区警务室"
+},
+"lat": 22.5816513,
+"lon": 113.8936037,
+"area": 0.0
+},
+{
+"id": "n13230509508",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5827292,
+"lon": 113.8956703,
+"area": 0.0
+},
+{
+"id": "n13230601528",
+"tags": {
+"amenity": "pharmacy",
+"name": "瑞草堂大药房"
+},
+"lat": 22.5697762,
+"lon": 113.8672699,
+"area": 0.0
+},
+{
+"id": "n13230601529",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.5693505,
+"lon": 113.8673841,
+"area": 0.0
+},
+{
+"id": "n13230601533",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5711987,
+"lon": 113.8675854,
+"area": 0.0
+},
+{
+"id": "n13230601537",
+"tags": {
+"amenity": "police",
+"name": "麻布社区警务室"
+},
+"lat": 22.5734034,
+"lon": 113.8686222,
+"area": 0.0
+},
+{
+"id": "n13230601546",
+"tags": {
+"addr:housenumber": "宝安大仟里",
+"addr:street": "海城路",
+"amenity": "pharmacy",
+"name": "国大药房"
+},
+"lat": 22.5722798,
+"lon": 113.8676738,
+"area": 0.0
+},
+{
+"id": "n13230601555",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5762,
+"lon": 113.8707105,
+"area": 0.0
+},
+{
+"id": "n13230601557",
+"tags": {
+"amenity": "police",
+"name": "西乡社区警务室"
+},
+"lat": 22.5748658,
+"lon": 113.8716922,
+"area": 0.0
+},
+{
 "id": "n13230601564",
 "tags": {
 "amenity": "library",
@@ -7408,6 +8371,272 @@
 "area": 0.0
 },
 {
+"id": "n13230601565",
+"tags": {
+"amenity": "pharmacy",
+"name": "国大药房"
+},
+"lat": 22.5739853,
+"lon": 113.8741168,
+"area": 0.0
+},
+{
+"id": "n13230607062",
+"tags": {
+"amenity": "police",
+"name": "西乡中队西乡警务室"
+},
+"lat": 22.5806909,
+"lon": 113.8766925,
+"area": 0.0
+},
+{
+"id": "n13230612021",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5771094,
+"lon": 113.8905509,
+"area": 0.0
+},
+{
+"id": "n13231987605",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5577095,
+"lon": 113.8846444,
+"area": 0.0
+},
+{
+"id": "n13232006900",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5621541,
+"lon": 113.882891,
+"area": 0.0
+},
+{
+"id": "n13232107359",
+"tags": {
+"amenity": "police",
+"name": "新安湖社区警务室"
+},
+"lat": 22.5655569,
+"lon": 113.9027434,
+"area": 0.0
+},
+{
+"id": "n13232139918",
+"tags": {
+"amenity": "pharmacy",
+"name": "瑞草堂大药房"
+},
+"lat": 22.5625853,
+"lon": 113.8698253,
+"area": 0.0
+},
+{
+"id": "n13232190433",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.5599452,
+"lon": 113.8717547,
+"area": 0.0
+},
+{
+"id": "n13232190440",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.570325,
+"lon": 113.8801459,
+"area": 0.0
+},
+{
+"id": "n13232219400",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.5734734,
+"lon": 113.8517265,
+"area": 0.0
+},
+{
+"id": "n13232235813",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5773342,
+"lon": 113.848702,
+"area": 0.0
+},
+{
+"id": "n13232497360",
+"tags": {
+"amenity": "pharmacy",
+"name": "三好药行"
+},
+"lat": 22.5536207,
+"lon": 113.8900866,
+"area": 0.0
+},
+{
+"id": "n13234865765",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.4973896,
+"lon": 113.8879141,
+"area": 0.0
+},
+{
+"id": "n13235673167",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5150893,
+"lon": 113.90257,
+"area": 0.0
+},
+{
+"id": "n13235720275",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.7228035,
+"lon": 113.8238251,
+"area": 0.0
+},
+{
+"id": "n13235723903",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.7368455,
+"lon": 113.8117238,
+"area": 0.0
+},
+{
+"id": "n13235723922",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.7661762,
+"lon": 113.8518674,
+"area": 0.0
+},
+{
+"id": "n13235908428",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.6928262,
+"lon": 113.7893046,
+"area": 0.0
+},
+{
+"id": "n13236222318",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5958485,
+"lon": 113.8408274,
+"area": 0.0
+},
+{
+"id": "n13236222341",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.6134343,
+"lon": 113.8518154,
+"area": 0.0
+},
+{
+"id": "n13238183964",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.7021205,
+"lon": 113.8094842,
+"area": 0.0
+},
+{
+"id": "n13238183965",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.702545,
+"lon": 113.8088347,
+"area": 0.0
+},
+{
+"id": "n13238381374",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5512608,
+"lon": 113.8834013,
+"area": 0.0
+},
+{
+"id": "n13238381377",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5500782,
+"lon": 113.8852768,
+"area": 0.0
+},
+{
+"id": "n13238381512",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5482671,
+"lon": 113.9434086,
+"area": 0.0
+},
+{
 "id": "n13238563151",
 "tags": {
 "amenity": "library",
@@ -7415,6 +8644,81 @@
 },
 "lat": 22.6170162,
 "lon": 113.8556917,
+"area": 0.0
+},
+{
+"id": "n13238563152",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.6175742,
+"lon": 113.8565018,
+"area": 0.0
+},
+{
+"id": "n13238563163",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.6190796,
+"lon": 113.8561363,
+"area": 0.0
+},
+{
+"id": "n13238563187",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.7849277,
+"lon": 113.8731303,
+"area": 0.0
+},
+{
+"id": "n13238568148",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5703108,
+"lon": 113.8977498,
+"area": 0.0
+},
+{
+"id": "n13238568149",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.5687882,
+"lon": 113.8984614,
+"area": 0.0
+},
+{
+"id": "n13238568150",
+"tags": {
+"amenity": "pharmacy",
+"name": "大参林",
+"name:en": "dashenlin"
+},
+"lat": 22.5670014,
+"lon": 113.8987348,
+"area": 0.0
+},
+{
+"id": "n13247224547",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.5721609,
+"lon": 113.9084899,
 "area": 0.0
 },
 {
@@ -7438,6 +8742,91 @@
 "area": 0.0
 },
 {
+"id": "n13249341928",
+"tags": {
+"addr:housenumber": "龙光·玖龙台",
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.7486404,
+"lon": 113.929905,
+"area": 0.0
+},
+{
+"id": "n13249341929",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.7478287,
+"lon": 113.9280367,
+"area": 0.0
+},
+{
+"id": "n13249502302",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.7583293,
+"lon": 113.9339901,
+"area": 0.0
+},
+{
+"id": "n13249502325",
+"tags": {
+"amenity": "pharmacy",
+"name": "大参林",
+"name:en": "dashenlin"
+},
+"lat": 22.7640466,
+"lon": 113.933612,
+"area": 0.0
+},
+{
+"id": "n13249502328",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.7647194,
+"lon": 113.9328316,
+"area": 0.0
+},
+{
+"id": "n13249502330",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.7652685,
+"lon": 113.9318803,
+"area": 0.0
+},
+{
+"id": "n13249800279",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.7385652,
+"lon": 113.8075133,
+"area": 0.0
+},
+{
+"id": "n13249800282",
+"tags": {
+"amenity": "pharmacy",
+"name": "大参林",
+"name:en": "dashenlin"
+},
+"lat": 22.7387414,
+"lon": 113.8083236,
+"area": 0.0
+},
+{
 "id": "n13250160418",
 "tags": {
 "historic": "memorial",
@@ -7445,6 +8834,17 @@
 },
 "lat": 22.5288089,
 "lon": 114.0540712,
+"area": 0.0
+},
+{
+"id": "n13251474127",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5724418,
+"lon": 113.8845278,
 "area": 0.0
 },
 {
@@ -7692,6 +9092,350 @@
 "area": 0.0
 },
 {
+"id": "n13255293097",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.6290843,
+"lon": 114.0169449,
+"area": 0.0
+},
+{
+"id": "n13255293129",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.581367,
+"lon": 114.128645,
+"area": 0.0
+},
+{
+"id": "n13255293145",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5943196,
+"lon": 114.1282631,
+"area": 0.0
+},
+{
+"id": "n13255418093",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.7728345,
+"lon": 113.8238052,
+"area": 0.0
+},
+{
+"id": "n13256958052",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.7304942,
+"lon": 113.929158,
+"area": 0.0
+},
+{
+"id": "n13256972242",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.527626,
+"lon": 113.9438201,
+"area": 0.0
+},
+{
+"id": "n13256972244",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.528163,
+"lon": 113.9449144,
+"area": 0.0
+},
+{
+"id": "n13256972286",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.6949688,
+"lon": 113.9670742,
+"area": 0.0
+},
+{
+"id": "n13257117104",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.7230065,
+"lon": 114.2647439,
+"area": 0.0
+},
+{
+"id": "n13257117124",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.556225,
+"lon": 114.2331367,
+"area": 0.0
+},
+{
+"id": "n13258013521",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.561147,
+"lon": 114.0370091,
+"area": 0.0
+},
+{
+"id": "n13258047478",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.6467218,
+"lon": 114.1912298,
+"area": 0.0
+},
+{
+"id": "n13258096201",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5885347,
+"lon": 114.2566624,
+"area": 0.0
+},
+{
+"id": "n13258099906",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.7109302,
+"lon": 114.2037991,
+"area": 0.0
+},
+{
+"id": "n13258165406",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5388119,
+"lon": 113.9616854,
+"area": 0.0
+},
+{
+"id": "n13258165446",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.7594985,
+"lon": 113.8165744,
+"area": 0.0
+},
+{
+"id": "n13261077812",
+"tags": {
+"amenity": "pharmacy",
+"name": "万佳大药房"
+},
+"lat": 22.5672629,
+"lon": 113.8776221,
+"area": 0.0
+},
+{
+"id": "n13261412960",
+"tags": {
+"amenity": "pharmacy",
+"name": "康福万家"
+},
+"lat": 22.5634459,
+"lon": 113.8723954,
+"area": 0.0
+},
+{
+"id": "n13261446485",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.7443797,
+"lon": 113.8267938,
+"area": 0.0
+},
+{
+"id": "n13261446490",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.7457449,
+"lon": 113.8277316,
+"area": 0.0
+},
+{
+"id": "n13264390909",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.7390261,
+"lon": 113.8052385,
+"area": 0.0
+},
+{
+"id": "n13264864780",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5844703,
+"lon": 113.8844749,
+"area": 0.0
+},
+{
+"id": "n13264864809",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.5857103,
+"lon": 113.8912834,
+"area": 0.0
+},
+{
+"id": "n13266220882",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5627425,
+"lon": 113.9035195,
+"area": 0.0
+},
+{
+"id": "n13266255790",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.5654822,
+"lon": 113.9021267,
+"area": 0.0
+},
+{
+"id": "n13266641969",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5769036,
+"lon": 113.8867936,
+"area": 0.0
+},
+{
+"id": "n13266822501",
+"tags": {
+"amenity": "police",
+"name": "深圳市公安局宝安分局刑事侦察大队"
+},
+"lat": 22.5697092,
+"lon": 113.9023698,
+"area": 0.0
+},
+{
+"id": "n13266822502",
+"tags": {
+"amenity": "police",
+"name": "深圳市公安局宝安分局特警中队"
+},
+"lat": 22.5698216,
+"lon": 113.9021756,
+"area": 0.0
+},
+{
+"id": "n13266822600",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5720143,
+"lon": 113.9064724,
+"area": 0.0
+},
+{
+"id": "n13266822601",
+"tags": {
+"amenity": "pharmacy",
+"name": "大参林",
+"name:en": "dashenlin"
+},
+"lat": 22.571851,
+"lon": 113.9066483,
+"area": 0.0
+},
+{
+"id": "n13267009106",
+"tags": {
+"amenity": "pharmacy",
+"name": "大参林",
+"name:en": "dashenlin"
+},
+"lat": 22.5808423,
+"lon": 113.8952501,
+"area": 0.0
+},
+{
+"id": "n13267009145",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5790193,
+"lon": 113.8927085,
+"area": 0.0
+},
+{
 "id": "n13267152906",
 "tags": {
 "name": "粤港澳大湾区跨海通道科普基地",
@@ -7700,6 +9444,27 @@
 },
 "lat": 22.5741833,
 "lon": 113.7661341,
+"area": 0.0
+},
+{
+"id": "n13269379838",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.7188191,
+"lon": 113.842004,
+"area": 0.0
+},
+{
+"id": "n13269379839",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.7173885,
+"lon": 113.8405338,
 "area": 0.0
 },
 {
@@ -7779,6 +9544,81 @@
 "area": 0.0
 },
 {
+"id": "n13277560158",
+"tags": {
+"amenity": "pharmacy",
+"name": "大参林",
+"name:en": "dashenlin"
+},
+"lat": 22.6477283,
+"lon": 114.026009,
+"area": 0.0
+},
+{
+"id": "n13279159519",
+"tags": {
+"addr:housenumber": "洪福雅苑",
+"amenity": "pharmacy",
+"name": "大参林",
+"name:en": "dashenlin"
+},
+"lat": 22.563914,
+"lon": 113.8890925,
+"area": 0.0
+},
+{
+"id": "n13279215302",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.7798095,
+"lon": 113.8826983,
+"area": 0.0
+},
+{
+"id": "n13279289540",
+"tags": {
+"amenity": "police",
+"name": "罗田社区警务室"
+},
+"lat": 22.7993803,
+"lon": 113.8710262,
+"area": 0.0
+},
+{
+"id": "n13280019310",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.7796052,
+"lon": 113.893735,
+"area": 0.0
+},
+{
+"id": "n13282392331",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.7362366,
+"lon": 113.8205923,
+"area": 0.0
+},
+{
+"id": "n13285275317",
+"tags": {
+"amenity": "pharmacy",
+"name": "大参林",
+"name:en": "dashenlin"
+},
+"lat": 22.7250068,
+"lon": 113.9100023,
+"area": 0.0
+},
+{
 "id": "n13286867504",
 "tags": {
 "name": "宝安区美术馆",
@@ -7796,6 +9636,329 @@
 },
 "lat": 22.7280717,
 "lon": 114.0106797,
+"area": 0.0
+},
+{
+"id": "n13287230806",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.7474995,
+"lon": 114.0362759,
+"area": 0.0
+},
+{
+"id": "n13288463978",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5853218,
+"lon": 113.8802392,
+"area": 0.0
+},
+{
+"id": "n13290050837",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5375494,
+"lon": 114.000948,
+"area": 0.0
+},
+{
+"id": "n13290050883",
+"tags": {
+"amenity": "pharmacy",
+"name": "大参林",
+"name:en": "dashenlin"
+},
+"lat": 22.5682691,
+"lon": 114.0368921,
+"area": 0.0
+},
+{
+"id": "n13290052602",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.5932465,
+"lon": 114.1024606,
+"area": 0.0
+},
+{
+"id": "n13290066941",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.6824781,
+"lon": 114.3418913,
+"area": 0.0
+},
+{
+"id": "n13290066948",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.6820146,
+"lon": 114.3237744,
+"area": 0.0
+},
+{
+"id": "n13290066958",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.7330597,
+"lon": 114.3713604,
+"area": 0.0
+},
+{
+"id": "n13290066960",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.7331096,
+"lon": 114.3787096,
+"area": 0.0
+},
+{
+"id": "n13290066973",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.7248949,
+"lon": 114.291691,
+"area": 0.0
+},
+{
+"id": "n13290114174",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.6763393,
+"lon": 113.9404835,
+"area": 0.0
+},
+{
+"id": "n13290126562",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.6085209,
+"lon": 114.1525646,
+"area": 0.0
+},
+{
+"id": "n13290245337",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.6463723,
+"lon": 114.0065556,
+"area": 0.0
+},
+{
+"id": "n13290245352",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5640434,
+"lon": 114.1665155,
+"area": 0.0
+},
+{
+"id": "n13290245354",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.5618976,
+"lon": 114.1678304,
+"area": 0.0
+},
+{
+"id": "n13290245356",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.6274361,
+"lon": 114.414371,
+"area": 0.0
+},
+{
+"id": "n13294195147",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5615678,
+"lon": 113.9707803,
+"area": 0.0
+},
+{
+"id": "n13294460916",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5315769,
+"lon": 113.9072355,
+"area": 0.0
+},
+{
+"id": "n13294460924",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.533101,
+"lon": 113.9156942,
+"area": 0.0
+},
+{
+"id": "n13294460953",
+"tags": {
+"amenity": "pharmacy",
+"name": "大参林",
+"name:en": "dashenlin"
+},
+"lat": 22.6921682,
+"lon": 113.8349176,
+"area": 0.0
+},
+{
+"id": "n13294460986",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.7253193,
+"lon": 113.802267,
+"area": 0.0
+},
+{
+"id": "n13294460992",
+"tags": {
+"amenity": "pharmacy",
+"name": "大参林",
+"name:en": "dashenlin"
+},
+"lat": 22.7606092,
+"lon": 113.7980168,
+"area": 0.0
+},
+{
+"id": "n13294460996",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5633244,
+"lon": 114.0900964,
+"area": 0.0
+},
+{
+"id": "n13294479511",
+"tags": {
+"amenity": "pharmacy",
+"name": "大参林",
+"name:en": "dashenlin"
+},
+"lat": 22.7583879,
+"lon": 113.9002908,
+"area": 0.0
+},
+{
+"id": "n13295902985",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.6202759,
+"lon": 114.1461492,
+"area": 0.0
+},
+{
+"id": "n13295915010",
+"tags": {
+"amenity": "pharmacy",
+"name": "大参林",
+"name:en": "dashenlin"
+},
+"lat": 22.6521566,
+"lon": 114.2076323,
+"area": 0.0
+},
+{
+"id": "n13295915029",
+"tags": {
+"amenity": "pharmacy",
+"name": "大参林",
+"name:en": "dashenlin"
+},
+"lat": 22.6963015,
+"lon": 114.273648,
+"area": 0.0
+},
+{
+"id": "n13296104988",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.7172069,
+"lon": 113.8163498,
+"area": 0.0
+},
+{
+"id": "n13296151014",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.7162288,
+"lon": 114.239503,
+"area": 0.0
+},
+{
+"id": "n13296151015",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.7157657,
+"lon": 114.2399807,
 "area": 0.0
 },
 {
@@ -7819,6 +9982,94 @@
 "area": 0.0
 },
 {
+"id": "n13296798840",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5446232,
+"lon": 114.0417459,
+"area": 0.0
+},
+{
+"id": "n13298766587",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5191049,
+"lon": 113.9212089,
+"area": 0.0
+},
+{
+"id": "n13298766592",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5734501,
+"lon": 113.95558,
+"area": 0.0
+},
+{
+"id": "n13298781421",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5189157,
+"lon": 114.0676025,
+"area": 0.0
+},
+{
+"id": "n13298781464",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5350095,
+"lon": 114.0805767,
+"area": 0.0
+},
+{
+"id": "n13298781482",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.5665767,
+"lon": 114.1651904,
+"area": 0.0
+},
+{
+"id": "n13300652354",
+"tags": {
+"addr:housenumber": "天汇时代花园(二期)",
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.7772602,
+"lon": 113.8886516,
+"area": 0.0
+},
+{
+"id": "n13300652355",
+"tags": {
+"addr:housenumber": "天汇时代花园(二期)",
+"amenity": "pharmacy",
+"name": "大参林",
+"name:en": "dashenlin"
+},
+"lat": 22.7771179,
+"lon": 113.8890781,
+"area": 0.0
+},
+{
 "id": "n13312804863",
 "tags": {
 "name": "宏发领域荟",
@@ -7826,6 +10077,50 @@
 },
 "lat": 22.5577074,
 "lon": 113.8832438,
+"area": 0.0
+},
+{
+"id": "n13329509803",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5864684,
+"lon": 113.8785111,
+"area": 0.0
+},
+{
+"id": "n13329509817",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5925073,
+"lon": 113.8818587,
+"area": 0.0
+},
+{
+"id": "n13339631518",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.6131755,
+"lon": 113.8505542,
+"area": 0.0
+},
+{
+"id": "n13339631519",
+"tags": {
+"amenity": "pharmacy",
+"name": "大参林",
+"name:en": "dashenlin"
+},
+"lat": 22.6132351,
+"lon": 113.8505276,
 "area": 0.0
 },
 {
@@ -7859,6 +10154,38 @@
 "area": 0.0
 },
 {
+"id": "n13340267196",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.6458633,
+"lon": 113.8270559,
+"area": 0.0
+},
+{
+"id": "n13341815355",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.6975948,
+"lon": 113.8334197,
+"area": 0.0
+},
+{
+"id": "n13344335820",
+"tags": {
+"amenity": "pharmacy",
+"name": "大参林",
+"name:en": "dashenlin"
+},
+"lat": 22.6406788,
+"lon": 114.00816,
+"area": 0.0
+},
+{
 "id": "n13347836638",
 "tags": {
 "name": "鸿大百货",
@@ -7866,6 +10193,61 @@
 },
 "lat": 22.6966502,
 "lon": 113.8244362,
+"area": 0.0
+},
+{
+"id": "n13350665662",
+"tags": {
+"amenity": "pharmacy",
+"name": "大参林",
+"name:en": "dashenlin"
+},
+"lat": 22.6845916,
+"lon": 113.826658,
+"area": 0.0
+},
+{
+"id": "n13350665663",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.6842154,
+"lon": 113.825844,
+"area": 0.0
+},
+{
+"id": "n13350686320",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.6962047,
+"lon": 113.8145927,
+"area": 0.0
+},
+{
+"id": "n13351456270",
+"tags": {
+"amenity": "pharmacy",
+"name": "大参林",
+"name:en": "dashenlin"
+},
+"lat": 22.6941315,
+"lon": 113.7977346,
+"area": 0.0
+},
+{
+"id": "n13352521646",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5856852,
+"lon": 113.8592259,
 "area": 0.0
 },
 {
@@ -7891,6 +10273,38 @@
 "area": 0.0
 },
 {
+"id": "n13366355774",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.5668048,
+"lon": 113.8891618,
+"area": 0.0
+},
+{
+"id": "n13373883543",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5824076,
+"lon": 113.9120357,
+"area": 0.0
+},
+{
+"id": "n13382779029",
+"tags": {
+"amenity": "pharmacy",
+"name": "大参林",
+"name:en": "dashenlin"
+},
+"lat": 22.5942701,
+"lon": 113.8400041,
+"area": 0.0
+},
+{
 "id": "n13386097353",
 "tags": {
 "name": "星辉里",
@@ -7898,6 +10312,17 @@
 },
 "lat": 22.6041834,
 "lon": 113.8411002,
+"area": 0.0
+},
+{
+"id": "n13386097357",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.6043238,
+"lon": 113.8400906,
 "area": 0.0
 },
 {
@@ -8062,6 +10487,16 @@
 "area": 0.0
 },
 {
+"id": "n13591999040",
+"tags": {
+"amenity": "police",
+"name": "大鹏派出所"
+},
+"lat": 22.5974432,
+"lon": 114.4709041,
+"area": 0.0
+},
+{
 "id": "n13650287654",
 "tags": {
 "name": "太子山",
@@ -8101,6 +10536,18 @@
 },
 "lat": 22.6477248,
 "lon": 114.1882668,
+"area": 0.0
+},
+{
+"id": "n13801483788",
+"tags": {
+"amenity": "security_booth",
+"information": "visitor_centre",
+"name": "盐港夜市游客服务中心",
+"tourism": "information"
+},
+"lat": 22.5758456,
+"lon": 114.2475879,
 "area": 0.0
 },
 {
@@ -8255,6 +10702,17 @@
 "area": 0.0
 },
 {
+"id": "n13915708534",
+"tags": {
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5223444,
+"lon": 113.9345873,
+"area": 0.0
+},
+{
 "id": "n13917044890",
 "tags": {
 "name": "鹞婆石",
@@ -8275,6 +10733,18 @@
 "area": 0.0
 },
 {
+"id": "n13957482991",
+"tags": {
+"addr:street": "甲岸路",
+"amenity": "pharmacy",
+"name": "海王星辰",
+"name:en": "China Nepstar"
+},
+"lat": 22.5584457,
+"lon": 113.8946925,
+"area": 0.0
+},
+{
 "id": "n13971699787",
 "tags": {
 "amenity": "library",
@@ -8288,7 +10758,8 @@
 "id": "n14022686187",
 "tags": {
 "amenity": "library",
-"name": "悦海图书馆分馆"
+"name": "悦海图书馆分馆",
+"opening_hours": "Tu off; Mo,We-Su 12:00-19:00"
 },
 "lat": 22.584705,
 "lon": 114.300862,
@@ -8317,11 +10788,24 @@
 {
 "id": "n14230135201",
 "tags": {
+"addr:housenumber": "2039号",
+"addr:street": "白石路",
 "name": "Dream Aquarium",
 "tourism": "aquarium"
 },
 "lat": 22.5286876,
 "lon": 113.9839178,
+"area": 0.0
+},
+{
+"id": "n14238346982",
+"tags": {
+"information": "visitor_centre",
+"name": "零碳公园服务中心",
+"tourism": "information"
+},
+"lat": 22.7798904,
+"lon": 114.2810807,
 "area": 0.0
 },
 {
@@ -8348,8 +10832,10 @@
 {
 "id": "n14293601101",
 "tags": {
+"addr:street": "宝龙街道",
 "amenity": "library",
-"name": "龙岗区图书馆宝龙街道分馆"
+"name": "龙岗区图书馆宝龙街道分馆",
+"opening_hours": "Tu-Su 09:00-21:00"
 },
 "lat": 22.6933035,
 "lon": 114.3080628,
@@ -8412,9 +10898,13 @@
 {
 "id": "w41281446",
 "tags": {
+"addr:housenumber": "6030",
+"addr:street": "红荔路",
 "leisure": "park",
 "name": "莲花山公园",
 "name:en": "Lianhuashan Park",
+"opening_hours": "Mo-Su 06:00-23:00",
+"phone": "+86 0755 83067950",
 "wikidata": "Q15941172",
 "wikipedia": "zh:莲花山 (深圳)"
 },
@@ -8425,6 +10915,10 @@
 {
 "id": "w64601041",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "罗湖区",
+"addr:housenumber": "5002号",
+"addr:street": "深南东路",
 "name": "地王大厦",
 "name:en": "Shun Hing Square",
 "tourism": "attraction",
@@ -8438,7 +10932,12 @@
 {
 "id": "w96293662",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "9009-1",
+"addr:street": "深南大道",
 "name": "华·美术馆",
+"opening_hours": "Tu-Su 9:00-17:00",
 "tourism": "gallery"
 },
 "lat": 22.535923949999997,
@@ -8468,9 +10967,13 @@
 {
 "id": "w98999987",
 "tags": {
+"addr:housenumber": "26",
+"addr:street": "梅岗路",
 "leisure": "park",
 "name": "笔架山公园",
 "name:en": "Bijiashan Park",
+"opening_hours": "Mo-Su 06:00-23:00",
+"phone": "+86 0755 83220201",
 "wikidata": "Q15898034",
 "wikipedia": "zh:笔架山公园"
 },
@@ -8524,6 +11027,7 @@
 {
 "id": "w105683429",
 "tags": {
+"addr:housenumber": "3",
 "name": "明华轮",
 "name:en": "Minghua",
 "tourism": "attraction",
@@ -8537,9 +11041,14 @@
 {
 "id": "w146867406",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "2001号",
+"addr:street": "福中一路",
 "amenity": "library",
 "name": "深圳图书馆",
 "name:en": "Shenzhen Library",
+"opening_hours": "Tu-Sa 9:00-21:00; Mo off",
 "wikidata": "Q38773376",
 "wikipedia": "zh:深圳图书馆"
 },
@@ -8550,9 +11059,14 @@
 {
 "id": "w146867409",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "2016号",
+"addr:street": "福中一路",
 "amenity": "theatre",
 "name": "深圳音乐厅",
 "name:en": "Shenzhen Concert Hall",
+"phone": "+86 755 8284 1888",
 "wikidata": "Q85800789"
 },
 "lat": 22.5501406,
@@ -8605,6 +11119,10 @@
 {
 "id": "w164033632",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "罗湖区",
+"addr:housenumber": "5016号",
+"addr:street": "深南东路",
 "name": "京基100",
 "name:en": "Kingkey 100",
 "tourism": "attraction",
@@ -8639,8 +11157,13 @@
 {
 "id": "w170144292",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "6026号",
+"addr:street": "红荔路",
 "name": "关山月美术馆",
 "name:en": "Guan Shanyue Art Museum",
+"opening_hours": "Tu-Su 09:00-17:00; Mo off",
 "tourism": "museum",
 "wikidata": "Q16926285",
 "wikipedia": "zh:關山月美術館"
@@ -8675,6 +11198,10 @@
 {
 "id": "w179274427",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "罗湖区",
+"addr:housenumber": "5018号",
+"addr:street": "深南东路",
 "amenity": "theatre",
 "name": "深圳大剧院",
 "name:en": "Shenzhen Grand Theatre",
@@ -8723,6 +11250,10 @@
 {
 "id": "w181234749",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "9028",
+"addr:street": "深南大道",
 "name": "益田假日广场",
 "name:en": "Yitian Holiday Plaza",
 "shop": "mall"
@@ -8730,6 +11261,16 @@
 "lat": 22.54053375,
 "lon": 113.97012715,
 "area": 0.0435
+},
+{
+"id": "w182033930",
+"tags": {
+"amenity": "police",
+"name": "华强北派出所"
+},
+"lat": 22.54946145,
+"lon": 114.08432385,
+"area": 0.0012
 },
 {
 "id": "w182033934",
@@ -8788,8 +11329,14 @@
 {
 "id": "w183106483",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "6",
+"addr:street": "同心路",
 "name": "深圳博物馆古代艺术馆",
 "name:en": "Shenzhen Museum Ancient Art Museum",
+"opening_hours": "Tu-Su 10:00-18:00",
+"phone": "+86 755 88132247",
 "tourism": "museum"
 },
 "lat": 22.54489545,
@@ -8811,8 +11358,13 @@
 {
 "id": "w193921211",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "118",
+"addr:street": "福华三路",
 "name": "皇庭广场",
 "name:en": "Wongtee Plaza",
+"opening_hours": "Su-Th 10:00-22:00; Fr-Sa 10:00-22:30",
 "shop": "mall"
 },
 "lat": 22.53639,
@@ -8822,6 +11374,10 @@
 {
 "id": "w193921212",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "3",
+"addr:street": "福华一路",
 "name": "领展中心城",
 "name:en": "Link CentralWalk",
 "shop": "mall",
@@ -8913,6 +11469,10 @@
 {
 "id": "w219493684",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "罗湖区",
+"addr:housenumber": "2023号",
+"addr:street": "文锦北路",
 "leisure": "park",
 "name": "洪湖公园",
 "name:en": "Honghu Park",
@@ -8991,6 +11551,9 @@
 {
 "id": "w235150407",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:street": "后海滨路",
 "amenity": "theatre",
 "name": "深圳保利剧院",
 "name:en": "Poly Theater",
@@ -9072,6 +11635,8 @@
 {
 "id": "w238466890",
 "tags": {
+"addr:housenumber": "31",
+"addr:street": "长兴南路",
 "leisure": "park",
 "name": "龙潭公园",
 "name:en": "Longtan Park"
@@ -9100,6 +11665,17 @@
 "lat": 22.7274241,
 "lon": 114.24363015,
 "area": 0.0145
+},
+{
+"id": "w239572272",
+"tags": {
+"amenity": "police",
+"name": "深圳市公安局",
+"name:en": "Shenzhen Public Security Bureau"
+},
+"lat": 22.547200699999998,
+"lon": 114.1032613,
+"area": 0.0036
 },
 {
 "id": "w239574716",
@@ -9176,6 +11752,10 @@
 {
 "id": "w245047091",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "1086",
+"addr:street": "南海大道",
 "name": "City花园城",
 "name:en": "Garden City Center",
 "shop": "mall"
@@ -9276,8 +11856,14 @@
 {
 "id": "w249696516",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "4065",
+"addr:street": "西丽湖路",
 "name": "深圳野生动物园",
 "name:en": "Safari Park Shenzhen",
+"opening_hours": "Mo-Su 09:30-18:00",
+"phone": "+86 755 2662 2888",
 "tourism": "zoo",
 "wikidata": "Q25058046",
 "wikipedia": "zh:深圳野生动物园"
@@ -9310,13 +11896,30 @@
 {
 "id": "w258334999",
 "tags": {
+"addr:city": "深圳",
+"addr:street": "宝源路",
 "name": "猫尔小镇",
 "name:en": "Times Mall",
+"opening_hours": "10:00-22:00",
 "shop": "mall"
 },
 "lat": 22.5698584,
 "lon": 113.86329839999999,
 "area": 0.0108
+},
+{
+"id": "w258357773",
+"tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:street": "新安六路",
+"amenity": "police",
+"name": "西乡派出所",
+"name:en": "Xixiang Police Station"
+},
+"lat": 22.56592405,
+"lon": 113.868316,
+"area": 0.0093
 },
 {
 "id": "w259033259",
@@ -9420,6 +12023,10 @@
 {
 "id": "w264401663",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "1018",
+"addr:street": "创业一路",
 "name": "天虹商场",
 "name:en": "Rainbow Shopping Mall",
 "shop": "mall"
@@ -9442,9 +12049,14 @@
 {
 "id": "w264955019",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "1号",
+"addr:street": "宝兴路",
 "amenity": "library",
 "name": "宝安区图书馆",
-"name:en": "Bao'an Liberary"
+"name:en": "Bao'an Liberary",
+"opening_hours": "Tu-Su 09:00-21:00"
 },
 "lat": 22.55166005,
 "lon": 113.87777704999999,
@@ -9453,6 +12065,10 @@
 {
 "id": "w264955029",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "19",
+"addr:street": "兴华一路",
 "name": "前海HOP天地",
 "shop": "mall"
 },
@@ -9485,6 +12101,10 @@
 {
 "id": "w266335167",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "521",
+"addr:street": "凤塘大道",
 "name": "易生园购物中心",
 "name:en": "Yishengyuan Shopping Center",
 "shop": "mall"
@@ -9496,6 +12116,10 @@
 {
 "id": "w266335171",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "523",
+"addr:street": "凤塘大道",
 "name": "唐美广场",
 "name:en": "Tangmei Plaza",
 "shop": "mall"
@@ -9578,8 +12202,22 @@
 "area": 0.0099
 },
 {
+"id": "w271849740",
+"tags": {
+"information": "office",
+"name": "小梧桐游客中心",
+"tourism": "information"
+},
+"lat": 22.5742641,
+"lon": 114.18672215000001,
+"area": 0.0023
+},
+{
 "id": "w284814238",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:street": "笋岗西路",
 "leisure": "stadium",
 "name": "深圳体育场",
 "name:en": "Shenzhen Stadium",
@@ -9625,9 +12263,14 @@
 {
 "id": "w296199625",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "71号",
+"addr:street": "农林路",
 "leisure": "park",
 "name": "深圳市儿童乐园",
 "name:en": "Shenzhen Children Amusement Park",
+"opening_hours": "Tu-Su 10:00-18:00",
 "tourism": "theme_park"
 },
 "lat": 22.54566785,
@@ -9637,6 +12280,10 @@
 {
 "id": "w296471451",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "48",
+"addr:street": "景田北街",
 "name": "景田银座",
 "shop": "mall"
 },
@@ -9680,6 +12327,10 @@
 {
 "id": "w303303318",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "4089",
+"addr:street": "沙河西路",
 "amenity": "university",
 "name": "深圳职业技术大学（西丽校区西丽湖园区）",
 "name:en": "Shenzhen Polytechnic University (Xili Campus Xilihu Park)",
@@ -9756,7 +12407,12 @@
 {
 "id": "w318485858",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙华区",
+"addr:housenumber": "38",
+"addr:street": "景龙建设路",
 "amenity": "hospital",
+"emergency": "yes",
 "name": "深圳市龙华区人民医院",
 "name:en": "The People's Hospital of Longhua, Shenzhen"
 },
@@ -9767,9 +12423,14 @@
 {
 "id": "w319515324",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "2239号",
+"addr:street": "丽水路",
 "amenity": "library",
 "name": "深圳大学城图书馆",
-"name:en": "University Town Library of Shenzhen"
+"name:en": "University Town Library of Shenzhen",
+"phone": "+86 755 8886 6634"
 },
 "lat": 22.592784350000002,
 "lon": 113.96858795,
@@ -9778,6 +12439,10 @@
 {
 "id": "w319515452",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "6",
+"addr:street": "平山一路",
 "amenity": "university",
 "name": "哈尔滨工业大学（深圳）",
 "name:en": "Harbin Institute of Technology, Shenzhen",
@@ -9802,9 +12467,15 @@
 {
 "id": "w322631273",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "1",
+"addr:street": "海园一路",
 "amenity": "hospital",
+"emergency": "yes",
 "name": "香港大学深圳医院",
 "name:en": "The University of Hong Kong-Shenzhen Hospital",
+"phone": "+86 755 8691 3333",
 "wikidata": "Q13568829",
 "wikipedia": "zh:香港大学深圳医院"
 },
@@ -9828,8 +12499,14 @@
 {
 "id": "w330499627",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "2093号",
+"addr:street": "南山大道",
 "name": "南山博物馆",
 "name:en": "Nanshan Museum",
+"opening_hours": "Tu-Su 10:00-18:00",
+"phone": "+86 755 8670 0071",
 "tourism": "museum"
 },
 "lat": 22.538043799999997,
@@ -9845,6 +12522,16 @@
 "lat": 22.56080635,
 "lon": 114.17106455,
 "area": 0.0021
+},
+{
+"id": "w330656360",
+"tags": {
+"amenity": "police",
+"name": "深圳市罗湖口岸派出所"
+},
+"lat": 22.530502900000002,
+"lon": 114.11164595,
+"area": 0.0005
 },
 {
 "id": "w330746248",
@@ -9890,7 +12577,12 @@
 {
 "id": "w334625766",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "3012",
+"addr:street": "福强路",
 "amenity": "hospital",
+"emergency": "yes",
 "name": "深圳市妇幼保健院（福强院区）",
 "name:en": "Shenzhen Maternal & Child Health Hospital (Fuqiang Campus)"
 },
@@ -9909,6 +12601,17 @@
 "area": 0.0588
 },
 {
+"id": "w356776843",
+"tags": {
+"amenity": "police",
+"name": "大运城派出所",
+"name:en": "Dayuncheng Police Station"
+},
+"lat": 22.7013527,
+"lon": 114.20312885,
+"area": 0.0008
+},
+{
 "id": "w357189043",
 "tags": {
 "name": "椰林沙滩",
@@ -9922,6 +12625,10 @@
 {
 "id": "w358733291",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "1095",
+"addr:street": "深南中路",
 "name": "iN城市广场",
 "name:en": "iN CITY PARK",
 "shop": "mall"
@@ -9942,6 +12649,18 @@
 "area": 0.0058
 },
 {
+"id": "w359287997",
+"tags": {
+"information": "office",
+"name": "深圳市旅游信息中心",
+"name:en": "Shenzhen Tourism Information Center",
+"tourism": "information"
+},
+"lat": 22.52483065,
+"lon": 113.98697200000001,
+"area": 0.0021
+},
+{
 "id": "w360733680",
 "tags": {
 "leisure": "park",
@@ -9954,6 +12673,10 @@
 {
 "id": "w360832719",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "49",
+"addr:street": "公园路",
 "amenity": "theatre",
 "name": "风华大剧院"
 },
@@ -9964,7 +12687,12 @@
 {
 "id": "w364731902",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "1120",
+"addr:street": "莲花路",
 "amenity": "hospital",
+"emergency": "yes",
 "name": "北京大学深圳医院",
 "name:en": "Peking University Shenzhen Hospital",
 "wikidata": "Q30293608",
@@ -9977,7 +12705,12 @@
 {
 "id": "w364733593",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "6001",
+"addr:street": "北环大道",
 "amenity": "hospital",
+"emergency": "yes",
 "name": "广州中医药大学深圳医院（福田区中医院）",
 "name:en": "Shenzhen Hospital of Guangzhou University of Chinese Medicine",
 "wikidata": "Q17164176",
@@ -10036,7 +12769,8 @@
 "id": "w376392646",
 "tags": {
 "leisure": "park",
-"name": "虚拟大学园社区公园"
+"name": "虚拟大学园社区公园",
+"opening_hours": "24/7"
 },
 "lat": 22.533013750000002,
 "lon": 113.939978,
@@ -10045,6 +12779,10 @@
 {
 "id": "w379914112",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "1",
+"addr:street": "青青路",
 "leisure": "park",
 "name": "青青世界",
 "name:en": "Evergreen Resort",
@@ -10093,6 +12831,16 @@
 "lat": 22.656846,
 "lon": 114.06043815000001,
 "area": 0.0013
+},
+{
+"id": "w386959534",
+"tags": {
+"amenity": "pharmacy",
+"name": "南北药行"
+},
+"lat": 22.6552353,
+"lon": 114.05956785000001,
+"area": 0.0003
 },
 {
 "id": "w387362587",
@@ -10173,7 +12921,12 @@
 {
 "id": "w414189587",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "罗湖区",
+"addr:housenumber": "2069",
+"addr:street": "春风路",
 "amenity": "hospital",
+"emergency": "yes",
 "name": "罗湖区人民医院春风院区",
 "name:en": "Luohu People's Hospital (Chunfeng Branch)"
 },
@@ -10184,7 +12937,12 @@
 {
 "id": "w415703358",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "6019",
+"addr:street": "留仙大道",
 "amenity": "hospital",
+"emergency": "yes",
 "name": "南方科技大学医院",
 "name:en": "Southern University of Science and Technology Hospital"
 },
@@ -10205,7 +12963,10 @@
 {
 "id": "w420050964",
 "tags": {
+"addr:housenumber": "3030",
+"addr:street": "南新路",
 "name": "欢乐颂购物中心",
+"opening_hours": "Mo-Th 10:00-22:00; Fr-Su 10:00-22:30",
 "shop": "mall"
 },
 "lat": 22.538139299999997,
@@ -10226,6 +12987,10 @@
 {
 "id": "w440551685",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "82",
+"addr:street": "公园路",
 "leisure": "park",
 "name": "四海公园",
 "name:en": "Sihai Park"
@@ -10279,8 +13044,13 @@
 {
 "id": "w456331569",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "184",
+"addr:street": "福中路",
 "name": "深圳市当代艺术与城市规划馆",
 "name:en": "The Museum of Contemporary Art & Planning Exhibition (MOCAPE)",
+"opening_hours": "Tu-Su 10:00-18:00",
 "tourism": "museum",
 "wikidata": "Q17498976",
 "wikipedia": "zh:当代艺术与城市规划展览馆 (深圳)"
@@ -10292,9 +13062,14 @@
 {
 "id": "w456349157",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "1088",
+"addr:street": "学苑大道",
 "amenity": "university",
 "name": "南方科技大学",
 "name:en": "Southern University of Science and Technology",
+"phone": "+86 755 88010114",
 "wikidata": "Q7568723",
 "wikipedia": "zh:南方科技大學"
 },
@@ -10305,9 +13080,15 @@
 {
 "id": "w456825812",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "89",
+"addr:street": "桃园路",
 "amenity": "hospital",
+"emergency": "yes",
 "name": "南山区人民医院",
 "name:en": "Shenzhen Nanshan District People's Hospital",
+"phone": "+86 0755 2655 3111",
 "wikidata": "Q30270392"
 },
 "lat": 22.5337132,
@@ -10328,6 +13109,8 @@
 {
 "id": "w480227299",
 "tags": {
+"addr:city": "深圳",
+"addr:district": "南山",
 "amenity": "university",
 "name": "深圳大学(丽湖校区)",
 "name:en": "Shenzhen University (Lihu Campus)",
@@ -10341,6 +13124,10 @@
 {
 "id": "w487794911",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "3018号",
+"addr:street": "深南中路",
 "name": "世纪汇",
 "name:en": "Century Place",
 "shop": "mall"
@@ -10363,9 +13150,15 @@
 {
 "id": "w492870872",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "1333",
+"addr:street": "新湖路",
 "amenity": "hospital",
+"emergency": "yes",
 "name": "南方医科大学深圳医院",
-"name:en": "Shenzhen Hospital of Southern Medical University"
+"name:en": "Shenzhen Hospital of Southern Medical University",
+"phone": "+86 0755 23329999"
 },
 "lat": 22.54734925,
 "lon": 113.8913411,
@@ -10384,9 +13177,15 @@
 {
 "id": "w493114482",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "3002",
+"addr:street": "笋岗路",
 "amenity": "hospital",
+"emergency": "yes",
 "name": "深圳市第二人民医院",
 "name:en": "The Second People's Hospital of Shenzhen",
+"phone": "+86 755 8321 6006;+86 755 8336 6388",
 "wikidata": "Q11153071",
 "wikipedia": "zh:深圳市第二人民医院"
 },
@@ -10425,6 +13224,21 @@
 "area": 0.0138
 },
 {
+"id": "w498494538",
+"tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "10288",
+"addr:street": "深南大道",
+"amenity": "police",
+"name": "深圳市公安局南山分局",
+"name:en": "Shenzhen Municipal Public Security Bureau Nanshan Branch"
+},
+"lat": 22.544893100000003,
+"lon": 113.91966540000001,
+"area": 0.0034
+},
+{
 "id": "w498494553",
 "tags": {
 "leisure": "park",
@@ -10456,6 +13270,36 @@
 "area": 0.0018
 },
 {
+"id": "w508770222",
+"tags": {
+"amenity": "police",
+"name": "深圳市公安局福田分局"
+},
+"lat": 22.5248292,
+"lon": 114.04905225,
+"area": 0.0044
+},
+{
+"id": "w508770238",
+"tags": {
+"amenity": "police",
+"name": "深圳市公安局福田特勤大队"
+},
+"lat": 22.5268679,
+"lon": 114.03898455000001,
+"area": 0.0047
+},
+{
+"id": "w509539645",
+"tags": {
+"amenity": "police",
+"name": "伯公坳哨所"
+},
+"lat": 22.556613149999997,
+"lon": 114.20679005,
+"area": 0.0001
+},
+{
 "id": "w513502358",
 "tags": {
 "leisure": "park",
@@ -10468,7 +13312,12 @@
 {
 "id": "w513502377",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "36",
+"addr:street": "工业七路",
 "amenity": "hospital",
+"emergency": "yes",
 "name": "前海蛇口自贸区医院",
 "name:en": "Qianhai Shekou Free Trade Zone Hospital",
 "wikidata": "Q86729011",
@@ -10483,11 +13332,22 @@
 "tags": {
 "leisure": "park",
 "name": "德逸公园",
-"name:en": "Deyi Park"
+"name:en": "Deyi Park",
+"opening_hours": "24/7"
 },
 "lat": 22.635205550000002,
 "lon": 114.02299885,
 "area": 0.0977
+},
+{
+"id": "w517912201",
+"tags": {
+"amenity": "police",
+"name": "深圳市公安局治安巡警支队"
+},
+"lat": 22.5647479,
+"lon": 114.002239,
+"area": 0.009
 },
 {
 "id": "w521224779",
@@ -10542,7 +13402,12 @@
 {
 "id": "w523229003",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "罗湖区",
+"addr:housenumber": "3046",
+"addr:street": "深南东路",
 "amenity": "hospital",
+"emergency": "yes",
 "name": "深圳市人民医院第一门诊部",
 "name:en": "First Outpatient Department of Shenzhen People's Hospital"
 },
@@ -10553,6 +13418,10 @@
 {
 "id": "w525263927",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "罗湖区",
+"addr:housenumber": "2002",
+"addr:street": "人民南路",
 "name": "佳宁娜广场",
 "name:en": "Carrianna Square",
 "shop": "mall"
@@ -10564,12 +13433,30 @@
 {
 "id": "w525263930",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "罗湖区",
+"addr:housenumber": "2008",
+"addr:street": "人民南路",
 "name": "深圳嘉里中心",
 "shop": "mall"
 },
 "lat": 22.54031155,
 "lon": 114.11435935,
 "area": 0.0038
+},
+{
+"id": "w525273353",
+"tags": {
+"addr:city": "深圳市",
+"addr:district": "罗湖区",
+"addr:housenumber": "2009",
+"addr:street": "南湖路",
+"amenity": "police",
+"name": "深圳市公安局 罗湖分局 南湖派出所"
+},
+"lat": 22.540486899999998,
+"lon": 114.1161128,
+"area": 0.0012
 },
 {
 "id": "w527620893",
@@ -10616,6 +13503,8 @@
 {
 "id": "w529208911",
 "tags": {
+"addr:housenumber": "89",
+"addr:street": "创业二路",
 "name": "中洲π mall购物中心",
 "name:en": "π mall",
 "shop": "mall"
@@ -10627,6 +13516,10 @@
 {
 "id": "w530348427",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "3004",
+"addr:street": "兴业路",
 "name": "碧海中心",
 "name:en": "Bihai Center",
 "shop": "mall"
@@ -10638,7 +13531,12 @@
 {
 "id": "w531933754",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "罗湖区",
+"addr:housenumber": "15",
+"addr:street": "迎春路",
 "amenity": "hospital",
+"emergency": "yes",
 "name": "深圳市中医院 第三门诊部"
 },
 "lat": 22.54385535,
@@ -10660,7 +13558,8 @@
 "tags": {
 "amenity": "library",
 "name": "琳恩图书馆",
-"name:en": "Lynn Library"
+"name:en": "Lynn Library",
+"opening_hours": "Mo-Su 08:00-22:00"
 },
 "lat": 22.597957800000003,
 "lon": 113.9933702,
@@ -10692,6 +13591,10 @@
 {
 "id": "w533650675",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙岗区",
+"addr:housenumber": "2001号",
+"addr:street": "龙翔大道",
 "amenity": "university",
 "name": "香港中文大学(深圳)下园",
 "name:en": "The Chinese University of Hong Kong, Shenzhen Lower Campus"
@@ -10713,9 +13616,14 @@
 {
 "id": "w533912106",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "12",
+"addr:street": "朗山路",
 "amenity": "hospital",
 "name": "阜外医院深圳医院",
-"name:en": "Fuwai Shenzhen Hospital"
+"name:en": "Fuwai Shenzhen Hospital",
+"phone": "+86 755 82180028"
 },
 "lat": 22.55981195,
 "lon": 113.9427457,
@@ -10793,6 +13701,10 @@
 {
 "id": "w535309689",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安中心区",
+"addr:housenumber": "99",
+"addr:street": "新湖路",
 "name": "前海壹方城 Uniwalk",
 "name:en": "Uniwalk",
 "shop": "mall"
@@ -10800,6 +13712,16 @@
 "lat": 22.5553627,
 "lon": 113.8829494,
 "area": 0.1057
+},
+{
+"id": "w535354515",
+"tags": {
+"amenity": "police",
+"name": "北站公交派出所"
+},
+"lat": 22.6098772,
+"lon": 114.02360585,
+"area": 0.0084
 },
 {
 "id": "w535403485",
@@ -10829,7 +13751,8 @@
 "tags": {
 "leisure": "park",
 "name": "世纪广场",
-"name:en": "Century Square"
+"name:en": "Century Square",
+"phone": "+86 0755 21010471"
 },
 "lat": 22.699461499999998,
 "lon": 114.04301910000001,
@@ -10879,6 +13802,17 @@
 "area": 0.2005
 },
 {
+"id": "w539914034",
+"tags": {
+"amenity": "police",
+"name": "蛇口派出所",
+"name:en": "Shekou Police Office"
+},
+"lat": 22.495751849999998,
+"lon": 113.92173199999999,
+"area": 0.0031
+},
+{
 "id": "w540340496",
 "tags": {
 "name": "自然展览厅",
@@ -10891,9 +13825,14 @@
 {
 "id": "w540340500",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "30",
+"addr:street": "农园路",
 "leisure": "park",
 "name": "香蜜公园",
-"name:en": "Xiangmi Park"
+"name:en": "Xiangmi Park",
+"opening_hours": "06:00-23:00"
 },
 "lat": 22.54983205,
 "lon": 114.01688525,
@@ -10913,6 +13852,10 @@
 {
 "id": "w542438542",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "1",
+"addr:street": "观海路",
 "name": "招商局历史博物馆",
 "name:en": "China Merchants History Museum",
 "tourism": "museum",
@@ -10926,6 +13869,10 @@
 {
 "id": "w543052135",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "99",
+"addr:street": "建安一路",
 "name": "海雅缤纷城",
 "name:en": "Haiya Mega Mall",
 "shop": "mall"
@@ -10937,7 +13884,12 @@
 {
 "id": "w543152996",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "56",
+"addr:street": "玉律路",
 "amenity": "hospital",
+"emergency": "yes",
 "name": "宝安区妇幼保健院",
 "name:en": "Baoan Wemen's and Children’s Hospital"
 },
@@ -10981,7 +13933,8 @@
 "tags": {
 "amenity": "university",
 "name": "香港中文大学(深圳)上园",
-"name:en": "The Chinese University of Hong Kong, Shenzhen Upper Campus"
+"name:en": "The Chinese University of Hong Kong, Shenzhen Upper Campus",
+"opening_hours": "24/7"
 },
 "lat": 22.6935566,
 "lon": 114.19758835,
@@ -10990,6 +13943,10 @@
 {
 "id": "w545225987",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "8099",
+"addr:street": "红荔西路",
 "name": "东海城市广场",
 "name:en": "Donghai City Plaza",
 "shop": "mall"
@@ -11001,9 +13958,13 @@
 {
 "id": "w545246937",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:street": "新洲路",
 "leisure": "park",
 "name": "福田红树林生态公园",
-"name:en": "Futian Mangrove Ecological Park"
+"name:en": "Futian Mangrove Ecological Park",
+"opening_hours": "Mo-Su 06:00-23:00"
 },
 "lat": 22.51179815,
 "lon": 114.0343876,
@@ -11014,6 +13975,7 @@
 "tags": {
 "name": "福田 COCO Park",
 "name:en": "Futian COCO Park",
+"opening_hours": "10:00-22:00",
 "shop": "mall",
 "wikidata": "Q65055965",
 "wikipedia": "zh:福田COCO Park"
@@ -11025,6 +13987,10 @@
 {
 "id": "w548333468",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "罗湖区",
+"addr:housenumber": "1092",
+"addr:street": "建设路",
 "amenity": "hospital",
 "name": "南方医科大学 深圳口腔医院 广东省深圳牙科医疗中心"
 },
@@ -11056,6 +14022,10 @@
 {
 "id": "w549217299",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "3",
+"addr:street": "职教路",
 "amenity": "university",
 "name": "深圳职业技术大学(香蜜校区)",
 "name:en": "Shenzhen Polytechnic University (Xiangmi Campus)",
@@ -11077,6 +14047,21 @@
 "area": 0.0023
 },
 {
+"id": "w555086128",
+"tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "12",
+"addr:street": "石洲北路",
+"amenity": "police",
+"name": "沙河派出所",
+"name:en": "Shahe Police Station"
+},
+"lat": 22.53865185,
+"lon": 113.9607263,
+"area": 0.0022
+},
+{
 "id": "w555332412",
 "tags": {
 "name": "湾畔百货",
@@ -11085,6 +14070,17 @@
 "lat": 22.543063850000003,
 "lon": 113.96296269999999,
 "area": 0.0044
+},
+{
+"id": "w555601854",
+"tags": {
+"amenity": "police",
+"name": "牛湖派出所",
+"name:en": "Niuhu Local Police Office"
+},
+"lat": 22.72627205,
+"lon": 114.07443115,
+"area": 0.0254
 },
 {
 "id": "w555939507",
@@ -11110,6 +14106,9 @@
 {
 "id": "w557519658",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:street": "宝民一路",
 "name": "港隆城",
 "shop": "mall"
 },
@@ -11131,6 +14130,10 @@
 {
 "id": "w559067019",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "7019",
+"addr:street": "益田路",
 "amenity": "hospital",
 "name": "深圳市儿童医院",
 "name:en": "Shenzhen Children's Hospital",
@@ -11154,6 +14157,9 @@
 {
 "id": "w563824467",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "盐田区",
+"addr:street": "东海道",
 "amenity": "hospital",
 "name": "盐田区人民医院盐田院区门诊部"
 },
@@ -11164,6 +14170,9 @@
 {
 "id": "w563824468",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "盐田区",
+"addr:street": "盐田北四街",
 "amenity": "hospital",
 "name": "盐田区人民医院盐田院区住院部"
 },
@@ -11194,6 +14203,26 @@
 "area": 0.0088
 },
 {
+"id": "w564236902",
+"tags": {
+"amenity": "police",
+"name": "深圳市公安局大鹏分局-出入境办证大厅"
+},
+"lat": 22.59560345,
+"lon": 114.46654290000001,
+"area": 0.0009
+},
+{
+"id": "w564236904",
+"tags": {
+"amenity": "police",
+"name": "深圳市公安局大鹏分局"
+},
+"lat": 22.5954084,
+"lon": 114.46670985,
+"area": 0.001
+},
+{
 "id": "w565467994",
 "tags": {
 "name": "来福士",
@@ -11209,7 +14238,8 @@
 "tags": {
 "leisure": "park",
 "name": "南海公园",
-"name:en": "Nanhai Park"
+"name:en": "Nanhai Park",
+"opening_hours": "24/7"
 },
 "lat": 22.5166065,
 "lon": 113.9202248,
@@ -11350,6 +14380,10 @@
 {
 "id": "w574503791",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "罗湖区",
+"addr:housenumber": "2013",
+"addr:street": "太白路",
 "amenity": "hospital",
 "name": "深圳市罗湖区妇幼保健院",
 "name:en": "Shenzhen Luohu Maternity & Child Healthcare Hospital"
@@ -11357,6 +14391,17 @@
 "lat": 22.5790672,
 "lon": 114.1316368,
 "area": 0.0053
+},
+{
+"id": "w581971320",
+"tags": {
+"amenity": "police",
+"name": "深圳市交警局车辆管理所",
+"name:en": "Shenzhen Traffic Police Bureau Vehicle Management Office"
+},
+"lat": 22.5643578,
+"lon": 113.96495759999999,
+"area": 0.132
 },
 {
 "id": "w583525757",
@@ -11392,7 +14437,12 @@
 {
 "id": "w585481095",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "118号",
+"addr:street": "龙井二路",
 "amenity": "hospital",
+"emergency": "yes",
 "name": "宝安区人民医院",
 "name:en": "Bao’an People's Hospital"
 },
@@ -11454,6 +14504,20 @@
 "area": 2.2002
 },
 {
+"id": "w598020620",
+"tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "2",
+"addr:street": "罗田路",
+"amenity": "police",
+"name": "深圳市公安局宝安分局办证大厅"
+},
+"lat": 22.567029400000003,
+"lon": 113.87985775,
+"area": 0.0025
+},
+{
 "id": "w604205294",
 "tags": {
 "name": "深圳中心公园",
@@ -11466,9 +14530,13 @@
 {
 "id": "w609078453",
 "tags": {
+"addr:housenumber": "18",
+"addr:street": "彩云路",
 "leisure": "park",
 "name": "彩田公园",
 "name:en": "Caitian Park",
+"opening_hours": "Mo-Su 06:00-23:00",
+"phone": "+86 0755 83067950",
 "wikidata": "Q131552520"
 },
 "lat": 22.5656983,
@@ -11478,6 +14546,10 @@
 {
 "id": "w609577972",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "6号",
+"addr:street": "侨城东街",
 "amenity": "university",
 "name": "暨南大学(深圳校区)",
 "name:en": "Jinan University (Shenzhen Campus)"
@@ -11487,8 +14559,19 @@
 "area": 0.0569
 },
 {
+"id": "w610188488",
+"tags": {
+"amenity": "police",
+"name": "深圳市公安局南山公交保安大队"
+},
+"lat": 22.5388569,
+"lon": 113.9749291,
+"area": 0.0008
+},
+{
 "id": "w612863312",
 "tags": {
+"addr:street": "裕安一路",
 "name": "海格堡",
 "name:en": "theLOCO",
 "shop": "mall"
@@ -11511,6 +14594,10 @@
 {
 "id": "w616351232",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "1号",
+"addr:street": "中航路",
 "name": "中航城天虹购物中心",
 "name:en": "AVIC Center Rainbow Shopping Center",
 "shop": "mall"
@@ -11522,9 +14609,14 @@
 {
 "id": "w629936158",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "1011号",
+"addr:street": "红荔路",
 "amenity": "library",
 "name": "深圳少年儿童图书馆",
 "name:en": "Shenzhen Children's Library",
+"opening_hours": "Tu-Su 09:00-21:00",
 "wikidata": "Q67932227",
 "wikipedia": "zh:深圳少年儿童图书馆"
 },
@@ -11546,7 +14638,8 @@
 "id": "w633927809",
 "tags": {
 "leisure": "park",
-"name": "望牛亭公园"
+"name": "望牛亭公园",
+"opening_hours": "06:00-21:00"
 },
 "lat": 22.676087250000002,
 "lon": 113.81100475,
@@ -11577,6 +14670,7 @@
 "id": "w638856663",
 "tags": {
 "name": "KK ONE",
+"opening_hours": "Mo-Su 10:00-22:00",
 "shop": "mall"
 },
 "lat": 22.5307678,
@@ -11607,9 +14701,14 @@
 {
 "id": "w641794230",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "216号",
+"addr:street": "北环大道",
 "leisure": "park",
 "name": "深圳革命烈士陵园",
-"name:en": "Shenzhen Revolutionary Martyrs Cemetery"
+"name:en": "Shenzhen Revolutionary Martyrs Cemetery",
+"phone": "+86 766 83175661"
 },
 "lat": 22.569473600000002,
 "lon": 114.06427769999999,
@@ -11700,6 +14799,8 @@
 {
 "id": "w657165573",
 "tags": {
+"addr:housenumber": "6",
+"addr:street": "南极路",
 "name": "罗湖美术馆",
 "name:en": "Luohu Art Museum",
 "tourism": "gallery"
@@ -11721,9 +14822,15 @@
 {
 "id": "w657177578",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "3025号",
+"addr:street": "深南大道",
 "amenity": "hospital",
+"emergency": "yes",
 "name": "中山大学附属第八医院",
 "name:en": "The Eighth Affiliated Hospital, Sun Yat-Sen University",
+"phone": "+86 755 8398 1333;+86 755 8398 2222",
 "wikidata": "Q11153073",
 "wikipedia": "zh:中山大学附属第八医院"
 },
@@ -11743,8 +14850,23 @@
 "area": 0.0061
 },
 {
+"id": "w664026056",
+"tags": {
+"amenity": "police",
+"name": "园岭派出所",
+"opening_hours": "24/7"
+},
+"lat": 22.54784625,
+"lon": 114.0915621,
+"area": 0.0004
+},
+{
 "id": "w665213779",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙岗区",
+"addr:housenumber": "1",
+"addr:street": "国际大学园路",
 "amenity": "university",
 "name": "深圳北理莫斯科大学",
 "name:en": "Shenzhen MSU-BIT University",
@@ -11851,6 +14973,9 @@
 {
 "id": "w675906479",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙岗区",
+"addr:street": "中兴路",
 "name": "天虹商场",
 "shop": "mall"
 },
@@ -11861,6 +14986,9 @@
 {
 "id": "w679777832",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "罗湖区",
+"addr:street": "经二路",
 "leisure": "park",
 "name": "新兴社区公园"
 },
@@ -11882,6 +15010,10 @@
 {
 "id": "w683517950",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "坪山区",
+"addr:housenumber": "3002",
+"addr:street": "兰田路",
 "amenity": "university",
 "name": "深圳技术大学",
 "name:en": "Shenzhen Technology University",
@@ -11924,6 +15056,21 @@
 "area": 0.0027
 },
 {
+"id": "w683640515",
+"tags": {
+"addr:city": "深圳市",
+"addr:district": "龙华区",
+"addr:housenumber": "62",
+"addr:street": "梅观路",
+"amenity": "police",
+"name": "福南中队综合服务大厅",
+"name:en": "Funan Sub-team Comprehensive Service Hall"
+},
+"lat": 22.60007925,
+"lon": 114.04491745,
+"area": 0.0146
+},
+{
 "id": "w683640517",
 "tags": {
 "leisure": "park",
@@ -11933,6 +15080,20 @@
 "lat": 22.6014848,
 "lon": 114.04491825,
 "area": 0.0045
+},
+{
+"id": "w683866408",
+"tags": {
+"addr:city": "深圳市",
+"addr:housenumber": "3867",
+"addr:street": "南山大道",
+"amenity": "police",
+"name": "南头派出所",
+"name:en": "Nantou Police Station"
+},
+"lat": 22.5526725,
+"lon": 113.91911300000001,
+"area": 0.0067
 },
 {
 "id": "w684241524",
@@ -11970,13 +15131,28 @@
 {
 "id": "w687491600",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "光明区",
+"addr:housenumber": "628号",
+"addr:street": "圳园路",
 "amenity": "hospital",
+"emergency": "yes",
 "name": "中山大学第七附属医院",
 "name:en": "the Seventh Affiliated Hospital, Sun Yat-sen University"
 },
 "lat": 22.78953675,
 "lon": 113.94744685,
 "area": 0.1275
+},
+{
+"id": "w688541078",
+"tags": {
+"amenity": "police",
+"name": "大鹏派出所"
+},
+"lat": 22.595363,
+"lon": 114.5040174,
+"area": 0.0143
 },
 {
 "id": "w689596935",
@@ -11993,7 +15169,8 @@
 "tags": {
 "leisure": "nature_reserve",
 "name": "华侨城湿地公园",
-"name:en": "OCT Wetland Park"
+"name:en": "OCT Wetland Park",
+"opening_hours": "Tu,Th-Su,PH 09:30-16:30"
 },
 "lat": 22.53175195,
 "lon": 113.9780178,
@@ -12013,9 +15190,15 @@
 {
 "id": "w691162575",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "2004",
+"addr:street": "红荔路",
 "amenity": "hospital",
+"emergency": "yes",
 "name": "深圳市妇幼保健院",
-"name:en": "Shenzhen Maternity and Child Care Hospital"
+"name:en": "Shenzhen Maternity and Child Care Hospital",
+"phone": "+86 755 8288 9999;+86 755 8336 0642"
 },
 "lat": 22.5523881,
 "lon": 114.0891596,
@@ -12043,6 +15226,16 @@
 "area": 0.0884
 },
 {
+"id": "w693124396",
+"tags": {
+"amenity": "police",
+"name": "龙华区人民医院警务室"
+},
+"lat": 22.658066249999997,
+"lon": 114.02848399999999,
+"area": 0.0001
+},
+{
 "id": "w693802018",
 "tags": {
 "name": "龙峰塔",
@@ -12056,9 +15249,12 @@
 {
 "id": "w693802019",
 "tags": {
+"addr:housenumber": "4279",
+"addr:street": "龙华人民路",
 "leisure": "park",
 "name": "龙华公园",
-"name:en": "Longhua Park"
+"name:en": "Longhua Park",
+"opening_hours": "24/7"
 },
 "lat": 22.66006405,
 "lon": 114.01188105,
@@ -12067,6 +15263,10 @@
 {
 "id": "w694439494",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "15号",
+"addr:street": "侨城西街",
 "name": "华·生活馆",
 "name:en": "Hua Living Space",
 "shop": "mall"
@@ -12098,6 +15298,9 @@
 {
 "id": "w698483369",
 "tags": {
+"addr:city": "Shenzhen",
+"addr:district": "Futian",
+"addr:street": "侨香路",
 "leisure": "park",
 "name": "侨香公园",
 "name:en": "Qiaoxiang Park"
@@ -12121,7 +15324,9 @@
 "tags": {
 "leisure": "park",
 "name": "白石龙音乐主题公园",
-"name:en": "Baishilong Music Theme Park"
+"name:en": "Baishilong Music Theme Park",
+"opening_hours": "Mo-Su 06:30-23:00",
+"phone": "+86 0755 21010471"
 },
 "lat": 22.600603,
 "lon": 114.0340367,
@@ -12130,9 +15335,12 @@
 {
 "id": "w701096492",
 "tags": {
+"addr:housenumber": "100",
 "leisure": "park",
 "name": "逸秀公园",
-"name:en": "Yixiu Park"
+"name:en": "Yixiu Park",
+"opening_hours": "Mo-Su 06:00-22:00",
+"phone": "+86 0755 21073094"
 },
 "lat": 22.604638,
 "lon": 114.0291812,
@@ -12173,20 +15381,41 @@
 {
 "id": "w706976439",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙华区",
+"addr:street": "阳光路",
 "leisure": "park",
 "name": "民治社区公园",
-"name:en": "Minzhi Commiunity Park"
+"name:en": "Minzhi Commiunity Park",
+"opening_hours": "24/7"
 },
 "lat": 22.62175345,
 "lon": 114.03037325,
 "area": 0.0412
 },
 {
+"id": "w706980206",
+"tags": {
+"amenity": "police",
+"name": "民治派出所",
+"name:en": "Minzhi Local Police Station",
+"phone": "+86 755 2819 1110"
+},
+"lat": 22.622411800000002,
+"lon": 114.02884185,
+"area": 0.0015
+},
+{
 "id": "w706980827",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙华区",
+"addr:housenumber": "88",
+"addr:street": "民旺路",
 "leisure": "park",
 "name": "民治电信支局闲置地改建公园",
-"name:en": "Idle Land Conversion Park of Minzhi Telecom Branch Office"
+"name:en": "Idle Land Conversion Park of Minzhi Telecom Branch Office",
+"opening_hours": "24/7"
 },
 "lat": 22.6240524,
 "lon": 114.0284283,
@@ -12197,7 +15426,8 @@
 "tags": {
 "amenity": "library",
 "name": "一丹图书馆",
-"name:en": "Yidan Library"
+"name:en": "Yidan Library",
+"opening_hours": "24/7"
 },
 "lat": 22.60033285,
 "lon": 113.9932548,
@@ -12259,8 +15489,22 @@
 "area": 0.8898
 },
 {
+"id": "w725359481",
+"tags": {
+"amenity": "police",
+"name": "警犬基地"
+},
+"lat": 22.596781200000002,
+"lon": 114.03849555,
+"area": 0.0535
+},
+{
 "id": "w727054447",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙岗区",
+"addr:housenumber": "8",
+"addr:street": "雅星路",
 "name": "星河WORLD COCO Park",
 "name:en": "Galaxy WORLD COCO Park",
 "shop": "mall"
@@ -12358,9 +15602,15 @@
 {
 "id": "w740015209",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "1号",
+"addr:street": "湾厦路",
 "amenity": "hospital",
+"emergency": "no",
 "name": "南山区妇幼保健院",
-"name:en": "Nanshan Maternity and Children’s Hospital"
+"name:en": "Nanshan Maternity and Children’s Hospital",
+"phone": "+85 755 87850088"
 },
 "lat": 22.490391250000002,
 "lon": 113.92541370000001,
@@ -12423,7 +15673,9 @@
 "tags": {
 "leisure": "park",
 "name": "深圳北站中心公园",
-"name:en": "Shenzhen North Railway Station Central Park"
+"name:en": "Shenzhen North Railway Station Central Park",
+"opening_hours": "Mo-Su 06:30-23:00",
+"phone": "+86 0755 21010471"
 },
 "lat": 22.6089984,
 "lon": 114.01944175,
@@ -12452,7 +15704,12 @@
 {
 "id": "w759525430",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙岗区",
+"addr:housenumber": "53",
+"addr:street": "爱心路",
 "amenity": "hospital",
+"emergency": "yes",
 "name": "深圳市龙岗区人民医院",
 "name:en": "Shenzhen Longgang People’s Hospital"
 },
@@ -12463,6 +15720,10 @@
 {
 "id": "w759525432",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙岗区",
+"addr:housenumber": "6",
+"addr:street": "爱龙路",
 "amenity": "hospital",
 "name": "深圳市龙岗区妇幼保健院",
 "name:en": "Shenzhen Longgang District Maternal and Child Healthcare Hospital"
@@ -12503,11 +15764,27 @@
 "area": 0.0065
 },
 {
+"id": "w764383841",
+"tags": {
+"amenity": "police",
+"name": "深圳市公安局南山分局塘朗派出所"
+},
+"lat": 22.59220035,
+"lon": 113.98019905000001,
+"area": 0.0089
+},
+{
 "id": "w765144388",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙岗区",
+"addr:housenumber": "29号",
+"addr:street": "布澜路",
 "amenity": "hospital",
+"emergency": "yes",
 "name": "深圳市第三人民医院",
-"name:en": "The Third People's Hospital of Shenzhen"
+"name:en": "The Third People's Hospital of Shenzhen",
+"phone": "+86 755 6122 2333"
 },
 "lat": 22.63824495,
 "lon": 114.12150510000001,
@@ -12662,6 +15939,10 @@
 {
 "id": "w777460301",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "16",
+"addr:street": "宝兴路",
 "amenity": "theatre",
 "name": "深圳滨海艺术中心",
 "name:en": "Bay Opera of Shenzhen"
@@ -12683,9 +15964,14 @@
 {
 "id": "w778406380",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:street": "滨河大道",
 "amenity": "hospital",
+"emergency": "no",
 "name": "深圳口岸医院",
-"name:en": "Shenzhen Port Hospital"
+"name:en": "Shenzhen Port Hospital",
+"phone": "+85 755 83774007;+86 755 8377 4013;+86 755 8377 4098"
 },
 "lat": 22.53078365,
 "lon": 114.07453025000001,
@@ -12694,6 +15980,10 @@
 {
 "id": "w778519540",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "光明区",
+"addr:housenumber": "66",
+"addr:street": "公常路",
 "amenity": "university",
 "name": "中山大学（深圳校区）",
 "name:en": "Sun Yat-sen University (Shenzhen Campus)",
@@ -12707,6 +15997,8 @@
 {
 "id": "w779037729",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
 "leisure": "park",
 "name": "景田南三街街心公园",
 "name:en": "Jingtian South 3rd Street Park"
@@ -12737,6 +16029,16 @@
 "area": 0.0043
 },
 {
+"id": "w779388806",
+"tags": {
+"amenity": "police",
+"name": "清湖社区警务室"
+},
+"lat": 22.67313685,
+"lon": 114.0410945,
+"area": 0.0015
+},
+{
 "id": "w780905064",
 "tags": {
 "leisure": "park",
@@ -12765,6 +16067,16 @@
 "lat": 22.737452949999998,
 "lon": 114.3725376,
 "area": 0.2287
+},
+{
+"id": "w781320139",
+"tags": {
+"amenity": "police",
+"name": "坑梓派出所"
+},
+"lat": 22.7398155,
+"lon": 114.37178750000001,
+"area": 0.0136
 },
 {
 "id": "w781672573",
@@ -12800,6 +16112,7 @@
 "id": "w782915634",
 "tags": {
 "amenity": "hospital",
+"emergency": "no",
 "name": "市公安局监管医院"
 },
 "lat": 22.572677849999998,
@@ -12820,11 +16133,62 @@
 "id": "w782971966",
 "tags": {
 "amenity": "hospital",
-"name": "坪山区妇幼保健院"
+"name": "坪山区妇幼保健院",
+"phone": "+86 755 8413 4902"
 },
 "lat": 22.74939905,
 "lon": 114.3642978,
 "area": 0.0332
+},
+{
+"id": "w783018278",
+"tags": {
+"amenity": "police",
+"name": "市公安局警卫局"
+},
+"lat": 22.5716626,
+"lon": 114.0458199,
+"area": 0.0102
+},
+{
+"id": "w783018281",
+"tags": {
+"amenity": "police",
+"name": "市公安局制证中心"
+},
+"lat": 22.572476700000003,
+"lon": 114.0476242,
+"area": 0.0025
+},
+{
+"id": "w783018282",
+"tags": {
+"amenity": "police",
+"name": "市公安局治安巡警支队"
+},
+"lat": 22.5745741,
+"lon": 114.04474935,
+"area": 0.0142
+},
+{
+"id": "w783018284",
+"tags": {
+"amenity": "police",
+"name": "深圳市公安局预审监管支队"
+},
+"lat": 22.57311635,
+"lon": 114.04696325,
+"area": 0.0098
+},
+{
+"id": "w783018285",
+"tags": {
+"amenity": "police",
+"name": "市公安局公交分局"
+},
+"lat": 22.571755099999997,
+"lon": 114.04781994999999,
+"area": 0.0115
 },
 {
 "id": "w783232529",
@@ -12959,6 +16323,16 @@
 "area": 0.0043
 },
 {
+"id": "w796359654",
+"tags": {
+"amenity": "police",
+"name": "老坑社区警务室"
+},
+"lat": 22.729074349999998,
+"lon": 114.3530947,
+"area": 0.0004
+},
+{
 "id": "w796359662",
 "tags": {
 "name": "龙围世居",
@@ -12977,6 +16351,26 @@
 "lat": 22.74465645,
 "lon": 114.3710253,
 "area": 0.0053
+},
+{
+"id": "w797826531",
+"tags": {
+"amenity": "police",
+"name": "深圳市公安局坪山分局"
+},
+"lat": 22.7027123,
+"lon": 114.3477637,
+"area": 0.0299
+},
+{
+"id": "w801554112",
+"tags": {
+"amenity": "police",
+"name": "深圳市公安局交通警察支队坪山中队"
+},
+"lat": 22.71261425,
+"lon": 114.34694105,
+"area": 0.0104
 },
 {
 "id": "w801554113",
@@ -13031,6 +16425,10 @@
 {
 "id": "w816502315",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "2002",
+"addr:street": "福田街道海滨社区金田路",
 "amenity": "hospital",
 "name": "深圳市福田区妇幼保健院",
 "name:en": "Shenzhen Futian Maternity & Child Health Hospital"
@@ -13044,7 +16442,8 @@
 "tags": {
 "leisure": "park",
 "name": "福民追梦公园",
-"name:en": "Fumin Dreamland Park"
+"name:en": "Fumin Dreamland Park",
+"opening_hours": "24/7"
 },
 "lat": 22.52683175,
 "lon": 114.06187560000001,
@@ -13075,11 +16474,23 @@
 "id": "w819148982",
 "tags": {
 "amenity": "hospital",
-"name": "深圳市萨米国际医疗中心（深圳市第四人民医院）"
+"emergency": "yes",
+"name": "深圳市萨米国际医疗中心（深圳市第四人民医院）",
+"phone": "+86 755 2158 9999"
 },
 "lat": 22.7071109,
 "lon": 114.3733953,
 "area": 0.0883
+},
+{
+"id": "w819300445",
+"tags": {
+"amenity": "police",
+"name": "马峦派出所"
+},
+"lat": 22.6896549,
+"lon": 114.36732570000001,
+"area": 0.0074
 },
 {
 "id": "w819300463",
@@ -13306,7 +16717,8 @@
 "id": "w832497764",
 "tags": {
 "leisure": "park",
-"name": "平山社区公园"
+"name": "平山社区公园",
+"opening_hours": "sunrise-sunset"
 },
 "lat": 22.58761985,
 "lon": 113.96078539999999,
@@ -13322,6 +16734,16 @@
 "lat": 22.53302215,
 "lon": 113.9684371,
 "area": 0.002
+},
+{
+"id": "w835266315",
+"tags": {
+"amenity": "police",
+"name": "石井派出所"
+},
+"lat": 22.69637495,
+"lon": 114.39721185,
+"area": 0.0011
 },
 {
 "id": "w846692246",
@@ -13395,6 +16817,32 @@
 "lat": 22.6104979,
 "lon": 114.02890830000001,
 "area": 0.0663
+},
+{
+"id": "w859503845",
+"tags": {
+"addr:housenumber": "30",
+"addr:street": "新大路",
+"amenity": "police",
+"name": "深圳大鹏水头小型汽车科目二考场",
+"opening_hours": "Mo-Su 09:00-18:00"
+},
+"lat": 22.56754715,
+"lon": 114.48656919999999,
+"area": 0.0197
+},
+{
+"id": "w859503846",
+"tags": {
+"addr:housenumber": "30",
+"addr:street": "新大路",
+"amenity": "police",
+"name": "深圳大鹏水头小型汽车科目三考场",
+"opening_hours": "Mo-Su 09:00-18:00"
+},
+"lat": 22.5668046,
+"lon": 114.48706229999999,
+"area": 0.0451
 },
 {
 "id": "w864588541",
@@ -13515,7 +16963,8 @@
 "tags": {
 "amenity": "library",
 "name": "涵泳图书馆",
-"name:en": "Learning Nexus"
+"name:en": "Learning Nexus",
+"opening_hours": "Mo-Su 08:00-22:00"
 },
 "lat": 22.604421799999997,
 "lon": 113.99199164999999,
@@ -13525,6 +16974,7 @@
 "id": "w880594795",
 "tags": {
 "amenity": "hospital",
+"emergency": "no",
 "name": "中国人民武装警察边防部队总医院"
 },
 "lat": 22.5761049,
@@ -13618,6 +17068,7 @@
 {
 "id": "w902736738",
 "tags": {
+"addr:street": "海府路",
 "name": "商业东岸",
 "shop": "mall"
 },
@@ -13626,14 +17077,39 @@
 "area": 0.0846
 },
 {
+"id": "w902736739",
+"tags": {
+"information": "office",
+"name": "游客中心",
+"name:en": "Service Center",
+"tourism": "information"
+},
+"lat": 22.547743,
+"lon": 113.87948285,
+"area": 0.0024
+},
+{
 "id": "w902736740",
 "tags": {
+"addr:street": "海澜路",
 "name": "商业西岸",
 "shop": "mall"
 },
 "lat": 22.547433150000003,
 "lon": 113.8754217,
 "area": 0.0292
+},
+{
+"id": "w902989440",
+"tags": {
+"addr:city": "深圳市",
+"addr:district": "龙岗区",
+"amenity": "police",
+"name": "龙岗公交派出所"
+},
+"lat": 22.637000999999998,
+"lon": 114.17827675000001,
+"area": 0.0107
 },
 {
 "id": "w903989120",
@@ -13728,6 +17204,9 @@
 {
 "id": "w904451070",
 "tags": {
+"addr:city": "深圳",
+"addr:district": "龙华",
+"addr:street": "龙华人民路",
 "name": "龙华天虹购物中心",
 "shop": "mall"
 },
@@ -13739,6 +17218,7 @@
 "id": "w906212975",
 "tags": {
 "amenity": "hospital",
+"emergency": "yes",
 "name": "北京中医药大学深圳医院"
 },
 "lat": 22.711063,
@@ -13783,7 +17263,8 @@
 "tags": {
 "leisure": "park",
 "name": "木墩公园",
-"name:en": "Mudun Park"
+"name:en": "Mudun Park",
+"opening_hours": "24/7"
 },
 "lat": 22.76652665,
 "lon": 113.92073255,
@@ -13812,6 +17293,9 @@
 {
 "id": "w913559047",
 "tags": {
+"addr:district": "宝安中心区",
+"addr:housenumber": "4",
+"addr:street": "甲岸路",
 "name": "得丰·圆方购物中心",
 "shop": "mall"
 },
@@ -13833,7 +17317,9 @@
 "id": "w919023810",
 "tags": {
 "leisure": "park",
-"name": "寄山公园"
+"name": "寄山公园",
+"opening_hours": "06:00-22:00",
+"phone": "0755-26555616"
 },
 "lat": 22.602589899999998,
 "lon": 114.01492504999999,
@@ -13919,9 +17405,15 @@
 {
 "id": "w929842141",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙岗区",
+"addr:housenumber": "113",
+"addr:street": "宝荷路",
 "amenity": "hospital",
+"emergency": "yes",
 "name": "深圳市肿瘤医院",
-"name:en": "Shenzhen Cancer Hospital"
+"name:en": "Shenzhen Cancer Hospital",
+"phone": "+86 755 6661 9865"
 },
 "lat": 22.697111149999998,
 "lon": 114.24601095,
@@ -13970,6 +17462,16 @@
 "area": 0.1396
 },
 {
+"id": "w936389476",
+"tags": {
+"amenity": "police",
+"name": "深圳市公安局交警支队龙岗大队布吉中队"
+},
+"lat": 22.63094345,
+"lon": 114.1319569,
+"area": 0.0052
+},
+{
 "id": "w939229067",
 "tags": {
 "amenity": "hospital",
@@ -14015,6 +17517,10 @@
 {
 "id": "w945992133",
 "tags": {
+"addr:city": "Shenzhen",
+"addr:district": "China",
+"addr:housenumber": "2-1",
+"addr:street": "林丰路",
 "name": "深圳档案中心",
 "name:en": "Shenzhen Archives Center",
 "tourism": "museum"
@@ -14026,6 +17532,10 @@
 {
 "id": "w946103593",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "27",
+"addr:street": "中康路",
 "amenity": "hospital",
 "name": "福田区第二人民医院",
 "name:en": "Futian District Second People's Hospital"
@@ -14037,6 +17547,10 @@
 {
 "id": "w946104014",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "15號",
+"addr:street": "梅林路",
 "amenity": "university",
 "name": "深圳廣播電視大學（福田分校）",
 "name:en": "Shenzhen University of Radio and Television (Futian Campus)"
@@ -14081,6 +17595,9 @@
 {
 "id": "w958530108",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙华区",
+"addr:street": "新区大道",
 "amenity": "hospital",
 "name": "深圳市新华医院"
 },
@@ -14165,6 +17682,10 @@
 {
 "id": "w967470554",
 "tags": {
+"addr:city": "葵涌街道",
+"addr:district": "大鹏新区",
+"addr:housenumber": "26",
+"addr:street": "葵心北路",
 "amenity": "hospital",
 "name": "深圳市葵涌人民医院"
 },
@@ -14183,6 +17704,17 @@
 "area": 0.0015
 },
 {
+"id": "w979921164",
+"tags": {
+"amenity": "police",
+"name": "深圳市公安局罗湖分局",
+"name:en": "Shenzhen Public Security Bureau Luohu Branch"
+},
+"lat": 22.5617567,
+"lon": 114.17664205,
+"area": 0.0225
+},
+{
 "id": "w979927783",
 "tags": {
 "amenity": "university",
@@ -14198,7 +17730,8 @@
 "tags": {
 "leisure": "park",
 "name": "民新社区公园",
-"name:en": "Minxin Commiunity Park"
+"name:en": "Minxin Commiunity Park",
+"opening_hours": "24/7"
 },
 "lat": 22.621806149999998,
 "lon": 114.0403367,
@@ -14207,6 +17740,8 @@
 {
 "id": "w989942549",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙华区",
 "amenity": "hospital",
 "name": "深圳市健安医院",
 "name:en": "Shenzhen Jian'an Hospital"
@@ -14228,6 +17763,10 @@
 {
 "id": "w990623378",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "2746",
+"addr:street": "南海大道",
 "name": "海雅缤纷广场",
 "name:en": "Haiya Binfeng Plaza",
 "shop": "mall"
@@ -14279,8 +17818,32 @@
 "area": 0.0156
 },
 {
+"id": "w1006889832",
+"tags": {
+"amenity": "police",
+"name": "禁止登山執法點"
+},
+"lat": 22.638809600000002,
+"lon": 114.47933075,
+"area": 0.0
+},
+{
+"id": "w1006889835",
+"tags": {
+"amenity": "police",
+"name": "禁止登山執法點"
+},
+"lat": 22.55528075,
+"lon": 114.5413216,
+"area": 0.0004
+},
+{
 "id": "w1009536338",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "169",
+"addr:street": "桂湾四路",
 "name": "万象前海",
 "name:en": "MixC Qianhai",
 "shop": "mall"
@@ -14398,6 +17961,16 @@
 "area": 0.0057
 },
 {
+"id": "w1044157139",
+"tags": {
+"amenity": "police",
+"name": "沙头派出所"
+},
+"lat": 22.5229274,
+"lon": 114.02897565,
+"area": 0.0028
+},
+{
 "id": "w1044157166",
 "tags": {
 "leisure": "park",
@@ -14472,6 +18045,9 @@
 {
 "id": "w1054118588",
 "tags": {
+"addr:city": "Shenzhen",
+"addr:district": "福田区",
+"addr:street": "福强路",
 "amenity": "hospital",
 "name": "深圳新风和睦家医院"
 },
@@ -14483,6 +18059,7 @@
 "id": "w1054604401",
 "tags": {
 "name": "新湖街道国防教育主题公园",
+"opening_hours": "24/7",
 "tourism": "theme_park"
 },
 "lat": 22.76632625,
@@ -14493,7 +18070,8 @@
 "id": "w1054604408",
 "tags": {
 "leisure": "park",
-"name": "新湖街道国防教育主题公园"
+"name": "新湖街道国防教育主题公园",
+"opening_hours": "24/7"
 },
 "lat": 22.767092599999998,
 "lon": 113.92522095000001,
@@ -14509,6 +18087,16 @@
 "lat": 22.55073005,
 "lon": 114.54035049999999,
 "area": 0.0002
+},
+{
+"id": "w1057905113",
+"tags": {
+"amenity": "police",
+"name": "深圳市公安局交通警察局龙岗大队"
+},
+"lat": 22.72415395,
+"lon": 114.2235373,
+"area": 0.005
 },
 {
 "id": "w1057905116",
@@ -14543,7 +18131,12 @@
 {
 "id": "w1067938221",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "233",
+"addr:street": "广深路西乡段",
 "amenity": "hospital",
+"emergency": "yes",
 "name": "宝安区中心医院"
 },
 "lat": 22.5831547,
@@ -14553,6 +18146,10 @@
 {
 "id": "w1068926961",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙岗区",
+"addr:housenumber": "1",
+"addr:street": "华南二道",
 "name": "深圳龙岗万达广场",
 "name:en": "Shenzhen Longgang Wanda Plaza",
 "shop": "mall"
@@ -14648,6 +18245,9 @@
 {
 "id": "w1095595906",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:street": "石厦街",
 "name": "石厦时代广场",
 "shop": "mall"
 },
@@ -14750,6 +18350,7 @@
 "id": "w1131230266",
 "tags": {
 "amenity": "hospital",
+"emergency": "yes",
 "name": "龙岗区第五人民医院"
 },
 "lat": 22.7009088,
@@ -14759,9 +18360,16 @@
 {
 "id": "w1133115897",
 "tags": {
+"addr:city": "深圳",
+"addr:district": "龙华",
+"addr:housenumber": "68",
+"addr:street": "华旺路",
 "amenity": "hospital",
+"emergency": "yes",
 "name": "深圳市龙华区妇幼保健院",
-"name:en": "Shenzhen Longhua Maternal & Child Health Center"
+"name:en": "Shenzhen Longhua Maternal & Child Health Center",
+"opening_hours": "24/7",
+"phone": "+86 755 2982 1199"
 },
 "lat": 22.674992500000002,
 "lon": 113.98783415,
@@ -14770,9 +18378,12 @@
 {
 "id": "w1133362946",
 "tags": {
+"addr:city": "深圳",
+"addr:district": "龙华",
 "amenity": "library",
 "name": "文化名人图书馆",
-"name:en": "Cultural Celebrities Memorial Library"
+"name:en": "Cultural Celebrities Memorial Library",
+"opening_hours": "Tu-Su 09:00-18:00"
 },
 "lat": 22.67228005,
 "lon": 113.9803077,
@@ -14801,6 +18412,9 @@
 {
 "id": "w1138068276",
 "tags": {
+"addr:district": "宝安中心区",
+"addr:housenumber": "1088号",
+"addr:street": "兴业路",
 "name": "瑞湾荟",
 "shop": "mall"
 },
@@ -14900,7 +18514,8 @@
 "tags": {
 "leisure": "park",
 "name": "学府社区公园",
-"name:en": "Xuefu Commiunity Park"
+"name:en": "Xuefu Commiunity Park",
+"opening_hours": "24/7"
 },
 "lat": 22.528695,
 "lon": 113.92488035,
@@ -14909,6 +18524,8 @@
 {
 "id": "w1155221586",
 "tags": {
+"addr:housenumber": "1",
+"addr:street": "英泰路",
 "amenity": "hospital",
 "name": "厚德医院",
 "name:en": "Houde Hospital"
@@ -14928,8 +18545,25 @@
 "area": 0.0121
 },
 {
+"id": "w1159685079",
+"tags": {
+"addr:city": "深圳市",
+"addr:district": "龙华区",
+"addr:housenumber": "71",
+"addr:street": "民宝路",
+"amenity": "police",
+"name": "民新派出所",
+"name:en": "Minxin Local Police Station"
+},
+"lat": 22.6215209,
+"lon": 114.0196961,
+"area": 0.0077
+},
+{
 "id": "w1159685127",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙华区",
 "amenity": "library",
 "name": "民治文体中心",
 "name:en": "Minzhi Culture & Sport Center"
@@ -14995,7 +18629,9 @@
 "tags": {
 "leisure": "park",
 "name": "油松滨水公园",
-"name:en": "Yousong Waterfront Park"
+"name:en": "Yousong Waterfront Park",
+"opening_hours": "24/7",
+"phone": "+86 0755 22020901"
 },
 "lat": 22.65012635,
 "lon": 114.0356921,
@@ -15026,11 +18662,26 @@
 "area": 0.0181
 },
 {
+"id": "w1178233378",
+"tags": {
+"amenity": "police",
+"name": "宝龙派出所"
+},
+"lat": 22.690396550000003,
+"lon": 114.30770945,
+"area": 0.0031
+},
+{
 "id": "w1178327404",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙华区",
+"addr:housenumber": "30",
+"addr:street": "腾龙路",
 "amenity": "library",
 "name": "深圳图书馆北馆",
 "name:en": "Shenzhen Library North Branch",
+"opening_hours": "Tu-Su 09:00-17:00",
 "wikidata": "Q130367270"
 },
 "lat": 22.62711615,
@@ -15040,8 +18691,14 @@
 {
 "id": "w1178327405",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙华区",
+"addr:housenumber": "30",
+"addr:street": "腾龙路",
 "name": "深圳美术馆（新馆）",
 "name:en": "Shenzhen Art Museum (New Museum)",
+"opening_hours": "Tu-Su 09:00-17:00",
+"phone": "+86 755 2806 2007",
 "tourism": "gallery"
 },
 "lat": 22.6276978,
@@ -15062,6 +18719,10 @@
 {
 "id": "w1178756979",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "99",
+"addr:street": "来安路",
 "amenity": "hospital",
 "name": "宝安纯中医治疗医院"
 },
@@ -15085,7 +18746,8 @@
 "tags": {
 "leisure": "park",
 "name": "狮径公园",
-"name:en": "Shijing Park"
+"name:en": "Shijing Park",
+"phone": "+86 0755 28013990"
 },
 "lat": 22.7143292,
 "lon": 114.01805855,
@@ -15107,7 +18769,8 @@
 "tags": {
 "leisure": "park",
 "name": "梅龙路一号地块公园",
-"name:en": "Meilong Road Lot 1 Park"
+"name:en": "Meilong Road Lot 1 Park",
+"opening_hours": "24/7"
 },
 "lat": 22.6351693,
 "lon": 114.02555515,
@@ -15139,7 +18802,9 @@
 "tags": {
 "leisure": "park",
 "name": "观澜河湿地公园",
-"name:en": "Guanlan River Wetland Park"
+"name:en": "Guanlan River Wetland Park",
+"opening_hours": "Mo-Su 07:00-22:00",
+"phone": "+86 0755 28193264"
 },
 "lat": 22.6856555,
 "lon": 114.03835135,
@@ -15170,6 +18835,10 @@
 {
 "id": "w1191756576",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "罗湖区",
+"addr:housenumber": "3018",
+"addr:street": "建设路",
 "name": "1234Space",
 "shop": "mall"
 },
@@ -15220,6 +18889,20 @@
 "area": 0.0074
 },
 {
+"id": "w1196383221",
+"tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "95",
+"addr:street": "学府路",
+"amenity": "police",
+"name": "粤海派出所"
+},
+"lat": 22.527774049999998,
+"lon": 113.9308179,
+"area": 0.0034
+},
+{
 "id": "w1197473305",
 "tags": {
 "leisure": "park",
@@ -15232,6 +18915,8 @@
 {
 "id": "w1202237021",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙岗区",
 "name": "三联商业广场",
 "name:en": "Sanlian Shoping Mall",
 "shop": "mall"
@@ -15347,6 +19032,10 @@
 {
 "id": "w1216783707",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙岗区",
+"addr:housenumber": "2",
+"addr:street": "翔鸽路",
 "name": "布吉万象汇",
 "name:en": "Buji MixC City",
 "shop": "mall"
@@ -15401,7 +19090,8 @@
 "tags": {
 "leisure": "park",
 "name": "新区大道街心花园",
-"name:en": "Xinqu Blvd Street Garden"
+"name:en": "Xinqu Blvd Street Garden",
+"opening_hours": "24/7"
 },
 "lat": 22.62627115,
 "lon": 114.01339515000001,
@@ -15481,6 +19171,16 @@
 "area": 0.6032
 },
 {
+"id": "w1231656736",
+"tags": {
+"amenity": "police",
+"name": "深圳市公安局法医检验中心"
+},
+"lat": 22.6303917,
+"lon": 114.1546873,
+"area": 0.0115
+},
+{
 "id": "w1231656740",
 "tags": {
 "amenity": "library",
@@ -15543,6 +19243,17 @@
 "area": 0.002
 },
 {
+"id": "w1242132590",
+"tags": {
+"information": "visitor_centre",
+"name": "好汉坡游客服务中心",
+"tourism": "information"
+},
+"lat": 22.577045849999998,
+"lon": 114.21046685,
+"area": 0.0008
+},
+{
 "id": "w1242713704",
 "tags": {
 "leisure": "park",
@@ -15561,6 +19272,16 @@
 "lat": 22.5896425,
 "lon": 114.26746184999999,
 "area": 0.0069
+},
+{
+"id": "w1242753728",
+"tags": {
+"amenity": "police",
+"name": "盐田公安分局巡警大队"
+},
+"lat": 22.5862274,
+"lon": 114.27105904999999,
+"area": 0.0007
 },
 {
 "id": "w1242753748",
@@ -15594,8 +19315,27 @@
 "area": 0.0848
 },
 {
+"id": "w1243207423",
+"tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "38",
+"addr:street": "梅林路",
+"amenity": "police",
+"name": "梅林派出所",
+"name:en": "Meilin Police Station"
+},
+"lat": 22.567879599999998,
+"lon": 114.0442151,
+"area": 0.0024
+},
+{
 "id": "w1243207424",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "128",
+"addr:street": "梅华路",
 "amenity": "theatre",
 "name": "深圳歌剧舞剧院",
 "name:en": "Shenzhen Opera & Dance Theatre"
@@ -15607,6 +19347,9 @@
 {
 "id": "w1243990509",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:street": "泽田路",
 "amenity": "hospital",
 "name": "深圳市眼科医院",
 "name:en": "Shenzhen Eye Hospital"
@@ -15620,11 +19363,23 @@
 "tags": {
 "leisure": "park",
 "name": "田背社区公园",
-"name:en": "Tianbei Commiunity Park"
+"name:en": "Tianbei Commiunity Park",
+"opening_hours": "24/7",
+"phone": "+86 0755 28013990"
 },
 "lat": 22.69523455,
 "lon": 114.03312085,
 "area": 0.0407
+},
+{
+"id": "w1244517768",
+"tags": {
+"amenity": "police",
+"name": "深圳市公安局经济犯罪侦查局"
+},
+"lat": 22.54861715,
+"lon": 114.00454985,
+"area": 0.0021
 },
 {
 "id": "w1244784097",
@@ -15636,6 +19391,16 @@
 "lat": 22.672921600000002,
 "lon": 113.81893844999999,
 "area": 0.0514
+},
+{
+"id": "w1244809506",
+"tags": {
+"amenity": "police",
+"name": "莲塘派出所"
+},
+"lat": 22.5606083,
+"lon": 114.15595780000001,
+"area": 0.0008
 },
 {
 "id": "w1245159278",
@@ -15734,6 +19499,16 @@
 "area": 0.0109
 },
 {
+"id": "w1251080398",
+"tags": {
+"amenity": "police",
+"name": "深圳市公安局盐田分局"
+},
+"lat": 22.56428655,
+"lon": 114.23986719999999,
+"area": 0.0015
+},
+{
 "id": "w1251175597",
 "tags": {
 "leisure": "park",
@@ -15763,6 +19538,16 @@
 "lat": 22.615945500000002,
 "lon": 113.86180165,
 "area": 0.1296
+},
+{
+"id": "w1251643004",
+"tags": {
+"amenity": "police",
+"name": "罗湖铁路公安局"
+},
+"lat": 22.537003650000003,
+"lon": 114.11115445,
+"area": 0.002
 },
 {
 "id": "w1251643053",
@@ -15808,6 +19593,10 @@
 {
 "id": "w1252773737",
 "tags": {
+"addr:city": "深圳",
+"addr:district": "福田区",
+"addr:housenumber": "1001",
+"addr:street": "福强路",
 "amenity": "hospital",
 "name": "深圳中山妇产医院",
 "name:en": "Shenzhen Zhongshan Obstetrics and Gynecology Hospital"
@@ -15868,6 +19657,16 @@
 "area": 0.0055
 },
 {
+"id": "w1255524291",
+"tags": {
+"amenity": "police",
+"name": "龙岗分局刑警大队"
+},
+"lat": 22.62184215,
+"lon": 114.11410425,
+"area": 0.0021
+},
+{
 "id": "w1255620239",
 "tags": {
 "leisure": "park",
@@ -15922,6 +19721,10 @@
 {
 "id": "w1258089079",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "1",
+"addr:street": "松岭路",
 "amenity": "hospital",
 "name": "深圳市中医肛肠医院(福田)南园院区"
 },
@@ -15945,7 +19748,8 @@
 "tags": {
 "leisure": "park",
 "name": "龙平公园",
-"name:en": "Longping Park"
+"name:en": "Longping Park",
+"phone": "+86 13590272001"
 },
 "lat": 22.6449407,
 "lon": 114.00964785,
@@ -15960,6 +19764,16 @@
 "lat": 22.54657015,
 "lon": 114.1077449,
 "area": 0.0041
+},
+{
+"id": "w1262456887",
+"tags": {
+"amenity": "police",
+"name": "文锦社区警务室"
+},
+"lat": 22.54412105,
+"lon": 114.12424185,
+"area": 0.001
 },
 {
 "id": "w1262566172",
@@ -16014,6 +19828,16 @@
 "area": 0.001
 },
 {
+"id": "w1266999492",
+"tags": {
+"amenity": "police",
+"name": "深圳市公安局福田分局机动训练大队"
+},
+"lat": 22.57991685,
+"lon": 114.06255655,
+"area": 0.1109
+},
+{
 "id": "w1266999501",
 "tags": {
 "name": "蓝山汇",
@@ -16039,7 +19863,8 @@
 "tags": {
 "leisure": "park",
 "name": "深湾街心公园",
-"name:en": "Shenwan Street Park"
+"name:en": "Shenwan Street Park",
+"opening_hours": "24/7"
 },
 "lat": 22.52698075,
 "lon": 113.96273495,
@@ -16049,6 +19874,7 @@
 "id": "w1270598327",
 "tags": {
 "amenity": "hospital",
+"emergency": "no",
 "name": "和美妇儿科医院"
 },
 "lat": 22.54391275,
@@ -16060,7 +19886,8 @@
 "tags": {
 "leisure": "park",
 "name": "凯丰社区公园",
-"name:en": "Kaifeng Commiunity Park"
+"name:en": "Kaifeng Commiunity Park",
+"opening_hours": "24/7"
 },
 "lat": 22.567459,
 "lon": 114.05815435,
@@ -16151,6 +19978,10 @@
 {
 "id": "w1271875968",
 "tags": {
+"addr:city": "新安街道",
+"addr:district": "深圳市",
+"addr:housenumber": "198",
+"addr:street": "新安四路",
 "name": "宝立方中心",
 "shop": "mall"
 },
@@ -16161,6 +19992,9 @@
 {
 "id": "w1271875971",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:street": "前进路",
 "name": "天虹商场",
 "name:en": "Tianhong Shopping Mall",
 "shop": "mall"
@@ -16222,6 +20056,9 @@
 {
 "id": "w1274564885",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "光明区",
+"addr:street": "碧水路",
 "name": "光明农场大观园",
 "tourism": "attraction"
 },
@@ -16312,6 +20149,16 @@
 "area": 0.0175
 },
 {
+"id": "w1279573039",
+"tags": {
+"amenity": "police",
+"name": "东湖派出所"
+},
+"lat": 22.5798609,
+"lon": 114.1329637,
+"area": 0.0013
+},
+{
 "id": "w1280112305",
 "tags": {
 "name": "雨林迎宾",
@@ -16386,6 +20233,8 @@
 {
 "id": "w1285871938",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
 "name": "百佳华·佳漾汇",
 "name:en": "Baijiahua Jiayanghui",
 "shop": "mall"
@@ -16555,6 +20404,10 @@
 {
 "id": "w1299259277",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙华区",
+"addr:housenumber": "60",
+"addr:street": "中梅路",
 "name": "鹏润达环球服贸广场",
 "name:en": "Pengrunda Global Clothing Trade Plaza",
 "shop": "mall"
@@ -16660,6 +20513,10 @@
 {
 "id": "w1303241054",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "10",
+"addr:street": "科兴路",
 "name": "科技园文化广场",
 "name:en": "Kejiyuan Cultural Plaza",
 "shop": "mall"
@@ -16681,6 +20538,10 @@
 {
 "id": "w1303653420",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "1",
+"addr:street": "楼岗大道",
 "name": "天虹商场 (松岗店)",
 "name:en": "Rainbow Department Store (Songgang Branch)",
 "shop": "mall"
@@ -16701,8 +20562,21 @@
 "area": 0.0542
 },
 {
+"id": "w1305353902",
+"tags": {
+"amenity": "police",
+"name": "天安派出所"
+},
+"lat": 22.53531465,
+"lon": 114.02520175000001,
+"area": 0.0028
+},
+{
 "id": "w1305893989",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:street": "航城大道",
 "name": "航城里购物中心",
 "name:en": "Hangchengli Shopping Center",
 "shop": "mall"
@@ -16785,10 +20659,26 @@
 "area": 0.0809
 },
 {
+"id": "w1313182200",
+"tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "8",
+"addr:street": "福永大道",
+"amenity": "police",
+"name": "福永派出所",
+"name:en": "Fuyong Police Station"
+},
+"lat": 22.67332895,
+"lon": 113.8207634,
+"area": 0.0154
+},
+{
 "id": "w1327466582",
 "tags": {
 "name": "前海博物馆",
 "name:en": "Qianhai Museum",
+"opening_hours": "Tu-Su 10:00-18:00",
 "tourism": "museum"
 },
 "lat": 22.52282445,
@@ -16798,6 +20688,10 @@
 {
 "id": "w1331505747",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "1",
+"addr:street": "梅坳二路",
 "amenity": "hospital",
 "name": "深圳市中医肛肠医院（福田）梅林院区",
 "name:en": "Shenzhen TCM Anorectal Hospital, Meilin Campus, Futian"
@@ -16805,6 +20699,22 @@
 "lat": 22.5788961,
 "lon": 114.0521663,
 "area": 0.0123
+},
+{
+"id": "w1333009589",
+"tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "1",
+"addr:street": "裕亨路",
+"amenity": "police",
+"name": "福强派出所",
+"name:en": "Fuqiang Police Station",
+"phone": "+86 755 8339 8110"
+},
+"lat": 22.51842315,
+"lon": 114.0695102,
+"area": 0.0009
 },
 {
 "id": "w1334179499",
@@ -16840,6 +20750,10 @@
 {
 "id": "w1335901515",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "3099",
+"addr:street": "梦海大道",
 "amenity": "hospital",
 "name": "深圳前海泰康医院",
 "name:en": "Shenzhen Qianhai Taikang Hospital"
@@ -16882,6 +20796,18 @@
 "area": 0.0764
 },
 {
+"id": "w1343494476",
+"tags": {
+"information": "office",
+"name": "体育服务中心",
+"name:en": "Sports Service Center",
+"tourism": "information"
+},
+"lat": 22.5541756,
+"lon": 114.01356394999999,
+"area": 0.0011
+},
+{
 "id": "w1343494493",
 "tags": {
 "name": "香蜜湖四季花谷",
@@ -16917,7 +20843,8 @@
 "tags": {
 "leisure": "park",
 "name": "龙峰三路街心公园",
-"name:en": "Longfeng 3rd Road Street Park"
+"name:en": "Longfeng 3rd Road Street Park",
+"opening_hours": "24/7"
 },
 "lat": 22.6563029,
 "lon": 113.9962501,
@@ -16928,7 +20855,9 @@
 "tags": {
 "leisure": "park",
 "name": "松元厦地铁口街心公园",
-"name:en": "Songyuanxia Metro Station Street Park"
+"name:en": "Songyuanxia Metro Station Street Park",
+"opening_hours": "24/7",
+"phone": "+86 0755 28013430"
 },
 "lat": 22.7237606,
 "lon": 114.05961769999999,
@@ -16939,7 +20868,8 @@
 "tags": {
 "leisure": "park",
 "name": "劳动者广场",
-"name:en": "Laborers' Square"
+"name:en": "Laborers' Square",
+"opening_hours": "24/7"
 },
 "lat": 22.6808792,
 "lon": 113.9867431,
@@ -16950,7 +20880,8 @@
 "tags": {
 "leisure": "park",
 "name": "华兴路与石龙路交会处街心花园",
-"name:en": "Huaxing Road and Shilong Road Junction Street Garden"
+"name:en": "Huaxing Road and Shilong Road Junction Street Garden",
+"opening_hours": "24/7"
 },
 "lat": 22.67984345,
 "lon": 113.97592935,
@@ -16961,7 +20892,8 @@
 "tags": {
 "leisure": "park",
 "name": "锦绣街心公园",
-"name:en": "Jingxiu Street Park"
+"name:en": "Jingxiu Street Park",
+"opening_hours": "24/7"
 },
 "lat": 22.637164749999997,
 "lon": 114.0250994,
@@ -16972,7 +20904,8 @@
 "tags": {
 "leisure": "park",
 "name": "玖钻花园",
-"name:en": "Jiuzuan Garden"
+"name:en": "Jiuzuan Garden",
+"opening_hours": "24/7"
 },
 "lat": 22.62477945,
 "lon": 114.0170078,
@@ -17112,6 +21045,10 @@
 {
 "id": "w1349160092",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安中心区",
+"addr:housenumber": "16-55",
+"addr:street": "明玉路",
 "leisure": "park",
 "name": "82区社区公园"
 },
@@ -17122,6 +21059,8 @@
 {
 "id": "w1349166314",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
 "leisure": "park",
 "name": "西部海岸活力带宝安示范段"
 },
@@ -17212,6 +21151,17 @@
 "area": 0.0068
 },
 {
+"id": "w1351577532",
+"tags": {
+"information": "visitor_centre",
+"name": "罗田森林公园游客服务中心",
+"tourism": "information"
+},
+"lat": 22.82501025,
+"lon": 113.88447975,
+"area": 0.0002
+},
+{
 "id": "w1352117952",
 "tags": {
 "leisure": "nature_reserve",
@@ -17272,6 +21222,16 @@
 "lat": 22.79491465,
 "lon": 113.86111925,
 "area": 0.0646
+},
+{
+"id": "w1360050593",
+"tags": {
+"amenity": "police",
+"name": "燕罗派出所"
+},
+"lat": 22.798827799999998,
+"lon": 113.85512215,
+"area": 0.0128
 },
 {
 "id": "w1360305951",
@@ -17352,6 +21312,35 @@
 "lat": 22.79076405,
 "lon": 113.95671145,
 "area": 0.0082
+},
+{
+"id": "w1364511444",
+"tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "10",
+"addr:street": "兴工路",
+"amenity": "police",
+"name": "南山派出所",
+"name:en": "Nanshan Police Station"
+},
+"lat": 22.507353350000002,
+"lon": 113.91554215,
+"area": 0.0037
+},
+{
+"id": "w1364765711",
+"tags": {
+"addr:housenumber": "172",
+"addr:street": "平龙西路",
+"amenity": "police",
+"name": "辅城派出所",
+"name:en": "Fucheng Local Police Station",
+"phone": "+86 0755 8469 6110"
+},
+"lat": 22.7002576,
+"lon": 114.1021939,
+"area": 0.0104
 },
 {
 "id": "w1365527638",
@@ -17450,6 +21439,10 @@
 {
 "id": "w1369548906",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙岗区",
+"addr:housenumber": "1",
+"addr:street": "福新路",
 "amenity": "hospital",
 "name": "深圳大学附属华南医院",
 "name:en": "Shenzhen University Affiliated South China Hospital"
@@ -17471,6 +21464,10 @@
 {
 "id": "w1371686736",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "256",
+"addr:street": "宝民一路",
 "name": "宝安福城万达广场",
 "name:en": "Bao’an Fucheng Wanda Plaza",
 "shop": "mall"
@@ -17595,7 +21592,8 @@
 "tags": {
 "name": "鹿嘴银滩",
 "name:en": "Luzui Beach",
-"natural": "beach"
+"natural": "beach",
+"opening_hours": "Mo-Fr 07:00-19:00; Sa-Su,PH 08:00-19:30"
 },
 "lat": 22.54112525,
 "lon": 114.59820445,
@@ -17667,6 +21665,9 @@
 {
 "id": "w1414847308",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙岗区",
+"addr:street": "甘坑路",
 "name": "二十四史书院",
 "tourism": "attraction"
 },
@@ -17750,6 +21751,10 @@
 {
 "id": "w1417598805",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙岗区",
+"addr:housenumber": "281",
+"addr:street": "吉祥路",
 "name": "天虹商场（龙新店）",
 "name:en": "Tianhong Mall Longxin Store",
 "shop": "mall"
@@ -17771,6 +21776,9 @@
 {
 "id": "w1418572563",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "光明区",
+"addr:street": "硕泰路",
 "leisure": "park",
 "name": "创新公园"
 },
@@ -17881,6 +21889,16 @@
 "area": 0.0153
 },
 {
+"id": "w1421700422",
+"tags": {
+"amenity": "police",
+"name": "深圳市公安局光明分局"
+},
+"lat": 22.74636375,
+"lon": 113.94622104999999,
+"area": 0.0021
+},
+{
 "id": "w1422841101",
 "tags": {
 "leisure": "park",
@@ -17909,6 +21927,16 @@
 "lat": 22.749572450000002,
 "lon": 113.92912755,
 "area": 0.0442
+},
+{
+"id": "w1424073510",
+"tags": {
+"amenity": "police",
+"name": "龙华上塘派出所"
+},
+"lat": 22.637920299999998,
+"lon": 114.0114236,
+"area": 0.0018
 },
 {
 "id": "w1424073540",
@@ -17946,7 +21974,8 @@
 "tags": {
 "amenity": "library",
 "name": "龙岗图书馆(碧道分馆)",
-"name:en": "Longgang Blueway Pavilion"
+"name:en": "Longgang Blueway Pavilion",
+"opening_hours": "Tu-Su 09:00-20:00"
 },
 "lat": 22.73571345,
 "lon": 114.26327674999999,
@@ -18106,6 +22135,10 @@
 {
 "id": "w1424767278",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "38",
+"addr:street": "锦花路",
 "name": "天骄荟 Tin Mall",
 "name:en": "Tin Mall",
 "shop": "mall"
@@ -18220,7 +22253,8 @@
 "id": "w1425507966",
 "tags": {
 "leisure": "park",
-"name": "桃花园公园"
+"name": "桃花园公园",
+"opening_hours": "06:00-22:00"
 },
 "lat": 22.596914400000003,
 "lon": 113.9591432,
@@ -18319,6 +22353,10 @@
 {
 "id": "w1425709989",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙岗区",
+"addr:housenumber": "552",
+"addr:street": "布龙路",
 "amenity": "hospital",
 "name": "深圳坂田医院",
 "name:en": "Shenzhen Bantian Hospital"
@@ -18330,6 +22368,8 @@
 {
 "id": "w1425709990",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙岗区",
 "name": "坂田万科广场",
 "name:en": "Bantian Vanke Mall",
 "shop": "mall"
@@ -18341,6 +22381,8 @@
 {
 "id": "w1425710958",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙岗区",
 "name": "max city 百佳华购物中心",
 "name:en": "max city Baijiahua Shopping Mall",
 "shop": "mall"
@@ -18414,7 +22456,8 @@
 "id": "w1425760064",
 "tags": {
 "historic": "monument",
-"name": "刘铸伯纪念馆"
+"name": "刘铸伯纪念馆",
+"opening_hours": "Tu-Su 09:00-12:00,14:00-17:00"
 },
 "lat": 22.704202950000003,
 "lon": 114.13507285,
@@ -18699,7 +22742,8 @@
 "id": "w1430467278",
 "tags": {
 "leisure": "park",
-"name": "乐城公园"
+"name": "乐城公园",
+"opening_hours": "06:30-22:30"
 },
 "lat": 22.6759659,
 "lon": 114.2141108,
@@ -18729,6 +22773,9 @@
 {
 "id": "w1430819019",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙岗区",
+"addr:street": "吉华路",
 "amenity": "hospital",
 "name": "香港中文大学（深圳）医院",
 "name:en": "The Chinese University of Hong Kong, Shenzhen Hospital"
@@ -18748,8 +22795,23 @@
 "area": 0.0233
 },
 {
+"id": "w1431200352",
+"tags": {
+"amenity": "police",
+"name": "福田口岸交警大队",
+"name:en": "Futian Port Traffic Police Brigade"
+},
+"lat": 22.521718149999998,
+"lon": 114.06266085,
+"area": 0.0209
+},
+{
 "id": "w1431618941",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "8",
+"addr:street": "沙咀路",
 "name": "绿景佐阾红树林购物中心",
 "name:en": "Lvgem Zuoqiu Mangrove Shopping Center",
 "shop": "mall"
@@ -18761,6 +22823,10 @@
 {
 "id": "w1431648006",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "22",
+"addr:street": "农林路",
 "amenity": "hospital",
 "name": "深圳市福田区风湿病专科医院",
 "name:en": "Shenzhen Futian Rheumatism Specialist Hospital"
@@ -18783,6 +22849,10 @@
 {
 "id": "w1431881290",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "7",
+"addr:street": "景田东路",
 "leisure": "park",
 "name": "景华社区公园",
 "name:en": "Jinghua Community Park"
@@ -18794,6 +22864,10 @@
 {
 "id": "w1431909356",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "5",
+"addr:street": "百花二路",
 "name": "百花新天地商业城",
 "name:en": "Baihua New World Commercial Centre",
 "shop": "mall"
@@ -18801,6 +22875,21 @@
 "lat": 22.5549351,
 "lon": 114.08912735000001,
 "area": 0.0081
+},
+{
+"id": "w1432171554",
+"tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "38",
+"addr:street": "梅林路",
+"amenity": "police",
+"name": "梅林派出所",
+"name:en": "Meilin Police Station"
+},
+"lat": 22.5715211,
+"lon": 114.06214775000001,
+"area": 0.0041
 },
 {
 "id": "w1432192875",
@@ -18816,6 +22905,10 @@
 {
 "id": "w1432192897",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "1010",
+"addr:street": "侨香路",
 "name": "特发文创广场",
 "name:en": "Tefa Cultural & Creative Plaza",
 "shop": "mall"
@@ -18838,6 +22931,10 @@
 {
 "id": "w1432455767",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "222",
+"addr:street": "梅华路",
 "name": "下梅林广场",
 "name:en": "Xiameilin Plaza",
 "shop": "mall"
@@ -18849,6 +22946,10 @@
 {
 "id": "w1432455781",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "1",
+"addr:street": "梅亭路",
 "amenity": "hospital",
 "name": "福田区第二人民医院(龙尾院区)",
 "name:en": "Futian District Second People's Hospital (Longwei Campus)"
@@ -18860,6 +22961,10 @@
 {
 "id": "w1432481864",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "98-1",
+"addr:street": "梅华路",
 "name": "新世界时代汇",
 "name:en": "New World Time Collection",
 "shop": "mall"
@@ -18867,6 +22972,36 @@
 "lat": 22.5677108,
 "lon": 114.04814045,
 "area": 0.0041
+},
+{
+"id": "w1432487935",
+"tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "1106",
+"addr:street": "莲花路",
+"amenity": "police",
+"name": "莲花派出所",
+"name:en": "Lianhua Police Station"
+},
+"lat": 22.56311535,
+"lon": 114.05240069999999,
+"area": 0.0037
+},
+{
+"id": "w1432495468",
+"tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:housenumber": "1006",
+"addr:street": "莲花支路",
+"amenity": "police",
+"name": "深圳市公安局交通警察局",
+"name:en": "Shenzhen Municipal Traffic Police Bureau"
+},
+"lat": 22.56286945,
+"lon": 114.05973215,
+"area": 0.0069
 },
 {
 "id": "w1432667112",
@@ -18882,6 +23017,10 @@
 {
 "id": "w1432667121",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "罗湖区",
+"addr:housenumber": "36",
+"addr:street": "金湖一街",
 "amenity": "arts_centre",
 "name": "深圳画院",
 "name:en": "Shenzhen Art Academy",
@@ -18904,6 +23043,10 @@
 {
 "id": "w1432690624",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "215",
+"addr:street": "天宝路",
 "name": "年年好购物广场",
 "name:en": "Nian Nianhao Shopping Plaza",
 "shop": "mall"
@@ -18915,6 +23058,10 @@
 {
 "id": "w1433242833",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "2059",
+"addr:street": "南新路",
 "amenity": "hospital",
 "name": "深圳美中宜和妇产医院",
 "name:en": "Shenzhen Amcare Women & Children’s Hospital"
@@ -18946,6 +23093,10 @@
 {
 "id": "w1435555578",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "280",
+"addr:street": "西乡大道",
 "name": "文化潮汕博览园",
 "name:en": "Chaoshan Culture Expo Park",
 "tourism": "museum"
@@ -18957,6 +23108,10 @@
 {
 "id": "w1435556482",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "1019",
+"addr:street": "西乡大道",
 "name": "宝安天虹购物中心",
 "name:en": "Rainbow Shopping Center Bao’an",
 "shop": "mall"
@@ -18989,6 +23144,10 @@
 {
 "id": "w1436119323",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "67",
+"addr:street": "固戍一路",
 "name": "置富广场",
 "name:en": "Zhifu Plaza",
 "shop": "mall"
@@ -19022,6 +23181,10 @@
 {
 "id": "w1436820025",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "95",
+"addr:street": "龙井二路",
 "name": "宝安科技馆",
 "name:en": "Bao’an Science & Technology Museum",
 "tourism": "museum"
@@ -19033,6 +23196,10 @@
 {
 "id": "w1436820026",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "72",
+"addr:street": "新安二路",
 "amenity": "library",
 "name": "宝安区图书馆1990分馆",
 "name:en": "Bao’an District Library 1990 Branch"
@@ -19054,6 +23221,10 @@
 {
 "id": "w1436926562",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "48-11",
+"addr:street": "和沙路",
 "name": "新领汇购物广场",
 "name:en": "Xinlinghui Shopping Plaza",
 "shop": "mall"
@@ -19065,6 +23236,10 @@
 {
 "id": "w1437035663",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "29",
+"addr:street": "大洋路",
 "name": "百盛佳购物广场",
 "name:en": "Baishengjia Shopping Plaza",
 "shop": "mall"
@@ -19098,6 +23273,8 @@
 {
 "id": "w1441820307",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
 "name": "海纳广场",
 "name:en": "Haina Plaza",
 "shop": "mall"
@@ -19190,8 +23367,12 @@
 {
 "id": "w1442266882",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
+"addr:street": "皇岗四街",
 "leisure": "park",
-"name": "锦绣园"
+"name": "锦绣园",
+"opening_hours": "Mo-Su 06:00-18:00"
 },
 "lat": 22.5292906,
 "lon": 114.0544247,
@@ -19240,6 +23421,10 @@
 {
 "id": "w1442514258",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "4327",
+"addr:street": "东滨路",
 "name": "汇宾广场",
 "name:en": "Huibin Plaza",
 "shop": "mall"
@@ -19261,8 +23446,27 @@
 "area": 0.1828
 },
 {
+"id": "w1442589807",
+"tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "135",
+"addr:street": "自由路",
+"amenity": "police",
+"name": "翻身派出所",
+"name:en": "Fanshen Police Station"
+},
+"lat": 22.5721352,
+"lon": 113.88420665,
+"area": 0.003
+},
+{
 "id": "w1442589825",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "137",
+"addr:street": "自由路",
 "name": "前海·燊达汇广场",
 "name:en": "Shenda Plaza",
 "shop": "mall"
@@ -19304,8 +23508,27 @@
 "area": 0.0282
 },
 {
+"id": "w1443864268",
+"tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "351",
+"addr:street": "西乡大道",
+"amenity": "police",
+"name": "宝源警务室",
+"name:en": "Baoyuan Police Service Station"
+},
+"lat": 22.5710183,
+"lon": 113.85506115,
+"area": 0.0135
+},
+{
 "id": "w1444398546",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "159",
+"addr:street": "广深路",
 "amenity": "hospital",
 "name": "深圳春天阳光医院",
 "name:en": "Shenzhen Spring Sun Hospital"
@@ -19317,6 +23540,9 @@
 {
 "id": "w1444619364",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:street": "宝安大道",
 "name": "万科生活广场",
 "name:en": "Vanke Life Plaza",
 "shop": "mall"
@@ -19328,6 +23554,8 @@
 {
 "id": "w1444619367",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
 "name": "得丰·榕湾汇",
 "name:en": "Ruh Commercial Plaza",
 "shop": "mall"
@@ -19387,8 +23615,28 @@
 "area": 0.0084
 },
 {
+"id": "w1444817188",
+"tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "32",
+"addr:street": "同和路",
+"amenity": "police",
+"name": "上川派出所",
+"name:en": "Shangchuan Police Station",
+"opening_hours": "24/7"
+},
+"lat": 22.583265150000003,
+"lon": 113.89250455,
+"area": 0.0042
+},
+{
 "id": "w1444817190",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "296",
+"addr:street": "新安四路",
 "amenity": "hospital",
 "name": "深圳宝生妇产医院",
 "name:en": "Bao’an Obstetrics and Gynecology Hospital"
@@ -19439,6 +23687,16 @@
 "area": 0.0419
 },
 {
+"id": "w1445409166",
+"tags": {
+"amenity": "police",
+"name": "深圳市公安局宝安分局"
+},
+"lat": 22.5583666,
+"lon": 113.90678315,
+"area": 0.0185
+},
+{
 "id": "w1445692972",
 "tags": {
 "name": "福佳购物广场",
@@ -19447,6 +23705,19 @@
 "lat": 22.73865385,
 "lon": 113.80508929999999,
 "area": 0.005
+},
+{
+"id": "w1445717362",
+"tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"amenity": "police",
+"name": "新乐派出所",
+"name:en": "Xinle Police Station"
+},
+"lat": 22.55640385,
+"lon": 113.8956767,
+"area": 0.0036
 },
 {
 "id": "w1445749599",
@@ -19481,6 +23752,10 @@
 {
 "id": "w1445899151",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "4",
+"addr:street": "创业二路",
 "amenity": "hospital",
 "name": "宝安人民医院(集团)建安院区",
 "name:en": "Shenzhen Bao’an People’s Hospital (Group) Jian’an Branch"
@@ -19492,6 +23767,10 @@
 {
 "id": "w1445921688",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "93",
+"addr:street": "前进二路",
 "name": "彩虹城",
 "name:en": "Rainbow City",
 "shop": "mall"
@@ -19603,6 +23882,10 @@
 {
 "id": "w1445999874",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "190-3",
+"addr:street": "宝民二路",
 "name": "缤纷时代广场",
 "name:en": "Binfen Times Square",
 "shop": "mall"
@@ -19610,6 +23893,21 @@
 "lat": 22.5956006,
 "lon": 113.86943765000001,
 "area": 0.0242
+},
+{
+"id": "w1445999882",
+"tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "17",
+"addr:street": "宝田一路",
+"amenity": "police",
+"name": "流塘派出所",
+"name:en": "Liutang Police Station"
+},
+"lat": 22.597413,
+"lon": 113.87282015,
+"area": 0.0082
 },
 {
 "id": "w1446177175",
@@ -19624,6 +23922,10 @@
 {
 "id": "w1446429695",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "180",
+"addr:street": "新沙路",
 "name": "深明丰大厦",
 "name:en": "Shenmingfeng Building",
 "shop": "mall"
@@ -19635,6 +23937,10 @@
 {
 "id": "w1446431197",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "11",
+"addr:street": "中心路",
 "amenity": "hospital",
 "name": "深圳万丰医院",
 "name:en": "Shenzhen Wanfeng Hospital"
@@ -19646,6 +23952,10 @@
 {
 "id": "w1446450345",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "276",
+"addr:street": "新沙路",
 "name": "新沙·集悦汇",
 "name:en": "Xinsha JiYueHui",
 "shop": "mall"
@@ -19657,6 +23967,10 @@
 {
 "id": "w1446492156",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "1-2",
+"addr:street": "白石厦路",
 "amenity": "hospital",
 "name": "深圳永福医院",
 "name:en": "Shenzhen Yongfu Hospital"
@@ -19688,6 +24002,8 @@
 {
 "id": "w1447278736",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
 "amenity": "marketplace",
 "name": "大磡综合市场",
 "name:en": "Dakan General Market",
@@ -19748,6 +24064,16 @@
 "area": 2.1476
 },
 {
+"id": "w1447835006",
+"tags": {
+"amenity": "police",
+"name": "共乐派出所"
+},
+"lat": 22.575215550000003,
+"lon": 113.84561769999999,
+"area": 0.0097
+},
+{
 "id": "w1447983926",
 "tags": {
 "name": "凤凰山商业中心",
@@ -19761,6 +24087,8 @@
 {
 "id": "w1447983968",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
 "name": "金凤凰购物广场",
 "name:en": "Jinfenghuang Shopping Mall",
 "shop": "mall"
@@ -19781,6 +24109,19 @@
 "area": 0.0043
 },
 {
+"id": "w1447984185",
+"tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"amenity": "police",
+"name": "凤凰派出所",
+"name:en": "Fenghuang Police Station"
+},
+"lat": 22.696153250000002,
+"lon": 113.8293888,
+"area": 0.0027
+},
+{
 "id": "w1448136919",
 "tags": {
 "leisure": "park",
@@ -19790,6 +24131,21 @@
 "lat": 22.70814565,
 "lon": 113.80292635,
 "area": 0.0152
+},
+{
+"id": "w1448137172",
+"tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "3",
+"addr:street": "万里路",
+"amenity": "police",
+"name": "福海派出所",
+"name:en": "Fuhai Police Station"
+},
+"lat": 22.706561100000002,
+"lon": 113.80755965,
+"area": 0.0068
 },
 {
 "id": "w1448137175",
@@ -19805,6 +24161,8 @@
 {
 "id": "w1448137178",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
 "name": "百盛佳时代广场",
 "name:en": "Baishengjia Times Square",
 "shop": "mall"
@@ -19812,6 +24170,17 @@
 "lat": 22.70665365,
 "lon": 113.80623274999999,
 "area": 0.0096
+},
+{
+"id": "w1448147529",
+"tags": {
+"amenity": "police",
+"name": "南沙派出所",
+"name:en": "Nansha Police Station"
+},
+"lat": 22.72013355,
+"lon": 113.80011515000001,
+"area": 0.0091
 },
 {
 "id": "w1448147534",
@@ -19867,6 +24236,16 @@
 "area": 0.0082
 },
 {
+"id": "w1448360117",
+"tags": {
+"amenity": "police",
+"name": "镇南派出所"
+},
+"lat": 22.569613699999998,
+"lon": 113.9031645,
+"area": 0.0009
+},
+{
 "id": "w1448538295",
 "tags": {
 "name": "福万家购物中心",
@@ -19889,6 +24268,10 @@
 {
 "id": "w1448539908",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "36",
+"addr:street": "东方大道",
 "name": "东方新天地",
 "name:en": "One East",
 "shop": "mall"
@@ -19910,13 +24293,44 @@
 {
 "id": "w1448550277",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "坪山区",
+"addr:housenumber": "6",
+"addr:street": "文祥路",
 "name": "深圳自然博物馆",
 "name:en": "Shenzhen Natural History Museum",
+"opening_hours": "Tu-Su 10:00-18:00",
 "tourism": "museum"
 },
 "lat": 22.695537799999997,
 "lon": 114.35878025,
 "area": 0.0591
+},
+{
+"id": "w1449271162",
+"tags": {
+"amenity": "police",
+"name": "深圳市公安局交通警察支队龙华大队观澜中队",
+"name:en": "Shenzhen Traffic Police Longhua Brigade Guanlan Squadron"
+},
+"lat": 22.699852049999997,
+"lon": 114.03514544999999,
+"area": 0.011
+},
+{
+"id": "w1449271192",
+"tags": {
+"addr:city": "深圳市",
+"addr:district": "龙华区",
+"addr:housenumber": "61",
+"addr:street": "人民路",
+"amenity": "police",
+"name": "福民派出所",
+"name:en": "Fumin Police Station"
+},
+"lat": 22.70588785,
+"lon": 114.035809,
+"area": 0.0103
 },
 {
 "id": "w1449565917",
@@ -19959,6 +24373,16 @@
 "area": 0.0058
 },
 {
+"id": "w1449937717",
+"tags": {
+"amenity": "police",
+"name": "石岩派出所"
+},
+"lat": 22.682533499999998,
+"lon": 113.93206985,
+"area": 0.0022
+},
+{
 "id": "w1450163602",
 "tags": {
 "name": "乐汇东街",
@@ -19970,8 +24394,32 @@
 "area": 0.0075
 },
 {
+"id": "w1450163630",
+"tags": {
+"amenity": "police",
+"name": "坂田派出所",
+"name:en": "Bantian Police Station"
+},
+"lat": 22.63100165,
+"lon": 114.05387834999999,
+"area": 0.0082
+},
+{
+"id": "w1450163747",
+"tags": {
+"amenity": "police",
+"name": "大发埔社区警务室",
+"name:en": "Dafapu Police Service Point"
+},
+"lat": 22.633936249999998,
+"lon": 114.05269725,
+"area": 0.0012
+},
+{
 "id": "w1450439459",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙华区",
 "name": "星潮泰未来城",
 "name:en": "Xingchaotai Future City",
 "shop": "mall"
@@ -19983,6 +24431,9 @@
 {
 "id": "w1450661795",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙华区",
+"addr:street": "民治大道",
 "name": "万众城商业广场",
 "name:en": "Wanzhong City Commercial Plaza",
 "shop": "mall"
@@ -19994,6 +24445,10 @@
 {
 "id": "w1450789392",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙华区",
+"addr:housenumber": "12",
+"addr:street": "民治大道",
 "name": "龙华印象汇",
 "name:en": "Longhua Inreach",
 "shop": "mall"
@@ -20005,6 +24460,8 @@
 {
 "id": "w1451008714",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙岗区",
 "name": "五和伍城市广场",
 "name:en": "Wuhewu City Plaza",
 "shop": "mall"
@@ -20016,6 +24473,10 @@
 {
 "id": "w1451008719",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙岗区",
+"addr:housenumber": "9",
+"addr:street": "雅园路",
 "name": "宝银商业广场",
 "name:en": "Baoyin Shopping Mall",
 "shop": "mall"
@@ -20027,6 +24488,10 @@
 {
 "id": "w1451008743",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙岗区",
+"addr:housenumber": "80",
+"addr:street": "五和大道",
 "name": "五和商业广场",
 "name:en": "Wuhe Shopping Mall",
 "shop": "mall"
@@ -20059,8 +24524,11 @@
 {
 "id": "w1452859786",
 "tags": {
+"addr:street": "吉华路",
 "name": "景华汇购物中心",
 "name:en": "Jinghua Hui Shopping Center",
+"opening_hours": "Su-Th 10:00-22:00; Fr-Sa 10:00-22:30",
+"phone": "075589589173",
 "shop": "mall"
 },
 "lat": 22.6144613,
@@ -20070,6 +24538,10 @@
 {
 "id": "w1453013510",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙岗区",
+"addr:housenumber": "18",
+"addr:street": "布龙路",
 "name": "赛格ECO购物广场",
 "name:en": "SEG ECO Shopping Plaza",
 "shop": "mall"
@@ -20091,6 +24563,8 @@
 {
 "id": "w1454356461",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙岗区",
 "leisure": "park",
 "name": "布吉思清公园",
 "name:en": "Buji Siqing Park"
@@ -20102,9 +24576,15 @@
 {
 "id": "w1454560444",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙岗区",
+"addr:housenumber": "175",
+"addr:street": "吉华路",
 "amenity": "hospital",
 "name": "深圳市龙岗区第七人民医院(龙岭院区)",
-"name:en": "Shenzhen Longgang District Seventh People’s Hospital (Longling Branch)"
+"name:en": "Shenzhen Longgang District Seventh People’s Hospital (Longling Branch)",
+"opening_hours": "Mo-Su 08:00-21:00",
+"phone": "0755-28740471"
 },
 "lat": 22.6082715,
 "lon": 114.11067835,
@@ -20119,6 +24599,16 @@
 "lat": 22.632823199999997,
 "lon": 113.83654275,
 "area": 0.0233
+},
+{
+"id": "w1454614835",
+"tags": {
+"amenity": "police",
+"name": "黄田派出所"
+},
+"lat": 22.6323138,
+"lon": 113.83533595,
+"area": 0.012
 },
 {
 "id": "w1454614854",
@@ -20173,6 +24663,8 @@
 {
 "id": "w1454835366",
 "tags": {
+"addr:housenumber": "25",
+"addr:street": "东隆路",
 "leisure": "park",
 "name": "东坑社区公园"
 },
@@ -20234,8 +24726,13 @@
 {
 "id": "w1455699525",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "光明区",
+"addr:housenumber": "8",
+"addr:street": "光辉大道",
 "name": "深圳科学技术馆",
 "name:en": "Shenzhen Science & Technology Museum",
+"opening_hours": "We-Fr 10:00-17:00; Sa-Su,PH 09:30-17:00",
 "tourism": "museum",
 "wikidata": "Q134578940",
 "wikipedia": "zh:深圳科学技术馆"
@@ -20287,6 +24784,10 @@
 {
 "id": "w1458913519",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "68",
+"addr:street": "固兴路",
 "amenity": "hospital",
 "name": "深圳市五洲中医院"
 },
@@ -20297,8 +24798,13 @@
 {
 "id": "w1459184343",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "16",
+"addr:street": "宝田一路",
 "leisure": "park",
-"name": "臣田儿童友好公园"
+"name": "臣田儿童友好公园",
+"opening_hours": "24/7"
 },
 "lat": 22.59595505,
 "lon": 113.87221199999999,
@@ -20313,6 +24819,16 @@
 "lat": 22.56332695,
 "lon": 114.46189435,
 "area": 0.0248
+},
+{
+"id": "w1461104994",
+"tags": {
+"amenity": "police",
+"name": "深圳市公安局交通管理支队宝安大队西乡中队"
+},
+"lat": 22.57443795,
+"lon": 113.84470105,
+"area": 0.0015
 },
 {
 "id": "w1462198590",
@@ -20521,6 +25037,16 @@
 "area": 0.0024
 },
 {
+"id": "w1473808883",
+"tags": {
+"amenity": "police",
+"name": "清水河派出所"
+},
+"lat": 22.5690147,
+"lon": 114.0931667,
+"area": 0.0006
+},
+{
 "id": "w1475582097",
 "tags": {
 "leisure": "park",
@@ -20561,6 +25087,21 @@
 "area": 0.0249
 },
 {
+"id": "w1484978737",
+"tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "8号",
+"addr:street": "西丽南路",
+"amenity": "police",
+"name": "西丽派出所",
+"phone": "0755-26629999"
+},
+"lat": 22.57270045,
+"lon": 113.9441423,
+"area": 0.0041
+},
+{
 "id": "w1493295452",
 "tags": {
 "leisure": "park",
@@ -20570,6 +25111,21 @@
 "lat": 22.730518449999998,
 "lon": 114.2266813,
 "area": 0.0041
+},
+{
+"id": "w1493549118",
+"tags": {
+"addr:city": "深圳市",
+"addr:district": "龙岗区",
+"addr:housenumber": "88",
+"addr:street": "清林中路",
+"amenity": "police",
+"name": "新城派出所",
+"name:en": "Xincheng Police Station"
+},
+"lat": 22.7228473,
+"lon": 114.2286783,
+"area": 0.0025
 },
 {
 "id": "w1493860788",
@@ -20640,6 +25196,8 @@
 {
 "id": "w1494517953",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "福田区",
 "leisure": "park",
 "name": "口岸社区运动公园"
 },
@@ -20650,6 +25208,8 @@
 {
 "id": "w1494523720",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙岗区",
 "leisure": "park",
 "name": "宝龙龙湖文体公园",
 "name:en": "Baolong Longhu Culture and Sports Park"
@@ -20661,6 +25221,8 @@
 {
 "id": "w1494524920",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "光明区",
 "leisure": "park",
 "name": "甲子塘文体公园"
 },
@@ -20671,6 +25233,8 @@
 {
 "id": "w1494587245",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "光明区",
 "leisure": "park",
 "name": "凤凰社区奶头山体育公园"
 },
@@ -20681,6 +25245,8 @@
 {
 "id": "w1494594469",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙华区",
 "leisure": "park",
 "name": "银星体育公园"
 },
@@ -20724,6 +25290,10 @@
 {
 "id": "w1495458985",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙岗区",
+"addr:housenumber": "7188",
+"addr:street": "龙翔大道",
 "name": "万科广场",
 "name:en": "Vanke Mall",
 "shop": "mall"
@@ -20766,6 +25336,10 @@
 {
 "id": "w1498111492",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙岗区",
+"addr:housenumber": "297",
+"addr:street": "平吉大道北",
 "name": "华南西苑广场",
 "name:en": "Huanan Xiyuan Plaza",
 "shop": "mall"
@@ -20793,6 +25367,16 @@
 "lat": 22.7007181,
 "lon": 114.41101760000001,
 "area": 0.0131
+},
+{
+"id": "w1499333400",
+"tags": {
+"amenity": "police",
+"name": "横岗交警中队"
+},
+"lat": 22.647142350000003,
+"lon": 114.1860641,
+"area": 0.0092
 },
 {
 "id": "w1499913534",
@@ -20858,6 +25442,10 @@
 {
 "id": "w1501623550",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙岗区",
+"addr:housenumber": "10",
+"addr:street": "东林一路",
 "amenity": "hospital",
 "name": "深圳侨爱中医院",
 "name:en": "Shenzhen Qiaoai Chinese Medicine Hospital"
@@ -20964,7 +25552,8 @@
 "id": "w1511565830",
 "tags": {
 "leisure": "park",
-"name": "罗湖区水情教育基地"
+"name": "罗湖区水情教育基地",
+"opening_hours": "07:00-18:00"
 },
 "lat": 22.5908113,
 "lon": 114.09456255,
@@ -21037,7 +25626,8 @@
 "id": "w1521666342",
 "tags": {
 "amenity": "hospital",
-"name": "简竹护理院"
+"name": "简竹护理院",
+"phone": "0755-28740471"
 },
 "lat": 22.62838575,
 "lon": 114.1602398,
@@ -21062,6 +25652,16 @@
 "lat": 22.590021399999998,
 "lon": 114.28442005,
 "area": 0.0038
+},
+{
+"id": "w1527620053",
+"tags": {
+"amenity": "police",
+"name": "深圳市公安局龙岗分局水径派出所"
+},
+"lat": 22.616205700000002,
+"lon": 114.1074776,
+"area": 0.0082
 },
 {
 "id": "w1529163207",
@@ -21104,6 +25704,17 @@
 "lat": 22.56250885,
 "lon": 114.21592205,
 "area": 0.0243
+},
+{
+"id": "w1533202050",
+"tags": {
+"information": "visitor_centre",
+"name": "恩上水库服务站",
+"tourism": "information"
+},
+"lat": 22.57153305,
+"lon": 114.23081765,
+"area": 0.0002
 },
 {
 "id": "w1534627489",
@@ -21399,7 +26010,8 @@
 "id": "w1553393725",
 "tags": {
 "amenity": "library",
-"name": "遇见图书馆"
+"name": "遇见图书馆",
+"opening_hours": "Mo,We-Su 12:00-19:00"
 },
 "lat": 22.5938661,
 "lon": 114.255383,
@@ -21414,6 +26026,16 @@
 "lat": 22.591396500000002,
 "lon": 114.18475534999999,
 "area": 0.0034
+},
+{
+"id": "w1554172594",
+"tags": {
+"amenity": "police",
+"name": "横岗派出所"
+},
+"lat": 22.6595117,
+"lon": 114.1981815,
+"area": 0.0016
 },
 {
 "id": "w1560648163",
@@ -21603,6 +26225,9 @@
 {
 "id": "w1568172348",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "光明区",
+"addr:street": "公常路",
 "leisure": "park",
 "name": "惠和公园"
 },
@@ -21744,11 +26369,23 @@
 "tags": {
 "amenity": "library",
 "name": "南山图书馆",
-"name:en": "Nanshan Library"
+"name:en": "Nanshan Library",
+"phone": "+86 755 2652 0380"
 },
 "lat": 22.5380134,
 "lon": 113.91734915,
 "area": 0.0049
+},
+{
+"id": "r7787434",
+"tags": {
+"amenity": "police",
+"name": "深圳机场公安综合大楼",
+"name:en": "Complex Building for Public Security of Shenzhen Airport"
+},
+"lat": 22.6242031,
+"lon": 113.8144439,
+"area": 0.0055
 },
 {
 "id": "r8133384",
@@ -21764,6 +26401,10 @@
 {
 "id": "r8841461",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "33号",
+"addr:street": "文心五路",
 "name": "海岸城购物中心",
 "name:en": "Coastal City",
 "shop": "mall"
@@ -21777,6 +26418,7 @@
 "tags": {
 "name": "东部华侨城 - 茶溪谷",
 "name:en": "OCT East Tea Stream Valley",
+"opening_hours": "24/7 closed",
 "tourism": "theme_park"
 },
 "lat": 22.638218700000003,
@@ -21797,6 +26439,9 @@
 {
 "id": "r9079150",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "盐田区",
+"addr:street": "东部华侨城茶溪谷",
 "name": "茵特拉根小镇",
 "name:en": "Interlaken Town",
 "tourism": "theme_park"
@@ -21808,6 +26453,10 @@
 {
 "id": "r9249893",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "3021",
+"addr:street": "裕安一路",
 "leisure": "stadium",
 "name": "宝安体育场",
 "name:en": "Bao’an Stadium"
@@ -21854,6 +26503,10 @@
 {
 "id": "r10129044",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "龙岗区",
+"addr:housenumber": "2001号",
+"addr:street": "龙翔大道",
 "amenity": "university",
 "name": "香港中文大学（深圳）",
 "name:en": "The Chinese University of Hong Kong, Shenzhen",
@@ -21880,7 +26533,8 @@
 "tags": {
 "leisure": "park",
 "name": "平湖生态园",
-"name:en": "Pinghu Ecological Garden"
+"name:en": "Pinghu Ecological Garden",
+"opening_hours": "24/7"
 },
 "lat": 22.67697165,
 "lon": 114.10646159999999,
@@ -21889,6 +26543,10 @@
 {
 "id": "r10703129",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "3",
+"addr:street": "龙井二路",
 "name": "宝城三区购物中心",
 "name:en": "Baocheng Area 3 Shopping Center",
 "shop": "mall"
@@ -21902,6 +26560,7 @@
 "tags": {
 "name": "宝能环球汇",
 "name:en": "Baoneng Global",
+"opening_hours": "Su-Th 10:00-22:00;Fr-Sa 10:00-22:30",
 "shop": "mall"
 },
 "lat": 22.59354345,
@@ -21925,6 +26584,7 @@
 "tags": {
 "name": "小梅沙海洋世界",
 "name:en": "Xiaomeisha Ocean World",
+"opening_hours": "closed",
 "tourism": "theme_park"
 },
 "lat": 22.60636425,
@@ -21934,9 +26594,14 @@
 {
 "id": "r13900447",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "3688",
+"addr:street": "南海大道",
 "amenity": "university",
 "name": "深圳大学(粤海校区)",
 "name:en": "Shenzhen University (Yuehai Campus)",
+"phone": "+86 755 2653 6114",
 "wikidata": "Q1945756",
 "wikipedia": "zh:深圳大学"
 },
@@ -21960,7 +26625,8 @@
 "tags": {
 "leisure": "park",
 "name": "大浪文化公园",
-"name:en": "Dalang Cultral Park"
+"name:en": "Dalang Cultral Park",
+"opening_hours": "24/7"
 },
 "lat": 22.6725119,
 "lon": 113.98255015000001,
@@ -21985,6 +26651,7 @@
 "leisure": "park",
 "name": "凤凰山农趣谷",
 "name:en": "Fenghuangshan Agricultural Park",
+"opening_hours": "Mo-Su 08:00-22:00; CNY off",
 "tourism": "attraction"
 },
 "lat": 22.677565350000002,
@@ -22027,9 +26694,12 @@
 {
 "id": "r15626536",
 "tags": {
+"addr:housenumber": "2199",
+"addr:street": "丽水路",
 "amenity": "university",
 "name": "北京大学（深圳研究生院）",
-"name:en": "Peking University (Shenzhen Graduate School)"
+"name:en": "Peking University (Shenzhen Graduate School)",
+"opening_hours": "24/7"
 },
 "lat": 22.59534625,
 "lon": 113.97215994999999,
@@ -22038,9 +26708,14 @@
 {
 "id": "r15626537",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:street": "西丽大学城清华园区",
 "amenity": "university",
 "name": "清华大学（深圳国际研究生院）",
 "name:en": "Tsinghua University (Shenzhen International Graduate School)",
+"opening_hours": "24/7",
+"phone": "+86 755 8695 6583",
 "wikidata": "Q15908712",
 "wikipedia": "zh:清华大学深圳国际研究生院"
 },
@@ -22081,11 +26756,29 @@
 "area": 0.2219
 },
 {
+"id": "r15697783",
+"tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "128号",
+"addr:street": "龙井路",
+"amenity": "police",
+"name": "深圳市交警局西丽车辆管理所",
+"name:en": "Shenzhen Traffic Police Bureau Xili Vehicle Management Office",
+"opening_hours": "Mo-Fr 09:00-12:00,14:00-17:00"
+},
+"lat": 22.56425395,
+"lon": 113.96537935,
+"area": 0.0159
+},
+{
 "id": "r15817843",
 "tags": {
 "leisure": "park",
 "name": "龙华绿廊公园",
-"name:en": "Longhua Green Corridor Park"
+"name:en": "Longhua Green Corridor Park",
+"opening_hours": "24/7",
+"phone": "+86 0755 21010471"
 },
 "lat": 22.62902055,
 "lon": 114.01577605,
@@ -22162,13 +26855,34 @@
 {
 "id": "r17068951",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "9013",
+"addr:street": "深南大道",
 "name": "何香凝美术馆",
 "name:en": "He Xiangning Art Museum",
+"opening_hours": "Tu-Su,PH 9:30-17:00",
+"phone": "+86 755 26604540;+86 755 26918118",
 "tourism": "gallery"
 },
 "lat": 22.5359828,
 "lon": 113.97674245,
 "area": 0.0033
+},
+{
+"id": "r17172852",
+"tags": {
+"addr:housenumber": "35",
+"addr:street": "龙观西路",
+"amenity": "police",
+"name": "龙华派出所",
+"name:en": "Longhua Local Police Station",
+"opening_hours": "24/7",
+"phone": "+86 755 2813 6110"
+},
+"lat": 22.662683,
+"lon": 113.99860054999999,
+"area": 0.0029
 },
 {
 "id": "r17241569",
@@ -22195,9 +26909,13 @@
 {
 "id": "r17354200",
 "tags": {
+"addr:housenumber": "1",
+"addr:street": "振华西路",
 "leisure": "park",
 "name": "深圳中心公园",
 "name:en": "Shenzhen Central Park",
+"opening_hours": "Mo-Su 06:00-23:00",
+"phone": "+86 0755 83231133",
 "wikidata": "Q15925790",
 "wikipedia": "zh:深圳市中心公园"
 },
@@ -22208,6 +26926,10 @@
 {
 "id": "r17436625",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "7098",
+"addr:street": "留仙大道",
 "amenity": "university",
 "name": "深圳职业技术大学(西丽校区留仙洞园区)",
 "name:en": "Shenzhen Polytechnic University (Xili Campus Liuxiandong Park)",
@@ -22221,6 +26943,10 @@
 {
 "id": "r17436626",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
+"addr:housenumber": "113",
+"addr:street": "同发路",
 "amenity": "university",
 "name": "深圳职业技术大学(西丽校区官龙山园区)",
 "name:en": "Shenzhen Polytechnic University (Xili Campus Guanlongshan Park)",
@@ -22288,6 +27014,8 @@
 {
 "id": "r18002032",
 "tags": {
+"addr:housenumber": "1",
+"addr:street": "公常路",
 "amenity": "university",
 "name": "深圳理工大学(主校区)",
 "name:en": "Shenzhen University of Advanced Techology (Main Campus)"
@@ -22299,6 +27027,8 @@
 {
 "id": "r18459537",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
 "leisure": "park",
 "name": "深圳人才公园",
 "name:en": "Shenzhen Talent Park"
@@ -22312,7 +27042,8 @@
 "tags": {
 "leisure": "park",
 "name": "建设路街心公园",
-"name:en": "Jianshe Road Street Park"
+"name:en": "Jianshe Road Street Park",
+"opening_hours": "24/7"
 },
 "lat": 22.649329199999997,
 "lon": 114.00665660000001,
@@ -22323,7 +27054,8 @@
 "tags": {
 "leisure": "park",
 "name": "阳台山东门入口公园",
-"name:en": "Yangtai Mountain East Entrance Park"
+"name:en": "Yangtai Mountain East Entrance Park",
+"opening_hours": "24/7"
 },
 "lat": 22.648401200000002,
 "lon": 113.99676135,
@@ -22385,6 +27117,8 @@
 {
 "id": "r19506967",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "南山区",
 "leisure": "park",
 "name": "白芒拓印",
 "name:en": "Baimang Imprint"
@@ -22427,6 +27161,10 @@
 {
 "id": "r19673011",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "20",
+"addr:street": "银田路",
 "amenity": "hospital",
 "name": "深圳恒生医院",
 "name:en": "Shenzhen Heng Sheng Hospital"
@@ -22449,6 +27187,10 @@
 {
 "id": "r19740575",
 "tags": {
+"addr:city": "深圳市",
+"addr:district": "宝安区",
+"addr:housenumber": "3",
+"addr:street": "海城路",
 "name": "宝安大仟里",
 "name:en": "Maxland",
 "shop": "mall"

@@ -1040,48 +1040,9 @@ export function MapView(p: Props) {
     foliage.castShadow = true;
     scene.add(foliage);
 
-    /* ---- street facilities: schools, clinics, police/fire posts, petrol
-       stations, parking, post offices — small coloured blocks with an
-       emoji sign, dotted along the roads so the miniature reads as a
-       lived-in city, not just landmark towers. Decorative (the playable
-       places are the labelled buildings), placed deterministically. ---- */
-    {
-      const FACILITIES: { emoji: string; color: number }[] = [
-        { emoji: "🏫", color: 0xf5b942 }, { emoji: "🏥", color: 0xf8fafc }, { emoji: "🚓", color: 0x3b82f6 },
-        { emoji: "🚒", color: 0xef4444 }, { emoji: "⛽", color: 0xf97316 }, { emoji: "🅿️", color: 0x64748b },
-        { emoji: "📮", color: 0xdc2626 }, { emoji: "🏪", color: 0x22c55e }, { emoji: "🛒", color: 0xeab308 },
-        { emoji: "💊", color: 0x14b8a6 }, { emoji: "🏫", color: 0xf5b942 }, { emoji: "🏥", color: 0xf8fafc },
-        { emoji: "🚓", color: 0x3b82f6 }, { emoji: "⛽", color: 0xf97316 }, { emoji: "🏪", color: 0x22c55e },
-        { emoji: "🅿️", color: 0x64748b },
-      ];
-      let placedFac = 0;
-      for (let i = 0; i < 260 && placedFac < FACILITIES.length; i++) {
-        const x = -36 + rnd() * 72;
-        const z = -20 + rnd() * 33;
-        if (z > coastZ(cityKey, x) - 1.8) continue;
-        if (nearLoc(x, z) || nearMountain(x, z) || nearLake(x, z)) continue;
-        // beside a road but not on it: 1.7–3.6 units from the nearest centreline
-        let dRoad = Infinity;
-        for (const r of roads) {
-          const dx = r.x2 - r.x1;
-          const dz = r.z2 - r.z1;
-          const t = Math.max(0, Math.min(1, ((x - r.x1) * dx + (z - r.z1) * dz) / (dx * dx + dz * dz)));
-          dRoad = Math.min(dRoad, Math.hypot(x - (r.x1 + dx * t), z - (r.z1 + dz * t)));
-        }
-        if (dRoad < 1.7 || dRoad > 3.6) continue;
-        const fac = FACILITIES[placedFac]!;
-        const block = new THREE.Mesh(new THREE.BoxGeometry(1.25, 0.85, 1.25), new THREE.MeshStandardMaterial({ color: fac.color, roughness: 0.85 }));
-        block.position.set(x, LAND + 0.43, z);
-        block.castShadow = true;
-        block.receiveShadow = true;
-        scene.add(block);
-        const sign = emojiSprite(fac.emoji, fac.color);
-        sign.scale.set(1.25, 1.25, 1);
-        sign.position.set(x, LAND + 1.75, z);
-        scene.add(sign);
-        placedFac++;
-      }
-    }
+    /* (The random decorative 🏥🚓⛽ street blocks are gone: real hospitals,
+       pharmacies and police stations from OpenStreetMap are pins on the
+       map now, with their real names, addresses and phone numbers.) */
 
     // clouds: clusters of flattened low-poly puffs that soften at dusk
     const clouds: THREE.Group[] = [];
