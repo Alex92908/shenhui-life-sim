@@ -1437,6 +1437,8 @@ export function MapView(p: Props) {
     let moved = 0;
     let px = 0;
     let py = 0;
+    let hover: { x: number; y: number } | null = null;
+    const HOVER_R = 140; // px around the cursor where every label shows
     const onDown = (e: PointerEvent) => {
       dragging = true;
       camRef.current.lastUser = performance.now();
@@ -1490,6 +1492,17 @@ export function MapView(p: Props) {
     // page, pushing the header and side panels out of view.
     const wheelTarget = mount.parentElement ?? dom;
     wheelTarget.addEventListener("wheel", onWheel, { passive: false });
+    // Hover reveal: where the mouse rests, every label around it shows
+    // (past the density cap and the zoomed-out cut), so you can read a
+    // crowded neighbourhood without zooming in. Touch has no hover.
+    const onHover = (e: PointerEvent) => {
+      if (e.pointerType === "touch" || dragging) { hover = null; return; }
+      const r = mount.getBoundingClientRect();
+      hover = { x: e.clientX - r.left, y: e.clientY - r.top };
+    };
+    const onHoverOut = () => { hover = null; };
+    wheelTarget.addEventListener("pointermove", onHover);
+    wheelTarget.addEventListener("pointerleave", onHoverOut);
 
     const resize = () => {
       const w = mount.clientWidth;
@@ -1869,7 +1882,7 @@ export function MapView(p: Props) {
       // how many place labels may show at once (zoomed out it is the city view)
       const locCap = density === "all" ? 999 : overview ? (density === "few" ? 8 : 22) : density === "few" ? 14 : 60;
       let locShown = 0;
-      const cands: { chip: Chip; sx: number; sy: number; prio: number }[] = [];
+      const cands: { chip: Chip; sx: number; sy: number; prio: number; near: boolean }[] = [];
       for (const chip of chips) {
         const pos = chip.getPos();
         v3.set(pos.x, pos.y, pos.z).project(camera);
@@ -1887,11 +1900,13 @@ export function MapView(p: Props) {
           continue;
         }
         const dCam = Math.hypot(pos.x - cam.tx, pos.z - cam.tz);
+        const dHover = hover ? Math.hypot(sx - hover.x, sy - hover.y) : Infinity;
+        const near = dHover < HOVER_R;
         let prio: number;
         if (chip.kind === "actor") {
           if (chip.self) prio = 0;
           else {
-            if ((overview && dCam > 20) || (density !== "all" && dCam > (density === "few" ? 6 : 12))) {
+            if (!near && ((overview && dCam > 20) || (density !== "all" && dCam > (density === "few" ? 6 : 12)))) {
               chip.visible = false;
               chip.el.style.display = "none";
               continue;
@@ -1901,7 +1916,7 @@ export function MapView(p: Props) {
         } else if (chip.kind === "loc") {
           prio = (chip.locId !== undefined && chip.locId === propsRef.current.selfLocId ? 1 : 3) + dCam / 60;
         } else if (chip.station || chip.place) {
-          if (overview || dCam > (chip.place ? 18 : 14)) {
+          if (!near && (overview || dCam > (chip.place ? 18 : 14))) {
             chip.visible = false;
             chip.el.style.display = "none";
             continue;
@@ -1922,6 +1937,8 @@ export function MapView(p: Props) {
           }
           prio = 9;
         }
+        // around the cursor: labels win over the rest, closest first
+        if (near && !chip.self && (chip.kind !== "road" || chip.station || chip.place)) prio = 0.5 + dHover / HOVER_R;
         // the English subtitle duplicates the name in English mode, and is
         // noise at city scale: show it only zoomed in, in Chinese
         if (chip.sub) {
@@ -1936,17 +1953,17 @@ export function MapView(p: Props) {
           chip.lastText = txt;
         }
         if (chip.w === 0) continue;
-        cands.push({ chip, sx, sy, prio });
+        cands.push({ chip, sx, sy, prio, near });
       }
       if (redo) {
         cands.sort((a, b) => a.prio - b.prio);
         for (const c of cands) {
-          if (c.chip.kind === "loc" && !c.chip.self && c.chip.locId !== propsRef.current.selfLocId && c.chip.locId !== propsRef.current.destLocId && locShown >= locCap) {
+          if (!c.near && c.chip.kind === "loc" && !c.chip.self && c.chip.locId !== propsRef.current.selfLocId && c.chip.locId !== propsRef.current.destLocId && locShown >= locCap) {
             c.chip.visible = false;
             c.chip.el.style.display = "none";
             continue;
           }
-          const hw = c.chip.w / 2 + (density === "all" ? 4 : 9);
+          const hw = c.chip.w / 2 + (density === "all" || c.near ? 3 : 9);
           /* Edge clamp: pull the anchor inward so the WHOLE chip stays on
              screen — a place at the map's edge used to get its label sliced
              in half by the overlay edge. The delta is remembered on the
@@ -1996,6 +2013,8 @@ export function MapView(p: Props) {
       dom.removeEventListener("pointermove", onMove);
       dom.removeEventListener("pointerup", onUp);
       wheelTarget.removeEventListener("wheel", onWheel);
+      wheelTarget.removeEventListener("pointermove", onHover);
+      wheelTarget.removeEventListener("pointerleave", onHoverOut);
       renderer.dispose();
       mount.removeChild(renderer.domElement);
       labels.innerHTML = "";
