@@ -8,11 +8,14 @@
    Coverage: interface chrome (header, panels, tabs, buttons, actions),
    place names (game locations + OSM English names), companies, city
    events, achievements, weekly goals, emergency services, and templated
-   strings with numbers via PATTERNS. Long narrative text (NPC chat, story
-   scenes) is not translated yet. Add entries to EN to extend coverage. */
+   strings with numbers via PATTERNS, plus the generated i18n-en.ts, which
+   covers the rest of the client's text (NPC chat, events, scenes) as exact
+   strings and {n} templates. Add entries to EN to override or extend. */
 import { COMPANIES, LOC_EN, PLACE_KINDS, getLocations, placesForCity } from "./data";
 import { SZ_STATION_EN } from "./metro-sz";
 import { ACHIEVEMENTS, WEEKLY_GOALS } from "./meta";
+import { EN_EXACT, EN_TEMPLATES } from "./i18n-en";
+import { SZ_PLACE_EN_AUTO, SZ_STATION_EN_AUTO } from "./places-sz-en";
 
 export type Lang = "zh" | "en";
 export const LANGS: { id: Lang; label: string }[] = [{ id: "zh", label: "中文" }, { id: "en", label: "EN" }];
@@ -31,6 +34,7 @@ export function setLangStored(l: Lang): void {
 
 /* ---- dictionary: exact strings (trimmed) ---- */
 const EN: Record<string, string> = {
+  "深圳国际交流中心": "Shenzhen International Exchange Center", "频道 ·": " channel ·", "频道": " channel", "人在线：": "online: ",
   // header / chrome
   "深惠人生模拟电脑高配版": "Shenzhen–Huizhou Life Sim", "深惠人生模拟": "Shenzhen–Huizhou Life Sim",
   "📋 任务": "📋 Tasks", "📤 分享": "📤 Share", "📱 手机": "📱 Phone", "😴 回家睡觉": "😴 Go home & sleep", "人在线": "online",
@@ -171,7 +175,7 @@ const EN: Record<string, string> = {
   "去哪里 · 点了就出发，选中的地点详情在右侧「📍 地点」里": "Where to · tap to go; details appear in 📍 Place on the right", "·有人": "· players here",
   "拖动旋转 · 滚轮/＋－缩放（右下角显示比例） · 点建筑或标签前往 · 左下小地图看全城、点它定位镜头 · 天色按当地真实时间、云雨按真实天气走 · 右下 ☀️🌇🌙 预览时间 · 🕐 回到真实时间 · 🎥 延时演示 · 🎬 电影镜头": "Drag to rotate · scroll/＋－ to zoom · tap a building or label to go · minimap bottom-left · sky follows local time and live weather · ☀️🌇🌙 preview time · 🕐 back to real time · 🎥 time-lapse · 🎬 cinematic camera",
   "🗺️ 小地图 ·": "🗺️ Minimap ·", "全城": "whole city", "收起 ▾": "Hide ▾", "⚪ 你 · 🟡 NPC/玩家 · 🔴 目的地 · 点图定位镜头": "⚪ You · 🟡 NPC/players · 🔴 destination · tap to move the camera",
-  "💬 弹幕": "💬 Danmaku", "开": "on", "🚄 切换城市 · 去": "🚄 Switch city · to", "固定": "Pin",
+  "💬 弹幕": "💬 Danmaku ", "开": "on", "关": "off", "🚄 切换城市 · 去": "🚄 Switch city · to ", "固定": "Pin",
   "跳到白天": "Jump to day", "跳到黄昏": "Jump to dusk", "跳到夜晚": "Jump to night", "回到真实时间：天色按深圳/惠州当地此刻走": "Back to real time",
   "延时演示：一昼夜30秒，看昼夜光影全程": "Time-lapse: a full day in 30 s", "关闭电影镜头": "Turn off cinematic camera", "当前缩放比例（⌂ 回到 100%）": "Zoom (⌂ resets to 100%)",
   "放大地图": "Zoom in", "缩小地图": "Zoom out", "重置视角": "Reset view", "收起小地图": "Hide minimap", "标签：精简（点一下切换）": "Labels: few (tap to change)", "标签：标准（点一下切换）": "Labels: standard (tap to change)", "标签：全部（点一下切换）": "Labels: all (tap to change)",
@@ -252,6 +256,8 @@ const WORDS: Record<string, string> = {
   "大部晴朗": "Mostly clear", "晴间多云": "Partly cloudy", "雷阵雨": "Thunderstorms", "毛毛雨": "Drizzle", "阵雨": "Showers", "小雨": "Light rain", "中雨": "Rain", "大雨": "Heavy rain", "暴雨": "Rainstorm",
   "多云": "Cloudy", "阴": "Overcast", "晴": "Clear", "雾": "Fog", "深圳实况": "Shenzhen live", "惠州实况": "Huizhou live", "实况": "live",
   "食材": "Groceries", "体质": "Fitness", "技能": "Skill", "现金": "cash", "转入理财": "into investments", "可能": "maybe", "约一半概率转手": "~50% chance to resell for", "人情": "Goodwill", "关系": "Bond",
+  "雾凇": "Rime fog", "小毛毛雨": "Light drizzle", "浓毛毛雨": "Heavy drizzle", "冻毛毛雨": "Freezing drizzle", "冻雨": "Freezing rain", "小雪": "Light snow", "中雪": "Snow", "大雪": "Heavy snow", "雪粒": "Snow grains",
+  "强阵雨": "Heavy showers", "强阵雪": "Heavy snow showers", "阵雪": "Snow showers", "强雷阵雨伴冰雹": "Severe thunderstorm with hail", "雷阵雨伴冰雹": "Thunderstorm with hail",
   "还有": "in", "天气": "Weather", "号线": "", "深圳": "Shenzhen", "惠州": "Huizhou", "公里": "km", "分钟": "min", "免费": "free", "能量": "Energy", "心情": "Mood", "经验": "XP", "人脉": "Network",
 };
 const WORD_KEYS = Object.keys(WORDS).sort((a, b) => b.length - a.length);
@@ -261,16 +267,40 @@ function buildDataNames(): void {
   built = true;
   for (const [k, m] of Object.entries(PLACE_KINDS)) { const en = KIND_EN[k]; if (en) EN[m.label] ??= en; }
   for (const [zh, en] of Object.entries(SHORT_EN)) EN[zh] ??= en;
-  for (const [zh, en] of Object.entries(SZ_STATION_EN)) { EN[zh] ??= en; EN[`${zh}站`] ??= en.endsWith("Station") ? en : `${en} Station`; }
+  for (const [zh, en] of Object.entries({ ...SZ_STATION_EN_AUTO, ...SZ_STATION_EN })) { EN[zh] ??= en; EN[`${zh}站`] ??= en.endsWith("Station") ? en : `${en} Station`; }
   // a short label only gets the full English name when it is specific (not "医院", "商场" …)
   for (const ck of ["sz", "hz"] as const) for (const l of getLocations(ck)) { const en = SHORT_EN[l.short] ?? (l.short.length >= 3 ? LOC_EN[l.name] : undefined); if (en) EN[l.short] ??= en; }
   for (const [zh, en] of Object.entries(ROADS_EN)) EN[zh] ??= en;
   for (const [zh, en] of Object.entries(LOC_EN)) EN[zh] ??= en;
-  for (const p of placesForCity("sz")) if (p.en) EN[p.name] ??= p.en;
+  for (const p of placesForCity("sz")) { const en = p.en ?? SZ_PLACE_EN_AUTO[p.name]; if (en) EN[p.name] ??= en; }
   for (const c of COMPANIES) { const en = COMPANY_EN[c.id]; if (en) { EN[c.name] ??= en; EN[c.short] ??= en; } }
   for (const a of ACHIEVEMENTS) { const t = ACH_EN[a.id]; if (t) { EN[a.title] ??= t[0]; EN[a.desc] ??= t[1]; } }
   for (const g of WEEKLY_GOALS) { const en = GOAL_EN[g.id]; if (en) EN[g.name] ??= en; }
   for (const [k, m] of Object.entries(PLACE_KINDS)) { const en = KIND_EN[k]; if (en) EN[m.label] ??= en; }
+  for (const [zh, en] of Object.entries(EN_EXACT)) EN[zh] ??= en;
+  TEMPLATES = EN_TEMPLATES.map(([zh, en]) => {
+    const lits = zh.split(/\{\d+\}/);
+    const order = [...zh.matchAll(/\{(\d+)\}/g)].map((m) => Number(m[1]));
+    const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(`^${lits.map(esc).join("(.+?)")}$`, "s");
+    const key = lits.reduce((a, b) => (b.length > a.length ? b : a), "");
+    return { re, key, en, order, len: zh.length };
+  }).sort((a, b) => b.key.length - a.key.length || b.len - a.len);
+}
+type Template = { re: RegExp; key: string; en: string; order: number[]; len: number };
+let TEMPLATES: Template[] = [];
+/** A value captured from a template: a name, a number, or a phrase that may itself translate. */
+const fillEN = (v: string): string => (EN[v] ?? EN[`${v}站`] ?? translateText(v)?.trim() ?? v);
+function applyTemplate(t: string): string | null {
+  for (const tp of TEMPLATES) {
+    if (!t.includes(tp.key)) continue;
+    const m = tp.re.exec(t);
+    if (!m) continue;
+    const vals: Record<number, string> = {};
+    tp.order.forEach((n, i) => { vals[n] = m[i + 1]!; });
+    return tp.en.replace(/\{(\d+)\}/g, (_x, n: string) => fillEN(vals[Number(n)] ?? ""));
+  }
+  return null;
 }
 
 /* ---- templated strings ---- */
@@ -293,8 +323,20 @@ PATTERNS.push(
   [/^在大地图上定位(.+)$/, (_m, n) => `Show ${nameEN(n!)} on the map`], [/^线网图缩放到 (\d+)%$/, "Zoom metro map to $1%"],
   [/^当前缩放 (\d+)%$/, "Zoom $1%"], [/^存钱目标进度 (\d+)%$/, "Savings goal $1%"], [/^领取连续上线奖励 · ¥(\d+)$/, "Claim streak reward · ¥$1"],
   [/^(.+) · Line (.+)$/, (_m, a, b) => `${nameEN(a!)} · Line ${b}`],
-  [/^(.+)↔(.+)$/, (_m, a, b) => `${nameEN(a!)}↔${nameEN(b!)}`],
+  [/^(.+)↔(.+)$/, (_m, a, b) => `${trOr(a!)}↔${trOr(b!)}`],
+  [/^按顺序到达每一站自动打卡：每站 \+(.+?)，走完全程再 \+(.+?)。在地图上点地点名、或坐车过去都算到达。$/, "Reach each stop in order to check in automatically: +$1 per stop, and +$2 more for finishing. Tapping a place on the map or riding there both count."],
+  // player list / ranks: "Alex（你）"
+  [/^(.+)（你）$/, (_m, n) => `${n} (you)`],
+  // neighbours: "陈伯·小区保安 😐"
+  [/^([^·\s]{1,10})·([^·]+?)(\s+\p{Extended_Pictographic}\uFE0F?)?$/u, (_m, a, b, e) => `${nameEN(a!)} · ${trOr(b!)}${e ?? ""}`],
+  // feed / chat: "阿强：今天…"
+  [/^([^：\s]{1,12})：(.+)$/s, (_m, a, b) => `${nameEN(a!)}: ${trOr(b!)}`],
+  // server-written feed lines
+  [/^(.*?)\s*来到了(深圳|惠州)，开始过日子$/, (_m, n, c) => `${n ? `${n} ` : ""}arrived in ${nameEN(c!)} and started a new life`],
+  [/^(.*?)\s*过完了 30 天，结局是「(.+)」，存款 ¥([\d,]+)$/, (_m, n, r, m) => `${n ? `${n} ` : ""}finished 30 days — ending “${trOr(r!)}”, savings ¥${m}`],
+  [/^(.*?)\s*给(.+)送了(.+)$/, (_m, n, to, g) => `${n ? `${n} ` : ""}sent ${to} ${trOr(g!)}`],
 );
+const trOr = (v: string) => EN[v] ?? translateText(v)?.trim() ?? v;
 const EMOJI_PREFIX = /^((?:\p{Extended_Pictographic}|\uFE0F|\u200D|[\u2600-\u27BF])+\s*)(.+)$/u;
 
 function translateText(raw: string): string | null {
@@ -304,6 +346,8 @@ function translateText(raw: string): string | null {
   const tail = raw.slice(raw.lastIndexOf(t[t.length - 1]!) + 1);
   const whole = EN[t];
   if (whole !== undefined) return lead + whole + tail;
+  const viaTemplate = applyTemplate(t);
+  if (viaTemplate !== null) return lead + viaTemplate + tail;
   for (const [re, rep] of PATTERNS) if (re.test(t)) return lead + t.replace(re, rep as string) + tail;
   // "🚇 国贸", "🏙️ 前海会议中心": keep the emoji, translate the rest
   const em = EMOJI_PREFIX.exec(t);

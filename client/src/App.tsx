@@ -528,7 +528,8 @@ const [legalDoc, setLegalDoc] = useState<null | "terms" | "privacy">(null);
 const [agreed, setAgreed] = useState(() => { try { return localStorage.getItem("shhr-legal") === LEGAL_VERSION; } catch { return false; } });
 const setAgreedStored = (v: boolean) => { setAgreed(v); try { if (v) localStorage.setItem("shhr-legal", LEGAL_VERSION); else localStorage.removeItem("shhr-legal"); } catch { /* storage unavailable */ } };
 const [quiz, setQuiz] = useState<{ key: string; opts: string[]; picked: string | null } | null>(null);
-const [asideOpen, setAsideOpen] = useState(true);
+/* 📌 固定收起：钉住后地区面板不再自动弹出，只有点右侧竖条才展开 */
+const [asideOpen, setAsideOpen] = useState(() => { try { return localStorage.getItem("shhr-pin-aside") !== "1"; } catch { return true; } });
 /* Top-area compaction: status detail / Summit activity / city intro all
    start folded away behind one-line bars so the map stays the hero. */
 const [fold, setFold] = useState<"hud" | "apec" | "intro" | null>(null);
@@ -554,11 +555,11 @@ const set = which === "aside" ? setAsidePinned : setNavPinned;
 set((v) => { const nv = !v; try { localStorage.setItem(`shhr-pin-${which}`, nv ? "1" : "0"); } catch { /* storage unavailable */ } return nv; });
 };
 mapFullscreenRef.current = mapFullscreen;
-const autoOpenAside = () => { if (!mapFullscreenRef.current || asidePinnedRef.current) setAsideOpen(true); };
+const autoOpenAside = () => { if (!mapFullscreenRef.current && !asidePinnedRef.current) setAsideOpen(true); };
 const wasFullscreen = useRef(false);
 useEffect(() => {
-if (mapFullscreen) { if (!asidePinnedRef.current) setAsideOpen(false); }
-else if (wasFullscreen.current) setAsideOpen(true);
+if (mapFullscreen) setAsideOpen(false);
+else if (wasFullscreen.current && !asidePinnedRef.current) setAsideOpen(true);
 wasFullscreen.current = mapFullscreen;
 }, [mapFullscreen]);
 useEffect(() => {
@@ -581,7 +582,7 @@ const toggleMapFullscreen = () => {
     if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
   } else {
     setMapFullscreen(true);
-    if (!asidePinnedRef.current) setAsideOpen(false);
+    setAsideOpen(false);
     // Fullscreen the whole page, not the map shell: in native fullscreen
     // only the fullscreen element's subtree is painted, so popups living
     // outside the shell (metro carriage, bus/taxi ride, life scenes, toasts,
@@ -3283,11 +3284,11 @@ return (
 <>
 {asideOpen && (
 <>
-{!asidePinned && <button type="button" aria-label="点空白处把地区面板竖着收起成右侧竖条" onClick={() => setAsideOpen(false)} className="fixed inset-0 z-[35] cursor-default bg-black/15" />}
+{<button type="button" aria-label="点空白处把地区面板竖着收起成右侧竖条" onClick={() => setAsideOpen(false)} className="fixed inset-0 z-[35] cursor-default bg-black/15" />}
 <div className="float-panel fixed bottom-3 right-3 top-[76px] z-40 flex w-[430px] max-w-[calc(100vw-24px)] flex-col overflow-y-auto overflow-x-hidden rounded-[18px] border-2 border-[var(--border)] p-4 shadow-2xl">
 <div className="mb-2.5 flex items-center justify-between gap-2">
 <p className="text-xs font-black tracking-wide text-[var(--dim)]">🗺️ 地区面板 · {selLoc.emoji} {selLoc.short}一带</p>
-<button type="button" aria-label={asidePinned ? "取消固定地区面板" : "固定地区面板"} aria-pressed={asidePinned} title={asidePinned ? "已固定：点空白不收起，地图照常可点；再点取消固定" : "固定：面板一直挂着，点地图空白处也不收起"} onClick={() => togglePin("aside")} className={`ml-auto shrink-0 rounded-full px-2.5 py-1.5 text-[11px] font-black ${asidePinned ? "bg-[var(--text)] text-[var(--bg)]" : "border border-[var(--line)] bg-[var(--surface)]"}`}>📌 {asidePinned ? "已固定" : "固定"}</button>
+<button type="button" aria-label={asidePinned ? "取消固定收起" : "固定收起地区面板"} aria-pressed={asidePinned} title={asidePinned ? "已固定收起：面板不会自动弹出；再点取消" : "固定收起：以后选地点、搜索都不自动弹出面板，只有点右侧竖条才展开"} onClick={() => { if (!asidePinned) setAsideOpen(false); togglePin("aside"); }} className={`ml-auto shrink-0 rounded-full px-2.5 py-1.5 text-[11px] font-black ${asidePinned ? "bg-[var(--text)] text-[var(--bg)]" : "border border-[var(--line)] bg-[var(--surface)]"}`}>📌 {asidePinned ? "已固定收起" : "固定收起"}</button>
 <button type="button" aria-label="竖着收起地区面板，收成屏幕右侧的竖条，点竖条随时展开" title="竖着收起成右侧竖条，一直留在屏幕边上，点一下就展开" onClick={() => setAsideOpen(false)} className="shrink-0 rounded-full border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-[11px] font-black transition hover:border-[var(--border)]">竖收起 »</button>
 </div>
 <div className="grid grid-cols-6 gap-1 rounded-full bg-[var(--surface2)] p-1" role="tablist" aria-label="地点与联机面板">
@@ -3663,7 +3664,7 @@ return (
 <p className="text-xs font-black text-[var(--green)]">🏁 全程完成！完赛奖励 {fmt(tour.rewardFinish)} 已到账</p>
 <button type="button" aria-label="再走一遍一日游路线" onClick={() => restartTour(tour)} className="rounded-full border border-[var(--line)] px-3 py-1 text-[11px] font-black">再走一遍</button>
 </div>
-) : <p className="mt-2 text-[11px] leading-relaxed text-[var(--dim)]">按顺序到达每一站自动打卡：每站 +{fmt(tour.rewardPerStop)}，走完全程再 +{fmt(tour.rewardFinish)}。在地图上点地点名、或坐车过去都算到达。</p>}
+) : <p className="mt-2 text-[11px] leading-relaxed text-[var(--dim)]">{`按顺序到达每一站自动打卡：每站 +${fmt(tour.rewardPerStop)}，走完全程再 +${fmt(tour.rewardFinish)}。在地图上点地点名、或坐车过去都算到达。`}</p>}
 </div> ); })()}
 <div className="mt-3 rounded-[14px] border-2 border-[var(--border)] bg-[var(--surface)] p-3">
 <p className="text-sm font-black">🔍 看图认地方 <span className="text-[11px] font-bold text-[var(--dim)]">Photo Quiz · 认对 +¥10</span></p>
@@ -3722,6 +3723,7 @@ return (
 {([["place", "📍", "地点"], ["collect", "🎫", "集章"], ["feed", "🏘️", "动态"], ["wall", "🧑‍🤝‍🧑", "街坊墙"], ["chat", "💬", "聊天"], ["board", "🏆", "排行"], ["guide", "📖", "图鉴"]] as const).map(([k, icon, label]) => (
 <button key={k} type="button" aria-label={`展开地区面板 · ${label}`} title={`展开地区面板 · ${label}`} onClick={() => { setAsideTab(k); setAsideOpen(true); }} className={`flex w-9 flex-col items-center gap-0.5 rounded-[10px] px-0.5 py-1.5 text-base leading-none transition hover:bg-[var(--surface2)] ${asideTab === k ? "bg-[var(--surface2)]" : ""}`}><span aria-hidden="true">{icon}</span><span className="text-[10px] font-black [writing-mode:vertical-rl]">{label}</span></button>
 ))}
+<button type="button" aria-label={asidePinned ? "取消固定收起" : "固定收起地区面板"} aria-pressed={asidePinned} title={asidePinned ? "已固定收起：面板不会自动弹出，点上面的图标才展开；再点取消" : "固定收起：面板不再自动弹出"} onClick={() => togglePin("aside")} className={`mt-1 flex w-9 flex-col items-center gap-0.5 rounded-[10px] px-0.5 py-1.5 text-base leading-none ${asidePinned ? "bg-[var(--text)] text-[var(--bg)]" : "hover:bg-[var(--surface2)]"}`}><span aria-hidden="true">📌</span><span className="text-[10px] font-black [writing-mode:vertical-rl]">{asidePinned ? "已固定" : "固定"}</span></button>
 </div>
 )}
 </>

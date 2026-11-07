@@ -298,6 +298,8 @@ interface Chip {
   w: number;
   h: number;
   lastText: string;
+  /** source (untranslated) text last written to an actor chip — rewrite only when it changes, so the page translator's English sticks */
+  src?: string;
   visible: boolean;
   /* Last edge-clamped anchor (set by the declutter pass): on the frames
      between passes the chip follows its 3D anchor plus this clamp delta,
@@ -1765,7 +1767,7 @@ export function MapView(p: Props) {
         const acc = (view.userData as { acc?: THREE.Group }).acc;
         if (acc) for (const child of acc.children) child.visible = child.name === `acc-${a.accessory}`;
         const chip = actorChips.get(a.key);
-        if (chip) chip.el.textContent = a.isSelf ? `${a.name}（你）` : a.name;
+        if (chip) { const t = a.isSelf ? `${a.name}（你）` : a.name; if (chip.src !== t) { chip.src = t; chip.el.textContent = t; } }
       }
       for (const key of Array.from(actorViews.keys())) {
         if (!actorsRef.current.has(key)) {
