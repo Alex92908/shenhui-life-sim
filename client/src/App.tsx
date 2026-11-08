@@ -223,7 +223,7 @@ return { title, quote, badges};
    in with eased motion, props act (typing, steam, chewing, lifting), and
    captions tell the beat. Triggered by the real actions (finishing a rail
    ride, working, eating, cooking, sleeping…) and by the 今日生活 replay. */
-type LifeKind = "day" | "alightRail" | "metro" | "code" | "overtime" | "eat" | "cook" | "sleep" | "wash" | "groceries" | "shopping" | "gym" | "stroll" | "gathering" | "cruise" | "wheel" | "aquarium" | "turtle";
+type LifeKind = "day" | "alightRail" | "metro" | "code" | "overtime" | "eat" | "cook" | "sleep" | "wash" | "groceries" | "shopping" | "gym" | "stroll" | "gathering" | "cruise" | "wheel" | "aquarium" | "turtle" | "coaster" | "safari" | "hike" | "beach" | "cablecar";
 interface LifeStep { bg: string; prop: string; caption: string; sub: string; move?: "walk" | "stay"; fx?: "type" | "steam" | "zzz" | "rain" | "chew" | "lift" | "shine"; dawn?: boolean; }
 interface LifeScene { title: string; tone?: "night" | "indoor"; steps: LifeStep[]; }
 const LIFE_SCENES: Record<LifeKind, LifeScene> = {
@@ -320,6 +320,31 @@ turtle: { title: "海龟湾 · 看海龟", steps: [
   { bg: "🐢 🐢 🌊", prop: "🐢", caption: "海龟慢慢爬向大海", sub: "鳍肢一下一下划着沙子，留下一道道爬痕", move: "stay", fx: "shine" },
   { bg: "🐣 🌊 💚", prop: "🌊", caption: "小海龟奔向浪花", sub: "一个浪打上来，小家伙们就不见了——祝你们一路顺风", move: "stay", fx: "shine" },
 ] },
+coaster: { title: "坐过山车", steps: [
+  { bg: "🎢 🎫 😬", prop: "🎢", caption: "坐进第一排，压杠落下", sub: "咔哒咔哒——车慢慢爬上最高点，心跳比链条还响", move: "stay" },
+  { bg: "🎢 ⬇️ 😱", prop: "😱", caption: "俯冲！", sub: "失重的一秒，尖叫声和风一起灌进耳朵", move: "stay", fx: "shine" },
+  { bg: "🎢 🔄 🤣", prop: "🤣", caption: "翻完大回环，腿是软的", sub: "下车时还在笑，嗓子已经喊哑了", move: "stay", fx: "shine" },
+] },
+safari: { title: "坐观光车逛动物园", steps: [
+  { bg: "🚌 🦒 🌳", prop: "🚌", caption: "坐上带铁笼的观光车", sub: "司机提醒：关好车窗，不要投喂，不要伸手", move: "stay" },
+  { bg: "🦓 🦒 🌾", prop: "🦒", caption: "长颈鹿和斑马慢悠悠走过", sub: "长颈鹿低头看了你一眼，又继续嚼它的树叶", move: "stay", fx: "shine" },
+  { bg: "🦁 😮 📸", prop: "🦁", caption: "狮子就在车窗外", sub: "隔着铁笼都能感到它的气场——全车人屏住呼吸按快门", move: "stay", fx: "shine" },
+] },
+hike: { title: "爬山登顶", steps: [
+  { bg: "⛰️ 🥾 🌳", prop: "🥾", caption: "沿石阶往上爬", sub: "一级一级，汗顺着脖子往下流，树荫里有风", move: "walk" },
+  { bg: "🌫️ ⛰️ 💪", prop: "💧", caption: "半山腰歇一口气", sub: "喝口水，回头一看，城市已经在脚下了", move: "stay" },
+  { bg: "🏯 🌇 🙌", prop: "🙌", caption: "登顶！", sub: "山顶的风一吹，整座城尽收眼底——值了", move: "stay", fx: "shine" },
+] },
+beach: { title: "去海边", steps: [
+  { bg: "🏖️ 👣 ☀️", prop: "👣", caption: "光脚踩上沙滩", sub: "沙子有点烫，海风是咸的", move: "walk" },
+  { bg: "🌊 🏊 😆", prop: "🌊", caption: "下海玩水", sub: "一个浪打过来，从头湿到脚，笑得停不下来", move: "stay", fx: "shine" },
+  { bg: "🌅 🪑 🍹", prop: "🌅", caption: "坐在伞下看日落", sub: "海面一点点变成金色，今天的烦恼都留在了沙滩上", move: "stay", fx: "shine" },
+] },
+cablecar: { title: "坐缆车上山", steps: [
+  { bg: "🚡 🎫 ⛰️", prop: "🚡", caption: "坐进缆车", sub: "门一关，车厢轻轻一晃，离开站台往山上滑", move: "stay" },
+  { bg: "⛰️ 🌊 ✨", prop: "🌊", caption: "海湾在脚下展开", sub: "越升越高，山、海和城市的边界一下子都看清了", move: "stay", fx: "shine" },
+  { bg: "🏔️ 🙌 📸", prop: "📸", caption: "到山顶站了", sub: "下缆车前回头拍一张，这一段风景值回票价", move: "walk" },
+] },
 gathering: { title: "朋友聚餐", tone: "indoor", steps: [
   { bg: "🍻 👥 🎤", prop: "🍻", caption: "朋友们到齐了", sub: "拼桌坐下，先碰一杯，聊聊最近怎么样", move: "stay", fx: "shine" },
   { bg: "🍲 🥢 😂", prop: "🍲", caption: "边吃边聊", sub: "菜一盘盘上，笑声一阵阵——人脉就是这样攒下的", move: "stay", fx: "chew" },
@@ -346,6 +371,11 @@ case "cruise": return { set: "cruise", pose: idx === 0 ? "walk" : "sit" };
 case "wheel": return { set: "wheel", pose: idx === 0 ? "idle" : "sit" };
 case "aquarium": return { set: "aquarium", pose: idx === 0 ? "walk" : "idle" };
 case "turtle": return { set: "turtle", pose: idx === 0 ? "walk" : "idle" };
+case "coaster": return { set: "coaster", pose: "sit" };
+case "safari": return { set: "safari", pose: "sit" };
+case "hike": return { set: "hike", pose: idx === 2 ? "stretch" : idx === 1 ? "idle" : "walk" };
+case "beach": return { set: "beach", pose: idx === 0 ? "walk" : idx === 1 ? "stretch" : "idle" };
+case "cablecar": return { set: "cablecar", pose: idx === 2 ? "walk" : "sit" };
 }
 }
 
@@ -1836,7 +1866,12 @@ const special: LifeKind | undefined = kind !== "fun" && kind !== "stroll" && kin
   : loc.id === "hejiang" || loc.id === "sanjiaozhou" ? "cruise"
   : loc.name === "欢乐港湾" ? "wheel"
   : loc.name.includes("海洋世界") || loc.name.includes("水族") ? "aquarium"
-  : loc.id === "haiguiwan" ? "turtle" : undefined;
+  : loc.id === "haiguiwan" ? "turtle"
+  : loc.id === "happyvalley" ? "coaster"
+  : loc.id === "safari" ? "safari"
+  : loc.id === "octeast" ? "cablecar"
+  : loc.type === "mountain" || ["luofu", "nankunshan", "xiangtoushan", "gaobangshan", "tanglangshan", "fenghuangshan"].includes(loc.id) || loc.placeKind === "peak" ? "hike"
+  : /海滩|沙滩|海边|海滨|杨梅坑|黄金海岸|檀悦/.test(loc.name) || loc.placeKind === "beach" ? "beach" : undefined;
 const ak = special ?? animMap[kind];
 if (ak && msg && !(kind === "cook" && s0.groceries <= 0) && !(kind === "buy-groceries" && s0.money < 28)) playLifeAnim(ak);
 };

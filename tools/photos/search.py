@@ -1,5 +1,14 @@
 import json, re, sys, urllib.parse, subprocess
 Q = {
+ "sz-talent": ["Shenzhen Talent Park", "人才公园 深圳"], "sz-wutong": ["Wutong Mountain Shenzhen", "梧桐山"], "sz-xianhu": ["Fairy Lake Botanical Garden Shenzhen", "Hongfa Temple Shenzhen", "仙湖植物园"],
+ "sz-yantian": ["Yantian seaside boardwalk", "Yantian Shenzhen boardwalk", "盐田海滨栈道"], "sz-jinxiu": ["Splendid China Shenzhen", "China Folk Culture Village Shenzhen"],
+ "sz-safari": ["Shenzhen Safari Park", "深圳野生动物园"], "sz-octeast": ["OCT East Shenzhen", "东部华侨城", "OCT East cable car"], "sz-qingqing": ["Evergreen Resort Shenzhen", "青青世界"],
+ "sz-seagarden": ["Shenzhen Sea Garden Shajing", "海上田园 深圳"], "sz-gmfarm": ["Guangming Farm Shenzhen", "光明农场"], "sz-dapeng": ["Dapeng Fortress", "大鹏所城"],
+ "sz-octharbour": ["OCT Harbour Shenzhen", "欢乐海岸 深圳"], "sz-mission": ["Mission Hills Shenzhen", "观澜湖 深圳"], "sz-qiniang": ["Qiniang Mountain", "七娘山"],
+ "sz-yangmeikeng": ["Yangmeikeng Shenzhen", "杨梅坑"], "sz-xichong": ["Xichong beach Shenzhen", "西涌"], "sz-zhongying": ["Chung Ying Street", "中英街"],
+ "sz-tanglang": ["Tanglang Mountain Shenzhen", "塘朗山"], "sz-fenghuang": ["Fenghuang Mountain Shenzhen", "凤凰山 深圳"], "sz-swcac": ["Sea World Culture and Arts Center Shenzhen", "海上世界文化艺术中心"],
+ "sc-coaster": ["Happy Valley Shenzhen roller coaster", "roller coaster loop"], "sc-cablecar": ["OCT East cable car", "cable car Shenzhen"],
+ "sc-hike": ["Wutong Mountain summit", "Shenzhen hiking trail mountain"],
  "scene-gym2": ["gym equipment interior", "fitness centre interior", "weight room"], "scene-office2": ["office workers desks computers", "coworking space interior", "modern office interior"], "place-honghua2": ["Honghu Lake Huizhou", "Huizhou Honghua Lake", "惠州 红花湖", "Huizhou lake greenway"],
  "scene-park": ["Shenzhen Bay Park", "深圳湾公园"], "scene-metro": ["Shenzhen Metro train interior", "Shenzhen Metro carriage"],
  "scene-train": ["CR400AF interior", "Fuxing train second class interior"], "scene-station": ["Shenzhen North railway station platform"],

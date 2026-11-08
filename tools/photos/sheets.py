@@ -2,7 +2,8 @@ import json, subprocess, os, io, time
 from PIL import Image, ImageDraw
 c = json.load(open("cands.json"))
 os.makedirs("thumbs", exist_ok=True); os.makedirs("sheets", exist_ok=True)
-keys = list(c)
+import sys
+keys = [k for k in c if any(k.startswith(p) for p in sys.argv[1:])] if len(sys.argv) > 1 else list(c)
 for k in keys:
     ims = []
     for i, cand in enumerate(c[k][:6]):

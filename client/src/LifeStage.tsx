@@ -14,7 +14,7 @@ import { SCENE_PHOTOS } from "./experience";
 import * as THREE from "three";
 import { makePostFx, type PostFx } from "./postfx";
 
-export type LifeSet = "station" | "metro" | "train" | "bus" | "taxi" | "concourse" | "platform" | "office" | "restaurant" | "market" | "mall" | "kitchen" | "bedroom" | "bathroom" | "gym" | "park" | "home" | "cruise" | "wheel" | "aquarium" | "turtle";
+export type LifeSet = "station" | "metro" | "train" | "bus" | "taxi" | "concourse" | "platform" | "office" | "restaurant" | "market" | "mall" | "kitchen" | "bedroom" | "bathroom" | "gym" | "park" | "home" | "cruise" | "wheel" | "aquarium" | "turtle" | "coaster" | "safari" | "hike" | "beach" | "cablecar";
 export type LifePose = "walk" | "idle" | "sit" | "type" | "cook" | "eat" | "sleep" | "wash" | "lift" | "stretch";
 
 interface Props {
@@ -1275,7 +1275,7 @@ export function LifeStage3D(p: Props) {
       plane(2.2, 1.2, boardTex("#0c4a6e", [{ t: "峰会· 深圳欢迎您", s: 40, c: "#ffffff", bold: true }, { t: "Welcome to Shenzhen", s: 26, c: "#bae6fd" }]), 4.9, 2.1, -3.71);
       const stripP = box(9, 0.07, 0.4, 0xfff2d8, 0, 4.35, -1.2, 0.4, { emissive: 0xffe9b8, emissiveIntensity: 1.2 });
       stripP.castShadow = false;
-    } else if (setKind !== "cruise" && setKind !== "wheel" && setKind !== "aquarium" && setKind !== "turtle") {
+    } else if (!["cruise", "wheel", "aquarium", "turtle", "coaster", "safari", "hike", "beach", "cablecar"].includes(setKind)) {
       // home living room: sofa, coffee table, rug, bookshelf, lamp, window, door
       roomShell(0xf3ead8, 0xcbb59a, { windowX: 4.7, windowW: 1.6, clock: true });
       box(2.95, 0.55, 1.05, 0x93b8a4, -1.3, 0.3, -2.35, 0.95);
@@ -1449,6 +1449,97 @@ export function LifeStage3D(p: Props) {
           b.flips.forEach((fl, k) => { fl.rotation.y = Math.sin(t * 9 + k + i) * 0.7; });
         });
       });
+    }
+
+    if (setKind === "coaster") {
+      // 过山车: riding the front car — the track climbs, drops and loops;
+      // the world tilts and rushes past
+      floor.visible = false;
+      const ground = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), mat(0x6aa35a, 1)); ground.rotation.x = -Math.PI / 2; ground.position.y = -6; scene.add(ground);
+      const world = new THREE.Group(); scene.add(world);
+      for (let i = 0; i < 26; i++) { const tr = new THREE.Mesh(new THREE.ConeGeometry(0.9, 2.4, 7), mat(0x3f8f4e, 1, { flatShading: true })); tr.position.set(-20 + (i * 7) % 40, -4.8, -6 - (i * 11) % 30); world.add(tr); }
+      for (let i = 0; i < 8; i++) { const tw = new THREE.Mesh(new THREE.BoxGeometry(2, 4 + (i % 3) * 3, 2), mat(0xc9d4dc, 0.6)); tw.position.set(-18 + i * 5, -4 + (i % 3) * 1.5, -24); world.add(tw); }
+      const rail = mat(0x2563eb, 0.4, { metalness: 0.6 });
+      for (let i = 0; i < 40; i++) { const tie = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.08, 0.18), mat(0x6b7280)); tie.position.set(0, -0.6, 2 - i * 1.1); world.add(tie); }
+      for (const x of [-0.9, 0.9]) { const r = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 46), rail); r.position.set(x, -0.5, -20); world.add(r); }
+      const loop = new THREE.Mesh(new THREE.TorusGeometry(5, 0.14, 8, 48), rail); loop.position.set(4, 3, -18); loop.rotation.y = Math.PI / 2; world.add(loop);
+      const car = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.7, 2.2), mat(0xdc2626, 0.5)); car.position.set(0, -0.15, -0.3); scene.add(car);
+      const bar = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.06, 6, 16, Math.PI), mat(0xfacc15, 0.4)); bar.position.set(0, 0.6, 0.35); scene.add(bar);
+      ticks.push((t) => {
+        world.position.z = (t * 6) % 22;
+        world.rotation.x = Math.sin(t * 0.9) * 0.22;
+        world.rotation.z = Math.sin(t * 0.6) * 0.12;
+        world.position.y = Math.sin(t * 0.9) * 1.6;
+      });
+    } else if (setKind === "safari") {
+      // 野生动物园: riding the caged safari bus past giraffes, zebras and a lion
+      floor.visible = false;
+      const grass = new THREE.Mesh(new THREE.PlaneGeometry(80, 40), mat(0xb7c56a, 1)); grass.rotation.x = -Math.PI / 2; grass.position.y = -0.5; scene.add(grass);
+      const bus = new THREE.Group(); scene.add(bus);
+      const fl = new THREE.Mesh(new THREE.BoxGeometry(8, 0.2, 3.4), mat(0x4b5563)); fl.position.set(0, -0.1, 0.2); bus.add(fl);
+      for (let x = -3.8; x <= 3.8; x += 0.45) { const bar = new THREE.Mesh(new THREE.BoxGeometry(0.05, 2.6, 0.05), mat(0x3f3f46, 0.4, { metalness: 0.6 })); bar.position.set(x, 1.3, -1.5); bus.add(bar); }
+      for (const y of [0.9, 2.6]) { const h = new THREE.Mesh(new THREE.BoxGeometry(8, 0.06, 0.06), mat(0x3f3f46, 0.4, { metalness: 0.6 })); h.position.set(0, y, -1.5); bus.add(h); }
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(8, 0.12, 3.4), mat(0x556b2f)); roof.position.set(0, 2.7, 0.2); bus.add(roof);
+      const seat = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.12, 0.6), mat(0x78350f)); seat.position.set(0, 0.45, -0.75); bus.add(seat);
+      const savanna = new THREE.Group(); scene.add(savanna);
+      const animal = (kind: "giraffe" | "zebra" | "lion", x: number, z: number) => {
+        const g = new THREE.Group();
+        const col = kind === "giraffe" ? 0xe0a43a : kind === "zebra" ? 0xf1f1f1 : 0xc8913d;
+        const body = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.7, 0.6), mat(col, 0.8)); body.position.y = kind === "giraffe" ? 1.6 : 0.9; g.add(body);
+        for (const lx of [-0.5, 0.5]) for (const lz of [-0.2, 0.2]) { const leg = new THREE.Mesh(new THREE.BoxGeometry(0.14, kind === "giraffe" ? 1.3 : 0.7, 0.14), mat(col)); leg.position.set(lx, (kind === "giraffe" ? 0.65 : 0.35), lz); g.add(leg); }
+        if (kind === "giraffe") { const neck = new THREE.Mesh(new THREE.BoxGeometry(0.25, 1.6, 0.25), mat(col)); neck.position.set(0.65, 2.6, 0); neck.rotation.z = -0.25; g.add(neck); const head = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.25, 0.25), mat(col)); head.position.set(0.95, 3.4, 0); g.add(head); }
+        else { const head = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.45, 0.45), mat(kind === "lion" ? 0x8a5a2b : col)); head.position.set(0.85, 1.15, 0); g.add(head); }
+        if (kind === "zebra") for (let i = 0; i < 4; i++) { const st = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.72, 0.62), mat(0x111111)); st.position.set(-0.5 + i * 0.3, 0.9, 0); g.add(st); }
+        if (kind === "lion") { const mane = new THREE.Mesh(new THREE.SphereGeometry(0.42, 10, 8), mat(0x7c4a1e, 1, { flatShading: true })); mane.position.set(0.75, 1.15, 0); g.add(mane); }
+        g.position.set(x, -0.5, z); savanna.add(g);
+      };
+      for (let i = 0; i < 12; i++) animal((["giraffe", "zebra", "lion", "zebra"] as const)[i % 4]!, -24 + i * 4.2, -5 - (i % 3) * 2.5);
+      for (let i = 0; i < 16; i++) { const tr = new THREE.Mesh(new THREE.SphereGeometry(1.2, 8, 6), mat(0x6b8e23, 1, { flatShading: true })); tr.scale.y = 0.5; tr.position.set(-30 + i * 4, 2.2, -12 - (i % 2) * 3); savanna.add(tr); const tk = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.15, 2.4, 6), mat(0x6b4630)); tk.position.set(-30 + i * 4, 0.7, -12 - (i % 2) * 3); savanna.add(tk); }
+      ticks.push((t) => { savanna.position.x = ((t * 1.6) % 24) - 6; bus.position.y = Math.abs(Math.sin(t * 4)) * 0.03; });
+    } else if (setKind === "hike") {
+      // 登山: stone steps up a forested ridge to a summit pavilion, the
+      // city spread out below in the haze
+      floor.visible = false;
+      const slope = new THREE.Mesh(new THREE.PlaneGeometry(30, 20), mat(0x5d8a4f, 1, { flatShading: true })); slope.rotation.x = -Math.PI / 2 + 0.25; slope.position.set(0, -0.6, -2); scene.add(slope);
+      for (let i = 0; i < 14; i++) { const st = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.18, 0.6), mat(0xb8b2a6, 0.9)); st.position.set(0, -0.4 + i * 0.16, 2 - i * 0.55); scene.add(st); }
+      for (let i = 0; i < 22; i++) { const tr = new THREE.Mesh(new THREE.ConeGeometry(0.7 + (i % 3) * 0.2, 2 + (i % 4) * 0.4, 7), mat(i % 2 ? 0x3f7d46 : 0x4d9b5f, 1, { flatShading: true })); tr.position.set((i % 2 ? 1 : -1) * (2 + (i % 5) * 1.1), 0.6 + Math.floor(i / 2) * 0.25, 1.5 - Math.floor(i / 2) * 0.8); scene.add(tr); }
+      const pav = new THREE.Group(); pav.position.set(0, 2.1, -6.5); scene.add(pav);
+      for (const [x, z] of [[-0.8, -0.8], [0.8, -0.8], [-0.8, 0.8], [0.8, 0.8]] as const) { const c = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 1.6, 8), mat(0xb91c1c)); c.position.set(x, 0.8, z); pav.add(c); }
+      const pr = new THREE.Mesh(new THREE.ConeGeometry(1.6, 0.9, 4), mat(0x7f1d1d, 0.7, { flatShading: true })); pr.rotation.y = Math.PI / 4; pr.position.y = 2; pav.add(pr);
+      const mist: THREE.Mesh[] = [];
+      for (let i = 0; i < 6; i++) { const m = new THREE.Mesh(new THREE.PlaneGeometry(10, 2.5), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.22, depthWrite: false })); m.position.set(-12 + i * 5, 1 + (i % 3) * 0.8, -8); scene.add(m); mist.push(m); }
+      ticks.push((t) => { mist.forEach((m, i) => { m.position.x = ((-12 + i * 5 + t * 0.6) % 30 + 30) % 30 - 15; }); });
+    } else if (setKind === "beach") {
+      // 海边: sand, umbrellas, waves rolling in, gulls overhead
+      floor.visible = false;
+      const sand = new THREE.Mesh(new THREE.PlaneGeometry(40, 16), mat(0xf0deb0, 1)); sand.rotation.x = -Math.PI / 2; sand.position.z = 3; sand.receiveShadow = true; scene.add(sand);
+      const sea = new THREE.Mesh(new THREE.PlaneGeometry(60, 30), mat(0x2e9fd0, 0.2, { metalness: 0.25 })); sea.rotation.x = -Math.PI / 2; sea.position.set(0, -0.02, -19); scene.add(sea);
+      const foams: THREE.Mesh[] = [];
+      for (let i = 0; i < 3; i++) { const f = new THREE.Mesh(new THREE.PlaneGeometry(40, 0.4), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.75 })); f.rotation.x = -Math.PI / 2; f.position.set(0, 0.01, -4 - i * 1.4); scene.add(f); foams.push(f); }
+      for (const [x, z, c] of [[-3.2, 0.5, 0xef4444], [3.4, 0.2, 0xf59e0b], [6.5, 1.2, 0x22c55e]] as const) {
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 2.2, 6), mat(0xe5e7eb)); pole.position.set(x, 1.1, z); scene.add(pole);
+        const top = new THREE.Mesh(new THREE.ConeGeometry(1.2, 0.5, 10), mat(c, 0.7)); top.position.set(x, 2.3, z); scene.add(top);
+        const towel = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.02, 1.6), mat(c === 0xef4444 ? 0x60a5fa : 0xfde68a)); towel.position.set(x + 0.4, 0.02, z + 1.2); scene.add(towel);
+      }
+      const gulls: THREE.Mesh[] = [];
+      for (let i = 0; i < 4; i++) { const g = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.6, 3), mat(0xffffff)); g.rotation.z = Math.PI / 2; scene.add(g); gulls.push(g); }
+      ticks.push((t) => {
+        foams.forEach((f, i) => { f.position.z = -4 - i * 1.4 + Math.sin(t * 0.8 + i) * 0.7; (f.material as THREE.MeshBasicMaterial).opacity = 0.5 + 0.3 * Math.sin(t * 0.8 + i); });
+        gulls.forEach((g, i) => { g.position.set(((t * (1 + i * 0.3) + i * 6) % 30) - 15, 4 + Math.sin(t * 2 + i) * 0.4 + i * 0.4, -5 - i); g.scale.y = 1 + Math.sin(t * 8 + i) * 0.4; });
+      });
+    } else if (setKind === "cablecar") {
+      // 缆车: a gondola gliding up the hillside, the bay opening below
+      floor.visible = false;
+      const gond = new THREE.Group(); scene.add(gond);
+      const cab = new THREE.Mesh(new THREE.BoxGeometry(3.2, 2.6, 2.4), mat(0xbfe3f5, 0.1, { transparent: true, opacity: 0.16, side: THREE.DoubleSide })); cab.position.set(0, 1.2, -0.2); gond.add(cab);
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(3.3, 0.12, 2.5), mat(0xdc2626, 0.5)); frame.position.set(0, -0.05, -0.2); gond.add(frame);
+      const top = frame.clone(); top.position.y = 2.5; gond.add(top);
+      const seat = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.12, 0.6), mat(0x374151)); seat.position.set(0, 0.45, -0.75); gond.add(seat);
+      const cable = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 60, 6), mat(0x111827)); cable.rotation.z = Math.PI / 2 - 0.25; cable.position.set(0, 4.2, -0.2); scene.add(cable);
+      const land = new THREE.Group(); scene.add(land);
+      for (let i = 0; i < 30; i++) { const h = new THREE.Mesh(new THREE.ConeGeometry(3 + (i % 4), 3 + (i % 5) * 1.2, 7), mat(i % 2 ? 0x4d8a4f : 0x5d9a5a, 1, { flatShading: true })); h.position.set(-30 + (i % 10) * 6.5, -5, -6 - Math.floor(i / 10) * 7); land.add(h); }
+      const bay = new THREE.Mesh(new THREE.PlaneGeometry(80, 30), mat(0x3b8fc4, 0.25)); bay.rotation.x = -Math.PI / 2; bay.position.set(0, -6.4, -34); land.add(bay);
+      ticks.push((t) => { land.position.x = -t * 0.8 % 40; land.position.y = -Math.min(4, t * 0.4); gond.rotation.z = Math.sin(t * 0.8) * 0.02; });
     }
 
     /* ---- the actor ---- */
@@ -1671,7 +1762,8 @@ export function LifeStage3D(p: Props) {
       } else if (pose === "sit") {
         // seated on the carriage bench, phone in hand, city rushing past
         if (setKind === "taxi") A.g.position.set(0.55, -0.3 + Math.sin(t * 1.8) * 0.008, -1.08);
-        else if (setKind === "cruise" || setKind === "wheel") A.g.position.set(0, -0.05 + Math.sin(t * 1.3) * 0.02, -0.6);
+        else if (setKind === "cruise" || setKind === "wheel" || setKind === "safari" || setKind === "cablecar") A.g.position.set(0, -0.05 + Math.sin(t * 1.3) * 0.02, -0.6);
+        else if (setKind === "coaster") A.g.position.set(0, 0.05 + Math.sin(t * 9) * 0.03, -0.4);
         else A.g.position.set(0.95, -0.28 + Math.sin(t * 1.8) * 0.008, -1.9);
         // alive while seated: eyes drift between the window and the phone
         A.head.rotation.y = Math.sin(t * 0.45) * 0.24;

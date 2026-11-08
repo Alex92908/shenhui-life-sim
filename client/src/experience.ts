@@ -53,6 +53,35 @@ import placeTurtle from "./assets/place-turtle.jpg";
 import placeTurtle2 from "./assets/place-turtle2.jpg";
 import placeXunliao from "./assets/place-xunliao.jpg";
 import placeXlHotel from "./assets/place-xlhotel.jpg";
+import phSzCablecar from "./assets/sz-cablecar.jpg";
+import phSzCoaster from "./assets/sz-coaster.jpg";
+import phSzDapeng from "./assets/sz-dapeng.jpg";
+import phSzDapeng2 from "./assets/sz-dapeng2.jpg";
+import phSzFenghuang from "./assets/sz-fenghuang.jpg";
+import phSzFenghuang2 from "./assets/sz-fenghuang2.jpg";
+import phSzJinxiu from "./assets/sz-jinxiu.jpg";
+import phSzJinxiu2 from "./assets/sz-jinxiu2.jpg";
+import phSzOcteast from "./assets/sz-octeast.jpg";
+import phSzOctharbour from "./assets/sz-octharbour.jpg";
+import phSzOctharbour2 from "./assets/sz-octharbour2.jpg";
+import phSzQingqing from "./assets/sz-qingqing.jpg";
+import phSzQiniang from "./assets/sz-qiniang.jpg";
+import phSzSafari from "./assets/sz-safari.jpg";
+import phSzSafari2 from "./assets/sz-safari2.jpg";
+import phSzSwcac from "./assets/sz-swcac.jpg";
+import phSzSwcac2 from "./assets/sz-swcac2.jpg";
+import phSzTanglang from "./assets/sz-tanglang.jpg";
+import phSzTanglang2 from "./assets/sz-tanglang2.jpg";
+import phSzWutong from "./assets/sz-wutong.jpg";
+import phSzWutong2 from "./assets/sz-wutong2.jpg";
+import phSzXianhu from "./assets/sz-xianhu.jpg";
+import phSzXianhu2 from "./assets/sz-xianhu2.jpg";
+import phSzXichong from "./assets/sz-xichong.jpg";
+import phSzXichong2 from "./assets/sz-xichong2.jpg";
+import phSzYangmeikeng from "./assets/sz-yangmeikeng.jpg";
+import phSzYangmeikeng2 from "./assets/sz-yangmeikeng2.jpg";
+import phSzZhongying from "./assets/sz-zhongying.jpg";
+import phSzZhongying2 from "./assets/sz-zhongying2.jpg";
 import placeAquarium from "./assets/place-aquarium.jpg";
 import placeAquarium2 from "./assets/place-aquarium2.jpg";
 import placeWheel from "./assets/place-wheel.jpg";
@@ -81,6 +110,11 @@ export const SCENE_PHOTOS: Record<string, string> = {
   wheel: placeWheel,
   aquarium: placeAquarium,
   turtle: placeTurtle,
+  coaster: phSzCoaster,
+  safari: phSzSafari,
+  hike: phSzTanglang,
+  beach: phSzXichong2,
+  cablecar: phSzCablecar,
 };
 
 export interface GuidePlace {
@@ -256,6 +290,157 @@ export const GUIDE: GuidePlace[] = [
     npc: "阿强", story: "阿强说旺季的时候他在酒店码头带客人出海，一天跑五六趟，客人里一半是从深圳开车过来的。",
     sourceName: "Wikimedia Commons · Xunliao Bay", sourceUrl: "https://commons.wikimedia.org/wiki/File:Hotel,_Xunliao_Bay.jpg",
     photoNote: "照片为巽寮湾的海边度假酒店和海湾，示意度假氛围，不是该酒店本身",
+  },
+  {
+    key: "wutong", cityKey: "sz", locName: "梧桐山", nameEn: "Wutong Mountain",
+    photos: [phSzWutong, phSzWutong2],
+    address: "罗湖区 · 梧桐山风景区", price: "免费", hours: "全天（登山建议白天，带够水）",
+    tip: "泰山涧一路上山最常见，大梧桐顶上风大，带件外套。",
+    fact: "大梧桐海拔 943.7 米，是深圳第一高峰；天气好时山顶能望见深圳和香港两边的城市。",
+    factEn: "At 943.7 m Big Wutong is Shenzhen's highest peak; on clear days you can see both Shenzhen and Hong Kong.",
+    npc: "王姨", story: "王姨说她五十岁那年第一次爬上大梧桐，在山顶哭了一鼻子——年轻时来深圳打工，从没想过有空爬山。",
+    sourceName: "Wikimedia Commons", sourceUrl: "https://commons.wikimedia.org/wiki/Category:Wutong_Mountain",
+  },
+  {
+    key: "xianhu", cityKey: "sz", locName: "仙湖植物园 · 弘法寺", nameEn: "Fairy Lake Botanical Garden & Hongfa Temple",
+    photos: [phSzXianhu, phSzXianhu2],
+    address: "罗湖区 · 莲塘仙湖路", price: "以园方公告为准", hours: "以园方公告为准",
+    tip: "弘法寺在半山上，香客多，安静参观；沙漠植物区和化石森林别错过。",
+    fact: "植物园在梧桐山脚，湖区、温室、沙漠植物区和化石森林连成一片；半山的弘法寺香火很旺。",
+    factEn: "At the foot of Wutong Mountain: lakes, glasshouses, a desert-plant zone and a fossil forest, with Hongfa Temple up the slope.",
+    npc: "阿琳", story: "阿琳说她失恋那年天天下班来湖边坐，看着荷花开了又谢，后来就想通了。",
+    sourceName: "Wikimedia Commons", sourceUrl: "https://commons.wikimedia.org/wiki/Category:Fairy_Lake_Botanical_Garden",
+    photoNote: "照片为园内拍摄的植物特写",
+  },
+  {
+    key: "jinxiu", cityKey: "sz", locName: "锦绣中华 · 民俗村", nameEn: "Splendid China Folk Village",
+    photos: [phSzJinxiu, phSzJinxiu2],
+    address: "南山区 · 华侨城深南大道", price: "以景区公告为准", hours: "以景区公告为准（夜场演出更热闹）",
+    tip: "微缩景区白天逛，民俗村的晚场表演别错过。",
+    fact: "1989 年开园，按比例微缩了全国各地的名胜；旁边的民俗文化村能看各民族的建筑和歌舞。",
+    factEn: "Opened in 1989 with scale miniatures of China's landmarks; the folk village next door shows ethnic architecture and dance.",
+    npc: "陈伯", story: "陈伯说开园那年全家坐大巴来看微缩长城，那是他儿子第一次「去北京」。",
+    sourceName: "Wikimedia Commons", sourceUrl: "https://commons.wikimedia.org/wiki/Category:Splendid_China_Folk_Village",
+  },
+  {
+    key: "safari", cityKey: "sz", locName: "深圳野生动物园", nameEn: "Shenzhen Safari Park",
+    photos: [phSzSafari, phSzSafari2],
+    address: "南山区 · 西丽", price: "以园方公告为准", hours: "以园方公告为准",
+    tip: "猛兽区要坐带铁笼的观光车进去，记得关好车窗、别投喂。",
+    fact: "1993 年开园，草食区散养、猛兽区坐带铁笼的观光车穿行，还有海洋天地和夜间动物世界。",
+    factEn: "Opened in 1993: free-roaming herbivores, and a caged safari bus through the big-cat area.",
+    npc: "子健", story: "子健说小时候坐笼子车，一只老虎从车边走过，他吓得把可乐打翻在妈妈身上。",
+    sourceName: "Wikimedia Commons", sourceUrl: "https://commons.wikimedia.org/wiki/Category:Shenzhen_Safari_Park",
+  },
+  {
+    key: "octeast", cityKey: "sz", locName: "东部华侨城", nameEn: "OCT East",
+    photos: [phSzOcteast, phSzCablecar],
+    address: "盐田区 · 大梅沙", price: "以景区公告为准", hours: "以景区公告为准",
+    tip: "坐缆车上山看大梅沙海湾，山上的茶溪谷适合慢慢走。",
+    fact: "建在大梅沙背后的山里：茵特拉根小镇、茶溪谷、大侠谷连成一片，缆车上能俯瞰大梅沙海湾。",
+    factEn: "Set in the hills behind Dameisha — an alpine-style town, tea valleys and rides; the cable car looks out over the bay.",
+    npc: "阿琳", story: "阿琳说她和同事团建来过，缆车升到半山腰，整个大梅沙海湾突然出现在脚下，全车厢都安静了。",
+    sourceName: "Wikimedia Commons", sourceUrl: "https://commons.wikimedia.org/wiki/Category:OCT_East",
+  },
+  {
+    key: "qingqing", cityKey: "sz", locName: "青青世界", nameEn: "Evergreen Resort",
+    photos: [phSzQingqing],
+    address: "南山区 · 月亮湾大道", price: "以景区公告为准", hours: "以景区公告为准",
+    tip: "适合带小朋友，园子不大，半天就能逛完。",
+    fact: "藏在南山半山腰的生态园，热带植物、蝴蝶谷和农场小屋，城市里难得的一块绿荫。",
+    factEn: "An eco-park tucked on a Nanshan hillside — tropical plants, a butterfly valley and farm cabins.",
+    npc: "王姨", story: "王姨说外孙在蝴蝶谷追了一下午蝴蝶，回家路上在车里就睡着了。",
+    sourceName: "Wikimedia Commons", sourceUrl: "https://commons.wikimedia.org/wiki/Category:Evergreen_Resort_(Shenzhen)",
+  },
+  {
+    key: "dapeng", cityKey: "sz", locName: "大鹏所城", nameEn: "Dapeng Fortress",
+    photos: [phSzDapeng, phSzDapeng2],
+    address: "大鹏新区 · 鹏城村", price: "免费", hours: "全天（展馆以公告为准）",
+    tip: "城里的老巷子适合慢慢走，城门口的小吃店可以尝尝。",
+    fact: "明洪武二十七年（1394 年）建的海防卫所，深圳别称「鹏城」就是从这里来的。",
+    factEn: "A Ming coastal fort built in 1394 — Shenzhen's nickname \"Pengcheng\" comes from it.",
+    npc: "郭叔", story: "郭叔说他小时候在所城的城墙上放风筝，那时候还没人来旅游，城里都是老人和鸡。",
+    sourceName: "Wikimedia Commons", sourceUrl: "https://commons.wikimedia.org/wiki/Category:Dapeng_Fortress",
+  },
+  {
+    key: "octharbour", cityKey: "sz", locName: "欢乐海岸", nameEn: "OCT Harbour",
+    photos: [phSzOctharbour, phSzOctharbour2],
+    address: "南山区 · 深圳湾畔", price: "免费入园（项目另计）", hours: "全天（商户以营业时间为准）",
+    tip: "傍晚去，湖边散步、吃饭、看灯光，比白天舒服。",
+    fact: "深圳湾边的滨海商业区，湖区、湿地公园和商街连在一起，晚上灯光很美。",
+    factEn: "A waterfront district on Shenzhen Bay — lake, wetland park and shopping streets, lovely after dark.",
+    npc: "阿琳", story: "阿琳说同事聚餐最爱选这儿，吃完沿着湖走一圈，正好消食。",
+    sourceName: "Wikimedia Commons", sourceUrl: "https://commons.wikimedia.org/wiki/Category:OCT_Harbour",
+  },
+  {
+    key: "qiniang", cityKey: "sz", locName: "七娘山", nameEn: "Qiniang Mountain",
+    photos: [phSzQiniang],
+    address: "大鹏新区 · 南澳", price: "以景区公告为准（需预约）", hours: "以景区公告为准",
+    tip: "登山道陡，穿防滑鞋；山顶常有云雾，视野看运气。",
+    fact: "海拔 869 米，是深圳第二高峰，站在山顶能看到大鹏湾和排牙山。",
+    factEn: "At 869 m, Shenzhen's second-highest peak, overlooking Dapeng Bay and the Paiya ridge.",
+    npc: "郭叔", story: "郭叔说七娘山的云说来就来，上一秒还能看见海，下一秒连身边的人都看不清。",
+    sourceName: "Wikimedia Commons", sourceUrl: "https://commons.wikimedia.org/wiki/File:Qiniangshan,_Shenzhen.jpg",
+  },
+  {
+    key: "yangmeikeng", cityKey: "sz", locName: "杨梅坑", nameEn: "Yangmeikeng",
+    photos: [phSzYangmeikeng, phSzYangmeikeng2],
+    address: "大鹏新区 · 南澳", price: "免费（停车另计）", hours: "全天",
+    tip: "沿海边骑行道骑单车最舒服，傍晚在礁石边看海。",
+    fact: "大鹏半岛东端的海边山谷，溪流入海，沿海有骑行道和鹿嘴山庄的栈道。",
+    factEn: "A valley at the eastern tip of the Dapeng peninsula where a stream meets the sea, with a coastal cycle path.",
+    npc: "阿强", story: "阿强说他和朋友骑双人自行车沿海边骑，一路吵着谁没蹬，最后在海边笑成一团。",
+    sourceName: "Wikimedia Commons", sourceUrl: "https://commons.wikimedia.org/wiki/File:Yangmeikeng,_Dapeng.jpg",
+  },
+  {
+    key: "xichong", cityKey: "sz", locName: "西涌海滩", nameEn: "Xichong Beach",
+    photos: [phSzXichong, phSzXichong2],
+    address: "大鹏新区 · 南澳西涌", price: "以景区公告为准", hours: "全天（浴场时段以公告为准）",
+    tip: "海水干净但浪大，下水注意安全；晚上能去附近的天文台看星星。",
+    fact: "深圳最长、最干净的沙滩之一，远离市区，晚上没有城市光污染，能看到银河。",
+    factEn: "One of Shenzhen's longest and cleanest beaches — far enough from the city to see the Milky Way.",
+    npc: "阿强", story: "阿强说他第一次在西涌露营，半夜醒来看见满天星星，才知道深圳也能看到银河。",
+    sourceName: "Wikimedia Commons", sourceUrl: "https://commons.wikimedia.org/wiki/File:Sunset_on_Xichong.JPG",
+  },
+  {
+    key: "zhongying", cityKey: "sz", locName: "中英街", nameEn: "Chung Ying Street",
+    photos: [phSzZhongying, phSzZhongying2],
+    address: "盐田区 · 沙头角", price: "免费（进入需办理边境通行手续，以官方为准）", hours: "以官方公告为准",
+    tip: "进街前确认好通行手续；街心的界碑一定要看。",
+    fact: "一条街两边分属深圳和香港，街心的界碑就是边界，被叫做「一街两制」。",
+    factEn: "Half the street is Shenzhen, half Hong Kong — the boundary stones down the middle mark \"one street, two systems\".",
+    npc: "陈伯", story: "陈伯说八十年代来中英街买金首饰和电子表是件大事，街上挤得脚都落不了地。",
+    sourceName: "Wikimedia Commons", sourceUrl: "https://commons.wikimedia.org/wiki/Category:Chung_Ying_Street",
+  },
+  {
+    key: "tanglang", cityKey: "sz", locName: "塘朗山郊野公园", nameEn: "Tanglangshan Country Park",
+    photos: [phSzTanglang, phSzTanglang2],
+    address: "南山区 · 塘朗山", price: "免费", hours: "全天（建议白天登山）",
+    tip: "山顶的极目阁视野最好，南面是深圳湾和后海，北面是西丽水库。",
+    fact: "塘朗山横在南山和福田之间，山顶能同时望见深圳湾、后海和西丽水库。",
+    factEn: "Tanglang Mountain divides Nanshan and Futian; its summit looks over Shenzhen Bay, Houhai and Xili Reservoir.",
+    npc: "子健", story: "子健说他周末常和同学夜爬塘朗山，到顶时南山的灯一片片亮着，比白天还好看。",
+    sourceName: "Wikimedia Commons", sourceUrl: "https://commons.wikimedia.org/wiki/Category:Tanglang_Mountain",
+  },
+  {
+    key: "fenghuang", cityKey: "sz", locName: "凤凰山森林公园", nameEn: "Fenghuang Mountain Forest Park",
+    photos: [phSzFenghuang, phSzFenghuang2],
+    address: "宝安区 · 福永", price: "免费", hours: "全天",
+    tip: "山脚的凤凰古庙香火旺，上山的石阶不长，适合轻松走走。",
+    fact: "宝安的城市森林公园，山脚有古庙和凤凰古村，山顶望烟楼能看到珠江口。",
+    factEn: "A city forest park in Bao'an with an old temple at its foot; the hilltop tower looks out to the Pearl River estuary.",
+    npc: "陈伯", story: "陈伯说每年春节他都来凤凰山拜一拜，求一家人平平安安，然后在山脚吃碗豆腐花。",
+    sourceName: "Wikimedia Commons", sourceUrl: "https://commons.wikimedia.org/wiki/Category:Fenghuang_Mountain_(Shenzhen)",
+  },
+  {
+    key: "swcac", cityKey: "sz", locName: "海上世界文化艺术中心", nameEn: "Sea World Culture & Arts Center",
+    photos: [phSzSwcac, phSzSwcac2],
+    address: "南山区 · 蛇口望海路 1187 号", price: "展览以官方公告为准", hours: "以官方公告为准",
+    tip: "顶层平台能看海，看完展去旁边的海上世界吃饭。",
+    fact: "日本建筑师槇文彦设计，2017 年开放，几个错落的白色体块悬挑在蛇口海边，里面有设计博物馆和剧场。",
+    factEn: "Designed by Fumihiko Maki and opened in 2017 — stacked white volumes cantilevered over the Shekou waterfront, with a design museum and theatre.",
+    npc: "阿琳", story: "阿琳说她最喜欢在顶层平台坐着，看蛇口港的船一艘艘开出去。",
+    sourceName: "Wikimedia Commons", sourceUrl: "https://commons.wikimedia.org/wiki/Category:Sea_World_Culture_and_Arts_Center",
   },
   {
     key: "baylight", cityKey: "sz", locName: "欢乐港湾", nameEn: "OH Bay · Bay Glory Ferris Wheel",
