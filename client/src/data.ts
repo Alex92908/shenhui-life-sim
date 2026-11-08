@@ -7,7 +7,7 @@
 // 深圳国际交流中心 (香蜜湖). The 30-day season is November, so game day N is
 // November N.
 
-export type CityKey = "sz" | "hz";
+export type CityKey = "sz" | "hz" | "hk";
 
 export interface CityInfo {
   name: string;
@@ -56,6 +56,21 @@ export const CITIES: Record<CityKey, CityInfo> = {
     scene: "惠州 · 双月湾旁的老街",
     sky: "双月湾",
   },
+  hk: {
+    name: "香港",
+    emoji: "🇭🇰",
+    rentBase: 900,
+    goal: 20000,
+    payMul: 1.35,
+    foodMul: 1.4,
+    moodFun: 26,
+    funName: "坐天星小轮过海",
+    funCost: 25,
+    funDesc: "HK$5 都不到的百年渡轮，看维港两岸慢慢靠近——香港最抵的浪漫",
+    gigName: "茶餐厅帮工 / 送外卖",
+    scene: "香港 · 深水埗唐楼",
+    sky: "维多利亚港",
+  },
 };
 
 export interface Identity {
@@ -94,6 +109,14 @@ export interface Npc {
   name: string; job: string; emoji: string; color: number; line: string;
   outfit: string; shirt: number; pants: number; accessory: NpcAccessory;
   behavior: NpcBehavior; preferTypes: LocType[];
+  /** Which cities this neighbour belongs to. NPCs without the field are
+      the Shenzhen/Huizhou street crowd; Hong Kong has its own neighbours. */
+  cities?: CityKey[];
+}
+/** The neighbours who actually live in a city — Hong Kong's street crowd
+    is its own cast （茶餐厅伙计、的士司机、天星小轮船员…), bilingual. */
+export function npcsForCity(cityKey: CityKey): Npc[] {
+  return NPCS.filter((n) => (n.cities ? n.cities.includes(cityKey) : cityKey !== "hk"));
 }
 export const NPCS: Npc[] = [
   { name: "阿强", job: "外卖骑手", emoji: "🛵", color: 0xff8a00, line: "跑单路过，顺手帮你扶了下快倒的电动车。", outfit: "黄色骑手服 + 头盔，保温箱不离身", shirt: 0xf5b301, pants: 0x2e3440, accessory: "helmet", behavior: "commute", preferTypes: ["food", "transit"] },
@@ -107,6 +130,13 @@ export const NPCS: Npc[] = [
   { name: "阿琳", job: "你的同事", emoji: "👩‍💻", color: 0x3b82f6, line: "工位在你隔壁，需求评审永远坐第一排，保温杯里泡着枸杞。", outfit: "白衬衫 + 工牌，头发扎成马尾", shirt: 0xdbe7f5, pants: 0x334155, accessory: "bag", behavior: "stay", preferTypes: ["work"] },
   { name: "林婶", job: "隔壁邻居", emoji: "🏠", color: 0xe0658a, line: "住你隔壁，阳台上种满葱，晚饭点总能闻到她家煲汤的香气。", outfit: "家居碎花衫 + 拖鞋，买菜拎着布袋", shirt: 0xe0658a, pants: 0x6b4a5a, accessory: "none", behavior: "stay", preferTypes: ["home", "fun"] },
   { name: "郭叔", job: "菜市场摊主", emoji: "🥬", color: 0x65a30d, line: "菜摊摆了二十年，称头从不缺斤少两，熟客来了先塞把葱。", outfit: "深绿围裙 + 草帽，手边一把杆秤", shirt: 0x7a9a4d, pants: 0x44403c, accessory: "apron", behavior: "stay", preferTypes: ["market", "food"] },
+  /* ---- 香港街坊：中英双语，讲的都是香港的真实故事 ---- */
+  { name: "华哥", job: "茶餐厅伙计", emoji: "🧋", color: 0xd97706, line: "「唔该，一位？」华哥记性惊人，熟客未坐低已经冲好奶茶。He remembers every regular's order.", outfit: "白色围裙 + 毛巾搭肩，手写单不离手", shirt: 0xf5f0e6, pants: 0x2e3440, accessory: "apron", behavior: "stay", preferTypes: ["food"], cities: ["hk"] },
+  { name: "阿May", job: "中环白领", emoji: "💼", color: 0x0ea5e9, line: "中环返工的阿May，lunch 永远快靓正，放工去兰桂坊松一松。Central pace: fast at work, faster at happy hour.", outfit: "深蓝西装 + 白波鞋（返工标配），手袋里有后备高跟鞋", shirt: 0x2f3e55, pants: 0x23272e, accessory: "bag", behavior: "commute", preferTypes: ["work", "social"], cities: ["hk"] },
+  { name: "强哥", job: "的士司机", emoji: "🚕", color: 0xdc2626, line: "开红的三十年，香港每条隧道边条最塞佢都背得出。Thirty years on the red taxi — he knows every tunnel jam by heart.", outfit: "短袖恤衫 + 老花镜挂颈，车头摆满路线牌", shirt: 0xf8fafc, pants: 0x3a3f4a, accessory: "none", behavior: "commute", preferTypes: ["transit"], cities: ["hk"] },
+  { name: "婆婆珍", job: "街市菜贩", emoji: "🥬", color: 0x16a34a, line: "北角街市卖菜四十年，电车在门口叮叮过，她的秤从来唔呃人。Forty years at the market; the tram rings past her honest scales.", outfit: "碎花衫 + 围裙，腰包鼓鼓的都是散银", shirt: 0xe0658a, pants: 0x4a4a52, accessory: "apron", behavior: "stay", preferTypes: ["market", "food"], cities: ["hk"] },
+  { name: "船长辉", job: "天星小轮船员", emoji: "⛴️", color: 0x0284c7, line: "天星小轮开了几十年，HK$5 有找过海——辉哥说这是全世界最抵的观光船。The Star Ferry: the cheapest harbour cruise on Earth.", outfit: "白色船员制服 + 船帽，胳膊晒得黝黑", shirt: 0xf1f5f9, pants: 0x1e3a5f, accessory: "cap", behavior: "patrol", preferTypes: ["transit", "fun"], cities: ["hk"] },
+  { name: "肥妈", job: "深水埗邻居", emoji: "🏠", color: 0xe0658a, line: "住你隔篱的肥妈，煲汤香飘满层楼，成日问你食咗饭未。The neighbour whose soup smells fill the whole floor.", outfit: "家居花衫 + 布拖鞋，出门买菜拎个环保袋", shirt: 0xf0a6c0, pants: 0x6b4a5a, accessory: "none", behavior: "stay", preferTypes: ["home", "market"], cities: ["hk"] },
 ];
 
 export const WEATHERS = ["☀️ 晴", "🌤️ 多云", "☁️ 阴", "🌦️ 小雨", "⛈️ 暴雨", "🌊 海风"];
@@ -157,6 +187,11 @@ export const FOODS: Record<CityKey, Food[]> = {
     { name: "梅菜扣肉饭", emoji: "🍛", cost: 13, energy: 32, mood: 6, desc: "惠州本味，梅菜香到邻居敲墙" },
     { name: "海鲜大排档", emoji: "🦐", cost: 42, energy: 44, mood: 15, desc: "现捞现做，海风配啤酒，人间值得" },
     { name: "肠粉 + 豆浆", emoji: "🥛", cost: 8, energy: 20, mood: 3, desc: "早餐的体面，5分钟解决战斗" },
+  ],
+  hk: [
+    { name: "云吞面（细蓉）", emoji: "🍜", cost: 42, energy: 30, mood: 8, desc: "HK$42 · 银丝面弹牙，云吞一口一只虾，大地鱼汤底——香港面的体面" },
+    { name: "点心一盅两件", emoji: "🥟", cost: 58, energy: 32, mood: 11, desc: "HK$58 · 虾饺烧卖各一笼，普洱任斟，叹茶就是叹人生" },
+    { name: "菠萝油 + 丝袜奶茶", emoji: "🧋", cost: 28, energy: 22, mood: 9, desc: "HK$28 · 冰火菠萝油配拉茶，下午茶三点三，香港人的充电时间" },
   ],
 };
 
@@ -445,8 +480,46 @@ const HZ_LOCS: Loc[] = [
   { id: "hzbotanic", type: "scenic", emoji: "🌿", name: "惠州植物园", short: "惠州植物园", desc: "惠城丰山脚下的植物园，温室、沙地植物区和山顶的丰山公园连成一片。本地人周末遛娃吸氧的地方。", funName: "植物园温室看花", funCost: 10, funMood: 21, funDesc: "钻进温室看热带植物，再爬上丰山看老城", x: -16, z: -10, color: 0x65a30d, h: 1.2, w: 3.2 },
 ];
 
+/* ---- 香港：按真实地理铺——北面是新界（元朗/屯门/沙田/西贡），中间九龙
+   （深水埗/旺角/尖沙咀隔着维多利亚港），南面港岛（中环/铜锣湾/赤柱），
+   西南大屿山（机场/东涌/迪士尼/昂坪/大澳）。钱按港币（HK$）标价。 ---- */
+const HK_LOCS: Loc[] = [
+  { id: "home", type: "home", emoji: "🏠", name: "深水埗唐楼", short: "唐楼", desc: "深水埗的旧唐楼劏房，楼下就是鸭寮街和布市场。地方细，但落楼下什么都有——这就是你喺香港的窝。", x: -8, z: -4, color: 0xff6b4a, h: 3.2, w: 2.8 },
+  { id: "westkowloon", type: "transit", emoji: "🚄", name: "香港西九龙站", short: "西九龙站", desc: "广深港高铁的香港总站，落车过一地两检就入城。去深圳北最快 14 分钟，过关回内地的大门。", gigName: "车站接送 / 行李帮忙", x: -6, z: 3, color: 0x7c3aed, h: 2.2, w: 3.8 },
+  { id: "luohu-hk", type: "port", emoji: "🛃", name: "罗湖站 · 边境", short: "罗湖口岸", desc: "东铁线尽头，香港最老牌的陆路口岸。过桥就是罗湖——出示证件、过安检、行李过机，返深圳的人龙日日都长。", gigName: "口岸向导 / 行李帮忙", x: 0, z: -20, color: 0x22d3ee, h: 1.8, w: 3.4 },
+  { id: "central", type: "work", emoji: "🏙️", name: "中环金融区", short: "中环", desc: "中银大厦、汇丰总行、遮打花园——香港的心脏。返工的人西装骨骨，lunch 只有一个钟，行路快过跑步。", x: -6, z: 10, color: 0x3b82f6, h: 7, w: 3.4 },
+  { id: "kwuntong", type: "work", emoji: "🏭", name: "观塘工厦区", short: "观塘", desc: "旧工厦变身文创和初创的地盘，租金比中环平一大截。后巷有惊喜食堂，打工仔的秘密基地。", x: 18, z: 2, color: 0x64748b, h: 4.2, w: 3.2 },
+  { id: "sheungwan", type: "food", emoji: "🫖", name: "上环 · 茶餐厅食街", short: "上环食街", desc: "海味街隔篱的老区，茶餐厅、云吞面、点心酒楼挤满几条街。莲香楼的旧式点心车，全港买少见少。", x: -11, z: 9, color: 0xf59e0b, h: 2.6, w: 3.2 },
+  { id: "yumatei", type: "food", emoji: "🏮", name: "油麻地 · 庙街夜市", short: "庙街", desc: "庙街的煲仔饭和炒蟹香飘几条街，排档、占卜、唱粤曲的摊档连成一片——香港最地道的夜。", x: -5, z: 0, color: 0xf97316, h: 1.8, w: 3.2 },
+  { id: "mongkok", type: "market", emoji: "🛍️", name: "旺角 · 女人街", short: "旺角", desc: "全世界人口密度最高的地方之一：女人街、金鱼街、花墟、波鞋街。霓虹招牌密到遮天，人潮永远不散。", x: -4, z: -2, color: 0xe879f9, h: 3.4, w: 3.2 },
+  { id: "chunyeung", type: "market", emoji: "🥬", name: "北角 · 春秧街街市", short: "春秧街街市", desc: "电车直接驶进街市中间——全港独一无二的画面。两边是湿货干货摊档，叮叮车慢慢碌过，人人让路。", x: 11, z: 9, color: 0x06b6d4, h: 2.2, w: 3.2 },
+  { id: "causewaybay", type: "mall", emoji: "🛍️", name: "铜锣湾", short: "铜锣湾", desc: "时代广场、崇光百货、避风塘——全球店租最贵的购物区之一，行人永远塞满轩尼诗道。", x: 6, z: 10, color: 0xec4899, h: 4.4, w: 3.4 },
+  { id: "shatin", type: "mall", emoji: "🏬", name: "沙田新城市广场", short: "沙田", desc: "新界东的巨型商场连住沙田站，楼下是巴士总站。沙田人返工去中环，买嘢就喺屋企楼下解决。", x: 12, z: -14, color: 0xd946ef, h: 3.6, w: 3.4 },
+  { id: "bank-hk", type: "bank", emoji: "🏦", name: "汇丰银行总行", short: "汇丰总行", desc: "中环皇后大道中 1 号，门口一对铜狮子史提芬和施迪。香港人发钞、储钱、供楼，都绕不开这座大厦。", x: -4, z: 11, color: 0xf59e0b, h: 5.6, w: 3 },
+  { id: "hospital-hk", type: "health", emoji: "🏥", name: "玛丽医院", short: "玛丽医院", desc: "薄扶林的公立大医院，港大医学院的教学医院。急症室永远排长龙——身体系自己的，要锡住用。", x: -15, z: 11, color: 0xf43f5e, h: 4, w: 3.2 },
+  { id: "library-hk", type: "learn", emoji: "📚", name: "香港中央图书馆", short: "中央图书馆", desc: "铜锣湾摩顿台的十二层大馆，藏书过百万。自修室一位难求，考牌、进修、学英文的人都喺度搏杀。", x: 7, z: 8, color: 0x7c3aed, h: 3.4, w: 3.2 },
+  { id: "vicpark", type: "gym", emoji: "🌳", name: "维多利亚公园", short: "维园", desc: "铜锣湾闹市中的大草坪：晨运、跑步、踢波，维园阿伯的太极和年轻人的夜跑同场。城市再挤，这里都透到气。", funName: "维园晨跑一圈", funCost: 0, funMood: 18, funDesc: "绕住草坪跑一圈，铜锣湾的霓虹在树影后面闪", x: 5, z: 7, color: 0x84cc16, h: 1, w: 3.2 },
+  { id: "tst", type: "scenic", emoji: "🌃", name: "尖沙咀海滨 · 维多利亚港", short: "尖沙咀海滨", desc: "星光大道、钟楼、文化中心沿住海滨排开，对岸中环的灯一栋一栋亮起来。每晚八点，幻彩咏香江。", funName: "坐天星小轮过海", funCost: 5, funMood: 24, funDesc: "HK$5 有找，坐百年渡轮横过维港——全世界最抵的观光船", x: -2, z: 5, color: 0x0ea5e9, h: 1.2, w: 3.6 },
+  { id: "peak", type: "scenic", emoji: "🚠", name: "太平山顶", short: "山顶", desc: "海拔 552 米，香港的制高点。坐第六代山顶缆车斜斜上山，凌霄阁上望落去，维港和两岸高楼尽在脚下。", funName: "坐山顶缆车上山看夜景", funCost: 88, funMood: 28, funDesc: "缆车几乎垂直爬升，城市在身后一格一格升起；到顶正好赶上日落", x: -13, z: 14, color: 0x059669, h: 2.8, w: 3.4 },
+  { id: "tramroad", type: "fun", emoji: "🚃", name: "湾仔电车路", short: "电车路", desc: "1904 年通车至今的双层电车，全程 HK$3，慢悠悠碌过整个港岛北岸。坐上层最前排，就是移动的观景台。", funName: "坐叮叮电车慢游港岛", funCost: 3, funMood: 18, funDesc: "HK$3 由西环碌到北角，城市以步行的速度在窗边过", x: 1, z: 10, color: 0x14b8a6, h: 1.6, w: 3 },
+  { id: "disney", type: "fun", emoji: "🏰", name: "香港迪士尼乐园", short: "迪士尼", desc: "大屿山竹篙湾的童话王国，奇妙梦想城堡 2020 年登场。全球最细的迪士尼，但烟花和巡游一样不少。", funName: "迪士尼玩一整天", funCost: 639, funMood: 32, funDesc: "门票 HK$639 起——入城堡、睇巡游、等夜晚的烟花，心情直接满格", x: -28, z: 8, color: 0xe879f9, h: 3.2, w: 3.6 },
+  { id: "ngongping", type: "scenic", emoji: "🙏", name: "昂坪 · 天坛大佛", short: "昂坪大佛", desc: "坐昂坪 360 缆车跨山跨海 25 分钟，山上是 34 米高的天坛大佛和百年宝莲禅寺。爬 268 级石阶上去，风都静了。", funName: "缆车上昂坪拜大佛", funCost: 235, funMood: 26, funDesc: "水晶车厢脚下是海和山路，大佛在云雾里一点点变大", x: -31, z: 14, color: 0xb45309, h: 2.4, w: 3.4 },
+  { id: "taio", type: "scenic", emoji: "🎣", name: "大澳渔村", short: "大澳", desc: "大屿山西端的水上棚屋渔村，咸鱼、虾酱、茶果的味道飘满涌道。坐小艇出涌口，运气好会见到中华白海豚。", funName: "大澳坐艇找白海豚", funCost: 50, funMood: 25, funDesc: "棚屋在水上排成一排，小艇在涌道里慢慢穿", x: -36, z: 11, color: 0x0d9488, h: 1, w: 3.2 },
+  { id: "tungchung", type: "transit", emoji: "🚡", name: "东涌", short: "东涌", desc: "机场旁的新市镇，东荟城 outlet 和昂坪缆车站都在这里。机场打工仔的宿舍区，物价比市区平一截。", gigName: "缆车站 / 商场帮工", x: -24, z: 3, color: 0x38bdf8, h: 2.4, w: 3.2 },
+  { id: "airport-hk", type: "transit", emoji: "✈️", name: "香港国际机场", short: "机场", desc: "赤鱲角的人工岛机场，全球最繁忙的货运机场。地勤、行李、免税店——24 小时都缺人，也最锻炼人。", gigName: "机场地勤 / 行李帮忙", x: -34, z: 1, color: 0x38bdf8, h: 2.2, w: 4 },
+  { id: "oceanpark", type: "fun", emoji: "🐼", name: "海洋公园", short: "海洋公园", desc: "1977 年开园的香港人集体回忆：大熊猫、缆车、山上山下两个世界。坐园内缆车望住南中国海，几代人都在这里长大。", funName: "海洋公园坐缆车看海", funCost: 498, funMood: 28, funDesc: "门票 HK$498——缆车悬在海面上，熊猫在山下打盹", x: 2, z: 17, color: 0x22c55e, h: 2.6, w: 3.4 },
+  { id: "stanley", type: "fun", emoji: "⛱️", name: "赤柱", short: "赤柱", desc: "港岛南岸的慢活小镇：赤柱市集、卜公码头、美利楼，还有一排海边酒吧。外国人最爱来这里过周末。", funName: "赤柱市集逛海边", funCost: 60, funMood: 25, funDesc: "沿海滨长廊慢慢行，海风把市区的节奏吹散", x: 9, z: 19, color: 0xf97316, h: 1.2, w: 3.4 },
+  { id: "saikung", type: "scenic", emoji: "🦞", name: "西贡海鲜街", short: "西贡", desc: "「香港的后花园」：海滨长廊一排海鲜酒家，鱼缸里游的就是你的晚餐。出海去桥咀岛、半月湾，船程只要十几分钟。", funName: "西贡食海鲜坐船出海", funCost: 200, funMood: 27, funDesc: "在码头边拣活海鲜称好，酒家即刻加工，再坐街渡去半月湾游水", x: 30, z: -8, color: 0x0891b2, h: 1.2, w: 3.4 },
+  { id: "wongtaisin", type: "scenic", emoji: "🏮", name: "黄大仙祠", short: "黄大仙祠", desc: "「有求必应」的黄大仙祠，1915 年从广州迁来。年初一抢头炷香的人龙排到地铁站，啬色园的求签解签最出名。", funName: "黄大仙祠求签祈福", funCost: 0, funMood: 20, funDesc: "上一炷香，摇一支签——灵不灵，心诚则灵", x: 8, z: -4, color: 0xdc2626, h: 2, w: 3.2 },
+  { id: "tseungkwano", type: "fun", emoji: "🌉", name: "将军澳 · 海滨新市镇", short: "将军澳", desc: "跨湾大桥 2022 年通车后，将军澳变成海滨单车天堂。将军澳南海滨长廊连到调景岭，新楼、海景、后生仔。", funName: "跨湾大桥踩单车", funCost: 30, funMood: 22, funDesc: "沿海滨长廊踩到跨湾大桥底，海风追着车尾跑", x: 26, z: 2, color: 0x10b981, h: 1.6, w: 3.4 },
+  { id: "yuenlong", type: "market", emoji: "🥮", name: "元朗 · 大马路", short: "元朗", desc: "新界西的老城：老婆饼、肠粉、屏山文物径。元朗人自成一国，轻铁在马路上慢慢行，节奏比市区慢半拍。", gigName: "老店帮工 / 饼铺兼职", x: -20, z: -16, color: 0xf59e0b, h: 2, w: 3.2 },
+  { id: "tuenmun", type: "fun", emoji: "🏖️", name: "屯门 · 黄金海岸", short: "屯门", desc: "屯门码头和黄金海岸的海豚广场，是屯门人的后花园。轻铁总站就在旁边，去市区的巴士一坐就系一粒钟。", funName: "黄金海岸踏浪看日落", funCost: 15, funMood: 23, funDesc: "踩住幼沙行到海豚广场，日落把海面染成金色", x: -31, z: -7, color: 0x06b6d4, h: 1, w: 3.4 },
+  { id: "lankwaifong", type: "social", emoji: "🍸", name: "兰桂坊", short: "兰桂坊", desc: "中环旁边的一条斜路酒吧街，万圣节和跨年挤到水泄不通。白领放工的第一站，认人、倾偈、扩圈子的地方。", x: -7, z: 8, color: 0xa855f7, h: 2.4, w: 2.8 },
+  { id: "hotel-hk", type: "lodging", emoji: "🏨", name: "尖沙咀酒店 · 宾馆", short: "酒店宾馆", desc: "一边是半岛酒店的下午茶，一边是重庆大厦里的宾馆——同一条弥敦道，两种香港。住一晚，或者看看长租的门路。", x: -1, z: 6, color: 0xf472b6, h: 4.4, w: 3.2 },
+];
+
 export function getLocations(cityKey: CityKey): Loc[] {
-  return cityKey === "sz" ? SZ_LOCS : HZ_LOCS;
+  return cityKey === "sz" ? SZ_LOCS : cityKey === "hk" ? HK_LOCS : HZ_LOCS;
 }
 
 export const APPS = [
@@ -484,7 +557,7 @@ export function isSaturday(day: number): boolean {
 }
 
 /* ================= 交通方式 ================= */
-export type TransportModeId = "walk" | "bike" | "moto" | "bus" | "metro" | "taxi" | "rail" | "ferry" | "flight";
+export type TransportModeId = "walk" | "run" | "bike" | "moto" | "bus" | "metro" | "taxi" | "drive" | "rail" | "ferry" | "flight";
 /** Speed tiers — deliberately far apart so the choice of mode is a real
     decision: mapSpeed is world-units/sec (drives BOTH the map figure's
     movement speed and the real trip timer, so what you see is how long
@@ -494,11 +567,13 @@ export type TransportModeId = "walk" | "bike" | "moto" | "bus" | "metro" | "taxi
 export interface TransportMode { id: TransportModeId; emoji: string; name: string; desc: string; energyPerUnit: number; mapSpeed: number; etaPerUnit: number; etaFixed: number; speedTag: string; }
 export const TRANSPORT_MODES: TransportMode[] = [
   { id: "walk", emoji: "🚶", name: "步行", desc: "免费，最慢，耗能量", energyPerUnit: 0.55, mapSpeed: 6.5, etaPerUnit: 3.4, etaFixed: 0, speedTag: "最慢" },
+  { id: "run", emoji: "🏃", name: "跑步", desc: "免费，比步行快一半还多，最耗能量——赶时间又不想花钱时的选择，街上跑起来 NPC 都看你", energyPerUnit: 0.9, mapSpeed: 10, etaPerUnit: 2.1, etaFixed: 0, speedTag: "慢" },
   { id: "bike", emoji: "🚲", name: "骑行", desc: "¥3起，比步行快近一倍，全部地点可达——山顶、海滩、老街，再远也能骑到", energyPerUnit: 0.3, mapSpeed: 11, etaPerUnit: 1.7, etaFixed: 1, speedTag: "慢" },
   { id: "moto", emoji: "🛵", name: "摩托/电动车", desc: "短途最划算，明显快过骑行，远途耗电不划算", energyPerUnit: 0.18, mapSpeed: 15, etaPerUnit: 1.1, etaFixed: 1, speedTag: "中速" },
   { id: "bus", emoji: "🚌", name: "公交", desc: "¥2起，要等车、站站停，比电动车稳但快不了多少", energyPerUnit: 0.12, mapSpeed: 16.5, etaPerUnit: 1.0, etaFixed: 5, speedTag: "中速" },
   { id: "metro", emoji: "🚇", name: "地铁", desc: "按站收费，不堵车，进车厢真实乘车——中长途比地面交通快得多", energyPerUnit: 0.1, mapSpeed: 22, etaPerUnit: 0.62, etaFixed: 7, speedTag: "快" },
   { id: "taxi", emoji: "🚕", name: "打车", desc: "按距离计价，地面最快，点对点直达不用等站", energyPerUnit: 0.04, mapSpeed: 20, etaPerUnit: 0.72, etaFixed: 3, speedTag: "快" },
+  { id: "drive", emoji: "🚗", name: "自驾", desc: "开自己的车：油费/电费比打车便宜得多，点对点直达；路上跟车流一起等红灯，到了还要找车位、交停车费", energyPerUnit: 0.05, mapSpeed: 24, etaPerUnit: 0.6, etaFixed: 5, speedTag: "快" },
   { id: "rail", emoji: "🚄", name: "城际/高铁", desc: "全场最快：深惠跨城，深圳北↔惠州南，含进站安检时间", energyPerUnit: 0.06, mapSpeed: 34, etaPerUnit: 0.3, etaFixed: 12, speedTag: "最快" },
   { id: "ferry", emoji: "⛴️", name: "轮渡", desc: "蛇口邮轮港出发看海，船速不慢但要等班次", energyPerUnit: 0.08, mapSpeed: 15, etaPerUnit: 1.0, etaFixed: 15, speedTag: "中速" },
   { id: "flight", emoji: "✈️", name: "飞机", desc: "飞起来最快，但值机安检的固定开销最大，短途反而不划算", energyPerUnit: 0.05, mapSpeed: 30, etaPerUnit: 0.22, etaFixed: 50, speedTag: "最快" },
@@ -510,13 +585,46 @@ export function modeById(id: TransportModeId): TransportMode {
    honest name — modesForCity renames the metro entry for HZ so the word
    地铁 never appears as a Huizhou travel mode. */
 export function modesForCity(cityKey: CityKey): TransportMode[] {
-  return TRANSPORT_MODES.map((m) => (cityKey === "hz" && m.id === "metro"
-    ? { ...m, name: "城际", emoji: "🚆", desc: "莞惠城际，按站收费、不堵车，进车厢真实乘车——惠州没有地铁，市内轨道交通就靠城际" }
-    : m));
+  return TRANSPORT_MODES.map((m) => {
+    if (cityKey === "hz" && m.id === "metro")
+      return { ...m, name: "城际", emoji: "🚆", desc: "莞惠城际，按站收费、不堵车，进车厢真实乘车——惠州没有地铁，市内轨道交通就靠城际" };
+    if (cityKey === "hk") {
+      /* Hong Kong names its own transport: 港铁 (never 地铁）, 巴士， 的士，
+         渡轮， and the cross-border 高铁 from West Kowloon. The tram （电车）
+         and Peak Tram are place experiences （湾仔电车路 / 太平山顶）, and
+         天星小轮 rides live at 尖沙咀海滨. */
+      if (m.id === "metro") return { ...m, name: "港铁", desc: "MTR 港铁：荃湾线、港岛线、观塘线、东铁线等 10 条线，按站收费、不塞车，进车厢真实乘车——香港只有港铁，没有地铁这个说法" };
+      if (m.id === "bus") return { ...m, name: "巴士", desc: "双层巴士，HK$5 起；过海隧道巴士最方便，要等车、站站停" };
+      if (m.id === "bike") return { ...m, desc: "HK$3 起，比步行快近一倍，全部地点可达——山顶、海滩、老街，再远也能骑到" };
+      if (m.id === "taxi") return { ...m, name: "的士", desc: "红色的士（市区）按表收费，地面最快，点对点直达——过海要加隧道费，司机大佬最清楚哪条隧道不塞" };
+      if (m.id === "ferry") return { ...m, name: "渡轮", desc: "天星小轮过维港、新渡轮去长洲大澳——船速不慢但要等班次，海风和维港景是附赠的" };
+      if (m.id === "rail") return { ...m, name: "高铁", desc: "广深港高铁：西九龙站一地两检，14 分钟到福田、18 分钟到深圳北——过关回内地最快的方式" };
+      if (m.id === "flight") return { ...m, name: "飞机", desc: "赤鱲角机场出发，飞起来最快，但值机安检的固定开销最大，短途反而不划算" };
+    }
+    return m;
+  });
 }
-/** The everyday word for the city's urban rail: 地铁 in Shenzhen, 城轨 in Huizhou. */
+/** The everyday word for the city's urban rail: 地铁 in Shenzhen, 城轨 in Huizhou, 港铁 in Hong Kong. */
 export function railWord(cityKey: CityKey): string {
-  return cityKey === "hz" ? "城轨" : "地铁";
+  return cityKey === "hz" ? "城轨" : cityKey === "hk" ? "港铁" : "地铁";
+}
+/** Display currency of a city: Hong Kong prices EVERYTHING in HK$
+    (balance, pay, rent, food, fares — the 香港 city card promises 港币标价）;
+    Shenzhen and Huizhou price in ¥. Every amount the game renders goes
+    through fmtMoney with the city the player is standing in. */
+export function curSym(cityKey: CityKey): string {
+  return cityKey === "hk" ? "HK$" : "¥";
+}
+export function fmtMoney(n: number, cityKey: CityKey): string {
+  return `${curSym(cityKey)}${Math.round(n).toLocaleString()}`;
+}
+/** A cross-border HSR fare is named in the DEPARTURE city's currency:
+    leaving West Kowloon it is priced in HK$, leaving Shenzhen or
+    Huizhou in RMB — and the label says which, so a Hong Kong run never
+    shows a bare ¥ cross-border fare. */
+export function crossFareLabel(from: CityKey, fare: number): string {
+  if (from === "hk") return `HK$${fare}（西九龙出发 · 港币）`;
+  return `¥${fare}（${CITIES[from].name}出发 · 人民币）`;
 }
 /** Game-time minutes a trip of `dist` map units takes by this mode —
     the single source for every 预计耗时 shown in the UI. */
@@ -525,6 +633,21 @@ export function etaMinutes(id: TransportModeId, dist: number): number {
   return Math.max(1, Math.round(m.etaFixed + dist * m.etaPerUnit));
 }
 export function taxiFare(dist: number): number { return Math.round(11 + dist * 2.1); }
+/** Driving your own car: fuel/electricity only — much cheaper than a taxi,
+    but the destination's parking fee comes on top (see parkingFee). */
+export function driveFare(dist: number): number { return Math.round(3 + dist * 0.7); }
+/** What parking costs at the destination — the real friction of driving in
+    the city: free at home, pricey at malls / offices / APEC venues. */
+export function parkingFee(loc: Loc): number {
+  switch (loc.type) {
+    case "home": case "lodging": return 0;
+    case "mall": case "apec": case "work": case "health": return 12;
+    case "transit": case "port": return 10;
+    case "scenic": case "fun": return 8;
+    case "mountain": return 5;
+    default: return 6;
+  }
+}
 export function busFare(dist: number): number { return dist < 8 ? 2 : dist < 18 ? 3 : 4; }
 export function bikeFare(dist: number): number { return Math.round(3 + dist * 0.25); }
 export function motoFare(dist: number): number { return Math.round(6 + dist * 0.9); }
@@ -565,6 +688,16 @@ export const SCENIC_SPOTS: ScenicSpot[] = [
   { locId: "haiguiwan", cityKey: "hz", name: "海龟湾", tag: "保护区", tip: "海龟产卵场和观海栈道" },
   { locId: "sanjiaozhou", cityKey: "hz", name: "三角洲岛", tag: "海岛", tip: "快艇上岛浮潜看清澈海水" },
   { locId: "hzbotanic", cityKey: "hz", name: "惠州植物园", tag: "花园", tip: "温室热带植物和丰山全景" },
+  { locId: "tst", cityKey: "hk", name: "尖沙咀海滨 · 维多利亚港", tag: "维港", tip: "星光大道看对岸天际线，晚八点幻彩咏香江" },
+  { locId: "peak", cityKey: "hk", name: "太平山顶", tag: "山顶", tip: "缆车上凌霄阁，黄昏到夜景一次看够" },
+  { locId: "disney", cityKey: "hk", name: "香港迪士尼乐园", tag: "乐园", tip: "奇妙梦想城堡前打卡，晚上看烟花" },
+  { locId: "ngongping", cityKey: "hk", name: "昂坪 · 天坛大佛", tag: "大佛", tip: "268 级石阶登顶，缆车跨山跨海" },
+  { locId: "saikung", cityKey: "hk", name: "西贡海鲜街", tag: "后花园", tip: "码头拣海鲜即拣即煮，再坐街渡去半月湾" },
+  { locId: "stanley", cityKey: "hk", name: "赤柱", tag: "小镇", tip: "市集、美利楼、卜公码头和海边长廊" },
+  { locId: "wongtaisin", cityKey: "hk", name: "黄大仙祠", tag: "祈福", tip: "有求必应，上一炷香摇一支签" },
+  { locId: "taio", cityKey: "hk", name: "大澳渔村", tag: "棚屋", tip: "水上棚屋和涌道小艇，找中华白海豚" },
+  { locId: "mongkok", cityKey: "hk", name: "旺角 · 女人街", tag: "闹市", tip: "霓虹招牌下的排档长街，越夜越旺" },
+  { locId: "tramroad", cityKey: "hk", name: "湾仔电车路", tag: "叮叮车", tip: "HK$3 坐百年电车，上层前排是移动观景台" },
 ];
 
 /* ---- 双语地名 + 景区等级 + 城市简介（帮 APEC 外宾和新玩家认识这座城） ----
@@ -579,6 +712,7 @@ export const LOC_EN: Record<string, string> = {
   "七娘山": "Qiniang Mountain", "杨梅坑": "Yangmeikeng Coastal Valley", "西涌海滩": "Xichong Beach", "中英街": "Chung Ying Street", "塘朗山郊野公园": "Tanglangshan Country Park", "凤凰山森林公园": "Fenghuangshan Forest Park", "深圳博物馆": "Shenzhen Museum", "海上世界文化艺术中心": "Sea World Culture & Arts Center", "深圳湾体育中心 · 春茧": "Shenzhen Bay Sports Center (Spring Cocoon)", "龙岗大运中心": "Longgang Universiade Center",
   "海龟湾自然保护区": "Sea Turtle Bay Nature Reserve", "三角洲岛": "Delta Island (Sanjiaozhou)", "惠州博物馆": "Huizhou Museum", "霞涌海鲜街": "Xiayong Seafood Street", "东江公园": "Dongjiang Park", "惠州植物园": "Huizhou Botanical Garden",
   "罗浮山": "Luofu Mountain", "仲恺公司": "Zhongkai (Office)", "红花湖骑行站": "Honghuahu Lake Cycling", "惠州市图书馆": "Huizhou Library", "惠州西湖": "West Lake", "桥东二手市集": "Qiaodong Second-hand Market", "城轨站": "Intercity Rail Station", "港惠商场": "Ganghui Mall", "惠州市第一人民医院": "Huizhou First People's Hospital", "江北华贸天地": "Huamao Centre, Jiangbei", "惠州农商银行": "Huizhou Rural Commercial Bank", "老街夜市": "Old Street Night Market", "东江酒吧街": "Dongjiang Bar Street", "合江楼 · 东江夜游": "Hejiang Tower & Dongjiang Night Cruise", "惠州南站": "Huizhou South Station", "淡水老城": "Danshui Old Town", "大亚湾黄金海岸": "Daya Bay Golden Coast", "温泉酒店": "Hot Spring Hotel", "巽寮湾渔港": "Xunliao Bay Fishing Port", "海边出租屋": "Seaside Rental", "双月湾海边": "Shuangyue Bay Beach", "西湖青旅 · 湖畔民宿": "West Lake Hostel & B&B", "南昆山": "Nankun Mountain", "象头山": "Xiangtou Mountain", "高榜山 · 挂榜阁": "Gaobang Mountain & Guabang Pavilion", "惠州平潭机场": "Huizhou Pingtan Airport",
+  "深水埗唐楼": "Sham Shui Po Tong Lau", "香港西九龙站": "Hong Kong West Kowloon Station", "罗湖站 · 边境": "Lo Wu Station · Boundary", "中环金融区": "Central Financial District", "观塘工厦区": "Kwun Tong Industrial Buildings", "上环 · 茶餐廳食街": "Sheung Wan · Cha Chaan Teng Street", "油麻地 · 庙街夜市": "Yau Ma Tei · Temple Street Night Market", "旺角 · 女人街": "Mong Kok · Ladies' Market", "北角 · 春秧街街市": "North Point · Chun Yeung Street Market", "铜锣湾": "Causeway Bay", "沙田新城市广场": "New Town Plaza, Sha Tin", "汇丰银行总行": "HSBC Main Building", "玛丽医院": "Queen Mary Hospital", "香港中央图书馆": "Hong Kong Central Library", "维多利亚公园": "Victoria Park", "尖沙咀海滨 · 维多利亚港": "Tsim Sha Tsui Promenade · Victoria Harbour", "太平山顶": "Victoria Peak", "湾仔电车路": "Wan Chai Tramway", "香港迪士尼乐园": "Hong Kong Disneyland", "昂坪 · 天坛大佛": "Ngong Ping · Tian Tan Buddha", "大澳渔村": "Tai O Fishing Village", "东涌": "Tung Chung", "香港国际机场": "Hong Kong International Airport", "海洋公园": "Ocean Park Hong Kong", "赤柱": "Stanley", "西贡海鲜街": "Sai Kung Seafood Street", "黄大仙祠": "Wong Tai Sin Temple", "将军澳 · 海滨新市镇": "Tseung Kwan O Waterfront", "元朗 · 大马路": "Yuen Long Main Road", "屯门 · 黄金海岸": "Tuen Mun · Gold Coast", "兰桂坊": "Lan Kwai Fong", "尖沙咀酒店 · 宾馆": "Tsim Sha Tsui Hotels & Guesthouses",
 };
 
 export const LOC_GRADE: Record<string, string> = {
@@ -597,6 +731,11 @@ export const CITY_INTRO: Record<CityKey, CityIntro> = {
     title: "认识惠州",
     en: "Huizhou at a Glance",
     facts: "广东地级市，东江穿城而过 · 面积 11,347 km² · 常住人口约 606 万 · 罗浮山主峰飞云顶 1,296 米，道教名山 · 惠州西湖与杭州西湖同为「西湖」姊妹湖 · 大亚湾、巽寮湾、双月湾连成 280 多公里海岸线 · 厦深高铁半小时到深圳，莞惠城际通东莞。",
+  },
+  hk: {
+    title: "认识香港",
+    en: "Hong Kong at a Glance",
+    facts: "中国特别行政区 · 面积 1,114 km² · 人口约 750 万 · 港岛、九龙、新界、大屿山组成，维多利亚港隔开港岛和九龙 · 最高峰大帽山 957 米，太平山顶 552 米看维港 · 港铁 10 条重铁线 + 机场快线，全长 270+ 公里，电车（叮叮车）1904 年通车 · 天星小轮过海 HK$5 有找 · 茶餐厅、云吞面、点心、一盅两件，是这座城的日常。价格按港币（HK$）标示，游戏钱包与人民币按 1:1 简化结算。",
   },
 };
 export function scenicOf(cityKey: CityKey, locId: string): ScenicSpot | undefined {
@@ -634,6 +773,22 @@ export const METRO_LINES: MetroLine[] = [
      serves 惠州南 (transfers with 厦深高铁 there). */
   { id: "ganshen-rail", name: "赣深高铁（惠州北↔深圳北）", short: "赣深高铁", color: 0x9333ea, colorCss: "#9333EA", city: "hz", stations: [S("东莞南",-27,-7),S("仲恺",-20,-3,"work"),S("惠州北",0,-16)] },
   { id: "guangshan-rail", name: "广汕高铁（惠州南↔汕尾）", short: "广汕高铁", color: 0xe11d48, colorCss: "#E11D48", city: "hz", stations: [S("惠城南",-7,3),S("惠州南站",2,7,"hzsouth"),S("惠东站",18,2)] },
+  /* ---- 香港只有港铁，没有「地铁」这个说法 ----
+     9 条重铁线 + 机场快线 + 迪士尼线，线路颜色和走向按真实港铁网络；
+     广深港高铁在西九龙站和深圳北站之间过关（一地两检在西九龙站内完成）。
+     西九龙站与九龙站（东涌线/机场快线）之间是行人通道相连——和现实一样，
+     路线规划里算作一段步行接驳。 */
+  { id: "hsr-hk", name: "广深港高铁（西九龙↔深圳北）", short: "高铁", color: 0x7c3aed, colorCss: "#7C3AED", city: "both", stations: [S("香港西九龙",-6,3,"westkowloon"),S("福田",0,-1),S("深圳北站",1,-15,"north")] },
+  { id: "twl", name: "荃湾线", short: "荃湾线", color: 0xe2231a, colorCss: "#E2231A", city: "hk", stations: [S("荃湾",-18,-6),S("葵兴",-15,-5),S("美孚",-11,-4),S("深水埗",-8,-4,"home"),S("太子",-6,-3),S("旺角",-4,-2,"mongkok"),S("油麻地",-5,0,"yumatei"),S("佐敦",-4,2),S("尖沙咀",-2,5,"tst"),S("金钟",-2,9),S("中环",-6,10,"central")] },
+  { id: "isl", name: "港岛线", short: "港岛线", color: 0x0075c2, colorCss: "#0075C2", city: "hk", stations: [S("坚尼地城",-17,10),S("香港大学",-14,10),S("西营盘",-12,9),S("上环",-11,9,"sheungwan"),S("中环",-6,10,"central"),S("金钟",-2,9),S("湾仔",0,10,"tramroad"),S("铜锣湾",6,10,"causewaybay"),S("天后",8,9,"library-hk"),S("北角",11,9,"chunyeung"),S("鰂鱼涌",14,9),S("太古",16,9),S("柴湾",20,11)] },
+  { id: "ktl", name: "观塘线", short: "观塘线", color: 0x00a94f, colorCss: "#00A94F", city: "hk", stations: [S("黄埔",2,3),S("何文田",4,1),S("油麻地",-5,0,"yumatei"),S("旺角",-4,-2,"mongkok"),S("太子",-6,-3),S("石硖尾",-7,-5),S("九龙塘",2,-6),S("黄大仙",8,-4,"wongtaisin"),S("钻石山",11,-3),S("彩虹",14,-1),S("观塘",18,2,"kwuntong"),S("蓝田",21,3),S("油塘",23,3),S("调景岭",26,2,"tseungkwano")] },
+  { id: "tkl", name: "将军澳线", short: "将军澳线", color: 0x7d4998, colorCss: "#7D4998", city: "hk", stations: [S("北角",11,9,"chunyeung"),S("鰂鱼涌",14,9),S("油塘",23,3),S("调景岭",26,2,"tseungkwano"),S("将军澳",27,3),S("坑口",29,1),S("宝琳",30,0)] },
+  { id: "eal", name: "东铁线", short: "东铁线", color: 0x53b7e8, colorCss: "#53B7E8", city: "hk", stations: [S("罗湖",0,-20,"luohu-hk"),S("上水",-2,-17),S("粉岭",2,-15),S("太和",6,-16),S("大埔墟",10,-15),S("大学",11,-13),S("火炭",12,-12),S("沙田",12,-14,"shatin"),S("大围",10,-9),S("九龙塘",2,-6),S("红磡",0,3),S("会展",1,8),S("金钟",-2,9)] },
+  { id: "sil", name: "南港岛线", short: "南港岛线", color: 0xa9c400, colorCss: "#A9C400", city: "hk", stations: [S("金钟",-2,9),S("海洋公园",2,17,"oceanpark"),S("黄竹坑",0,15),S("利东",2,19),S("海怡半岛",4,20)] },
+  { id: "tml", name: "屯马线", short: "屯马线", color: 0x9a3820, colorCss: "#9A3820", city: "hk", stations: [S("屯门",-31,-7,"tuenmun"),S("兆康",-28,-10),S("天水围",-24,-13),S("朗屏",-21,-15),S("元朗",-20,-16,"yuenlong"),S("锦上路",-16,-13),S("荃湾西",-18,-7),S("美孚",-11,-4),S("南昌",-9,-1),S("红磡",0,3),S("土瓜湾",6,3),S("宋皇台",9,1),S("启德",13,-1),S("钻石山",11,-3),S("大围",10,-9),S("车公庙",11,-11),S("沙田围",13,-10),S("第一城",15,-11),S("乌溪沙",19,-13)] },
+  { id: "tcl", name: "东涌线", short: "东涌线", color: 0xf7943e, colorCss: "#F7943E", city: "hk", stations: [S("香港",-6,10,"central"),S("九龙",-6,3,"westkowloon"),S("奥运",-7,1),S("南昌",-9,-1),S("青衣",-16,-1),S("欣澳",-24,5),S("东涌",-24,3,"tungchung")] },
+  { id: "aex", name: "机场快线", short: "机场快线", color: 0x00888e, colorCss: "#00888E", city: "hk", stations: [S("香港",-6,10,"central"),S("九龙",-6,3,"westkowloon"),S("青衣",-16,-1),S("机场",-34,1,"airport-hk"),S("博览馆",-36,0)] },
+  { id: "drl", name: "迪士尼线", short: "迪士尼线", color: 0xf173ac, colorCss: "#F173AC", city: "hk", stations: [S("欣澳",-24,5),S("迪士尼",-28,8,"disney")] },
 ];
 export function metroLinesForCity(cityKey: CityKey): MetroLine[] {
   return METRO_LINES.filter((l) => l.city === cityKey || l.city === "both");
@@ -648,7 +803,7 @@ export interface MetroRoute { line: MetroLine; fromIdx: number; toIdx: number; s
  * 惠州北 (莞惠城际) and 惠州南站 (厦深高铁) are separate stations across town;
  * without this link the Huizhou intercity network and the high-speed rail
  * network would be two disconnected islands. */
-export const SHUTTLE_LINKS: [string, string][] = [["惠州北", "惠州南站"]];
+export const SHUTTLE_LINKS: [string, string][] = [["惠州北", "惠州南站"], ["香港西九龙", "九龙"]];
 /** BFS over the station graph: ride along a line, change lines at a
  * same-name station, or cross between the paired stations in SHUTTLE_LINKS
  * by shuttle bus. Returns the fewest-stops route, with legs split at each
@@ -853,7 +1008,7 @@ export function planRailTrip(cityKey: CityKey, fromLocId: string, toLocId: strin
   if (direct <= best.walkIn + best.walkOut) return null;
   return best;
 }
-export function rentFlatWeekly(cityKey: CityKey): number { return cityKey === "hz" ? 620 : 950; }
+export function rentFlatWeekly(cityKey: CityKey): number { return cityKey === "hz" ? 620 : cityKey === "hk" ? 1600 : 950; }
 
 /* ================= 地铁车厢 ================= */
 export interface CarriagePassenger { emoji: string; name: string; kind: "sitting" | "standing" | "elder" | "kid" | "phone" | "sleeping"; }
@@ -896,6 +1051,12 @@ export const RESTAURANTS: Restaurant[] = [
     { name: "兰州牛肉面", cost: 18, energy: 30, mood: 6, desc: "一清二白三红四绿" }, { name: "羊肉串 ×10 + 馕", cost: 45, energy: 34, mood: 11, desc: "孜然辣椒面，趁热吃" }, { name: "大盘鸡拌面", cost: 38, energy: 42, mood: 9, desc: "土豆比鸡还入味" }] },
   { id: "r-hk", name: "港式茶餐厅", cuisine: "粤式 · 茶餐厅", region: "中餐", emoji: "🧋", cities: ["sz"], tier: "¥¥", scene: "卡座、吊扇、拼桌文化。伙计端着丝袜奶茶穿梭，墙上餐牌密密麻麻，出餐快过地铁报站——这就是香港速度在深圳的投影。", tables: "卡座拼桌 · 靠墙双人位", dishes: [
     { name: "干炒牛河 + 冻柠茶", cost: 36, energy: 34, mood: 9, desc: "镬气十足，茶餐厅标配" }, { name: "菠萝油 + 丝袜奶茶", cost: 22, energy: 22, mood: 8, desc: "冰火两重天" }, { name: "烧腊三宝饭", cost: 34, energy: 36, mood: 8, desc: "叉烧烧鹅油鸡一次满足" }] },
+  { id: "r-hk-tea", name: "华记茶餐厅（上环）", cuisine: "港式 · 茶餐厅", region: "香港", emoji: "🧋", cities: ["hk"], tier: "HK$", scene: "卡座、吊扇、拼桌，伙计一只手托四杯奶茶。餐牌密密麻麻贴在墙上，出餐快过港铁报站——「唔该，一位？茶走，冻柠茶少甜！」这就是香港速度。价格按港币（HK$）。", tables: "卡座拼桌 · 靠墙双人位", dishes: [
+    { name: "云吞面 + 冻柠茶", cost: 52, energy: 32, mood: 9, desc: "HK$52 · 细蓉弹牙，茶餐厅的入场券" }, { name: "菠萝油 + 丝袜奶茶", cost: 28, energy: 22, mood: 9, desc: "HK$28 · 下午茶三点三，冰火两重天" }, { name: "干炒牛河", cost: 58, energy: 36, mood: 10, desc: "HK$58 · 镬气够不够，一口就知" }] },
+  { id: "r-hk-dimsum", name: "旧式点心酒楼（莲香风味）", cuisine: "粤式 · 点心", region: "香港", emoji: "🫖", cities: ["hk"], tier: "HK$", scene: "推车仔卖点心的老派酒楼：阿姐推着蒸笼车慢慢行，揭盖就是白汽。一盅两件，普洱任斟，隔篱台的阿伯在看马经——香港的早晨，就系咁叹。价格按港币（HK$）。", tables: "大厅圆台 · 靠窗卡位", dishes: [
+    { name: "虾饺皇 + 烧卖（一盅两件）", cost: 58, energy: 30, mood: 12, desc: "HK$58 · 虾饺皮薄到透光，叹茶标配" }, { name: "怀旧马拉糕 + 糯米鸡", cost: 46, energy: 32, mood: 9, desc: "HK$46 · 推车点心，卖完就冇" }, { name: "及第粥 + 炸两", cost: 44, energy: 30, mood: 8, desc: "HK$44 · 老广的早晨体面，香港一样通用" }] },
+  { id: "r-hk-dapaidong", name: "庙街大牌档", cuisine: "港式 · 大牌档", region: "香港", emoji: "🍺", cities: ["hk"], tier: "HK$", scene: "折叠台、塑料凳、大光灯，镬气和人声一起升起。煲仔饭的饭焦香飘过半条庙街，啤酒要用大碗饮——香港夜晚的江湖气，全在这里。价格按港币（HK$）。", tables: "街边折叠台 · 骑楼底长凳", dishes: [
+    { name: "腊味煲仔饭", cost: 68, energy: 38, mood: 12, desc: "HK$68 · 揭开盖豉油浇饭焦，正" }, { name: "避风塘炒蟹（小份）", cost: 148, energy: 40, mood: 15, desc: "HK$148 · 蒜茸豆豉辣到出汗，过瘾" }, { name: "椒盐鲜鱿 + 冻咸柠七", cost: 78, energy: 30, mood: 11, desc: "HK$78 · 大牌档的夜宵仪式感" }] },
   { id: "r-west1", name: "意式披萨屋", cuisine: "意大利菜", region: "西方", emoji: "🍕", cities: ["sz", "hz"], tier: "¥¥¥", scene: "砖砌的披萨窑炉火光跳动，面团在厨师手里转成薄饼。红白格桌布、烛台、轻声的爵士乐，窗外是海湾的灯——约会和犒劳自己的地方。", tables: "窑炉吧台位 · 烛光双人桌 · 露台位", dishes: [
     { name: "玛格丽特窑烤披萨", cost: 68, energy: 36, mood: 13, desc: "现烤出炉，芝士拉丝" }, { name: "奶油蘑菇意面", cost: 52, energy: 34, mood: 11, desc: "酱汁裹满每一根面" }, { name: "提拉米苏 + 浓缩咖啡", cost: 38, energy: 16, mood: 12, desc: "苦甜收尾，仪式感拉满" }] },
   { id: "r-west2", name: "美式汉堡餐吧", cuisine: "美式 · 餐吧", region: "西方", emoji: "🍔", cities: ["sz"], tier: "¥¥", scene: "霓虹灯牌、皮沙发卡座、大屏幕放着球赛。汉堡在铁板上滋滋作响，精酿啤酒的泡沫溢出来，隔壁桌在为进球欢呼。", tables: "吧台位 · 球赛大屏卡座", dishes: [

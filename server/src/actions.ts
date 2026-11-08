@@ -37,6 +37,7 @@ const worldResponse = z.object({
   online: z.array(playerShape),
   onlineSz: z.number(),
   onlineHz: z.number(),
+  onlineHk: z.number(),
   chat: z.array(
     z.object({
       id: z.number(),
@@ -117,6 +118,7 @@ async function loadWorld(ctx: Ctx, cityKey: string): Promise<World> {
     })),
     onlineSz: onlineRows.filter((p) => p.cityKey === "sz").length,
     onlineHz: onlineRows.filter((p) => p.cityKey === "hz").length,
+    onlineHk: onlineRows.filter((p) => p.cityKey === "hk").length,
     chat: chatRows
       .slice()
       .reverse()
@@ -155,8 +157,10 @@ const profileArgs = {
   name: z.string().trim().min(1).max(12),
   emoji: z.string().min(1).max(8),
   color: z.number().int().min(0).max(0xffffff),
-  cityKey: z.enum(["sz", "hz"]),
+  cityKey: z.enum(["sz", "hz", "hk"]),
 };
+
+const CITY_NAMES: Record<string, string> = { sz: "深圳", hz: "惠州", hk: "香港" };
 
 /* ---- real weather (user: 天色天气应该根据真实的来) ----
    The game's sky, rain and weather readouts follow the REAL current
@@ -169,6 +173,7 @@ const WEATHER_TTL_MS = 30 * 60_000;
 const WEATHER_CITIES = {
   sz: { zh: "深圳", en: "Shenzhen, Guangdong, China", lat: 22.5455, lon: 114.0577 },
   hz: { zh: "惠州", en: "Huizhou, Guangdong, China", lat: 23.1115, lon: 114.4152 },
+  hk: { zh: "香港", en: "Hong Kong, China", lat: 22.3193, lon: 114.1694 },
 } as const;
 
 type WeatherKind =
@@ -189,7 +194,7 @@ function kindFromDescription(desc: string): WeatherKind {
 const realWeatherResponse = z.object({
   ok: z.boolean(),
   stale: z.boolean(),
-  cityKey: z.enum(["sz", "hz"]),
+  cityKey: z.enum(["sz", "hz", "hk"]),
   locationName: z.string(),
   summary: z.string(),
   description: z.string(),
@@ -264,7 +269,7 @@ export const Actions = {
             playerId: args.playerId,
             playerName: args.name,
             kind: "join",
-            text: `来到了${args.cityKey === "sz" ? "深圳" : "惠州"}，开始过日子`,
+            text: `来到了${CITY_NAMES[args.cityKey] ?? "深圳"}，开始过日子`,
             createdAt: now,
           });
         }
@@ -306,7 +311,7 @@ export const Actions = {
       "Heartbeat: updates a player's current location and run snapshot, returns the fresh world snapshot.",
     request: z.object({
       playerId: z.string().min(4).max(64),
-      cityKey: z.enum(["sz", "hz"]),
+      cityKey: z.enum(["sz", "hz", "hk"]),
       locId: z.string().min(1).max(32),
       gameDay: z.number().int().min(1).max(31),
       money: z.number().int().min(-1000000).max(100000000),
@@ -335,7 +340,7 @@ export const Actions = {
   getWorld: defineAction({
     description:
       "Returns the shared world snapshot for a city: online players, chat, life feed and leaderboard.",
-    request: z.object({ cityKey: z.enum(["sz", "hz"]) }),
+    request: z.object({ cityKey: z.enum(["sz", "hz", "hk"]) }),
     response: z.object({ world: worldResponse }),
     async handler(ctx, args) {
       return { world: await loadWorld(ctx, args.cityKey) };
@@ -346,7 +351,7 @@ export const Actions = {
     description:
       "Returns the real current weather for Shenzhen or Huizhou (live channel, cached server-side for 30 minutes), used to drive the game's sky, rain and weather displays.",
     request: z.object({
-      cityKey: z.enum(["sz", "hz"]),
+      cityKey: z.enum(["sz", "hz", "hk"]),
       force: z.boolean().optional(),
     }),
     response: realWeatherResponse,
@@ -552,7 +557,7 @@ export const Actions = {
           playerId: me.id,
           playerName: me.name,
           kind: "finish",
-          text: `过完了 30 天，结局是「${args.resultTitle}」，存款 ¥${args.money.toLocaleString()}`,
+          text: `过完了 30 天，结局是「${args.resultTitle}」，存款 ${me.cityKey === "hk" ? "HK$" : "¥"}${args.money.toLocaleString()}`,
           createdAt: new Date(),
         });
         ctx.invalidateQueries();
