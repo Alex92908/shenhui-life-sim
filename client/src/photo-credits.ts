@@ -5,6 +5,7 @@
    tools/photos/ (see DATA-PLAN.md). */
 export interface PhotoCredit { title: string; artist: string; license: string; page: string }
 export const PHOTO_CREDITS: Record<string, PhotoCredit> = {
+ "place-xlhotel": {"title": "Hotel, Xunliao Bay.jpg", "artist": "Alice Fuweixia", "license": "CC BY-SA 4.0", "page": "https://commons.wikimedia.org/wiki/File:Hotel,_Xunliao_Bay.jpg"},
  "scene-park": {
   "title": "Shenzhen Bay Park Sunrise Theatre 20210904.jpg",
   "artist": "歪歪",

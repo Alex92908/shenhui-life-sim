@@ -45,7 +45,7 @@ ANCHORS = {
 }
 # game locations whose real spot is known but which shouldn't steer the place
 # layout (several sit within a km of each other in 仲恺 but far apart on the map)
-KM_ONLY = {"co-tcl": (23.0344, 114.3343), "co-desay": (23.0472, 114.3428), "co-eve": (23.0605, 114.2376), "co-petro": (22.7548, 114.5875)}
+KM_ONLY = {"tanyue": (22.6900, 114.7450), "co-tcl": (23.0344, 114.3343), "co-desay": (23.0472, 114.3428), "co-eve": (23.0605, 114.2376), "co-petro": (22.7548, 114.5875)}
 # game rail stations -> real position (for "nearest station")
 STATIONS = {
     "仲恺": (23.0294, 114.2618), "沥林北": (22.9818, 114.2249), "陈江南": (23.0087, 114.3219), "惠环": (23.0327, 114.3610),

@@ -52,6 +52,7 @@ import placeHejiang2 from "./assets/place-hejiang2.jpg";
 import placeTurtle from "./assets/place-turtle.jpg";
 import placeTurtle2 from "./assets/place-turtle2.jpg";
 import placeXunliao from "./assets/place-xunliao.jpg";
+import placeXlHotel from "./assets/place-xlhotel.jpg";
 import placeAquarium from "./assets/place-aquarium.jpg";
 import placeAquarium2 from "./assets/place-aquarium2.jpg";
 import placeWheel from "./assets/place-wheel.jpg";
@@ -244,6 +245,17 @@ export const GUIDE: GuidePlace[] = [
     factEn: "On the east shore of Daya Bay: clear water, white sand and scattered islets — one of Huizhou's busiest seaside resorts.",
     npc: "阿强", story: "阿强说渔船一靠岸，鱼虾蟹按筐往岸上搬，游客围着挑，砍价声比海浪还响。",
     sourceName: "Wikimedia Commons · Xunliao Bay", sourceUrl: "https://commons.wikimedia.org/wiki/File:Seascape_of_Xunliao_Bay.jpg",
+  },
+  {
+    key: "tanyue", cityKey: "hz", locName: "檀悦豪生度假酒店", nameEn: "Tanyue Howard Johnson Resort, Xunliao Bay",
+    photos: [placeXlHotel, placeXunliao],
+    address: "惠东县巽寮滨海旅游度假区", price: "房价随季节浮动，以酒店 / 订房平台为准", hours: "全天",
+    tip: "周末和节假日房价翻倍，工作日去最划算；傍晚在海边看日落，再回泳池泡一会儿。",
+    fact: "巽寮湾是惠州最热门的海滨度假地之一，海边一字排开的度假酒店，大多自带泳池和私家沙滩。",
+    factEn: "Xunliao Bay is one of Huizhou's busiest beach resorts; its seafront hotels mostly come with pools and their own beach.",
+    npc: "阿强", story: "阿强说旺季的时候他在酒店码头带客人出海，一天跑五六趟，客人里一半是从深圳开车过来的。",
+    sourceName: "Wikimedia Commons · Xunliao Bay", sourceUrl: "https://commons.wikimedia.org/wiki/File:Hotel,_Xunliao_Bay.jpg",
+    photoNote: "照片为巽寮湾的海边度假酒店和海湾，示意度假氛围，不是该酒店本身",
   },
   {
     key: "baylight", cityKey: "sz", locName: "欢乐港湾", nameEn: "OH Bay · Bay Glory Ferris Wheel",
