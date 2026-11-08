@@ -142,6 +142,93 @@ export const STORIES: NpcStory[] = [
         ? { title: "项目没成，人更强了", text: "App 做了三个月没做起来，但阿琳靠这个作品拿到了一家大厂的 offer：「跟你一起熬的夜，都值了。」", fx: { skill: 2, mood: 6, network: 2 } }
         : { title: "阿琳开始了新生活", text: "阿琳去了另一家公司，朋友圈里她在新工位上比耶：「这边不用天天开评审会了！」", fx: { mood: 5, network: 1 } },
   },
+  /* ---- 香港街坊 ---- */
+  {
+    npc: "华哥", title: "茶餐厅加租",
+    chapters: [
+      { need: 0, title: "一杯茶走", text: "华哥一边撞奶一边叹气：「业主话下个月加租三成。做咗三十年，可能要执笠喇。」他把一杯茶走推到你面前。", choices: [
+        { label: "陪他倾下计", reply: "「你肯听我讲，我已经好开心。」他多送了你一件菠萝油。", fx: { rel: 5, mood: 3 } },
+        { label: "帮他在网上发个好评", reply: "你写了一篇长长的食评，配上奶茶的照片。「哗，几十个赞！」", fx: { rel: 4, network: 1 } },
+      ] },
+      { need: 8, title: "老街坊的联署", text: "街坊们想联署求业主手下留情，华哥却拿不定主意：「求人唔似我性格……」", choices: [
+        { label: "帮他挨家挨户收联署", reply: "你跑了一个下午，收到两百多个签名。华哥看着那叠纸，眼眶红了。", fx: { energy: -12, rel: 10, network: 2 }, flag: "petition" },
+        { label: "建议他搬去租金平点的街", reply: "「搬……都系一条路。」他望住店里的卡位，没再说话。", fx: { rel: 4 }, flag: "move" },
+      ] },
+      { need: 18, title: "最后的决定", text: "业主约华哥见面。「你话我应该点？坚持留低，定系搬去深水埗重新开始？」", choices: [
+        { label: "留低，老店就要在老地方", reply: "「好！我同佢倾到尽。」华哥把围裙绑紧了一点。", fx: { rel: 4 }, flag: "stay" },
+        { label: "搬去深水埗，租平人情浓", reply: "「深水埗……我细个就喺嗰度大。」他笑了。", fx: { rel: 4 }, flag: "go" },
+      ] },
+    ],
+    ending: (f) => f.includes("stay") && f.includes("petition")
+      ? { title: "茶餐厅留低了", text: "业主看到两百多个街坊签名，只加了一成。华哥在墙上贴了一张「多谢街坊」，下面第一个名就是你。「你嘅奶茶，以后免费。」", fx: { mood: 15, money: 0, network: 2 } }
+      : f.includes("go")
+        ? { title: "深水埗新店开张", text: "华哥的新店开在深水埗，卡位、吊扇、手写餐牌全部搬了过来。开张第一日，老街坊坐满一屋。", fx: { mood: 12, network: 1 } }
+        : { title: "茶餐厅执笠了", text: "华哥的店还是关了。最后一日，他冲了最后一杯茶走给你：「香港人，捱得过嘅。」他准备去连锁店做师傅。", fx: { mood: 4 } },
+  },
+  {
+    npc: "船长辉", title: "最后一班船",
+    chapters: [
+      { need: 0, title: "船头的老人", text: "天星小轮靠岸，船长辉站在船头抛缆。「明年我就退休喇，开咗四十年，维港每一粒灯我都识。」", choices: [
+        { label: "请他讲讲以前的维港", reply: "他讲起七十年代的维港，没有高楼，晚上只有渔火。「你哋后生好彩，见到咁靓嘅香港。」", fx: { rel: 5, mood: 4 } },
+        { label: "帮他拍一张船头的照片", reply: "「影靓啲，我要寄俾我个孙。」他挺直了腰。", fx: { rel: 4, mood: 2 } },
+      ] },
+      { need: 8, title: "孙仔的愿望", text: "辉哥的孙仔想在他退休前坐一次他开的船，但孙仔在加拿大。「机票咁贵，算啦。」", choices: [
+        { label: "教他用视频直播开船", reply: "那天你拿着手机站在船头，孙仔在视频里大叫「爷爷好劲！」，全船乘客都笑了。", fx: { energy: -8, rel: 10 }, flag: "video" },
+        { label: "鼓励他亲自飞去探孙", reply: "「或者……退休之后去一转。」他把船票夹进了钱包。", fx: { rel: 5 }, flag: "fly" },
+      ] },
+      { need: 18, title: "退休那天", text: "退休前一晚，辉哥问你：「最后一班船，你嚟唔嚟？」", choices: [
+        { label: "一定来，陪他开完最后一程", reply: "「好，我留个船头位俾你。」", fx: { rel: 6 }, flag: "lastferry" },
+        { label: "帮他办一个小小的欢送会", reply: "你约了几个常客，准备了蛋糕和横额。", fx: { money: -150, rel: 8, network: 1 }, flag: "party" },
+      ] },
+    ],
+    ending: (f) => ({
+      title: f.includes("party") ? "码头上的欢送会" : "最后一班船",
+      text: j(f.includes("party") ? "最后一班船靠岸，码头上站满了常客，横额写着「辉哥，一路顺风」。辉哥拉响汽笛，久久没有放手。" : "最后一班船，你站在船头，辉哥让你拉响了汽笛。对岸的灯一栋一栋亮起来。", f.includes("fly") ? "下个月，他寄来一张在温哥华跟孙仔的合照。" : f.includes("video") ? "孙仔在视频里看完了全程。" : "", "「维港交俾你哋喇。」"),
+      fx: { mood: 15, network: f.includes("party") ? 2 : 1 },
+    }),
+  },
+  {
+    npc: "阿May", title: "深圳的 offer",
+    chapters: [
+      { need: 0, title: "三点钟的 lunch", text: "阿May 三点钟才吃上午饭：「中环啲人食饭都系开会。我都唔知几耐冇准时收工过。」", choices: [
+        { label: "陪她吃完这顿饭", reply: "她终于放下手机，慢慢吃完了一碗云吞面。「多谢你，我好耐冇咁坐低过。」", fx: { rel: 5, mood: 3 } },
+        { label: "约她周末去西贡行山", reply: "「好呀！我都想透下气。」她在手机日历上打了个星号。", fx: { rel: 4 }, flag: "hike" },
+      ] },
+      { need: 8, title: "前海的猎头", text: "一个前海的猎头找上阿May：薪水差不多，但每天准时下班，住深圳的房子大一倍。「你觉得我适合北上吗？」", choices: [
+        { label: "陪她去深圳看看", reply: "你们坐高铁去了前海，在深圳湾公园看了一场日落。「原来深圳咁靓。」", fx: { energy: -10, rel: 8 }, flag: "visit" },
+        { label: "劝她先想清楚家人那边", reply: "「我阿妈一个人住……我再谂下。」", fx: { rel: 5 }, flag: "family" },
+      ] },
+      { need: 18, title: "要不要签", text: "offer 摆在面前，阿May 手里的笔迟迟落不下去。「你话，我应唔应该签？」", choices: [
+        { label: "签吧，换一种生活", reply: "她深吸一口气，签了。「深圳见！」", fx: { rel: 5 }, flag: "go" },
+        { label: "留在香港，在本地找平衡", reply: "「或者我应该同老细倾下，唔好再咁做落去。」", fx: { rel: 5 }, flag: "stay" },
+      ] },
+    ],
+    ending: (f) => f.includes("go")
+      ? { title: "阿May 北上了", text: j("阿May 搬去了前海，每天六点准时下班，周末坐高铁回香港陪阿妈饮茶。", f.includes("visit") ? "「多谢你陪我去睇过，我先敢签。」" : "", "她发来一张深圳湾日落的照片。"), fx: { mood: 12, network: 2 } }
+      : { title: "阿May 学会了收工", text: j("阿May 留在中环，但跟老板谈好了每周两天准时收工。", f.includes("hike") ? "周末她拉你去西贡行山，说这是她的「充电日」。" : "", "「原来平衡唔使搬城市，只需要讲出口。」"), fx: { mood: 10, network: 1 } },
+  },
+  {
+    npc: "婆婆珍", title: "菜档传给谁",
+    chapters: [
+      { need: 0, title: "四十年的秤", text: "婆婆珍在春秧街卖了四十年菜，电车在她档口前叮叮驶过。「我个孙仔读大学，冇人接手喇。」", choices: [
+        { label: "帮她卖一个早上的菜", reply: "你学会了用杆秤，还帮她招呼了几个熟客。「后生仔，有前途！」", fx: { energy: -8, rel: 6 } },
+        { label: "买一大袋菜回家", reply: "她多塞了你一把葱：「下次再嚟。」", fx: { money: -40, rel: 4 } },
+      ] },
+      { need: 8, title: "孙仔的想法", text: "婆婆珍的孙仔阿杰说想把菜档做成网上订菜。婆婆珍摇头：「网上？菜要用手拣先知靓唔靓。」", choices: [
+        { label: "帮阿杰做一个订菜小程序", reply: "你和阿杰熬了两个晚上，订单页上线了。第一单是隔壁楼的阿婆。", fx: { energy: -12, skill: 1, rel: 8 }, flag: "online" },
+        { label: "劝阿杰先跟婆婆在档口学一年", reply: "「好，我暑假先嚟帮手。」阿杰挽起了袖子。", fx: { rel: 6 }, flag: "learn" },
+      ] },
+      { need: 18, title: "电车经过的早上", text: "婆婆珍最近腰痛，问你：「你话我系咪应该退休，俾阿杰试下？」", choices: [
+        { label: "让阿杰接手，婆婆做顾问", reply: "「顾问？咁好听！」婆婆珍笑得眼睛都眯了。", fx: { rel: 5 }, flag: "handover" },
+        { label: "多做几年，慢慢交接", reply: "「我都系舍唔得呢个档口。」", fx: { rel: 5 }, flag: "slow" },
+      ] },
+    ],
+    ending: (f) => f.includes("handover") && f.includes("online")
+      ? { title: "菜档有了接班人", text: "阿杰接手了菜档，网上订单一日几十单，婆婆珍每朝坐在档口旁边「监工」。电车叮叮驶过，她向你挥手：「呢个档口，唔会冇咗。」", fx: { mood: 15, network: 2 } }
+      : f.includes("handover")
+        ? { title: "婆婆珍退休了", text: "阿杰接过了杆秤，生意时好时坏，但每个熟客他都记得名字。婆婆珍说：「慢慢嚟，我四十年前都系咁。」", fx: { mood: 10, network: 1 } }
+        : { title: "婆婆珍还在档口", text: "婆婆珍还在卖菜，阿杰每个周末来帮手。「做得一日得一日，呢度就系我嘅家。」", fx: { mood: 8 } },
+  },
 ];
 
 export const storyOf = (npc: string) => STORIES.find((s) => s.npc === npc) ?? null;

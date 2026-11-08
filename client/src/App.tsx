@@ -3,6 +3,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { SafeAreaTopScrim } from "@hatch/space-sdk/client";
 import { loadMeta, saveMeta, touchStreak, streakReward, bump, rollWeek, checkAchievements, dailyEvent, dateKey, ACHIEVEMENTS, WEEKLY_GOALS, type Meta, type CityEvent } from "./meta";
 import { api, type ApiResponse } from "./api";
+import { AccountModal, accountToken } from "./Account";
+import { StoreModal, LOOK_COLOR, LOOK_TITLE } from "./Store";
+const lookOf = (b: object): string | null => (b as { look?: string | null }).look ?? null;
 import { TERMS, PRIVACY, LEGAL_VERSION, OPERATOR_MISSING } from "./legal";
 import { getLang, setLangStored, installTranslator, LANGS, trText, type Lang } from "./i18n";
 import { cloudCode, newCloudCode, setCloudCode, prettyCode, liteDefault, setQuality, readInvite, inviteLink, clearInviteParams, drawShareCard } from "./share";
@@ -15,7 +18,8 @@ curSym, fmtMoney, crossFareLabel,
 findMetroRoute, findStationRoute, exitLocForStation, resolveLoc, partialFare, nearbyPlaces, nearbyServices, placesForCity, PLACE_KINDS, type MetroLine, planRailTrip, allMetroDestinations, linesForLoc, metroLinesForCity, crowdForRide, motoFare,
 RESTAURANTS, DELIVERY_PLATFORMS, SHOP_VENUES, LODGINGS, rentFlatWeekly, OUTFITS, outfitOf, isRainy, HOME_ROOMS,
 LOC_EN, LOC_GRADE, CITY_INTRO,
-type AppId, type CityKey, type Loc, type TransportModeId, type MetroRoute
+type AppId, type CityKey, type Loc, type TransportModeId, type MetroRoute,
+crossRoutes, isCrossOpen, crossHoursStr, crossFareStr, crossName, crossNote, CROSS_ROUTES, type CrossRoute
 } from "./data";
 import { pickEvent, type GameEvent } from "./events";
 import {
@@ -35,7 +39,7 @@ import { storyEN } from "./stories-en";
 import { MiniGame, type GameSpec, type GameResult } from "./MiniGame";
 import { ACTIVITIES as ACTIVITIES_LIST, CAT_LABEL, DATE_QUESTIONS, DROP_SETS, ROMANCE_STAGES, activitiesAt, activityById, dropById, romanceStage, type Activity, type ActCat } from "./activities";
 import { resolveActivity, isRushHour } from "./playlogic";
-import { track, setAnalyticsPlayer } from "./analytics";
+import { track, setAnalyticsPlayer, deviceId } from "./analytics";
 
 /** Unique station names of a city with the lines serving each — the index
     behind the map search box. */
@@ -157,6 +161,7 @@ name: string;
 }
 
 export const LS_KEY = "shhr-pc-save-v1";
+const CITY_EN: Record<CityKey, string> = { sz: "Shenzhen", hz: "Huizhou", hk: "Hong Kong" };
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const fmt = (n: number, ck: CityKey = "sz") => fmtMoney(n, ck);
 const hexCss = (n: number) => `#${n.toString(16).padStart(6, "0")}`;
@@ -734,10 +739,22 @@ const [legacyGain, setLegacyGain] = useState<{ pts: number; parts: string[] } | 
 const [play, setPlay] = useState<{ act: Activity; spec: GameSpec; partyId?: number; mate?: string } | null>(null);
 const [datePick, setDatePick] = useState<Activity | null>(null);
 const [partyOpen, setPartyOpen] = useState(false);
+/** 跨城路线选择：去哪座城（null = 关着） */
+const [crossTo, setCrossTo] = useState<CityKey | null>(null);
 const [partyResult, setPartyResult] = useState<number | null>(null);
 /* 点人：玩家名片、私信窗口（peer = 对方公开 id） */
 const [cardOf, setCardOf] = useState<string | null>(null);
 const [dmOpen, setDmOpen] = useState(false);
+const [accountOpen, setAccountOpen] = useState(false);
+const [storeOpen, setStoreOpen] = useState(false);
+/* back from the Stripe payment page: ?paid=<order> (or cancel) */
+useEffect(() => {
+  const q = new URLSearchParams(window.location.search).get("paid");
+  if (!q) return;
+  window.history.replaceState(null, "", window.location.pathname + window.location.hash);
+  if (q !== "cancel") window.setTimeout(() => setStoreOpen(true), 2500); // the webhook usually lands within a second or two
+}, []);
+const [loggedIn, setLoggedIn] = useState(() => !!accountToken());
 const [dmPeer, setDmPeer] = useState<string | null>(null);
 const [dmInput, setDmInput] = useState("");
 /* 「现在能干嘛」总览 */
@@ -1004,6 +1021,7 @@ const s = gsRef.current;
 const prof = profileRef.current;
 if (!s ||!prof) throw new Error("no game");
 return api.syncPresence({
+device: deviceId() || undefined,
 playerId: prof.playerId,
 cityKey: s.cityKey,
 locId: currentLocRef.current,
@@ -1020,6 +1038,13 @@ title: metaRef.current.title,
 onSuccess: (data) => {
 if (data.me && data.me !== myPubRef.current) setMyPub(data.me);
 for (const g of data.inbox ?? []) receiveGift(g);
+/* the server keeps the real balance: earnings it could not account for are
+   taken back, and the game falls back to its figure */
+if (data.bank?.corrected) {
+  const fix = data.bank.money;
+  mutate((x) => { x.money = fix; });
+  showToast(en ? "💳 Balance corrected to the server's books (earnings faster than the game allows were not counted)." : "💳 余额已按服务器账本校正：超出游戏节奏的进账没有入账。");
+}
 const s = gsRef.current;
 queryClient.setQueryData(["world", s?.cityKey?? "sz"], data);
 },
@@ -1203,6 +1228,7 @@ setSelectedLoc("home");
 setPhase("game");
 const iden = IDENTITIES.find((i) => i.id === restored.idenId) ?? IDENTITIES[0]!;
 void api.joinWorld({
+device: deviceId() || undefined,
 playerId: prof.playerId,
 name: prof.name,
 emoji: iden.emoji,
@@ -1463,7 +1489,7 @@ else { await navigator.clipboard.writeText(`${text}${link}`); showToast("分享�
 const copyInvite = async () => {
 const st = gsRef.current; const prof = profileRef.current;
 if (!st || !prof) return;
-try { await navigator.clipboard.writeText(inviteLink(myPubRef.current, prof.name, st.employer)); showToast("邀请链接已复制：朋友点开就能进同一个世界，你会收到 ¥200 邀请奖励。"); }
+try { await navigator.clipboard.writeText(inviteLink(myPubRef.current, prof.name, st.employer)); showToast("邀请链接已复制：朋友点开就能进同一个世界。朋友玩满 3 天、和真人组过一次局后，你会收到 ¥200 邀请奖励（每周最多 10 份）。"); }
 catch { showToast("复制失败，长按下面的链接手动复制。"); }
 };
 
@@ -1535,24 +1561,25 @@ function intercityFare(from: CityKey, to: CityKey): number {
   if (pair === "hk-hz") return 120;
   return INTERCITY_FARE;
 }
-const switchCity = (to: CityKey) => {
+const switchCity = (to: CityKey, route?: CrossRoute) => {
 const s0 = gsRef.current;
 if (!s0) return;
 if (walking || carriage || lifeAnim) { showToast("先等这趟行程结束，再去坐跨城的车。"); return; }
 const from = s0.cityKey;
 if (to === from) return;
-const fare = intercityFare(from, to);
+const fare = route ? route.fare : intercityFare(from, to);
 const crossing = from === "hk" || to === "hk";
+const arrLoc = route?.toLoc ?? INTERCITY_STATION[to];
 /* Fare as the player sees it: cross-border fares are labelled in the
    DEPARTURE currency (West Kowloon → HK$, Shenzhen/Huizhou → ¥, named
    as such); the domestic Shenzhen⇄Huizhou fare stays a plain ¥40. */
-const fareTxt = crossing ? crossFareLabel(from, fare) : `¥${fare}`;
+const fareTxt = route ? crossFareStr(route) : crossing ? crossFareLabel(from, fare) : `¥${fare}`;
 /* The fare is charged when the player can afford it, but a switch is
    NEVER blocked by an empty wallet （绝不拦路， same rule as cycling):
    broke players ride free and are told so plainly. */
 const charged = s0.money >= fare;
-const fromStation = getLocations(from).find((l) => l.id === INTERCITY_STATION[from])?.name ?? CITIES[from].name;
-const toStationLoc = getLocations(to).find((l) => l.id === INTERCITY_STATION[to]);
+const fromStation = getLocations(from).find((l) => l.id === (route && route.fromLoc !== "*" ? route.fromLoc : INTERCITY_STATION[from]))?.name ?? CITIES[from].name;
+const toStationLoc = getLocations(to).find((l) => l.id === arrLoc);
 const toStation = toStationLoc?.name ?? CITIES[to].name;
 const arrive = () => {
 const wall = generateDailyPosts({ day: s0.day, cityKey: to, playerName: profileRef.current?.name ?? "我" }, [], gsRef.current?.npcMem ?? {});
@@ -1563,14 +1590,17 @@ s.energy = clamp(s.energy - 6, 1, 100);
 s.metroRides = (s.metroRides ?? 0) + 1;
 s.npcFeed = wall.posts;
 s.npcMem = wall.mems;
-s.log = [{ day: s.day, text: crossing
+if (route) s.energy = clamp(s.energy - Math.round(route.min / 15), 1, 100); // the trip is already acted out: it tires you, it does not lock you
+s.log = [{ day: s.day, text: route
+  ? `${route.emoji} ${route.name}：从${fromStation}出发${crossing ? "，出示证件、安检、入境" : ""}，${route.min} 分钟后到了${toStation}——接下来在${CITIES[to].name}过日子，进度、家当原样带着${charged ? (fare ? `（${fareTxt}）` : "") : "（钱包不够，这趟免费）"}。`
+  : crossing
   ? `过关啦：坐高铁从${fromStation}出发，在${to === "hk" ? "西九龙站一地两检" : "口岸"}办完出示证件、安检、入境手续，抵达${toStation}——接下来在${CITIES[to].name}过日子，进度、家当原样带着走${charged ? `（车票 ${fareTxt}）` : "（钱包不够车票钱，这趟免费坐）"}。`
   : `坐厦深高铁从${fromStation}到${toStation}，接下来在${CITIES[to].name}过日子——进度、家当都原样带着走${charged ? `（车票 ${fareTxt}）` : "（钱包不够车票钱，这趟免费坐）"}。` }, ...s.log].slice(0, 40);
 });
-setCurrentLoc(INTERCITY_STATION[to]); currentLocRef.current = INTERCITY_STATION[to];
-setSelectedLoc(INTERCITY_STATION[to]);
+setCurrentLoc(arrLoc); currentLocRef.current = arrLoc;
+setSelectedLoc(arrLoc);
 setAsideTab("place"); autoOpenAside();
-setMapFocus({ locId: INTERCITY_STATION[to], nonce: Date.now() });
+setMapFocus({ locId: arrLoc, nonce: Date.now() });
 showToast(charged
   ? `${crossing ? "🛃 过关成功" : "🚄 到站"}——${toStation}！这里是${CITIES[to].name}——地图、天气、街坊都换了，进度原样带着（车票 ${fareTxt}）。`
   : `${crossing ? "🛃 过关成功" : "🚄 到站"}——${toStation}！钱包不够车票钱，这趟免费坐，绝不拦路。这里是${CITIES[to].name}，进度原样带着。`);
@@ -1581,6 +1611,24 @@ postFeed("life", crossing ? `过关去了${CITIES[to].name}，换座城市过日
    sequence for Hong Kong, the 下高铁 platform scene for Huizhou — then
    the arrival callback flips the city. */
 playLifeAnim(crossing ? "crossing" : "alightRail", arrive);
+};
+/** Take one real route: it runs only in its real hours, a car route needs a
+    licence and a car, and you board where the route starts. */
+const takeRoute = (r: CrossRoute) => {
+const s0 = gsRef.current; if (!s0) return;
+if (r.shut) { showToast(en ? `${r.emoji} ${crossName(r, true)}: ${crossHoursStr(r, true)}.` : `${r.emoji} ${r.name}：${r.shut}。`); return; }
+if (!isCrossOpen(r, nowMin())) { showToast(en ? `${r.emoji} ${crossName(r, true)} isn't running now (${crossHoursStr(r, true)}, Beijing time). The Huanggang cross-border bus runs 24 hours.` : `${r.emoji} ${r.name} 现在不开（${crossHoursStr(r)}，北京时间）。换一条：皇岗口岸的跨境巴士 24 小时都有。`); return; }
+if (r.car && !((s0.license ?? 0) >= 3 && (s0.carOwned || s0.carDay === s0.day))) { showToast("自驾要先考到驾照、有车（买车或者租一天）。"); return; }
+if (s0.busyUntil && Date.now() < s0.busyUntil) { showToast(`还在忙「${s0.busyWhat ?? "上一件事"}」，忙完再出发。`); return; }
+if (r.fromLoc !== "*" && currentLocRef.current !== r.fromLoc) {
+  const l = getLocations(s0.cityKey).find((x) => x.id === r.fromLoc);
+  setCrossTo(null); setSelectedLoc(r.fromLoc); walkTo(r.fromLoc);
+  showToast(`先去${l?.name ?? "出发点"}——到了在那里点「${r.name}」出发。`);
+  return;
+}
+setCrossTo(null);
+track("cross_city", { route: r.id });
+switchCity(r.to, r);
 };
 
 /* ---------- core numbers ---------- */
@@ -1658,7 +1706,7 @@ else if (kind === "invite") x.money += 200;
 updMeta((m) => bump(m, "social"));
 const coName = kind === "referral" ? companyById(r.gift.company ?? undefined).short : "";
 floatReward(`${meta0.emoji} 来自${r.gift.fromName}`, "green");
-showToast(kind === "invite" ? `🎉 你邀请的${r.gift.fromName}来深惠过日子了！邀请奖励 ¥200 已到账。` : kind === "referral" ? `🤝 ${r.gift.fromName}把你内推进了${coName}：去${coName}面试，门槛降低（技能 -2、经验 -6）。` : `${meta0.emoji} ${r.gift.fromName}送了你一份${meta0.name}（${meta0.effect}）。在聊天页可以回赠。`);
+showToast(kind === "invite" ? `🎉 你邀请的${r.gift.fromName}在城里站稳了脚跟！邀请奖励 ¥200 已到账。` : kind === "referral" ? `🤝 ${r.gift.fromName}把你内推进了${coName}：去${coName}面试，门槛降低（技能 -2、经验 -6）。` : `${meta0.emoji} ${r.gift.fromName}送了你一份${meta0.name}（${meta0.effect}）。在聊天页可以回赠。`);
 addLog(`收到${r.gift.fromName}送的${meta0.name}。`);
 }).catch(() => { claimingGifts.current.delete(g.id); });
 };
@@ -2136,7 +2184,7 @@ gen.posts.slice(0, 2).forEach((p, i) => window.setTimeout(() => pushDanmakuRef.c
 /* 街坊连续剧的钩子：谁今天有新的一章，早上就冒个弹幕提醒 */
 {
 const g2 = gsRef.current;
-const ready = g2 ? STORIES.filter((st) => { const k = storyStatus(st, g2.story?.[st.npc], memOf(g2.npcMem ?? {}, st.npc).rel, g2.day).kind; return (k === "ready" && (g2.story?.[st.npc]?.ch ?? 0) > 0) || k === "ending"; }) : [];
+const ready = g2 ? STORIES.filter((st) => npcsForCity(g2.cityKey).some((n) => n.name === st.npc)).filter((st) => { const k = storyStatus(st, g2.story?.[st.npc], memOf(g2.npcMem ?? {}, st.npc).rel, g2.day).kind; return (k === "ready" && (g2.story?.[st.npc]?.ch ?? 0) > 0) || k === "ending"; }) : [];
 ready.slice(0, 2).forEach((st, i) => window.setTimeout(() => pushDanmakuRef.current(en ? `📖 ${trText(st.npc)}'s story "${L(st.title)}" continues — go and talk to ${trText(st.npc)}` : `📖 ${st.npc}的故事「${st.title}」有后续了——去找${st.npc}聊聊`), 2600 + i * 1200));
 }
 }
@@ -2276,9 +2324,8 @@ addLog(`${text}`);
     // Came in through a friend's invite link: welcome bonus + an intro
     // (内推) to the friend's company.
     if (invite && invite.fromId !== myPubRef.current) {
-      state.money += 100;
       if (invite.co && COMPANIES.some((c) => c.id === invite.co && c.id !== "startup")) state.referrals = [invite.co];
-      state.log = [{ day: 1, text: `${invite.from}邀请你来${cityInfo.name}，见面礼 ¥100${state.referrals?.length ? `，还帮你内推了${companyById(invite.co ?? undefined).short}` : ""}。` }, ...state.log];
+      state.log = [{ day: 1, text: `${invite.from}邀请你来${cityInfo.name}${state.referrals?.length ? `，还帮你内推了${companyById(invite.co ?? undefined).short}` : ""}。` }, ...state.log];
     }
     finishedSent.current = false;
     profileRef.current = prof;
@@ -2292,9 +2339,14 @@ addLog(`${text}`);
     saveLocal(prof, state);
     setResult(null);
     setPhase("game");
-    joinMut.mutate({ playerId: prof.playerId, name, emoji: iden.emoji, color: iden.color, cityKey: city }, {
+    const invitedBy = invite && invite.fromId !== myPubRef.current ? invite.fromId : undefined;
+    joinMut.mutate({ playerId: prof.playerId, name, emoji: iden.emoji, color: iden.color, cityKey: city, device: deviceId() || undefined, ...(invitedBy ? { invitedBy } : {}) }, {
       onSuccess: () => {
-        if (invite && invite.fromId !== myPubRef.current) void api.sendGift({ playerId: prof.playerId, toId: invite.fromId, kind: "invite" }).catch(() => {});
+        /* 见面礼由服务器发：每个账号、每台设备只发一次 */
+        if (invitedBy) void api.claimReward({ playerId: prof.playerId, kind: "welcome", device: deviceId() || undefined }).then((r) => {
+          if (r.ok) { mutate((x) => { x.money += r.money; }); floatReward(`+${fmt(r.money)} 见面礼`, "gold"); addLog(`收到邀请见面礼 ${fmt(r.money)}。`); }
+          else if (r.error) showToast(r.error);
+        }).catch(() => {});
         clearInviteParams();
       },
     });
@@ -2512,7 +2564,7 @@ addLog(`${text}`);
     if (a.id === "rentcar" && (s.carOwned || s.carDay === s.day)) return en ? "You already have a car today" : "今天已经有车了";
     return null;
   };
-  const datePartners = (s: GameState) => NPCS.filter((n) => memOf(s.npcMem ?? {}, n.name).rel >= 15 || (s.romance?.[n.name] ?? 0) > 0);
+  const datePartners = (s: GameState) => npcsForCity(s.cityKey).filter((n) => memOf(s.npcMem ?? {}, n.name).rel >= 15 || (s.romance?.[n.name] ?? 0) > 0);
   const specFor = (a: Activity): GameSpec => (a.cat === "date" && a.game.type === "quiz" ? { ...a.game, questions: [...DATE_QUESTIONS].sort(() => Math.random() - 0.5).slice(0, 3) } : a.game);
   const startActivity = (a: Activity, opts: { partyId?: number; mate?: string; locId?: string } = {}) => {
     const s0 = gsRef.current; if (!s0 || play) return;
@@ -2595,7 +2647,7 @@ addLog(`${text}`);
     const s0 = gsRef.current; const prof = profileRef.current; if (!s0 || !prof) return;
     const loc = locById(selectedLoc);
     void api.createParty({ playerId: prof.playerId, cityKey: s0.cityKey, locId: loc.id, locName: loc.name, activityId: a.id, title: a.name[0] }).then((r) => {
-      if (!r.ok) { showToast(r.error ?? (en ? "Couldn't open the party." : "组局失败了。")); return; }
+      if (!r.ok) { if (r.error?.includes("绑定账号")) setAccountOpen(true); showToast(r.error ?? (en ? "Couldn't open the party." : "组局失败了。")); return; }
       showToast(en ? `🎉 Party open: ${a.name[1]} at ${trText(loc.name)}. Everyone in the city can see it — start when you're ready; neighbours fill empty seats.` : `🎉 组局成功：在${loc.name}${a.name[0]}。同城玩家都能看到；人到了就开始，没人来街坊会来凑数。`);
       void partiesQuery.refetch(); setPartyOpen(true); track("party_create", { act: a.id });
     }).catch(() => showToast(en ? "Network hiccup — try again." : "网络不太好，再试一次。"));
@@ -2603,7 +2655,7 @@ addLog(`${text}`);
   const joinPartyNow = (pt: (typeof parties)[number]) => {
     const prof = profileRef.current; if (!prof) return;
     void api.joinParty({ playerId: prof.playerId, partyId: pt.id }).then((r) => {
-      if (!r.ok) { showToast(r.error ?? ""); return; }
+      if (!r.ok) { if (r.error?.includes("绑定账号")) setAccountOpen(true); showToast(r.error ?? ""); return; }
       track("party_join", { act: pt.activityId });
       void partiesQuery.refetch();
       if (currentLocRef.current !== pt.locId) { showToast(en ? `Joined! Heading to ${trText(pt.locName)}…` : `加入了！正在赶去${pt.locName}……`); setPartyOpen(false); setSelectedLoc(pt.locId); walkTo(pt.locId); }
@@ -2619,7 +2671,7 @@ addLog(`${text}`);
     });
   };
   /* NPC companions for a party nobody joined: deterministic per party */
-  const ghostMates = (pid: number) => { const pool = NPCS.slice().sort((x, y) => ((hashStr(x.name + pid) % 97) - (hashStr(y.name + pid) % 97))); return pool.slice(0, 2).map((n, i) => ({ id: `npc-${n.name}`, name: n.name, emoji: n.emoji, score: ((hashStr(`${n.name}:${pid}:${i}`) % 70) + 25) / 100, buddy: 0 })); };
+  const ghostMates = (pid: number) => { const pool = npcsForCity(gsRef.current?.cityKey ?? "sz").slice().sort((x, y) => ((hashStr(x.name + pid) % 97) - (hashStr(y.name + pid) % 97))); return pool.slice(0, 2).map((n, i) => ({ id: `npc-${n.name}`, name: n.name, emoji: n.emoji, score: ((hashStr(`${n.name}:${pid}:${i}`) % 70) + 25) / 100, buddy: 0 })); };
 
   /* ---------- 点人：名片、私信、邀请组局、拉黑举报 ---------- */
   const pickActor = (who: { npc: string } | { player: string }) => {
@@ -2634,7 +2686,7 @@ addLog(`${text}`);
   const sendDmNow = (peer: string, body: string) => {
     const prof = profileRef.current; if (!prof || !body.trim()) return;
     void api.sendDm({ playerId: prof.playerId, toId: peer, body: body.trim() }).then((r) => {
-      if (!r.ok) { showToast(r.error ?? (en ? "Message not sent." : "没发出去。")); return; }
+      if (!r.ok) { if (r.error?.includes("绑定账号")) setAccountOpen(true); showToast(r.error ?? (en ? "Message not sent." : "没发出去。")); return; }
       setDmInput(""); void inboxQuery.refetch(); track("dm_send");
     }).catch(() => showToast(en ? "Network hiccup — try again." : "网络不太好，再试一次。"));
   };
@@ -2808,7 +2860,7 @@ playLifeAnim("shopping");
   }
 
   /* A company HQ: work there if it is your employer, otherwise interview /
-     take the offer. Other place actions (e.g. 某安's 理财) stay underneath. */
+     take the offer. Other place actions (e.g. 平安's 理财) stay underneath. */
   const companyActions = (co0: Company, s: GameState): ActDef[] => {
     const co = effCompany(co0, todayEvent, s.referrals);
     const mates = (world?.online ?? []).filter((p) => p.id !== myId && p.employer === co.id && p.cityKey === s.cityKey).map((p) => p.name);
@@ -2840,6 +2892,13 @@ playLifeAnim("shopping");
     const co = companyAt(s.cityKey, loc.id);
     const acts = co ? [...companyActions(co, s), ...(loc.type === "work" ? [] : baseActionsFor(loc, s))] : baseActionsFor(loc, s);
     const ev = todayEvent;
+    const tn = nowMin();
+    for (const r of CROSS_ROUTES) {
+      if (r.from !== s.cityKey || r.fromLoc !== loc.id) continue;
+      const open = isCrossOpen(r, tn);
+      const toShort = getLocations(r.to).find((l) => l.id === r.toLoc)?.short ?? "";
+      acts.push({ kind: `__cross-${r.id}`, title: `${r.emoji} ${crossName(r, en)}`, emoji: "🧭", desc: en ? `To ${CITY_EN[r.to]}: ${crossNote(r, true)}` : `去${CITIES[r.to].name}（到${toShort}）：${r.note}`, cost: r.shut ? crossHoursStr(r, en) : `${crossFareStr(r, en)} · ${r.min} ${en ? "min" : "分钟"} · ${open ? crossHoursStr(r, en) : `${en ? "Not running" : "已停"} · ${crossHoursStr(r, en)}`}`, disabled: !open });
+    }
     return acts.map((a) => {
       if (ev.beachClosed && isBeachLoc(loc) && (a.kind === "fun" || a.kind === "checkin" || a.kind === "stroll")) return { ...a, disabled: true, desc: "🌀 台风预警，海边今天封闭，改天再来" };
       if (ev.mallMul && (a.kind === "mall-shop" || a.kind === "mall-cloth")) return { ...a, desc: `🛍️ 今日大促 6 折 · ${a.desc}` };
@@ -2877,11 +2936,11 @@ playLifeAnim("shopping");
         return [
           { kind: "gig", title: loc.gigName ?? city.gigName, emoji: "🛵", desc: "口岸附近接单，跨境客流不断", cost: `+${fmt(Math.round(base * 0.55))} 起 · 能量 -18`, disabled: s.energy < 18 },
           ...(s.cityKey === "hk" ? [
-            { kind: "__gocity-sz", title: "过关回深圳", emoji: "🛃", desc: "出示证件、过安检、入境——过桥就是罗湖，或者去西九龙站坐高铁。搬回深圳过日子，进度、家当原样带着", cost: `高铁 ${crossFareLabel("hk", intercityFare("hk", "sz"))} · 进度不变 · 钱不够免费过` },
+            { kind: "__gocity-sz", title: "看看所有回深圳的路", emoji: "🧭", desc: "罗湖、落马洲、香园围、皇岗巴士、高铁、蛇口船……按真实开放时间挑一条", cost: "免费过关 ~ HK$120 · 进度不变" },
             { kind: "rest", title: "在口岸歇会儿", emoji: "🧋", desc: "看人来人往过关，买杯水坐一会儿", cost: "能量 +14 · 心情 +8 · 免费" },
           ] : [
             { kind: "hk-trip", title: "过关去香港一日游", emoji: "🇭🇰", desc: "旺角、天星小轮、茶餐厅，过关当天来回", cost: `-${Y}180 · 心情 +22 · 能量 -16 · 人脉 +1`, disabled: s.money < 180 },
-            { kind: "__gocity-hk", title: "过关去香港过日子", emoji: "🛃", desc: "不只是一日游——搬过去住一段：坐高铁到西九龙站，一地两检过关（出示证件、安检、入境），地图、港铁、街坊全换成香港的", cost: `高铁 ${crossFareLabel(s.cityKey, intercityFare(s.cityKey, "hk"))} · 进度不变 · 钱不够免费过` },
+            { kind: "__gocity-hk", title: "看看所有去香港的路", emoji: "🧭", desc: "罗湖、福田、皇岗（24 小时）、深圳湾、莲塘、高铁、蛇口船——按真实开放时间挑一条，搬过去住一段", cost: "免费过关 ~ ¥220 · 进度不变" },
             { kind: "rest", title: "在口岸歇会儿", emoji: "🧋", desc: "看人来人往过关，买杯水坐一会儿", cost: "能量 +14 · 心情 +8 · 免费" },
           ]),
         ];
@@ -3427,6 +3486,8 @@ return (
 <button type="button" onClick={() => void restoreFromCloud()} className="shrink-0 rounded-full bg-[var(--text)] px-4 py-2 text-sm font-black text-[var(--bg)]">载入</button>
 </div>
 <p className="mt-1 text-xs text-[var(--dim)]">存档码在游戏里右侧「🎫 集章」页最上面。</p>
+<button type="button" onClick={() => setAccountOpen(true)} className="mt-2 w-full rounded-full border-2 border-[var(--border)] px-4 py-2 text-sm font-black">👤 {en ? "Or log in to your account" : "或者登录账号继续"}</button>
+{accountOpen && phase !== "game" && <AccountModal en={en} playerId={profile?.playerId ?? null} saveKey={LS_KEY} onClose={() => setAccountOpen(false)} toast={showToast} onChange={setLoggedIn} />}
 </details>
 <p className="mt-6 text-sm font-black">选一个身份</p>
 <div className="mt-2 grid gap-2 lg:grid-cols-2">
@@ -3466,7 +3527,7 @@ m.legacy = { ...m.legacy, equipped: m.legacy.equipped.includes(pk.id) ? m.legacy
 {OPERATOR_MISSING && <p className="mt-5 rounded-[12px] border-2 border-dashed border-[var(--accent)] px-3 py-2 text-[11px] font-bold text-[var(--accent)]">{lang === "en" ? "Pre-launch: the operator name and contact in the Terms and Privacy Policy are not filled in yet (set VITE_OPERATOR_NAME / VITE_OPERATOR_CONTACT when building)." : "上线前提醒：用户协议和隐私政策里的运营方名称、联系方式还没填（构建时设置 VITE_OPERATOR_NAME / VITE_OPERATOR_CONTACT）。"}</p>}
 <label className="mt-5 flex items-start gap-2 text-xs leading-relaxed">
 <input type="checkbox" checked={agreed} onChange={(e) => setAgreedStored(e.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--accent)]" aria-label={lang === "en" ? "I agree to the Terms and Privacy Policy" : "同意用户协议和隐私政策"} />
-<span>{lang === "en" ? <>I have read and agree to the <button type="button" onClick={() => setLegalDoc("terms")} className="font-black underline">Terms of Service</button> and <button type="button" onClick={() => setLegalDoc("privacy")} className="font-black underline">Privacy Policy</button>. Companies and events in the game are fictional.</> : <>我已阅读并同意<button type="button" onClick={() => setLegalDoc("terms")} className="font-black underline">《用户协议》</button>和<button type="button" onClick={() => setLegalDoc("privacy")} className="font-black underline">《隐私政策》</button>。游戏中的公司与活动均为虚构。</>}</span>
+<span>{lang === "en" ? <>I have read and agree to the <button type="button" onClick={() => setLegalDoc("terms")} className="font-black underline">Terms of Service</button> and <button type="button" onClick={() => setLegalDoc("privacy")} className="font-black underline">Privacy Policy</button>. Real company names only mark real places; jobs, pay and stories are fiction.</> : <>我已阅读并同意<button type="button" onClick={() => setLegalDoc("terms")} className="font-black underline">《用户协议》</button>和<button type="button" onClick={() => setLegalDoc("privacy")} className="font-black underline">《隐私政策》</button>。游戏里的真实企业名称只用来标示真实位置，工作、工资和剧情都是虚构的。</>}</span>
 </label>
 <button type="button" disabled={!setupName.trim() || !agreed} onClick={() => startGame(setupName.trim(), setupCity, setupIden)} className="mt-6 w-full rounded-full bg-[var(--accent)] py-4 text-base font-black text-white shadow-[5px_5px_0_var(--border)] disabled:opacity-40">
 进城，开始过日子 →
@@ -3539,7 +3600,7 @@ return (
 <p key={b.id} className={`flex items-center gap-2 rounded-[10px] px-3 py-2 text-sm ${b.id === myId ? "bg-[var(--surface2)] font-black" : ""}`}>
 <span className="w-6 font-black">{i + 1}</span>
 <span>{b.emoji}</span>
-<span className="min-w-0 flex-1 truncate">{b.name}{b.id === myId ? "（你）" : ""}</span>
+<span className="min-w-0 flex-1 truncate" style={lookOf(b) && LOOK_COLOR[lookOf(b)!] ? { color: LOOK_COLOR[lookOf(b)!], fontWeight: 900 } : undefined}>{b.name}{lookOf(b) && LOOK_TITLE[lookOf(b)!] ? <span className="ml-1 rounded-full bg-[var(--surface2)] px-1.5 text-[10px]">{LOOK_TITLE[lookOf(b)!]![en ? 1 : 0]}</span> : null}{b.id === myId ? "（你）" : ""}</span>
 <span className="text-xs text-[var(--dim)]">{CITIES[b.cityKey as CityKey]?.name ?? b.cityKey}</span>
 <span className="font-black">{fmt(b.money, b.cityKey as CityKey)}</span>
 <span className="hidden text-xs text-[var(--dim)] sm:inline">{b.status === "finished" ? b.resultTitle ?? "已结算" : `第 ${b.gameDay} 天`}</span>
@@ -3579,7 +3640,7 @@ return (
 {weatherQuery.isLoading ? "🌡️ 实况加载中…" : rwOk ? `${RW_EMOJI[realWeather!.kind]} ${city.name}实况 ${realWeather!.description || RW_LABEL[realWeather!.kind]}${realWeather!.temperature != null ? ` ${Math.round(realWeather!.temperature)}°` : ""}${realWeather!.stale ? "（缓存）" : ""}` : "🌡️ 实况暂不可用"}
 </button>
 {(Object.keys(CITIES) as CityKey[]).filter((k) => k !== s.cityKey).map((k) => (
-<button key={k} type="button" aria-label={`${k === "hk" || s.cityKey === "hk" ? "过关" : "坐高铁"}切换城市，去${CITIES[k].name}，车票 ${k === "hk" || s.cityKey === "hk" ? crossFareLabel(s.cityKey, intercityFare(s.cityKey, k)) : `¥${intercityFare(s.cityKey, k)}`}`} title={`${k === "hk" ? "过关去香港：高铁直达西九龙站，一地两检（出示证件、安检、入境）" : s.cityKey === "hk" ? "过关回内地：西九龙站一地两检，坐高铁出发" : `坐厦深高铁去${CITIES[k].name}`}：地图、天气、街坊全换，进度不变（车票 ${k === "hk" || s.cityKey === "hk" ? crossFareLabel(s.cityKey, intercityFare(s.cityKey, k)) : `¥${intercityFare(s.cityKey, k)}`}，钱不够免费坐）`} onClick={() => switchCity(k)} className="chip shrink-0 border-[var(--accent)] font-black text-[var(--accent)] transition hover:bg-[var(--surface2)]">{k === "hk" || s.cityKey === "hk" ? "🛃" : "🚄"} 去{CITIES[k].name} · {k === "hk" || s.cityKey === "hk" ? crossFareLabel(s.cityKey, intercityFare(s.cityKey, k)) : `¥${intercityFare(s.cityKey, k)}`}</button>
+<button key={k} type="button" aria-label={`去${CITIES[k].name}：${crossRoutes(s.cityKey, k).length} 条真实路线可选`} title="换座城市过日子：选口岸 / 高铁 / 船 / 大巴 / 自驾，按真实开放时间；进度原样带着" onClick={() => setCrossTo(k)} className="chip shrink-0 border-[var(--accent)] font-black text-[var(--accent)] transition hover:bg-[var(--surface2)]">{k === "hk" || s.cityKey === "hk" ? "🛃" : "🚄"} {en ? `To ${CITY_EN[k]} · ${crossRoutes(s.cityKey, k).length} routes` : `去${CITIES[k].name} · ${crossRoutes(s.cityKey, k).length} 条路线`}</button>
 ))}
 <button type="button" title={todayEvent.desc} aria-label={`今日城市事件：${todayEvent.name}`} onClick={() => showToast(`${todayEvent.emoji} 今日城市事件「${todayEvent.name}」：${todayEvent.desc}`)} className="ml-auto chip">{todayEvent.emoji} {todayEvent.name}</button>
 <span className="chip"><span className="live-dot" /> {(world?.onlineSz ?? 0) + (world?.onlineHz ?? 0) + (world?.onlineHk ?? 0)} 人在线</span>
@@ -3622,6 +3683,8 @@ return (
 {s.busyUntil && Date.now() < s.busyUntil ? <span className="chip border-[var(--accent)] text-[var(--accent)]">{`⏳ ${s.busyWhat ?? "忙"} ${countdown(s.busyUntil - Date.now())}`}</span> : null}
 <button type="button" onClick={() => setPartyOpen(true)} className={`chip ${parties.some((pt) => pt.status === "open") ? "border-[var(--accent)] text-[var(--accent)]" : ""}`} title={en ? "Parties in this city: join other players" : "同城组局：和真人一起玩"}>🎉 {en ? "Parties" : "组局"} {parties.filter((pt) => pt.status === "open").length}</button>
 <button type="button" onClick={() => { setHubOpen(true); track("hub_open"); }} className="chip border-[var(--text)] bg-[var(--text)] text-[var(--bg)]" title={en ? "Everything you can do right now, nearest first" : "现在能做的所有事，按远近排"}>🧭 {en ? "What can I do?" : "现在能干嘛"}</button>
+<button type="button" onClick={() => setStoreOpen(true)} className="chip" title={en ? "Starlight store: looks, season pass, membership" : "星光商店：外观、赛季通行证、会员"}>✨ {en ? "Store" : "商店"}</button>
+<button type="button" onClick={() => setAccountOpen(true)} className={`chip ${!loggedIn && s.day >= 2 ? "border-[var(--accent)] text-[var(--accent)]" : ""}`} title={en ? "Account: keep your progress, unlock DMs and parties" : "账号：保住进度，解锁私聊和组局"}>👤 {loggedIn ? (en ? "Account" : "账号") : (en ? "Sign in" : "绑定账号")}</button>
 <button type="button" onClick={() => setDmOpen(true)} className={`chip ${unreadDm ? "border-[var(--accent)] text-[var(--accent)]" : ""}`} title={en ? "Private messages" : "私信"}>💬 {en ? "DMs" : "私信"}{unreadDm ? ` ${unreadDm}` : ""}</button>
 <span className="chip" title={iden.name}>{iden.emoji} {career.name} ×{career.mul}</span>
 {(() => { const co = employerHere(s); return co ? <span className="chip" title={co.culture}>{co.emoji} {co.short}</span> : null; })()}
@@ -3761,8 +3824,12 @@ return (
 </div>
 {mapQuery.trim() !== "" && (() => {
 const q = mapQuery.trim();
+/* 口岸 / 过关 / 码头…: list every way out of the city (ports, ferry piers, the
+   cross-border rail station), not just places with the word in their name */
+const crossQ = /口岸|过关|出境|入境|边境|跨境|码头|border|crossing|ferry/i.test(q);
+const crossIds = new Set(CROSS_ROUTES.filter((r) => r.from === s.cityKey && r.fromLoc !== "*").map((r) => r.fromLoc));
 const locResults = [
-...getLocations(s.cityKey).filter((l) => l.name.includes(q) || l.short.includes(q) || (LOC_EN[l.name] ?? "").toLowerCase().includes(q.toLowerCase())).slice(0, 6),
+...getLocations(s.cityKey).filter((l) => l.name.includes(q) || l.short.includes(q) || (LOC_EN[l.name] ?? "").toLowerCase().includes(q.toLowerCase()) || (crossQ && (l.type === "port" || crossIds.has(l.id)))).slice(0, crossQ ? 16 : 6),
 ...placesForCity(s.cityKey).filter((p) => p.name.includes(q) || (p.en ?? "").toLowerCase().includes(q.toLowerCase())).slice(0, 8).map((p) => locById(`pl:${p.id}`)),
 ];
 const stationResults = stationIndexOf(s.cityKey).filter((st) => st.name.includes(q)).slice(0, 6);
@@ -3815,8 +3882,8 @@ return (
 💬 弹幕{danmakuOn ? "开" : "关"}
 </button>
 {(Object.keys(CITIES) as CityKey[]).filter((k) => k !== s.cityKey).map((k) => (
-<button key={k} type="button" aria-label={`切换城市：${k === "hk" || s.cityKey === "hk" ? "过关" : "坐高铁"}去${CITIES[k].name}，车票 ${k === "hk" || s.cityKey === "hk" ? crossFareLabel(s.cityKey, intercityFare(s.cityKey, k)) : `¥${intercityFare(s.cityKey, k)}`}，钱和进度不变`} title="换座城市过日子：地图、地点、天气、街坊全换，进度原样带着（车票钱不够就免费坐）" onClick={() => switchCity(k)} className="rounded-full border border-black/40 bg-[#14202b]/90 px-3.5 py-2 text-xs font-black text-white shadow-lg">
-{k === "hk" || s.cityKey === "hk" ? "🛃 过关" : "🚄 切换城市"} · 去{CITIES[k].name}
+<button key={k} type="button" aria-label={`去${CITIES[k].name}：${crossRoutes(s.cityKey, k).length} 条真实路线可选`} title="换座城市过日子：选口岸 / 高铁 / 船 / 大巴 / 自驾，按真实开放时间；进度原样带着" onClick={() => setCrossTo(k)} className="rounded-full border border-black/40 bg-[#14202b]/90 px-3.5 py-2 text-xs font-black text-white shadow-lg">
+{en ? `${k === "hk" || s.cityKey === "hk" ? "🛃 Cross" : "🚄 Travel"} · to ${CITY_EN[k]}` : `${k === "hk" || s.cityKey === "hk" ? "🛃 过关" : "🚄 切换城市"} · 去${CITIES[k].name}`}
 </button>
 ))}
 </div>
@@ -3937,7 +4004,7 @@ return (
 <p className="mt-3.5 flex items-baseline justify-between gap-2"><span className="text-xs font-black tracking-wide">📍 在这里能做 · 常用操作</span><span className="text-[11px] font-bold text-[var(--dim)]">{arrived ? "点一下就行动" : "到了才能做"}</span></p>
 <div className="mt-2 grid gap-2">
 {actionsFor(selLoc, s).map((a) => { const tb = timeBlock(a.kind, s) ?? (a.kind === "__sleep" || a.kind === "rest" ? null : venueClosed(selLoc)); return (
-<button key={a.kind + (a.arg ?? 0)} type="button" disabled={!arrived || a.disabled || !!tb} onClick={() => { if (a.kind === "__sleep") playLifeAnim("sleep", () => doSleep()); else if (a.kind.startsWith("__gocity-")) switchCity(a.kind.slice("__gocity-".length) as CityKey); else doAction(a.kind, a.arg ?? 0); }} className="act-btn">
+<button key={a.kind + (a.arg ?? 0)} type="button" disabled={!arrived || a.disabled || !!tb} onClick={() => { if (a.kind === "__sleep") playLifeAnim("sleep", () => doSleep()); else if (a.kind.startsWith("__gocity-")) setCrossTo(a.kind.slice("__gocity-".length) as CityKey); else if (a.kind.startsWith("__cross-")) { const r = CROSS_ROUTES.find((x) => x.id === a.kind.slice("__cross-".length)); if (r) takeRoute(r); } else doAction(a.kind, a.arg ?? 0); }} className="act-btn">
 <span className="flex items-center justify-between text-sm font-black"><span>{a.title}</span><span>{a.emoji}</span></span>
 <span className="mt-0.5 block text-xs leading-relaxed text-[var(--dim)]">{a.desc}</span>
 <span className="mt-1 block text-xs font-bold text-[var(--accent2)]">{a.cost}{a.kind !== "__sleep" && ` · ⏳ ${realMinLabel(actionMinutes(a.kind))}`}</span>
@@ -4206,7 +4273,7 @@ return (
 <p key={b.id} className={`flex items-center gap-2 rounded-[10px] px-3 py-2 text-sm ${b.id === myId ? "bg-[var(--surface2)] font-black" : ""}`}>
 <span className="w-6 font-black">{i + 1}</span>
 <span>{b.emoji}</span>
-<span className="min-w-0 flex-1 truncate">{b.name}{b.id === myId ? "（你）" : ""}</span>
+<span className="min-w-0 flex-1 truncate" style={lookOf(b) && LOOK_COLOR[lookOf(b)!] ? { color: LOOK_COLOR[lookOf(b)!], fontWeight: 900 } : undefined}>{b.name}{lookOf(b) && LOOK_TITLE[lookOf(b)!] ? <span className="ml-1 rounded-full bg-[var(--surface2)] px-1.5 text-[10px]">{LOOK_TITLE[lookOf(b)!]![en ? 1 : 0]}</span> : null}{b.id === myId ? "（你）" : ""}</span>
 <span className="text-xs text-[var(--dim)]">{CITIES[b.cityKey as CityKey]?.name ?? b.cityKey}</span>
 <span className="font-black">{fmt(b.money, b.cityKey as CityKey)}</span>
 <span className="hidden text-xs text-[var(--dim)] sm:inline">{b.status === "finished" ? b.resultTitle ?? "已结算" : `第 ${b.gameDay} 天 · ${(CAREERS[b.careerIdx] ?? CAREERS[0]!).name}`}</span>
@@ -4491,7 +4558,7 @@ return (
 </div>
 <button type="button" onClick={() => void copyInvite()} className="mt-2 w-full rounded-full border-2 border-[var(--border)] py-2.5 text-sm font-black">🔗 复制邀请链接</button>
 <p className="mt-2 break-all rounded-[10px] bg-[var(--surface2)] px-3 py-2 text-[11px] text-[var(--dim)]">{profile && s && myPub ? inviteLink(myPub, profile.name, s.employer) : "（联网后生成）"}</p>
-<p className="mt-2 text-xs leading-relaxed text-[var(--dim)]">朋友用这个链接进来：开局多 ¥100{s && (s.employer ?? "startup") !== "startup" ? `，还自带${companyById(s.employer).short}的内推` : ""}；他报到后你收到 ¥200 邀请奖励。</p>
+<p className="mt-2 text-xs leading-relaxed text-[var(--dim)]">朋友用这个链接进来：开局多 ¥100{s && (s.employer ?? "startup") !== "startup" ? `，还自带${companyById(s.employer).short}的内推` : ""}；他玩满 3 天、和真人组过一次局后，你收到 ¥200 邀请奖励（同一台设备或同一个网络的账号不算，每周最多 10 份）。</p>
 </div>
 </div>
 )}
@@ -4629,9 +4696,10 @@ const todo: { t: string; go?: () => void }[] = [];
 if (s.workDay !== s.day && employerHere(s)) todo.push({ t: en ? `💼 Haven't worked today — ${companyById(s.employer).short}` : `💼 今天还没上班：${companyById(s.employer).short}`, go: () => { const co = employerHere(s); if (co?.locIds[0]) { setHubOpen(false); walkTo(co.locIds[0]); } } });
 if (s.sleptDay !== s.day && nowMin() >= 21 * 60) todo.push({ t: en ? "😴 Time for bed — go home and sleep" : "😴 不早了，回家睡觉", go: () => { setHubOpen(false); goHomeAndSleep(); } });
 if (isSaturday(s.day)) todo.push({ t: en ? `🏠 Rent ${fmt(s.rent)} is due tonight` : `🏠 今晚交租 ${fmt(s.rent)}` });
-for (const st of STORIES) { const k = storyStatus(st, s.story?.[st.npc], memOf(s.npcMem ?? {}, st.npc).rel, s.day).kind; if (k === "ready" || k === "ending") todo.push({ t: en ? `📖 ${trText(st.npc)}'s story has a new chapter` : `📖 ${st.npc}的故事有新章节`, go: () => { setHubOpen(false); openNpcChat(st.npc); } }); }
+for (const st of STORIES.filter((x) => npcsForCity(s.cityKey).some((n) => n.name === x.npc))) { const k = storyStatus(st, s.story?.[st.npc], memOf(s.npcMem ?? {}, st.npc).rel, s.day).kind; if (k === "ready" || k === "ending") todo.push({ t: en ? `📖 ${trText(st.npc)}'s story has a new chapter` : `📖 ${st.npc}的故事有新章节`, go: () => { setHubOpen(false); openNpcChat(st.npc); } }); }
 const openParties = parties.filter((pt) => pt.status === "open" && !pt.members.some((m) => m.id === myId));
 if (openParties.length) todo.push({ t: en ? `🎉 ${openParties.length} open part${openParties.length > 1 ? "ies" : "y"} in the city` : `🎉 城里有 ${openParties.length} 个局在等人`, go: () => { setHubOpen(false); setPartyOpen(true); } });
+if (!loggedIn && s.day >= 2) todo.push({ t: en ? "👤 Link an account so you never lose progress (and unlock DMs and parties)" : "👤 绑定账号：进度不丢，还能私聊、组局", go: () => { setHubOpen(false); setAccountOpen(true); } });
 if (unreadDm) todo.push({ t: en ? `💬 ${unreadDm} unread message${unreadDm > 1 ? "s" : ""}` : `💬 ${unreadDm} 条未读私信`, go: () => { setHubOpen(false); setDmOpen(true); } });
 return (
 <div className="fixed inset-0 z-[66] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={en ? "What can I do now" : "现在能干嘛"}>
@@ -4686,6 +4754,27 @@ return (
 </div> ); })()}
 
 {/* ===== 私信 ===== */}
+{crossTo && (() => { const routes = crossRoutes(s.cityKey, crossTo); const tn = nowMin(); const here = currentLoc; const nameOf = (ck: CityKey, id: string) => id === "*" ? "你现在的位置" : getLocations(ck).find((l) => l.id === id)?.name ?? id; return (
+<div className="fixed inset-0 z-[75] grid place-items-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-label={`去${CITIES[crossTo].name}的路线`} onClick={() => setCrossTo(null)}>
+<div className="max-h-[88vh] w-full max-w-lg overflow-y-auto rounded-[18px] border border-[var(--line)] bg-[var(--surface)] p-4 text-[var(--text)]" onClick={(e) => e.stopPropagation()}>
+<div className="mb-2 flex items-center justify-between"><h2 className="text-lg font-black">🧭 {en ? `To ${CITY_EN[crossTo]}: pick a route` : `去${CITIES[crossTo].name}：选一条路`}</h2><button type="button" onClick={() => setCrossTo(null)} aria-label="关闭" className="text-xl">✕</button></div>
+<p className="mb-3 text-xs text-[var(--dim)]">{en ? `Real routes with real opening hours (Beijing time ${clockStr(tn)}). Each one arrives at its own port or station across the border; if you are not at the start, you will be taken there first. Your progress comes with you.` : `都是真实线路，按真实开放时间（北京时间 ${clockStr(tn)}）。从哪儿出发就到对面哪个口岸 / 车站；不在出发点会先带你过去。进度、家当原样带着走。`}</p>
+<div className="grid gap-2">
+{routes.map((r) => { const open = isCrossOpen(r, tn); const atStart = r.fromLoc === "*" || here === r.fromLoc; return (
+<div key={r.id} className={`rounded-[14px] border p-3 ${open ? "border-[var(--line)]" : "border-dashed border-[var(--line)] opacity-60"}`}>
+<p className="text-sm font-black">{r.emoji} {crossName(r, en)}</p>
+<p className="mt-0.5 text-xs font-bold">{nameOf(r.from, r.fromLoc)} → {nameOf(r.to, r.toLoc)}</p>
+<p className="mt-1 text-xs text-[var(--dim)]">{crossNote(r, en)}</p>
+<div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-bold">
+{!r.shut && <span className="chip">{crossFareStr(r, en)}</span>}{!r.shut && <span className="chip">⏱ {r.min} {en ? "min" : "分钟"}</span>}<span className={`chip ${open ? "" : "border-red-400 text-red-500"}`}>{r.shut ? `⛔ ${crossHoursStr(r, en)}` : open ? `🟢 ${en ? "Open" : "开放"} ${crossHoursStr(r, en)}` : `⛔ ${en ? "Not running" : "已停"} · ${crossHoursStr(r, en)}`}</span>{r.car && !r.shut && <span className="chip">🪪 {en ? "Needs a licence and a car" : "要驾照和车"}</span>}
+<button type="button" disabled={!open} onClick={() => takeRoute(r)} className="ml-auto rounded-full bg-[var(--accent)] px-3.5 py-1.5 text-xs font-black text-white disabled:opacity-40">{r.shut ? (en ? "Closed" : "不开放") : atStart ? (en ? "Go" : "出发") : en ? `Go to ${trText(nameOf(r.from, r.fromLoc))} first` : `先去${nameOf(r.from, r.fromLoc)}`}</button>
+</div>
+</div>); })}
+</div>
+</div>
+</div>); })()}
+{storeOpen && phase === "game" && <StoreModal en={en} onClose={() => setStoreOpen(false)} toast={showToast} openAccount={() => setAccountOpen(true)} />}
+{accountOpen && phase === "game" && <AccountModal en={en} playerId={profile?.playerId ?? null} saveKey={LS_KEY} onClose={() => setAccountOpen(false)} toast={showToast} onChange={(v) => { setLoggedIn(v); track(v ? "account_login" : "account_logout"); }} />}
 {dmOpen && (() => { const th = threads.find((t) => t.peerId === dmPeer); const peerName = th?.peerName ?? (world?.online ?? []).find((x) => x.id === dmPeer)?.name ?? ""; return (
 <div className="fixed inset-0 z-[66] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={en ? "Private messages" : "私信"}>
 <div className="rise flex h-[80vh] w-full max-w-2xl overflow-hidden rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)]">
@@ -4891,11 +4980,11 @@ return (
 <div className="mb-2 rounded-[14px] border-2 border-[var(--border)] bg-[var(--surface2)] p-3">
 <p className="text-sm font-black">🔥 连续上线第 {meta.streak.count} 天 <span className="text-xs font-bold text-[var(--dim)]">（真实日历，断一天从 1 重来，第 7 天起奖励最高）</span></p>
 <div className="mt-1.5 flex gap-1">{[1, 2, 3, 4, 5, 6, 7].map((d) => <span key={d} className={`grid h-7 flex-1 place-items-center rounded-[8px] text-[10px] font-black ${d <= Math.min(7, meta.streak.count) ? "bg-[var(--accent)] text-white" : "bg-[var(--surface)] text-[var(--dim)]"}`}>{d === 7 ? "🎁" : `D${d}`}</span>)}</div>
-<button type="button" disabled={got} onClick={() => { mutate((x) => { x.money += r.money; x.energy += r.energy; }); updMeta((m) => { m.streak.claimed = today; }); floatReward(`+${fmt(r.money)} 连登`, "gold"); }} className="mt-2 w-full rounded-full bg-[var(--accent)] py-2 text-xs font-black text-white disabled:opacity-40">{got ? "✅ 今天的连续上线奖励已领" : `领取连续上线奖励 · ${fmt(r.money)}${r.energy ? ` + 能量 ${r.energy}` : ""}`}</button>
+<button type="button" disabled={got} onClick={() => { const prof = profileRef.current; if (!prof) return; void api.claimReward({ playerId: prof.playerId, kind: "streak", device: deviceId() || undefined }).then((sr) => { updMeta((m) => { m.streak.claimed = today; }); if (!sr.ok) { showToast(sr.error ?? "领取失败"); return; } mutate((x) => { x.money += sr.money; x.energy += sr.energy; }); updMeta((m) => { m.streak.count = Math.max(m.streak.count, sr.n); m.streak.best = Math.max(m.streak.best, sr.n); }); floatReward(`+${fmt(sr.money)} 连登`, "gold"); }).catch(() => showToast("网络不太好，稍后再试。")); }} className="mt-2 w-full rounded-full bg-[var(--accent)] py-2 text-xs font-black text-white disabled:opacity-40">{got ? "✅ 今天的连续上线奖励已领" : `领取连续上线奖励 · ${fmt(r.money)}${r.energy ? ` + 能量 ${r.energy}` : ""}`}</button>
 <p className="mt-2 text-xs font-bold">{todayEvent.emoji} 今日城市事件「{todayEvent.name}」：<span className="font-normal">{todayEvent.desc}</span></p>
 </div>
 ); })()}
-<button type="button" disabled={signed} aria-label={signed ? "今日已签到" : "每日签到领奖励"} onClick={() => { mutate((x) => { x.signDay = s.day; x.money += 30; x.energy += 10; }); floatReward(`+${fmt(30)} 签到`, "gold"); floatReward("能量 +10", "green"); burstDanmaku(["🧧 今天的签到红包到账啦", "陈伯：早啊，又是新的一天", "小美：签到打卡，元气满满 ☀️"]); showToast(`签到成功：+${fmt(30)}，能量 +10。今天的任务在下面，顺手就做了。`); }} className="w-full rounded-[14px] bg-[var(--accent)] py-3.5 text-sm font-black text-white disabled:bg-[var(--surface2)] disabled:text-[var(--dim)]">
+<button type="button" disabled={signed} aria-label={signed ? "今日已签到" : "每日签到领奖励"} onClick={() => { const prof = profileRef.current; if (!prof) return; void api.claimReward({ playerId: prof.playerId, kind: "signin", device: deviceId() || undefined }).then((r) => { if (!r.ok) { if (r.error === "今天已经领过了") mutate((x) => { x.signDay = s.day; }); showToast(r.error ?? "签到失败"); return; } mutate((x) => { x.signDay = s.day; x.money += r.money; x.energy += r.energy; }); floatReward(`+${fmt(r.money)} 签到`, "gold"); floatReward(`能量 +${r.energy}`, "green"); burstDanmaku(["🧧 今天的签到红包到账啦", "陈伯：早啊，又是新的一天", "小美：签到打卡，元气满满 ☀️"]); showToast(`签到成功：+${fmt(r.money)}，能量 +${r.energy}。今天的任务在下面，顺手就做了。`); }).catch(() => showToast("网络不太好，签到没成功，稍后再试。")); }} className="w-full rounded-[14px] bg-[var(--accent)] py-3.5 text-sm font-black text-white disabled:bg-[var(--surface2)] disabled:text-[var(--dim)]">
 {signed ? "✅ 今日已签到（明天再来）" : `🧧 每日签到 · 领 ${fmt(30)} + 能量 10`}
 </button>
 <p className="mt-4 text-xs font-black tracking-wide text-[var(--dim)]">今日任务 · 完成点领取，奖励立刻飘字到账</p>

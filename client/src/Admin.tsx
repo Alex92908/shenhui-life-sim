@@ -16,6 +16,13 @@ type Overview = {
   reports: { id: number; reason: string; createdAt: string; reporter: { pub: string; name: string }; target: { pub: string; name: string; banned: boolean }; context: { from: string; body: string; at: string }[] }[];
   errors: { id: number; message: string; stack: string | null; url: string | null; ua: string | null; count: number; lastAt: string }[];
   chat: { id: number; player: string; name: string; city: string; body: string; at: string }[];
+  economy?: { clamped: { name: string; pub: string; n: number; sum: number }[]; orders: { id: string; product: string; amount: number; currency: string; status: string; provider: string; at: string }[]; starsOutstanding: number };
+  risk?: {
+    multiDevice: { n: number; names: string }[];
+    burstNet: { n: number; names: string }[];
+    inviters: { pub: string; name: string; pending: number; granted: number; rejected: number; expired: number }[];
+    rejected: { inviter: string; invitee: string; reason: string; at: string }[];
+  };
 };
 const REASON: Record<string, string> = { harassment: "骚扰", scam: "诈骗", spam: "广告刷屏", inappropriate: "不当内容", minor: "未成年人安全", other: "其他" };
 const KEY = "shhr-admin-token";
@@ -26,7 +33,7 @@ export function AdminPage() {
   const [input, setInput] = useState("");
   const [data, setData] = useState<Overview | null>(null);
   const [err, setErr] = useState("");
-  const [tab, setTab] = useState<"reports" | "numbers" | "chat" | "errors">("reports");
+  const [tab, setTab] = useState<"reports" | "numbers" | "chat" | "errors" | "risk" | "economy">("reports");
   const [banPub, setBanPub] = useState("");
   const load = async (tok = token) => {
     if (!tok) return;
@@ -73,7 +80,7 @@ export function AdminPage() {
             ))}
           </div>
           <div className="mt-3 flex flex-wrap gap-1.5">
-            {([["reports", `举报（${data.reports.length}）`], ["numbers", "数据"], ["chat", "最近公开聊天"], ["errors", `报错（${data.errors.length}）`]] as const).map(([k, l]) => <button key={k} type="button" onClick={() => setTab(k)} className={`rounded-full border-2 px-3 py-1 text-xs font-black ${tab === k ? "bg-[var(--text)] text-[var(--bg)]" : ""}`}>{l}</button>)}
+            {([["reports", `举报（${data.reports.length}）`], ["risk", "风险 / 薅羊毛"], ["economy", "经济 / 订单"], ["numbers", "数据"], ["chat", "最近公开聊天"], ["errors", `报错（${data.errors.length}）`]] as const).map(([k, l]) => <button key={k} type="button" onClick={() => setTab(k)} className={`rounded-full border-2 px-3 py-1 text-xs font-black ${tab === k ? "bg-[var(--text)] text-[var(--bg)]" : ""}`}>{l}</button>)}
           </div>
 
           {tab === "reports" && (
@@ -96,6 +103,42 @@ export function AdminPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+
+          {tab === "risk" && (
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-[12px] border border-[var(--line)] bg-[var(--surface)] p-3 text-xs">
+                <p className="text-sm font-black">📱 一台设备 ≥ 3 个账号</p>
+                {(data.risk?.multiDevice ?? []).length === 0 ? <p className="mt-1 text-[var(--dim)]">没有。</p> : data.risk!.multiDevice.map((r, i) => <p key={i} className="mt-1"><b>×{r.n}</b> {r.names}</p>)}
+              </div>
+              <div className="rounded-[12px] border border-[var(--line)] bg-[var(--surface)] p-3 text-xs">
+                <p className="text-sm font-black">🌐 同一网络 24 小时内 ≥ 5 个新号</p>
+                {(data.risk?.burstNet ?? []).length === 0 ? <p className="mt-1 text-[var(--dim)]">没有。</p> : data.risk!.burstNet.map((r, i) => <p key={i} className="mt-1"><b>×{r.n}</b> {r.names}</p>)}
+              </div>
+              <div className="rounded-[12px] border border-[var(--line)] bg-[var(--surface)] p-3 text-xs">
+                <p className="text-sm font-black">🎟️ 邀请人（待定 / 已发 / 拒绝 / 过期）</p>
+                <p className="mt-1 text-[11px] text-[var(--dim)]">被邀请人要活跃 3 天 + 和真人组过局；同设备、同网络不算；每人每周最多发 10 份。</p>
+                {(data.risk?.inviters ?? []).map((r) => <p key={r.pub} className="mt-1 flex items-center gap-2"><span className="min-w-0 flex-1 truncate">{r.name}</span><span>{r.pending} / <b className="text-[var(--green)]">{r.granted}</b> / <b className="text-[var(--accent)]">{r.rejected}</b> / {r.expired}</span><button type="button" onClick={() => void act({ targetPub: r.pub, action: "ban" })} className="rounded-full border px-2 text-[11px] font-black">封号</button></p>)}
+              </div>
+              <div className="rounded-[12px] border border-[var(--line)] bg-[var(--surface)] p-3 text-xs">
+                <p className="text-sm font-black">⛔ 最近被拒的邀请</p>
+                {(data.risk?.rejected ?? []).length === 0 ? <p className="mt-1 text-[var(--dim)]">没有。</p> : data.risk!.rejected.map((r, i) => <p key={i} className="mt-1">{r.inviter} → {r.invitee} · <b>{r.reason}</b> <span className="text-[var(--dim)]">{r.at ? t(r.at) : ""}</span></p>)}
+              </div>
+            </div>
+          )}
+
+          {tab === "economy" && (
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <div className="rounded-[12px] border border-[var(--line)] bg-[var(--surface)] p-3 text-xs">
+                <p className="text-sm font-black">🧾 7 天内被拦下的进账</p>
+                <p className="mt-1 text-[11px] text-[var(--dim)]">客户端报上来、超出游戏节奏的钱没有入账（账本 kind = clamped）。反复出现的多半在改存档。</p>
+                {(data.economy?.clamped ?? []).length === 0 ? <p className="mt-1 text-[var(--dim)]">没有。</p> : data.economy!.clamped.map((r) => <p key={r.pub} className="mt-1 flex gap-2"><span className="min-w-0 flex-1 truncate">{r.name}</span><span>{r.n} 次</span><b>¥{r.sum.toLocaleString()}</b></p>)}
+              </div>
+              <div className="rounded-[12px] border border-[var(--line)] bg-[var(--surface)] p-3 text-xs">
+                <p className="text-sm font-black">💳 最近订单 · 流通中的 ✨ {data.economy?.starsOutstanding ?? 0}</p>
+                {(data.economy?.orders ?? []).length === 0 ? <p className="mt-1 text-[var(--dim)]">还没有订单。</p> : data.economy!.orders.map((o) => <p key={o.id} className="mt-1 flex gap-2"><span className="min-w-0 flex-1 truncate">{o.product}</span><span>{(o.amount / 100).toFixed(2)} {o.currency.toUpperCase()}</span><b>{o.status}</b><span className="text-[var(--dim)]">{o.provider} · {o.at.slice(5, 16).replace("T", " ")}</span></p>)}
+              </div>
             </div>
           )}
 

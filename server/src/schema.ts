@@ -28,6 +28,22 @@ export const players = sqliteTable("players", {
   // hidden from the online list and boards); season = "YYYY-MM" of the run.
   banned: integer("banned").notNull().default(0),
   season: text("season").notNull().default("2026-11"),
+  // 防薅羊毛 (0010): a per-browser device id, a salted hash of the IP and of
+  // its /24 network, and how many distinct Beijing days the player was active.
+  device: text("device"),
+  ipHash: text("ip_hash"),
+  ipGroup: text("ip_group"),
+  activeDays: integer("active_days").notNull().default(0),
+  lastActiveDay: text("last_active_day"),
+  // 账号 (0011): the account this player belongs to once bound (guests: null).
+  accountId: text("account_id"),
+  // 经济 (0012): the server's own balance is \`money\`; reportedMoney is the
+  // client's last proposal, earnBudget what it may still earn without
+  // proof (refills over real time), cosmetic the equipped look (name colour).
+  reportedMoney: integer("reported_money").notNull().default(0),
+  earnBudget: integer("earn_budget").notNull().default(60000),
+  budgetAt: integer("budget_at", { mode: "timestamp_ms" }),
+  cosmetic: text("cosmetic"),
   // 公开编号 (0006): sha256(id) prefix. The id itself is the player's
   // private key and is never sent to other clients; everything shown to
   // others (chat, online list, boards, gifts, invite links) uses pub.
@@ -179,4 +195,110 @@ export const clientErrors = sqliteTable("client_errors", {
   count: integer("count").notNull().default(1),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
   lastAt: integer("last_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+
+// 邀请 (0010): an invite only pays the inviter once the invitee has been
+// active on 3 days and played a party with a real player, from another
+// device and network, within the inviter's weekly cap.
+export const invites = sqliteTable("invites", {
+  inviteeId: text("invitee_id").primaryKey(),
+  inviterId: text("inviter_id").notNull(),
+  status: text("status").notNull().default("pending"),
+  reason: text("reason"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  decidedAt: integer("decided_at", { mode: "timestamp_ms" }),
+});
+// 奖励领取 (0010): sign-in / streak / welcome bonus, granted by the server
+// once per player per Beijing day (welcome: once per player and per device).
+export const rewardClaims = sqliteTable("reward_claims", {
+  playerId: text("player_id").notNull(),
+  kind: text("kind").notNull(),
+  day: text("day").notNull(),
+  n: integer("n").notNull().default(1),
+  money: integer("money").notNull().default(0),
+  device: text("device"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+}, (t) => [primaryKey({ columns: [t.playerId, t.kind, t.day] })]);
+
+// 账号 (0011): one account per person; identities are the ways to log in
+// (email / phone now, Apple / Google / WeChat later); a session is a random
+// token whose SHA-256 is stored. Login codes are stored hashed, expire in 10
+// minutes and allow 5 attempts.
+export const accounts = sqliteTable("accounts", {
+  id: text("id").primaryKey(),
+  playerId: text("player_id"),
+  status: text("status").notNull().default("active"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
+});
+export const identities = sqliteTable("identities", {
+  provider: text("provider").notNull(),
+  subject: text("subject").notNull(),
+  accountId: text("account_id").notNull(),
+  verifiedAt: integer("verified_at", { mode: "timestamp_ms" }).notNull(),
+}, (t) => [primaryKey({ columns: [t.provider, t.subject] })]);
+export const loginCodes = sqliteTable("login_codes", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  provider: text("provider").notNull(),
+  subject: text("subject").notNull(),
+  codeHash: text("code_hash").notNull(),
+  attempts: integer("attempts").notNull().default(0),
+  ipHash: text("ip_hash"),
+  expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  usedAt: integer("used_at", { mode: "timestamp_ms" }),
+});
+export const sessions = sqliteTable("sessions", {
+  tokenHash: text("token_hash").primaryKey(),
+  accountId: text("account_id").notNull(),
+  device: text("device"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  lastUsedAt: integer("last_used_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  revokedAt: integer("revoked_at", { mode: "timestamp_ms" }),
+});
+
+/* 经济 (0012): every change to a player's season money, as the server saw it */
+export const ledger = sqliteTable("ledger", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  playerId: text("player_id").notNull(),
+  season: text("season").notNull(),
+  kind: text("kind").notNull(), // earn | spend | reward | clamped | season-start
+  amount: integer("amount").notNull(),
+  balance: integer("balance").notNull(),
+  note: text("note"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+/* ✨星光 (paid currency, per account, never per run): append-only ledger */
+export const starLedger = sqliteTable("star_ledger", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  accountId: text("account_id").notNull(),
+  amount: integer("amount").notNull(),
+  balance: integer("balance").notNull(),
+  reason: text("reason").notNull(), // purchase | refund | pass | member | shop | grant
+  ref: text("ref"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+export const orders = sqliteTable("orders", {
+  id: text("id").primaryKey(),
+  accountId: text("account_id").notNull(),
+  product: text("product").notNull(),
+  amount: integer("amount").notNull(), // minor units (分 / cents)
+  currency: text("currency").notNull(),
+  status: text("status").notNull().default("pending"), // pending | paid | refunded | failed
+  provider: text("provider").notNull(), // stripe | dev
+  providerRef: text("provider_ref"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  paidAt: integer("paid_at", { mode: "timestamp_ms" }),
+  refundedAt: integer("refunded_at", { mode: "timestamp_ms" }),
+});
+export const entitlements = sqliteTable("entitlements", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  accountId: text("account_id").notNull(),
+  kind: text("kind").notNull(), // pass | member | item | claim
+  item: text("item").notNull(),
+  season: text("season"),
+  expiresAt: integer("expires_at", { mode: "timestamp_ms" }),
+  orderId: text("order_id"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  revokedAt: integer("revoked_at", { mode: "timestamp_ms" }),
 });

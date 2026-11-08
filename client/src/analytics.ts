@@ -59,3 +59,13 @@ export function installErrorReporting(): void {
 
 /** A React render crash caught by the root error boundary. */
 export function reportCrash(err: Error): void { sendError(`[crash] ${err.message}`, err.stack); }
+
+/** A random id for this browser (not the save): lets the server notice one
+    device running many accounts. Not a fingerprint — clearing site data resets it. */
+export function deviceId(): string {
+  try {
+    let d = localStorage.getItem("shhr-device");
+    if (!d) { d = (crypto.randomUUID?.() ?? `d-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`).replace(/[^A-Za-z0-9-]/g, ""); localStorage.setItem("shhr-device", d); }
+    return d;
+  } catch { return ""; }
+}

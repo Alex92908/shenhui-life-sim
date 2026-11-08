@@ -1,7 +1,7 @@
 /* 地标缩影 — low-poly miniatures of the real buildings and places.
 
    Every playable location used to be the same box + pyramid roof. Here each
-   one gets a small model of what is really there: 某安金融中心's tapered
+   one gets a small model of what is really there: 平安金融中心's tapered
    tower, 春茧's lattice cocoon, the 口岸 inspection halls with their lane
    canopies, 城中村 handshake buildings, beaches with umbrellas, mountain
    parks with trails and a summit pavilion …
@@ -9,6 +9,7 @@
    Performance: a model is built from many primitives, but parts are merged
    per material (BufferGeometryUtils.mergeGeometries), and materials are
    shared across all models, so a landmark costs a handful of draw calls. */
+import { BRIDGES as THK_BRIDGES } from "./terrain-hk";
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { CityKey, Loc } from "./data";
@@ -265,7 +266,7 @@ export function createLandmarks(winTex: THREE.Texture) {
 
   /* ---- specific locations ---- */
   const SPECIFIC: Record<string, (k: Kit, l: Loc, spin: THREE.Object3D[], g: THREE.Group) => number> = {
-    // 某安金融中心: tapered glass shaft, stone ribs, crown and spire
+    // 平安金融中心: tapered glass shaft, stone ribs, crown and spire
     "sz:bank": (k) => {
       plate(k, 1.7);
       k.box(CONCRETE, 2.8, 1.2, 2.8, 0, 0.14, 0);
@@ -285,7 +286,7 @@ export function createLandmarks(winTex: THREE.Texture) {
       return 5.4;
     },
     /* ---- 大厂总部 ---- */
-    // 某讯滨海大厦: twin towers tied by three sky bridges
+    // 腾讯滨海大厦: twin towers tied by three sky bridges
     "sz:co-tencent": (k) => {
       plate(k, 1.75);
       tower(k, 1.05, 10.5, 1.1, 0x7fa9c9, -1.0, -0.1, 0.14);
@@ -294,7 +295,7 @@ export function createLandmarks(winTex: THREE.Texture) {
       k.box(neon(0x3b82f6), 0.8, 0.3, 0.05, -1.0, 8.5, 0.47);
       return 11;
     },
-    // 某讯大铲湾园区: a reclaimed-land campus ringed by water, two 云海大厦 towers,
+    // 腾讯大铲湾园区: a reclaimed-land campus ringed by water, two 云海大厦 towers,
     // mid-rise blocks with green roofs, a seaside boardwalk — and a penguin
     "sz:co-penguin": (k) => {
       k.cyl(WATER, 1.9, 1.9, 0.05, 0, 0, 0, 28);
@@ -316,7 +317,7 @@ export function createLandmarks(winTex: THREE.Texture) {
       k.box(orange, 0.12, 0.04, 0.1, 1.12, 0.16, 1.02);
       return 4.1;
     },
-    // 某音集团后海中心: a slim ~150 m tower with a sloped crown
+    // 字节跳动后海中心: a slim ~150 m tower with a sloped crown
     "sz:co-bytedance": (k) => {
       plate(k, 1.3);
       k.box(CONCRETE, 1.6, 0.6, 1.4, 0, 0.14, 0);
@@ -326,7 +327,7 @@ export function createLandmarks(winTex: THREE.Texture) {
       k.box(neon(0xf43f5e), 0.06, 6.5, 0.06, -0.53, 1.6, 0.53);
       return 9.8;
     },
-    // 某度国际大厦: east and west towers on a shared podium
+    // 百度国际大厦: east and west towers on a shared podium
     "sz:co-baidu": (k) => {
       plate(k, 1.3);
       k.box(CONCRETE, 2.2, 0.7, 1.4, 0, 0.14, 0);
@@ -335,7 +336,7 @@ export function createLandmarks(winTex: THREE.Texture) {
       k.box(neon(0x2563eb), 0.6, 0.25, 0.04, -0.55, 7.2, 0.46);
       return 8.2;
     },
-    // 某疆总部大楼: two towers with platforms cantilevered between them
+    // 大疆总部大楼: two towers with platforms cantilevered between them
     "sz:co-dji": (k) => {
       plate(k, 1.3);
       tower(k, 0.75, 8.5, 0.75, 0x30363d, -0.6, -0.1, 0.14);
@@ -346,7 +347,7 @@ export function createLandmarks(winTex: THREE.Texture) {
       for (const [dx, dz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) k.cyl(STEEL, 0.09, 0.09, 0.02, -0.6 + dx * 0.2, 9.36, -0.1 + dz * 0.2, 8);
       return 9.6;
     },
-    // 某为坂田基地: a low campus of research blocks around a lake
+    // 华为坂田基地: a low campus of research blocks around a lake
     "sz:co-huawei": (k) => {
       k.cyl(GRASS, 1.5, 1.5, 0.12, 0, 0, 0, 26);
       k.cyl(WATER, 0.5, 0.5, 0.04, 0.2, 0.12, 0.25, 18);
@@ -359,7 +360,7 @@ export function createLandmarks(winTex: THREE.Texture) {
       for (let i = 0; i < 6; i++) roundTree(k, Math.cos(i) * 1.25, Math.sin(i) * 1.25, 0.55, 0.12);
       return 1.8;
     },
-    // 某兴通讯大厦: blue glass tower with a stepped top
+    // 中兴通讯大厦: blue glass tower with a stepped top
     "sz:co-zte": (k) => {
       plate(k, 1.3);
       tower(k, 1.2, 5.4, 1.0, 0x4b8fd1, 0, 0, 0.14);
@@ -367,7 +368,7 @@ export function createLandmarks(winTex: THREE.Texture) {
       k.cyl(STEEL, 0.04, 0.04, 1.2, 0, 6.54, 0, 4);
       return 7.6;
     },
-    // 某商银行大厦: tall tower with a slanted crown
+    // 招商银行大厦: tall tower with a slanted crown
     "sz:co-cmb": (k) => {
       plate(k, 1.3);
       k.box(CONCRETE, 1.6, 0.8, 1.4, 0, 0.14, 0);
@@ -376,7 +377,7 @@ export function createLandmarks(winTex: THREE.Texture) {
       k.box(RED, 1.02, 0.25, 1.02, 0, 9.2, 0);
       return 11.6;
     },
-    // 某科中心: the "horizontal skyscraper" floating on legs over a park
+    // 万科中心: the "horizontal skyscraper" floating on legs over a park
     "sz:co-vanke": (k) => {
       k.cyl(GRASS, 1.55, 1.55, 0.12, 0, 0, 0, 26);
       const arm = M(0xd9dcd6, { rough: 0.5 });
@@ -388,7 +389,7 @@ export function createLandmarks(winTex: THREE.Texture) {
       for (let i = 0; i < 4; i++) roundTree(k, -1.0 + i * 0.5, 0.6, 0.5, 0.12);
       return 1.8;
     },
-    // 某亚迪坪山总部: an office block, saw-tooth factory roofs, EVs lined up
+    // 比亚迪坪山总部: an office block, saw-tooth factory roofs, EVs lined up
     "sz:co-byd": (k) => {
       plate(k, 1.5, CONCRETE);
       tower(k, 0.9, 2.6, 0.8, 0x9fc4a8, -0.75, -0.6, 0.14);
@@ -400,7 +401,7 @@ export function createLandmarks(winTex: THREE.Texture) {
       for (let i = 0; i < 5; i++) k.box(solid(cars[i]!), 0.25, 0.12, 0.42, -0.9 + i * 0.4, 0.14, 0.95);
       return 2.8;
     },
-    // 某CL科技园 (仲恺): HQ tower with a red crown band, panel-factory halls, dorms
+    // TCL科技园 (仲恺): HQ tower with a red crown band, panel-factory halls, dorms
     "hz:co-tcl": (k) => {
       plate(k, 1.4, CONCRETE);
       tower(k, 0.9, 5.2, 0.9, 0x8fb3c9, -0.55, -0.45, 0.14);
@@ -409,7 +410,7 @@ export function createLandmarks(winTex: THREE.Texture) {
       for (let i = 0; i < 2; i++) k.box(solid(0xf1e3c8), 0.9, 1.3, 0.35, -0.6 + i * 1.1, 0.14, 1.0);
       return 5.6;
     },
-    // 某赛西威 (仲恺): blue-glass R&D block over a looping test track
+    // 德赛西威 (仲恺): blue-glass R&D block over a looping test track
     "hz:co-desay": (k) => {
       plate(k, 1.2, PAVE);
       k.torus(solid(0x374151), 0.95, 0.07, 0, 0.18, 0, Math.PI / 2);
@@ -418,7 +419,7 @@ export function createLandmarks(winTex: THREE.Texture) {
       for (const [x, z, c] of [[0.85, 0.3, 0xffffff], [-0.6, 0.75, 0xdc2626]] as const) k.box(solid(c), 0.22, 0.1, 0.36, x, 0.22, z);
       return 4.0;
     },
-    // 某纬锂能 (潼湖): saw-tooth battery plants, a cooling tower, dorm block
+    // 亿纬锂能 (潼湖): saw-tooth battery plants, a cooling tower, dorm block
     "hz:co-eve": (k) => {
       plate(k, 1.4, CONCRETE);
       for (let i = 0; i < 4; i++) {
@@ -429,7 +430,7 @@ export function createLandmarks(winTex: THREE.Texture) {
       k.box(solid(0xf1e3c8), 0.9, 1.4, 0.35, 0.6, 0.14, 0.95);
       return 2.0;
     },
-    // 某海油大亚湾石化区: distillation columns, sphere tanks, a flare stack
+    // 中海油大亚湾石化区: distillation columns, sphere tanks, a flare stack
     "hz:co-petro": (k) => {
       plate(k, 1.6, CONCRETE);
       for (const [x, z, h] of [[-0.8, -0.5, 3.0], [-0.45, -0.7, 2.4], [-0.1, -0.45, 3.6]] as const) k.cyl(STEEL, 0.14, 0.16, h, x, 0.14, z, 10);
@@ -762,6 +763,129 @@ export function createLandmarks(winTex: THREE.Texture) {
     },
     "hz:xunliao": (k) => { fishingHarbour(k); return 1.6; },
     "hz:xiayong": (k) => { fishingHarbour(k); return 1.6; },
+    /* ---- 香港 ---- */
+    // 中环：中银大厦（交叉斜撑的三角柱一级级收窄）+ 国际金融中心二期（带皇冠的最高塔）
+    "hk:central": (k) => {
+      plate(k, 1.8);
+      const boc = M(0x7d93a8, { glass: true, rough: 0.25, metal: 0.55 });
+      const segs = [[1.3, 6], [1.0, 4], [0.7, 3], [0.42, 2.4]] as const;
+      let y = 0.14;
+      segs.forEach(([w, h], i) => { k.add(new THREE.CylinderGeometry(w * 0.2, w, h, 3, 1), boc, -0.9, y + h / 2, 0, 0, i * 0.5, 0); y += h; });
+      for (let i = 0; i < 6; i++) k.add(new THREE.BoxGeometry(0.05, 2.6, 0.05), WHITE, -0.9 + (i % 2 ? 0.5 : -0.5) * 0.9, 1.6 + i * 2.1, 0.55, 0, 0, i % 2 ? 0.55 : -0.55);
+      for (const dx of [-0.08, 0.08]) k.cone(STEEL, 0.03, 2.2, -0.9 + dx, y, 0, 4);
+      tower(k, 0.9, 13.5, 0.9, 0x9fb7c7, 1.0, 0, 0.14);
+      for (let i = 0; i < 4; i++) k.box(M(0xdfe7ea, { rough: 0.3, metal: 0.4 }), 0.9 - i * 0.18, 0.5, 0.9 - i * 0.18, 1.0, 13.64 + i * 0.5, 0);
+      return y + 2.4;
+    },
+    // 汇丰总行：钢结构「衣架」+ 门口一对铜狮
+    "hk:bank-hk": (k) => {
+      plate(k, 1.5);
+      k.box(glass(0x8fa7b5), 1.6, 7, 1.1, 0, 0.14, 0);
+      for (const y of [2.2, 4.4, 6.6]) k.box(STEEL, 1.9, 0.18, 1.2, 0, y, 0);
+      for (const x of [-0.95, 0.95]) for (const z of [-0.5, 0.5]) k.box(M(0x6b7280, { metal: 0.6, rough: 0.35 }), 0.16, 7.4, 0.16, x, 0.14, z);
+      for (const x of [-0.45, 0.45]) { k.box(M(0x9a7b3a, { metal: 0.6, rough: 0.4 }), 0.25, 0.22, 0.4, x, 0.14, 0.9); k.ball(M(0x9a7b3a, { metal: 0.6, rough: 0.4 }), 0.13, x, 0.48, 0.98); }
+      return 7.8;
+    },
+    // 尖沙咀：钟楼 + 文化中心的大斜屋顶
+    "hk:tst": (k) => {
+      plate(k, 1.7, PAVE, 0.1);
+      k.box(M(0xc96f4a, { rough: 0.9 }), 0.55, 3.6, 0.55, -0.9, 0.1, 0.3);
+      k.box(M(0xe8e0d0), 0.6, 0.6, 0.6, -0.9, 3.7, 0.3);
+      k.cyl(WHITE, 0.25, 0.25, 0.03, -0.9, 4.0, 0.62, 16);
+      k.cone(M(0x5b6b73), 0.42, 0.9, -0.9, 4.3, 0.3, 4, Math.PI / 4);
+      k.add(new THREE.CylinderGeometry(0.01, 1.1, 1.6, 4, 1), M(0xe9d8c4, { rough: 0.8 }), 0.8, 0.9, -0.1, 0, Math.PI / 4, 0, 1.4, 1, 1);
+      return 5.2;
+    },
+    // 太平山顶：凌霄阁（像一口锅的屋顶）
+    "hk:peak": (k) => {
+      plate(k, 1.3, GRASS, 0.12);
+      k.box(solid(0xd6d3cc), 1.4, 1.1, 0.9, 0, 0.12, 0);
+      k.add(new THREE.CylinderGeometry(1.25, 0.55, 0.6, 18, 1, true), M(0x8f9aa3, { rough: 0.4, metal: 0.4, double: true }), 0, 1.6, 0);
+      for (let i = 0; i < 6; i++) roundTree(k, Math.cos(i) * 1.15, Math.sin(i) * 1.0, 0.45);
+      return 2.2;
+    },
+    // 湾仔电车路：双层叮叮车
+    "hk:tramroad": (k) => {
+      plate(k, 1.4, PAVE, 0.08);
+      for (const z of [-0.2, 0.2]) k.box(STEEL, 2.6, 0.03, 0.04, 0, 0.1, z);
+      const green = M(0x15803d, { rough: 0.6 });
+      k.box(green, 1.5, 0.45, 0.55, 0, 0.16, 0);
+      k.box(M(0xf5f0e1), 1.5, 0.4, 0.55, 0, 0.61, 0);
+      k.box(glass(0x2b3a4a), 1.45, 0.16, 0.57, 0, 0.72, 0);
+      k.box(green, 1.5, 0.08, 0.55, 0, 1.01, 0);
+      k.cyl(STEEL, 0.01, 0.01, 0.5, 0, 1.09, 0, 4);
+      return 1.7;
+    },
+    // 迪士尼：奇妙梦想城堡
+    "hk:disney": (k) => {
+      plate(k, 1.7, GRASS, 0.12);
+      k.box(M(0xf1e6f3), 1.6, 1.1, 0.9, 0, 0.12, 0);
+      const spires: [number, number, number, number][] = [[0, 0, 3.0, 0.32], [-0.6, 0.25, 2.2, 0.22], [0.6, 0.25, 2.2, 0.22], [-0.35, -0.3, 2.5, 0.2], [0.35, -0.3, 2.5, 0.2]];
+      for (const [x, z, h, r] of spires) { k.cyl(M(0xe9d5f5), r, r, h, x, 0.12, z, 12); k.cone(M(0x5b7fd6, { rough: 0.5 }), r * 1.3, h * 0.45, x, 0.12 + h, z, 12); k.cone(M(0xf6c445, { metal: 0.6 }), 0.03, 0.3, x, 0.12 + h * 1.45, z, 6); }
+      return 4.8;
+    },
+    // 昂坪：天坛大佛坐在三层圆台上
+    "hk:ngongping": (k) => {
+      plate(k, 1.5, GRASS, 0.12);
+      for (let i = 0; i < 3; i++) k.cyl(M(0xd8d2c4), 1.2 - i * 0.25, 1.2 - i * 0.25, 0.25, 0, 0.12 + i * 0.25, 0, 20);
+      const bronze = M(0x6e6a55, { metal: 0.5, rough: 0.5 });
+      k.cyl(bronze, 0.55, 0.65, 0.35, 0, 0.87, 0, 16);
+      k.ball(bronze, 0.42, 0, 1.55, 0, 1, 1.3, 0.9);
+      k.ball(bronze, 0.22, 0, 2.25, 0, 1, 1.1, 1);
+      k.ball(bronze, 0.1, 0, 2.5, 0);
+      return 2.8;
+    },
+    // 黄大仙祠：红柱金瓦的大殿
+    "hk:wongtaisin": (k) => {
+      plate(k, 1.4);
+      k.box(M(0xf2e6c9), 2.0, 0.25, 1.3, 0, 0.14, 0);
+      k.box(M(0xb91c1c, { rough: 0.7 }), 1.6, 0.9, 1.0, 0, 0.39, 0);
+      k.add(new THREE.ConeGeometry(1.35, 0.6, 4), M(0xd9a520, { rough: 0.5, metal: 0.3 }), 0, 1.6, 0, 0, Math.PI / 4, 0, 1.25, 1, 0.85);
+      for (const x of [-0.6, -0.2, 0.2, 0.6]) k.cyl(M(0x991b1b), 0.05, 0.05, 0.9, x, 0.39, 0.55, 8);
+      return 2.1;
+    },
+    // 大澳：水上棚屋
+    "hk:taio": (k) => {
+      k.cyl(WATER, 1.6, 1.6, 0.05, 0, 0, 0, 24);
+      for (let i = 0; i < 6; i++) {
+        const x = -1.1 + i * 0.45, z = (i % 2 ? 0.35 : -0.35);
+        for (const dx of [-0.15, 0.15]) for (const dz of [-0.12, 0.12]) k.cyl(WOOD, 0.03, 0.03, 0.35, x + dx, 0, z + dz, 5);
+        k.box(M([0x9aa3ab, 0xb08a6a, 0x7c8b95][i % 3]!, { rough: 0.95 }), 0.4, 0.3, 0.32, x, 0.35, z);
+        k.box(M(0x6b7280, { metal: 0.3 }), 0.44, 0.04, 0.36, x, 0.66, z);
+      }
+      return 1.2;
+    },
+    // 赤柱：美利楼的石柱长廊
+    "hk:stanley": (k) => {
+      plate(k, 1.5, PAVE, 0.1);
+      k.box(M(0xe8dcc4, { rough: 0.85 }), 2.0, 1.2, 0.8, 0, 0.1, 0);
+      for (let i = 0; i < 7; i++) k.cyl(WHITE, 0.06, 0.06, 1.1, -0.9 + i * 0.3, 0.1, 0.45, 8);
+      gable(k, M(0x8b5e3c, { flat: true }), 2.1, 0.9, 0.4, 0, 1.3, 0);
+      return 2.0;
+    },
+    "hk:westkowloon": (k) => station(k, 0x9ec3dc),
+    "hk:tungchung": (k) => station(k, 0xa8c4d4),
+    "hk:airport-hk": (k) => airport(k),
+    "hk:hospital-hk": (k) => { hospital(k); return 7.5; },
+    "hk:library-hk": (k) => SPECIFIC["sz:library"]!(k, {} as Loc, [], new THREE.Group()),
+    "hk:causewaybay": (k) => SPECIFIC["sz:mall"]!(k, {} as Loc, [], new THREE.Group()),
+    "hk:shatin": (k) => SPECIFIC["sz:mall"]!(k, {} as Loc, [], new THREE.Group()),
+    "hk:home": (k) => handshakeVillage(k),
+    "hk:mongkok": (k) => { oldStreet(k, true); return 2.4; },
+    "hk:yumatei": (k) => { oldStreet(k, true); return 2.4; },
+    "hk:sheungwan": (k) => { oldStreet(k, false); return 2.4; },
+    "hk:chunyeung": (k) => { oldStreet(k, false); return 2.4; },
+    "hk:yuenlong": (k) => { oldStreet(k, false); return 2.4; },
+    "hk:lankwaifong": (k) => { nightlife(k); return 5; },
+    "hk:saikung": (k) => { fishingHarbour(k); return 1.6; },
+    "hk:tuenmun": (k) => { beach(k, 3); return 1.6; },
+    "hk:vicpark": (k) => { park(k, 5, { lake: true, pavilion: true, trees: 8 }); return 1.6; },
+    "hk:kwuntong": (k) => { tower(k, 1.2, 5.5, 1.2, 0x9aa6b0, -0.6, 0, 0.14); tower(k, 1.0, 4.2, 1.0, 0xb4bcc4, 0.8, 0.3, 0.14); plate(k, 1.6); return 6; },
+    "hk:co-hkex": (k) => { plate(k, 1.5); for (const x of [-0.6, 0.6]) k.cyl(glass(0xc8a96a), 0.55, 0.55, 6.5, x, 0.14, 0, 16); k.box(glass(0xb8c7d1), 1.8, 1.0, 0.9, 0, 0.14, 0.6); return 7; },
+    "hk:co-swire": (k) => { plate(k, 1.6); tower(k, 1.1, 7, 1.1, 0x8fb0c4, -0.6, 0, 0.14); tower(k, 0.9, 5.2, 0.9, 0x9bbacb, 0.8, 0.2, 0.14); return 7.5; },
+    "hk:co-mtr": (k) => { plate(k, 1.6); k.box(solid(0xd1d5db), 2.6, 0.5, 1.6, 0, 0.14, 0); tower(k, 1.0, 5, 1.0, 0xa7b4bf, 0, 0, 0.64); k.box(neon(0xdc2626), 0.9, 0.25, 0.04, 0, 5.2, 0.52); return 6; },
+    "hk:co-hkstp": (k) => { plate(k, 1.6, GRASS, 0.12); k.ball(M(0xe5e7eb, { rough: 0.3, metal: 0.4 }), 0.9, -0.4, 0.12, 0, 1, 0.6, 1, 16); tower(k, 0.8, 2.6, 0.8, 0x7fc8a9, 0.8, 0.2, 0.12); return 3; },
+    "hk:co-cathay": (k) => { plate(k, 1.6); k.box(glass(0x5eaaa8), 2.4, 1.4, 1.2, 0, 0.14, 0); k.box(solid(0x0f766e), 2.4, 0.15, 1.2, 0, 1.54, 0); return 2; },
     "hz:hotel": (k) => {
       plate(k, 1.7);
       tower(k, 2.4, 2.4, 1.2, 0xf1c39c, 0, -0.5, 0.14);
@@ -897,6 +1021,7 @@ export function createLandmarks(winTex: THREE.Texture) {
   /** Free-standing skyline landmarks that are not playable locations. */
   function decor(cityKey: CityKey): DecorLandmark[] {
     if (cityKey === "hz") return decorHz();
+    if (cityKey === "hk") return decorHk();
     const out: DecorLandmark[] = [];
     const st = (n: string) => { for (const l of SZ_METRO_LINES) { const s = l.stations.find((x) => x.name === n); if (s) return s; } return null; };
     const pl = (n: string) => SZ_PLACES.find((p) => p.name === n) ?? null;
@@ -982,8 +1107,7 @@ export function createLandmarks(winTex: THREE.Texture) {
     });
     // 深中通道: west from the airport across the Lingdingyang
     add("深中通道", -42, -5.5, 0, (k) => seaBridge(k, 20, -3, 5.5), 0.06);
-    // 深圳湾公路大桥: towards Hong Kong, a single leaning pylon
-    add("深圳湾大桥", -26, 21.5, 0, (k) => seaBridge(k, 26, 3, 6.5, 0.18), 0.32);
+    // (深圳湾公路大桥 is drawn at its real position from terrain-sz.ts)
     // 明华轮：蛇口海上世界广场上那艘退役的法国邮轮（1962 年下水、1983 年起停在陆地上）——
     // 深蓝船身、五层白色上层建筑、红顶黑边的烟囱、桅杆和橙色救生艇，船头朝着海
     const mh = pl("明华轮");
@@ -1068,6 +1192,41 @@ export function createLandmarks(winTex: THREE.Texture) {
       spin.push(wheel);
       return 6.3;
     });
+    return out;
+  }
+
+  /** Hong Kong skyline landmarks: 环球贸易广场 (ICC) over West Kowloon, 国际金融中心 (IFC)
+      on the Central waterfront, and the 青马大桥 suspension bridge to Lantau. */
+  function decorHk(): DecorLandmark[] {
+    const out: DecorLandmark[] = [];
+    const add = (name: string, x: number, z: number, r: number, build: (k: Kit) => number, ry = 0) => {
+      const g = new THREE.Group(); const k = new Kit();
+      const top = build(k);
+      k.into(g);
+      out.push({ name, x, z, r, group: g, top, spin: [], ry });
+    };
+    add("环球贸易广场", 5.4, 5.0, 0.9,  // just north of 西九龙站 (its real spot is on top of the station)
+      (k) => {
+      k.add(new THREE.BoxGeometry(1.0, 17, 1.0), M(0x8fb3cc, { glass: true, rough: 0.2, metal: 0.55 }), 0, 8.5, 0, 0, Math.PI / 4, 0, 1, 1, 0.8);
+      k.add(new THREE.BoxGeometry(0.7, 0.8, 0.7), M(0xdbe7ef, { rough: 0.3, metal: 0.4 }), 0, 17.3, 0, 0, Math.PI / 4);
+      return 18;
+    });
+    // 青马大桥：两座门形桥塔 + 主缆
+    // at the real bridge (terrain-hk BRIDGES), turned along its span
+    const tm = THK_BRIDGES.find((b) => b.name === "青马大桥");
+    if (tm) add("青马大桥", (tm.a[0] + tm.b[0]) / 2, (tm.a[1] + tm.b[1]) / 2, 0, (k) => {
+      const deck = M(0xe5e1d8, { rough: 0.6 });
+      k.box(deck, 9, 0.3, 1.2, 0, 1.0, 0);
+      for (const x of [-3, 3]) for (const z of [-0.55, 0.55]) k.box(CONCRETE, 0.3, 4.2, 0.3, x, 0, z);
+      for (const x of [-3, 3]) k.box(CONCRETE, 0.3, 0.3, 1.4, x, 3.9, 0);
+      const cable = M(0xd1d5db, { rough: 0.4 });
+      for (const z of [-0.55, 0.55]) {
+        const pts: THREE.Vector3[] = [];
+        for (let i = 0; i <= 24; i++) { const t = i / 24; const x = -4.5 + 9 * t; const y = x < -3 ? 1.3 + (x + 4.5) / 1.5 * 2.8 : x > 3 ? 1.3 + (4.5 - x) / 1.5 * 2.8 : 1.6 + Math.pow(x / 3, 2) * 2.5; pts.push(new THREE.Vector3(x, y, z)); }
+        k.add(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 40, 0.05, 5), cable, 0, 0, 0);
+      }
+      return 4.3;
+    }, -Math.atan2(tm.b[1] - tm.a[1], tm.b[0] - tm.a[0]));
     return out;
   }
 
