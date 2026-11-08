@@ -14,8 +14,8 @@ import { SCENE_PHOTOS } from "./experience";
 import * as THREE from "three";
 import { makePostFx, type PostFx } from "./postfx";
 
-export type LifeSet = "station" | "metro" | "train" | "bus" | "taxi" | "concourse" | "platform" | "office" | "restaurant" | "market" | "mall" | "kitchen" | "bedroom" | "bathroom" | "gym" | "park" | "home" | "cruise" | "wheel" | "aquarium" | "turtle" | "coaster" | "safari" | "hike" | "beach" | "cablecar";
-export type LifePose = "walk" | "idle" | "sit" | "type" | "cook" | "eat" | "sleep" | "wash" | "lift" | "stretch";
+export type LifeSet = "station" | "metro" | "train" | "bus" | "taxi" | "drive" | "concourse" | "platform" | "office" | "restaurant" | "market" | "mall" | "kitchen" | "bedroom" | "bathroom" | "gym" | "park" | "home" | "cruise" | "wheel" | "aquarium" | "turtle" | "coaster" | "safari" | "hike" | "beach" | "cablecar";
+export type LifePose = "walk" | "idle" | "sit" | "drive" | "type" | "cook" | "eat" | "sleep" | "wash" | "lift" | "stretch";
 
 interface Props {
   setKind: LifeSet;
@@ -24,6 +24,8 @@ interface Props {
   pants: number;
   night: boolean;
   emoji: string;
+  /** Currency symbol drawn on the taxi meter — HK$ in Hong Kong, ¥ elsewhere. */
+  cur?: string;
 }
 
 /* ---------------- canvas texture helpers ---------------- */
@@ -339,7 +341,7 @@ export function LifeStage3D(p: Props) {
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
-    const { setKind, pose, shirt, pants, night, emoji } = propsRef.current;
+    const { setKind, pose, shirt, pants, night, emoji, cur } = propsRef.current;
     // Same WebGL guard as the main map: a refused context degrades to the
     // emoji fallback below instead of crashing the animation overlay.
     let renderer: THREE.WebGLRenderer;
@@ -422,6 +424,8 @@ export function LifeStage3D(p: Props) {
     const bobbers: { g: THREE.Group; ph: number; amp: number }[] = [];
     const tapers: { f: Figure; ph: number }[] = [];
     const streaks: { m: THREE.Mesh; c: number; hw: number; sp: number; off: number }[] = [];
+    /* traffic-light heads whose lamps the frame loop cycles red→green */
+    const tlights: { red: THREE.MeshStandardMaterial; yel: THREE.MeshStandardMaterial; grn: THREE.MeshStandardMaterial; off: number }[] = [];
     const swayers: { g: THREE.Group; ph: number }[] = [];
     const motes: { sp: THREE.Sprite; ph: number }[] = [];
     const codeTexs: THREE.CanvasTexture[] = [];
@@ -450,7 +454,7 @@ export function LifeStage3D(p: Props) {
     };
 
     /* ---- floor ---- */
-    const floorKind = setKind === "bathroom" || setKind === "kitchen" || setKind === "concourse" ? "tile" : setKind === "station" || setKind === "platform" ? "concrete" : setKind === "metro" || setKind === "train" || setKind === "bus" || setKind === "taxi" ? "carriage" : setKind === "park" ? "grass" : setKind === "mall" ? "tile" : "wood";
+    const floorKind = setKind === "bathroom" || setKind === "kitchen" || setKind === "concourse" ? "tile" : setKind === "station" || setKind === "platform" ? "concrete" : setKind === "metro" || setKind === "train" || setKind === "bus" || setKind === "taxi" || setKind === "drive" ? "carriage" : setKind === "park" ? "grass" : setKind === "mall" ? "tile" : "wood";
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(22, 14), new THREE.MeshStandardMaterial({ map: floorTex(floorKind), roughness: 0.95 }));
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
@@ -684,7 +688,7 @@ export function LifeStage3D(p: Props) {
       }
       // dashboard + glowing meter + nav screen
       box(6.6, 0.55, 0.5, 0x22262b, 0, 0.82, -2.25, 0.5);
-      plane(1.15, 0.5, boardTex("#0b1220", [{ t: "计价器", s: 34, c: "#f5b942" }, { t: "¥ · 行驶中", s: 30, c: "#a3e635" }]), -1.9, 1.28, -2.2);
+      plane(1.15, 0.5, boardTex("#0b1220", [{ t: "计价器", s: 34, c: "#f5b942" }, { t: `${cur ?? "¥"} · 行驶中`, s: 30, c: "#a3e635" }]), -1.9, 1.28, -2.2);
       plane(1.3, 0.55, boardTex("#0c4a6e", [{ t: "导航 · 前方直行", s: 32, c: "#ffffff" }, { t: "目的地快到了", s: 26, c: "#bae6fd" }]), 1.6, 1.28, -2.2);
       box(0.9, 0.28, 0.06, 0x9fb2c2, 0, 3.28, -2.3, 0.35, { metalness: 0.5 });
       // front seat backs + driver (seen from behind: rotation 0)
@@ -702,6 +706,53 @@ export function LifeStage3D(p: Props) {
       // back bench the player sits on
       box(3.4, 0.18, 0.8, 0x374151, 0.2, 0.6, -1.05, 0.8);
       box(3.4, 0.8, 0.16, 0x374151, 0.2, 1.15, -1.42, 0.8);
+      addGlow(0, 3.3, -1, 1.6, 0xffd9a0, 0.35);
+    } else if (setKind === "drive") {
+      // your own car, from the driver's seat: windshield with the street
+      // streaming past, dashboard + nav screen, the wheel in front of the
+      // actor — and a REAL traffic light ahead that cycles red → green,
+      // because driving in the city means stopping at lights like everyone.
+      box(11, 1.5, 0.2, 0x2e3339, 0, 3.6, -2.55, 0.6);
+      box(0.25, 4.4, 0.25, 0x2e3339, -3.4, 2.1, -2.5, 0.6);
+      box(0.25, 4.4, 0.25, 0x2e3339, 3.4, 2.1, -2.5, 0.6);
+      const vt = viewTex(); scrollTexs.push(vt);
+      plane(6.4, 2.5, vt, 0, 2.2, -2.42);
+      for (let sIdx = 0; sIdx < 3; sIdx++) {
+        const bar = box(0.15, 1.1, 0.03, 0xd8ecff, 0, 2.2, -2.38, 0.3, { emissive: 0x9fc8e8, emissiveIntensity: 1 });
+        bar.castShadow = false;
+        streaks.push({ m: bar, c: 0, hw: 2.6, sp: 1.9 + sIdx * 0.6, off: sIdx * 1.9 });
+      }
+      // the traffic light ahead, upper right through the windshield
+      cyl(0.05, 0.05, 3.1, 0x22262b, 2.75, 1.55, -2.3, 0.5, { metalness: 0.5 });
+      box(0.42, 1.15, 0.18, 0x14181d, 2.75, 3.35, -2.3, 0.5);
+      const lampMat = (em: number) => new THREE.MeshStandardMaterial({ color: 0x1c2126, roughness: 0.35, emissive: em, emissiveIntensity: 0.12 });
+      const tlRed = lampMat(0xff2a1e);
+      const tlYel = lampMat(0xffb020);
+      const tlGrn = lampMat(0x2ee66b);
+      const lampGeo = new THREE.SphereGeometry(0.13, 10, 8);
+      const mkLamp = (m: THREE.MeshStandardMaterial, ly: number) => { const s = new THREE.Mesh(lampGeo, m); s.position.set(2.75, ly, -2.18); scene.add(s); };
+      mkLamp(tlRed, 3.72); mkLamp(tlYel, 3.35); mkLamp(tlGrn, 2.98);
+      tlights.push({ red: tlRed, yel: tlYel, grn: tlGrn, off: 0 });
+      addGlow(2.75, 3.35, -2.0, 1.1, 0xffc873, 0.22);
+      // dashboard + glowing nav screen + instrument cluster
+      box(6.6, 0.55, 0.5, 0x1d2126, 0, 0.82, -2.25, 0.5);
+      plane(1.35, 0.55, boardTex("#0c4a6e", [{ t: "导航 · 沿主路直行", s: 32, c: "#ffffff" }, { t: "前方路口 · 注意信号灯", s: 26, c: "#bae6fd" }]), 0.9, 1.3, -2.2);
+      plane(0.95, 0.42, boardTex("#0b1220", [{ t: "车速", s: 30, c: "#a3e635" }, { t: "电量 82%", s: 28, c: "#f5b942" }]), -2.1, 1.26, -2.2);
+      box(0.9, 0.28, 0.06, 0x9fb2c2, -0.3, 3.28, -2.3, 0.35, { metalness: 0.5 });
+      // steering wheel right in front of the driver (actor sits at x=-0.95)
+      const wheelD = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.045, 8, 18), mat(0x22262b, 0.5));
+      wheelD.position.set(-0.95, 1.14, -1.52);
+      wheelD.rotation.x = 0.5;
+      scene.add(wheelD);
+      cyl(0.045, 0.045, 0.5, 0x22262b, -0.95, 0.95, -1.72, 0.5, { metalness: 0.5 }).rotation.x = 1.1;
+      // the two front seats: driver's (actor) + a friend riding shotgun
+      for (const fx of [-0.95, 0.95]) {
+        box(1.05, 0.18, 0.7, 0x3f4750, fx, 0.6, -1.05, 0.75);
+        box(1.05, 0.95, 0.18, 0x3f4750, fx, 1.15, -1.35, 0.75);
+        box(0.55, 0.3, 0.14, 0x333a42, fx, 1.85, -1.33, 0.7);
+      }
+      const buddy = extraFigure(0.95, -0.3, -1.05, Math.PI, 0xec4899, 0x3a3f4a, true);
+      buddy.armL.rotation.x = -0.4; buddy.armR.rotation.x = -0.75;
       addGlow(0, 3.3, -1, 1.6, 0xffd9a0, 0.35);
     } else if (setKind === "office") {
       roomShell(0xf3ead8, 0xb9c6cf, { windowX: -3.9, windowW: 3.1, clock: true });
@@ -1623,6 +1674,7 @@ export function LifeStage3D(p: Props) {
       train: [0, 1.35, -1.1],
       bus: [0, 1.35, -1.1],
       taxi: [0, 1.3, -1.15],
+      drive: [-0.3, 1.3, -1.15],
       station: [0, 1.5, -1.0],
       concourse: [0, 1.35, -0.9],
       platform: [0, 1.4, -0.9],
@@ -1670,7 +1722,7 @@ export function LifeStage3D(p: Props) {
       const startDist = pose === "walk" ? 9.6 : 7.6;
       const dist = startDist - push * 1.5;
       const sway = Math.sin(t * 0.35) * 0.45;
-      const vib = setKind === "metro" || setKind === "station" || setKind === "train" || setKind === "bus" || setKind === "taxi" ? Math.sin(t * 34) * 0.008 : 0;
+      const vib = setKind === "metro" || setKind === "station" || setKind === "train" || setKind === "bus" || setKind === "taxi" || setKind === "drive" ? Math.sin(t * 34) * 0.008 : 0;
       camera.position.set(sway, 3.15 - push * 0.55 + vib, dist);
       camera.lookAt(look[0], look[1], look[2]);
 
@@ -1772,6 +1824,20 @@ export function LifeStage3D(p: Props) {
         A.armL.rotation.x = -0.5;
         A.armR.rotation.x = -0.85 + Math.sin(t * 6) * 0.05;
         A.head.rotation.x = 0.14;
+      } else if (pose === "drive") {
+        // behind the wheel: seated in the driver's seat, both hands up on
+        // the wheel, small steering corrections, eyes flicking between the
+        // road ahead and the mirrors — driving, not posing.
+        A.g.position.set(-0.95, -0.3 + Math.sin(t * 1.8) * 0.008, -1.12);
+        A.legL.rotation.x = -1.32; A.legR.rotation.x = -1.22;
+        const steer = Math.sin(t * 0.7) * 0.09 + Math.sin(t * 2.3) * 0.03;
+        A.armL.rotation.x = -0.98 + steer * 0.4;
+        A.armR.rotation.x = -0.98 - steer * 0.4;
+        A.armL.rotation.z = 0.22 + steer;
+        A.armR.rotation.z = -0.22 + steer;
+        A.g.rotation.x = 0.06;
+        A.head.rotation.y = Math.sin(t * 0.4) * 0.3;
+        A.head.rotation.x = 0.05 + Math.max(0, Math.sin(t * 0.4 + 1.4)) * 0.05;
       } else if (pose === "stretch") {
         // just woke up: both arms reach overhead, spine lengthens, a
         // little rise onto the toes, then settles — the morning stretch
@@ -1821,6 +1887,14 @@ export function LifeStage3D(p: Props) {
         mo.sp.position.x = (mo.sp.userData.x as number) + Math.sin(t * 0.25 + mo.ph) * 0.3;
       }
       if (flameLight) flameLight.intensity = 4.4 + Math.sin(t * 23) * 0.9 + Math.sin(t * 7.3) * 0.7;
+      // traffic lights cycle like the real thing: red, a breath, green,
+      // amber, red again — the driver waits through it in the drive set
+      for (const tl of tlights) {
+        const cyc = (t + tl.off) % 7;
+        tl.red.emissiveIntensity = cyc < 3 ? 2.6 : 0.12;
+        tl.grn.emissiveIntensity = cyc >= 3.4 && cyc < 6.2 ? 2.6 : 0.12;
+        tl.yel.emissiveIntensity = cyc >= 3 && cyc < 3.4 ? 2.6 : cyc >= 6.2 ? 2.6 : 0.12;
+      }
       for (const tex of codeTexs) tex.offset.y = (t * 0.14) % 1;
       for (const tex of scrollTexs) tex.offset.x = -((t * 0.45) % 1);
       for (const sp of steamSprites) {

@@ -132,6 +132,15 @@ Imagery not needed: the world is a real-time low-poly 3D scene (Three.js geometr
 - Diagnosis from the user's fullscreen screenshot (zoom chip at 63%): the city sat in the top half of a full-viewport stage with the bottom half empty dark-blue. Three compounding causes in MapView: (1) camera distance was a fixed 58 regardless of canvas size/aspect, so a bigger stage just meant relatively less city; (2) pure player-follow anchoring — with the player at home in the south, the whole landmass projected into the upper frame and the foreground was all sea; (3) the polar angle 0.92 was oblique enough to stretch a wide foreground water strip, and the water plane itself was an oversized 240×160 ocean.
 - Fix (MapView.tsx only): framing is now derived from the land bounds (x −38…38, z −22…coast) — `CAM_POL` 0.92→0.68 (flatter, map-like), `fitDistForAspect(aspect)` computes the distance at which the land fills the frame (height nearly full; width may crop slightly so wide-short stages fill vertically). A ResizeObserver recomputes the fit on every size change, and while auto-fit is armed (initial load, ⌂ reset, any fullscreen/fill toggle) the camera distance tracks it — entering/leaving fullscreen, window resizes and panel collapses all re-fill the frame. Manual wheel/button zoom disarms auto-fit and the zoom % is now relative to the fit distance (⌂ = 100% = exactly filled). At overview distances the camera target blends toward the land centre (weight grows with distance), so the city stays centred instead of hugging the top; zoomed-in play still follows the player. The water plane shrank to 168×104 hugging the miniature. Normal (non-fullscreen) mode gets the same treatment via the same observer, since its canvas size changes with breakpoints and the aside collapse.
 
+## Sleeping Dogs pass: true-scale streets + driving + living NPCs (2026-11-06, user: 参照热血无赖去设计，整个地图真实，玩家和npc动作行为完全复刻，体验真实3d)
+- Honest scope (same framing the parent gave the user): a browser game cannot match a AAA title's motion capture/fidelity; this round rebuilds the PC edition along Sleeping Dogs' DESIGN — a dense living street level — within the standing low-poly decision. Combat is explicitly out of scope per the brief. Dual cities, real weather, APEC, the guide/album, multiplayer and all existing systems are untouched; no server/schema change.
+- Streets at true scale (MapView): every road corridor gained pavements on both sides; real segment-crossing junctions (from ROADS geometry) gained zebra crossings (instanced) and two signal heads each. Signals run an 18s two-phase cycle with per-junction offsets and amber changeovers; lamp emissives are driven by the same phase function the traffic obeys. Street walls: up to ~120 shopfront blocks line both sides of the roads (awnings, neon sign strips pushed into the existing neon cycle, window textures that light at night via buildingMats), skipping locations/roads/mountains/lakes/coast. A 🚶 街景视角 toggle drops the camera to a near-horizontal close follow behind the player, so the street reads at eye height instead of as a miniature; ⌂/全景 restores the framed view.
+- Traffic behaves (MapView): vehicles ease toward cruise speed, brake to the stop line on red/late-amber, and queue behind the vehicle ahead (same road/direction/lane) — flow bunches at junctions and releases on green. 阿强 the delivery rider is a physical scooter + seated rider figure IN that traffic (same light/queue rules via trafficAdvance), not a map pin.
+- Pedestrians (MapView): 22 unnamed citizens walk the pavements with limb-swing figures; at junctions they turn onto crossing streets, wait at the kerb for the pedestrian green (the phase where the crossed road's traffic is stopped, plus the changeover), cross, and duck into shopfront doors (door points recorded when the shop rows are built) for a few seconds before coming back out.
+- NPC daily life (MapView + npcAnchorLocId): named NPCs now run on the REAL Asia/Shanghai clock that already drives the sky — morning commute (transit/work), midday at their job's kind of place, lunch at food/market, evening food/social/mall, night back in the home quarter; "stay" roles keep their corner. When the beat changes they visibly travel across the map to the new anchor; idle movement clusters around the anchor (80%) instead of random cross-city teleports. Passing NPCs greet each other (and the player) with short street lines on their name chips for ~2.6s. The persona/memory/wall system in npc.ts is unchanged — this is its physical layer.
+- Driving (data.ts + App.tsx + MapView + LifeStage): two new travel modes — 🏃 跑步 (free, mapSpeed 10, highest energy cost; stride cadence now scales with actual speed for every actor) and 🚗 自驾 (mapSpeed 24; cost = driveFare fuel/electricity ¥3+0.7/unit + parkingFee by destination type ¥0 home/lodging … ¥12 mall/APEC/work/health; unaffordable falls back to walking with an explanation, never a silent switch). On the map the player sits in their own car (taxi-style glass cabin, no taxi sign, body tinted to the player's identity colour, `veh-drive`). Every drive opens the road-ride cinematic in the new LifeStage `drive` set — driver's seat POV: steering wheel in front of the actor (new `drive` pose: hands on the wheel, steering corrections, mirror glances), a friend riding shotgun, scrolling street through the windshield, and a working traffic light ahead cycling red→amber→green; the four beats are 上车点火 → 路口等红灯 → 跟着车流走 → 找车位停好下车. The drive set's photo backdrop reuses the verified Shenzhen street-through-a-windshield photo (scene-taxi, provenance in the Real-photo experiences section).
+- Player action coverage after this round: walk / run (stride-scaled), cycle / scooter / bus / taxi (existing seated rides), drive (own car + driver POV), metro/rail (existing full entry sequence), plus all LifeStage acted scenes for eating/working/cooking/sleeping/etc. — every locomotion and daily action has a matching on-screen performance.
+
 ## NPC simulation system (2026-11-06, user: 做 NPC 模拟系统，借鉴 MiroFish 的多智能体思路，不搬代码、不调大模型、轻量本地跑)
 - New module `client/src/npc.ts`: MiroFish-style agent flavour implemented purely locally — personality parameters + persistent memory + templates + seeded RNG. No LLM calls, no server changes, no tokens spent; everything derives deterministically from (NPC identity, game day, city) so the same day always produces the same street.
 - Persona: five traits （热心/幽默/拼劲/话痨/要面子） seeded per NPC with hand-anchored overrides for known neighbours （陈伯热心话多、老周要面子话少、Lisa 话痨拼劲…); 作息 derived from each job and shown in the social panel and chat header; pairwise NPC↔NPC affinity seeded from name pairs drives supportive vs teasing comments.
@@ -203,3 +212,87 @@ Scripts: `tools/photos/search.py` (Commons search, licence filter) → `sheets.p
 Life scenes added: 东江夜游 (cruise), 湾区之光摩天轮 (wheel), 小梅沙海洋世界 (aquarium tunnel), 海龟湾 (turtles); triggered by those places' main action.
 Area labels: `tools/hz/fetch_areas.py` + `gen_areas.py` → `client/src/areas.ts` (OSM neighbourhoods / towns / villages placed on both maps).
 - Photos NOT from Commons, pending written permission (user decision 2026-11-07: use now, confirm before launch): `sz-mission.jpg`, `sz-mission2.jpg` from China Daily's Shenzhen government page for Mission Hills (https://govt.chinadaily.com.cn/s/201812/17/WS5ce75ce0498e079e68021961/mission-hills-resort-shenzhen.html). Their credit line shows 「授权待确认」. Official channels checked for the other gaps: 人才公园 (sz.gov.cn page, unreachable from here), 红花湖 / 盐田海滨栈道 / 海上田园 / 光明农场大观园 (no official site found; official WeChat accounts only).
+## Hong Kong — third city (2026-11-07)
+
+User asked for Hong Kong as the next city after Shenzhen/Huizhou: real geography
+（港岛/九龙/新界/大屿山）, real MTR network (no 「地铁」 wording — Hong Kong only
+has 港铁）, real-photo experiences priced in HK$, a real border crossing from
+Shenzhen （罗湖/福田/深圳湾口岸 + 高铁 to 西九龙站）, bilingual HK NPCs, and the
+full 真实经历/图鉴/打卡/一日游 treatment.
+
+- **Geography & locations**: 31 locations in `HK_LOCS` (data.ts) laid out on the
+  real map — 新界 north, 九龙 mid, Victoria Harbour water band, 港岛 south,
+  大屿山 southwest. Includes 维多利亚港（尖沙咀海滨）, 太平山顶， 中环， 旺角，
+  香港迪士尼乐园， 昂坪·天坛大佛， 大澳， 赤柱， 西贡， 黄大仙祠， 海洋公园，
+  plus work/food/market/bank/hospital/library/lodging and the gateways
+  香港西九龙站 / 罗湖站·边境 / 香港国际机场 / 东涌.
+- **MTR**: 10 lines in `METRO_LINES` with real names, colours and station
+  sequences — 荃湾线， 港岛线， 观塘线， 将军澳线， 东铁线 （罗湖/落马洲支线），
+  南港岛线， 屯马线， 东涌线， 机场快线， 迪士尼线 — plus 广深港高铁
+  （西九龙↔福田↔深圳北， city "both") and a pedestrian SHUTTLE_LINK
+  西九龙↔九龙站 (same mechanism as 惠州北↔惠州南）. Transport modes renamed
+  for HK: 港铁/巴士/的士/渡轮/高铁； 电车 （叮叮） and 山顶缆车 are place
+  experiences （湾仔电车路 / 太平山顶）, 天星小轮 is the fun action at
+  尖沙咀海滨.
+- **Border crossing**: `switchCity(to)` now takes a target city. Any pair
+  involving HK plays the new `crossing` life scene （出示证件 → 安检 →
+  一地两检/入境 → 抵达） in LifeStage instead of the 下高铁 scene. Fares:
+  深圳北↔惠州南 ¥40 （厦深）, 深圳北↔西九龙 ¥75 (real HSR 二等座）,
+  惠州南↔西九龙 ¥120. The never-block rule stays: an empty wallet rides
+  free and is told so. Shenzhen/Huizhou 口岸 (port) locations additionally
+  offer 「过关去香港过日子」 (permanent switch) next to the existing day
+  trip; HK's 罗湖站·边境 offers 「过关回深圳」.
+- **Money**: HK experience/food prices are labelled in HK$ (real prices:
+  云吞面 HK$42, 点心 HK$58, 天星小轮上层 HK$5, 山顶缆车 HK$88, 迪士尼
+  HK$639, 昂坪缆车 HK$235). The shared wallet settles 1:1 with RMB as an
+  explicit game simplification, stated in CITY_INTRO.hk.
+- **NPCs**: separate HK cast via `Npc.cities` + `npcsForCity` — 华哥（茶餐厅
+  伙计）, 阿May（中环白领）, 强哥（的士司机）, 婆婆珍（街市菜贩）, 船长辉
+  （天星小轮）, 肥妈（深水埗邻居）; bilingual Cantonese-flavoured lines,
+  personas/schedules/posts/chat replies in npc.ts. SZ/HZ NPCs never appear
+  in HK and vice versa.
+- **Photos** (image-search skill, downloaded, preflighted, copied into
+  `client/src/assets/`; WEBP originals converted to JPEG):
+  - place-harbour.jpg （维多利亚港）: https://ak-d.tripcdn.com/images/0104o12000nygbha75327.jpg
+  - place-peak.jpg （太平山顶）: https://www.somedaynomadic.com/wp-content/uploads/2026/01/Victoria-peak-3000x1348.jpg
+  - place-disney.jpg （香港迪士尼·奇妙梦想城堡， visually verified): https://www.somedaynomadic.com (Disney post image)
+  - place-buddha.jpg （天坛大佛）: wish.hr travel image
+  - place-saikung.jpg （西贡海滨）: KMB image
+  - place-stanley.jpg （赤柱）: https://ak-d.tripcdn.com/images/0103r12000o2d2v1aF1DB.jpg (discoverhongkong.com returned 403; Trip.com CDN used instead)
+  - place-wongtaisin.jpg （黄大仙祠）: neverendingfootsteps.com image
+  - place-taio.jpg （大澳棚屋）: myloview image
+  - place-mongkok.jpg （旺角霓虹）: thevacationgateway image
+  - place-dimsum.jpg （点心）: thehkhub image
+  - place-tram.jpg （叮叮电车， visually verified): trvl-media/Expedia image
+- **Guide cards**: 11 HK entries in experience.ts GUIDE, each with real
+  address, HK$ price, hours, tip, bilingual fact and an HK NPC story;
+  sources: discoverhongkong.com （维港/山顶/西贡/赤柱/大澳/旺角/餐饮）,
+  hongkongdisneyland.com, np360.com.hk, siksikyuen.org.hk, hktramways.com.
+  Day tour: 维港两岸一日游 （旺角→尖沙咀维港→上环茶餐厅→太平山顶）.
+- **Server**: cityKey enums widened to include "hk" (join/sync/getWorld/
+  getRealWeather), `onlineHk` added to the world snapshot, real weather
+  for Hong Kong (22.3193, 114.1694) through the same 30-minute cache.
+
+## Currency display fix (2026-11-07, user: 港币标价没落地）
+The HK build promised 港币标价 on the city card, but the setup screen,
+HUD and cross-city controls still rendered every amount with ¥. Fixed by
+making the display currency follow the city the player is standing in:
+- `curSym` / `fmtMoney` / `crossFareLabel` in data.ts are the single
+  source: hk → `HK$`, sz/hz → `¥`. App.tsx's in-component `fmt` shadows
+  the module default and resolves from the live `gs.cityKey` (falling
+  back to the setup screen's picked city), so identity money/pay on the
+  setup screen, balance/goal/rent, wages, food, lodging, ZhuyaHome
+  prices, transport fares, sign-in and quiz rewards all render in the
+  current city's currency. Leaderboard rows use each player's OWN city
+  currency. Random-event copy (authored with ¥ in events.ts) is
+  re-denominated at render time via `locText` when the player is in HK.
+- Cross-border HSR fares are labelled in the DEPARTURE city's currency
+  everywhere they appear (top-bar and map-edge switch buttons, the
+  crossing log line and arrival toast, the port 「过关去…过日子」
+  actions): West Kowloon departures read `HK$75（西九龙出发 · 港币）`,
+  Shenzhen departures `¥75（深圳出发 · 人民币）`, Huizhou departures
+  `¥120（惠州出发 · 人民币）`. The domestic Shenzhen⇄Huizhou fare stays
+  a plain ¥40. The server's finishSeason feed line also uses HK$ for
+  Hong Kong players.
+- Guide-card prices in experience.ts were already real per-city prices
+  (SZ/HZ in ¥, HK in HK$) and were left untouched.

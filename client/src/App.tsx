@@ -7,10 +7,11 @@ import { TERMS, PRIVACY, LEGAL_VERSION, OPERATOR_MISSING } from "./legal";
 import { getLang, setLangStored, installTranslator, LANGS, trText, type Lang } from "./i18n";
 import { cloudCode, newCloudCode, setCloudCode, prettyCode, liteDefault, setQuality, readInvite, inviteLink, clearInviteParams, drawShareCard } from "./share";
 import {
-APPS, CAREERS, COMPANIES, companyAt, companyById, companyGaps, employerHere, type Company, CITIES, FOODS, FURNITURE, IDENTITIES, NPCS, OFFERS, TEMPLATES,
+APPS, CAREERS, COMPANIES, companyAt, companyById, companyGaps, employerHere, type Company, CITIES, FOODS, FURNITURE, IDENTITIES, NPCS, npcsForCity, OFFERS, TEMPLATES,
 apecPhase, apecVenueMul, getLocations, isApecWeek, isSaturday, tplQuote, setSeason, isApecSeason,
 APEC_TASKS, apecTaskOfDay, APEC_SLOGAN, APEC_CERT_NAME,
-weatherOf, weekday, modesForCity, railWord, etaMinutes, modeById, SCENIC_SPOTS, scenicOf, taxiFare, busFare, bikeFare,
+weatherOf, weekday, modesForCity, railWord, etaMinutes, modeById, SCENIC_SPOTS, scenicOf, taxiFare, busFare, bikeFare, driveFare, parkingFee,
+curSym, fmtMoney, crossFareLabel,
 findMetroRoute, findStationRoute, exitLocForStation, resolveLoc, partialFare, nearbyPlaces, nearbyServices, placesForCity, PLACE_KINDS, type MetroLine, planRailTrip, allMetroDestinations, linesForLoc, metroLinesForCity, crowdForRide, motoFare,
 RESTAURANTS, DELIVERY_PLATFORMS, SHOP_VENUES, LODGINGS, rentFlatWeekly, OUTFITS, outfitOf, isRainy, HOME_ROOMS,
 LOC_EN, LOC_GRADE, CITY_INTRO,
@@ -157,7 +158,7 @@ name: string;
 
 export const LS_KEY = "shhr-pc-save-v1";
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
-const fmt = (n: number) => `¥${Math.round(n).toLocaleString()}`;
+const fmt = (n: number, ck: CityKey = "sz") => fmtMoney(n, ck);
 const hexCss = (n: number) => `#${n.toString(16).padStart(6, "0")}`;
 
 function idenOf(gs: GameState) {
@@ -187,7 +188,7 @@ return Math.floor(computeComfort(gs) / 12) + styleMatchCount(gs) * 3;
 }
 function homeName(gs: GameState): string {
 if (gs.homeStyle) return `精装房 · ${gs.homeStyle}`;
-return gs.cityKey === "hz"? "海边出租屋": "城中村出租屋";
+return gs.cityKey === "hz" ? "海边出租屋" : gs.cityKey === "hk" ? "深水埗唐楼" : "城中村出租屋";
 }
 function newPlayerId(): string {
 try {
@@ -206,11 +207,11 @@ if (reason === "debt" || gs.money < -500) {
 title = "被房东请出门";
 quote = `“钱没攒下，故事攒了一堆。” 这次${city.name}之旅提前结束了——不是你不行，是房租太准时。下次记得：周六之前，钱包里一定要留够房租。`;
 } else if (gs.money >= gs.goal * 1.5) {
-title = gs.cityKey === "sz"? "深圳湾预备业主": "海景房候选人";
-quote = `别人还在挤地铁，你已经在看房了。这30天你卷得明白、活得清醒——${gs.cityKey === "sz"? "深圳不相信眼泪，但相信存款。": "惠州的海，终于有一扇窗是为你留的。"}`;
+title = gs.cityKey === "sz" ? "深圳湾预备业主" : gs.cityKey === "hk" ? "维港看房人" : "海景房候选人";
+quote = `别人还在挤地铁，你已经在看房了。这30天你卷得明白、活得清醒——${gs.cityKey === "sz" ? "深圳不相信眼泪，但相信存款。" : gs.cityKey === "hk" ? "维港的灯火里，终于有一扇窗是为你留的。" : "惠州的海，终于有一扇窗是为你留的。"}`;
 } else if (gs.money >= gs.goal) {
-title = gs.cityKey === "sz"? "深漂上岸者": "惠州安家者";
-quote = `目标达成！${fmt(gs.money)} 是你一天一天、一顿一顿饭省出来、赚出来的。${city.name}没有辜负认真生活的人。`;
+title = gs.cityKey === "sz" ? "深漂上岸者" : gs.cityKey === "hk" ? "港漂扎根者" : "惠州安家者";
+quote = `目标达成！${fmt(gs.money, gs.cityKey)} 是你一天一天、一顿一顿饭省出来、赚出来的。${city.name}没有辜负认真生活的人。`;
 } else if (gs.money >= 0) {
 title = "平凡生存家";
 quote = "没到目标，但你完整地活过了30天，交齐了每一周的房租，吃了每一顿该吃的饭。平凡地活着，本身就很了不起。";
@@ -234,7 +235,7 @@ if ((gs.apecTasks ?? []).length >= APEC_TASKS.length) badges.push(APEC_CERT_NAME
 else if ((gs.apecCheckins ?? []).length >= 3) badges.push("📍 峰会三会场全打卡");
 if (gs.furniture.length >= 3) badges.push("🛋️ 安家小能手");
 if (computeComfort(gs) >= 80) badges.push("🏠 舒适小窝");
-if ((gs.metroRides ?? 0) >= 5) badges.push(gs.cityKey === "hz" ? "🚆 城轨达人" : "🚇 地铁达人");
+if ((gs.metroRides ?? 0) >= 5) badges.push(gs.cityKey === "hz" ? "🚆 城轨达人" : gs.cityKey === "hk" ? "🚇 港铁达人" : "🚇 地铁达人");
 if ((gs.visitedScenic ?? []).length >= 5) badges.push("📸 风景收藏家");
 if ((gs.actCount ?? 0) >= 15) badges.push("🎮 会玩的人");
 if ((gs.partyPlays ?? 0) >= 3) badges.push("🤝 组局达人");
@@ -250,7 +251,7 @@ return { title, quote, badges};
    in with eased motion, props act (typing, steam, chewing, lifting), and
    captions tell the beat. Triggered by the real actions (finishing a rail
    ride, working, eating, cooking, sleeping…) and by the 今日生活 replay. */
-type LifeKind = "day" | "alightRail" | "metro" | "code" | "overtime" | "eat" | "cook" | "sleep" | "wash" | "groceries" | "shopping" | "gym" | "stroll" | "gathering" | "cruise" | "wheel" | "aquarium" | "turtle" | "coaster" | "safari" | "hike" | "beach" | "cablecar";
+type LifeKind = "day" | "alightRail" | "crossing" | "metro" | "code" | "overtime" | "eat" | "cook" | "sleep" | "wash" | "groceries" | "shopping" | "gym" | "stroll" | "gathering" | "cruise" | "wheel" | "aquarium" | "turtle" | "coaster" | "safari" | "hike" | "beach" | "cablecar";
 interface LifeStep { bg: string; prop: string; caption: string; sub: string; move?: "walk" | "stay"; fx?: "type" | "steam" | "zzz" | "rain" | "chew" | "lift" | "shine"; dawn?: boolean; }
 interface LifeScene { title: string; tone?: "night" | "indoor"; steps: LifeStep[]; }
 const LIFE_SCENES: Record<LifeKind, LifeScene> = {
@@ -269,6 +270,11 @@ alightRail: { title: "下高铁", steps: [
   { bg: "🚄 🏙️", prop: "🚄", caption: "列车缓缓进站", sub: "广播响起：前方到站，请拿好随身行李", move: "stay" },
   { bg: "🚪 🧳 👥", prop: "🧳", caption: "车门打开，下车", sub: "拎着包走下站台，脚踏实地的感觉真好", move: "walk" },
   { bg: "🏙️ ☀️ 🚇", prop: "🎫", caption: "刷卡出站", sub: "跟着人流走出站厅，城市的热气扑面而来", move: "walk" },
+] },
+crossing: { title: "过关 · 深港之间", steps: [
+  { bg: "🛃 👥 🧳", prop: "🪪", caption: "排队过关，先出示证件", sub: "口岸大堂人流如织：把回乡证 / 港澳通行证拿在手里，跟着队伍慢慢往前挪", move: "stay" },
+  { bg: "🛂 🧳 🔍", prop: "🧳", caption: "安检 + 出入境检查", sub: "行李过机、人过闸口，证件一刷——内地的章和香港的入境记录，一次过完成", move: "walk" },
+  { bg: "🇭🇰 🏙️ 🚇", prop: "🎫", caption: "过关成功，入城", sub: "走出大堂，空气里的语言都变了：广播先讲广东话，再讲普通话，最后是英文", move: "walk" },
 ] },
 metro: { title: "坐地铁", steps: [
   { bg: "🚇 💺 👥", prop: "💺", caption: "坐进车厢", sub: "找个座位坐下，扶好扶手——车厢晃着往前开，窗外的城市一段段往后跑", move: "stay" },
@@ -382,6 +388,7 @@ function lifeStageFor(kind: LifeKind, idx: number): { set: LifeSet; pose: LifePo
 switch (kind) {
 case "day": return ([{ set: "bathroom", pose: "wash" }, { set: "home", pose: "idle" }, { set: "station", pose: "walk" }, { set: "metro", pose: "walk" }, { set: "office", pose: "type" }, { set: "restaurant", pose: "eat" }, { set: "market", pose: "walk" }, { set: "kitchen", pose: "cook" }, { set: "bedroom", pose: "sleep" }] as { set: LifeSet; pose: LifePose }[])[idx] ?? { set: "home", pose: "idle" };
 case "alightRail": return { set: "station", pose: idx === 0 ? "idle" : "walk" };
+case "crossing": return idx === 0 ? { set: "concourse", pose: "idle" } : idx === 1 ? { set: "concourse", pose: "walk" } : { set: "station", pose: "walk" };
 case "metro": return idx === 0 ? { set: "metro", pose: "sit" } : idx === 1 ? { set: "metro", pose: "walk" } : { set: "concourse", pose: "walk" };
 case "code": return { set: "office", pose: idx === 0 ? "walk" : idx === 3 ? "idle" : "type" };
 case "overtime": return { set: "office", pose: idx === 2 ? "walk" : "type" };
@@ -535,7 +542,7 @@ el.scrollTo({ left: Math.max(0, cur.offsetLeft - el.clientWidth / 2 + cur.offset
     四步按这趟行程的实际时长等分推进（每步 = 行程时长 ÷ 4），
     行程到点时若最后一步还没演满它那一份，弹窗等它演完再收起——
     绝不中途掐断。durMs 是这趟行程的地图移动时长，startedAt 是开演时刻。 */
-const [roadRide, setRoadRide] = useState<{ mode: "bus" | "taxi"; fromName: string; toName: string; fare: number; durMs: number; startedAt: number } | null>(null);
+const [roadRide, setRoadRide] = useState<{ mode: "bus" | "taxi" | "drive"; fromName: string; toName: string; fare: number; durMs: number; startedAt: number } | null>(null);
 const [roadRideStep, setRoadRideStep] = useState(0);
 /** 行程本身已到站（walk 定时器到点）：人物和结算照常落地，只是弹窗
     还在等最后一步演完；演完由下面的 effect 统一收起。 */
@@ -750,6 +757,22 @@ const [setupIden, setSetupIden] = useState(IDENTITIES[0]!.id);
 const finishedSent = useRef(false);
 const toastTimer = useRef<number | null>(null);
 
+/* Display currency follows the city you are standing in — Hong Kong
+   prices everything in HK$, Shenzhen/Huizhou in ¥. This `fmt` shadows
+   the module-level one so every amount rendered or logged inside the
+   game (balance, pay, rent, food, fares, other players' board rows
+   aside) uses the current city's currency; on the setup screen it
+   follows the city being picked (identity money, daily pay, the rules
+   line), so picking 香港 shows HK$ from the very first screen. The one
+   deliberate exception is a cross-border fare, which is labelled in
+   the DEPARTURE city's currency via crossFareLabel. `Y` is the bare
+   symbol for strings that build their own number formatting, and
+   locText re-denominates fixed copy (random-event text authored with
+   ¥) when the player is in Hong Kong. */
+const fmt = (n: number, ck?: CityKey) => fmtMoney(n, ck ?? gsRef.current?.cityKey ?? setupCity);
+const Y = curSym(gs?.cityKey ?? setupCity);
+const locText = (t: string, ck?: CityKey) => ((ck ?? gsRef.current?.cityKey) === "hk" ? t.replaceAll("¥", "HK$") : t);
+
 const cityKey: CityKey = gs?.cityKey?? "sz";
 /* 赛季 = 北京时间的一个自然月；星期、峰会都按本局所在的月份算 */
 setSeason(gs?.startKey ?? seasonStartFor());
@@ -881,7 +904,7 @@ const target = GUIDE.find((g) => g.key === quiz.key);
 setQuiz({ ...quiz, picked: name });
 if (target && name === target.locName) {
 mutate((d) => { d.money += 10; d.maxMoney = Math.max(d.maxMoney, d.money); });
-showToast("🎉 认对了！+¥10 —— 这张实拍你记住了");
+showToast(`🎉 认对了！+${fmt(10)} —— 这张实拍你记住了`);
 }
 };
 /* 一日游：按顺序到达每一站自动结算（换城市时按当前城市的路线算） */
@@ -1084,7 +1107,7 @@ const prof = p.profile as Partial<Profile>;
 const g = p.gs as Partial<GameState> & Record<string, unknown>;
 if (typeof prof.playerId !== "string" || prof.playerId.length < 4) return null;
 if (typeof prof.name !== "string" || prof.name.trim() === "") return null;
-if (g.cityKey !== "sz" && g.cityKey !== "hz") return null;
+if (g.cityKey !== "sz" && g.cityKey !== "hz" && g.cityKey !== "hk") return null;
 if (g.finished) return null;
 const num = (v: unknown, dflt: number): number => (typeof v === "number" && Number.isFinite(v) ? v : dflt);
 const strArr = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
@@ -1200,7 +1223,7 @@ const s0 = gsRef.current; if (!s0) return;
 if (!inWindow(nowMin(), RAIL_HOURS[s0.cityKey])) { showToast(`🚇 ${railWord(s0.cityKey)}已经停运了（运营 ${windowStr(RAIL_HOURS[s0.cityKey])}，北京时间）。打车或者明早再坐。`); return; }
 const route = routeOverride ?? findMetroRoute(s0.cityKey, fromLocId, toLocId);
 if (!route) { showToast("这趟车暂时没规划出来，换个目的地试试。"); return; }
-if (s0.money < route.fare) { showToast(`车票 ¥${route.fare}，钱包不够，先打工攒点钱。`); return; }
+if (s0.money < route.fare) { showToast(`车票 ${Y}${route.fare}，钱包不够，先打工攒点钱。`); return; }
 const crowd = crowdForRide(route.line.id, s0.day, s0.metroRides ?? 0);
 setCarriage({ route, fromLoc: fromLocId, toLoc: toLocId, stopIdx: 0, legIdx: 0, awaitingTransfer: false, crowdLabel: crowd.label, crowdDesc: crowd.desc, crowdLevel: crowd.level, seated: crowd.level === 0, gaveSeat: false, phoneUsed: false, heldRail: false });
 setRideEntry(0);
@@ -1228,7 +1251,7 @@ const fareNow = evRef.current.metroFree ? 0 : c.route.fare;
 mutate((s) => { s.money -= fareNow; s.energy -= Math.max(3, Math.round(c.route.stops * 1.2)) + (c.gaveSeat ? 2 : 0); s.metroRides = (s.metroRides ?? 0) + 1; if (c.gaveSeat) { s.network += 1; s.mood += 4; } if (c.phoneUsed) s.mood += 2; });
 setCurrentLoc(c.toLoc); currentLocRef.current = c.toLoc; setSelectedLoc(c.toLoc);
 const lastSt = c.route.stations[c.route.stations.length - 1]?.name ?? "";
-showToast(`${isRail ? "🚄" : "🚇"} 到达${lastSt && !locById(c.toLoc).name.includes(lastSt) ? `${lastSt}站，出站就是${locById(c.toLoc).short}` : locById(c.toLoc).name}，车票 ${fareNow ? `-¥${fareNow}` : "免费（绿色出行日）"}，共 ${c.route.stops} 站${c.route.isTransfer ? `（换乘 ${c.route.transferStations.length} 次：${c.route.summary}）` : ""}${pendingAfterRide.current && pendingAfterRide.current !== c.toLoc ? `，出站再步行到${locById(pendingAfterRide.current).short}` : ""}。`);
+showToast(`${isRail ? "🚄" : "🚇"} 到达${lastSt && !locById(c.toLoc).name.includes(lastSt) ? `${lastSt}站，出站就是${locById(c.toLoc).short}` : locById(c.toLoc).name}，车票 ${fareNow ? `-${Y}${fareNow}` : "免费（绿色出行日）"}，共 ${c.route.stops} 站${c.route.isTransfer ? `（换乘 ${c.route.transferStations.length} 次：${c.route.summary}）` : ""}${pendingAfterRide.current && pendingAfterRide.current !== c.toLoc ? `，出站再步行到${locById(pendingAfterRide.current).short}` : ""}。`);
 addLog(`坐 ${c.route.summary} 从${locById(c.fromLoc).short}到${locById(c.toLoc).short}，${c.route.stops}站${c.route.isTransfer ? `，在${c.route.transferStations.join("、")}换乘` : ""}${c.route.shuttleFrom.length > 0 ? `（${c.route.shuttleFrom.join("、")}坐接驳巴士）` : ""} -¥${fareNow}${c.gaveSeat ? "，车厢里让了个座，人脉+1" : ""}${pendingAfterRide.current && pendingAfterRide.current !== c.toLoc ? `，再步行到${locById(pendingAfterRide.current).short}` : ""}。`);
 setRideEntry(null);
 setCarriage(null);
@@ -1272,7 +1295,7 @@ if (mode === "metro" || mode === "rail") {
   const plan = planRailTrip(s0.cityKey, currentLocRef.current, locId);
   if (plan) {
     if (s0.money < plan.route.fare) {
-      showToast(`这趟车票 ¥${plan.route.fare}（${plan.route.summary}），钱包不够，先打工攒点钱再坐。`);
+      showToast(`这趟车票 ${Y}${plan.route.fare}（${plan.route.summary}），钱包不够，先打工攒点钱再坐。`);
       setSelectedLoc(currentLocRef.current);
       return;
     }
@@ -1297,22 +1320,23 @@ if (mode === "metro" || mode === "rail") {
   showToast(`「${from.short}」到「${to.short}」走过去比坐车还近：坐车光是走到站、下车再走回来就比直达更远，这次直接步行。`);
 }
 let cost = 0; let energyCost = 0; let effMode: TransportModeId = "walk"; let modeLabel = "步行";
-if (mode === "taxi") { cost = Math.round(taxiFare(dist) * (evRef.current.taxiMul ?? 1)); energyCost = 1; effMode = "taxi"; modeLabel = "打车"; if (s0.money < cost) { showToast(`打车要 ¥${cost}，钱不够，改步行了。`); cost = 0; energyCost = Math.round(dist * 0.5); effMode = "walk"; modeLabel = "步行"; } }
-else if (mode === "moto") { cost = motoFare(dist); energyCost = Math.max(1, Math.round(dist * 0.18)); effMode = "moto"; modeLabel = "电动车"; if (s0.money < cost) { showToast(`电动车要 ¥${cost}，钱不够，改步行了。`); cost = 0; energyCost = Math.round(dist * 0.5); effMode = "walk"; modeLabel = "步行"; } else if (dist > 22) { showToast(`路太远，电动车电量告急，骑到一半推了一段——远途还是坐${railWord(s0.cityKey)}/打车吧。`); energyCost += 4; } }
-else if (mode === "bike") { cost = bikeFare(dist); energyCost = Math.round(dist * 0.3); effMode = "bike"; modeLabel = "骑行"; if (s0.money < cost) { cost = 0; showToast(`骑行去${to.short}要 ¥${bikeFare(dist)}，钱包不够——共享单车免押金，这趟先免费骑。任何地点都能骑到，别让钱拦路。`); } }
+if (mode === "run") { cost = 0; energyCost = Math.round(dist * 0.85); effMode = "run"; modeLabel = "跑步"; }
+else if (mode === "taxi") { cost = Math.round(taxiFare(dist) * (evRef.current.taxiMul ?? 1)); energyCost = 1; effMode = "taxi"; modeLabel = "打车"; if (s0.money < cost) { showToast(`打车要 ${Y}${cost}，钱不够，改步行了。`); cost = 0; energyCost = Math.round(dist * 0.5); effMode = "walk"; modeLabel = "步行"; } }
+else if (mode === "moto") { cost = motoFare(dist); energyCost = Math.max(1, Math.round(dist * 0.18)); effMode = "moto"; modeLabel = "电动车"; if (s0.money < cost) { showToast(`电动车要 ${Y}${cost}，钱不够，改步行了。`); cost = 0; energyCost = Math.round(dist * 0.5); effMode = "walk"; modeLabel = "步行"; } else if (dist > 22) { showToast(`路太远，电动车电量告急，骑到一半推了一段——远途还是坐${railWord(s0.cityKey)}/打车吧。`); energyCost += 4; } }
+else if (mode === "bike") { cost = bikeFare(dist); energyCost = Math.round(dist * 0.3); effMode = "bike"; modeLabel = "骑行"; if (s0.money < cost) { cost = 0; showToast(`骑行去${to.short}要 ${Y}${bikeFare(dist)}，钱包不够——共享单车免押金，这趟先免费骑。任何地点都能骑到，别让钱拦路。`); } }
 else if (mode === "bus") { cost = busFare(dist); energyCost = Math.max(1, Math.round(dist * 0.12)); effMode = "bus"; modeLabel = "公交"; if (s0.money < cost) cost = 0; }
-else if (mode === "ferry") { cost = 60; energyCost = 4; effMode = "ferry"; modeLabel = "轮渡"; if (s0.money < cost) { showToast(`轮渡船票要 ¥${cost}，钱不够，改步行了。`); cost = 0; energyCost = Math.round(dist * 0.5); effMode = "walk"; modeLabel = "步行"; } }
-else if (mode === "flight") { cost = 420; energyCost = 6; effMode = "flight"; modeLabel = "飞机"; if (s0.money < cost) { showToast(`机票要 ¥${cost}，钱不够，改步行了。`); cost = 0; energyCost = Math.round(dist * 0.5); effMode = "walk"; modeLabel = "步行"; } }
-else if (mode === "car") {
+else if (mode === "ferry") { cost = 60; energyCost = 4; effMode = "ferry"; modeLabel = "轮渡"; if (s0.money < cost) { showToast(`轮渡船票要 ${Y}${cost}，钱不够，改步行了。`); cost = 0; energyCost = Math.round(dist * 0.5); effMode = "walk"; modeLabel = "步行"; } }
+else if (mode === "flight") { cost = 420; energyCost = 6; effMode = "flight"; modeLabel = "飞机"; if (s0.money < cost) { showToast(`机票要 ${Y}${cost}，钱不够，改步行了。`); cost = 0; energyCost = Math.round(dist * 0.5); effMode = "walk"; modeLabel = "步行"; } }
+else if (mode === "drive") {
   const hasCar = (s0.license ?? 0) >= 3 && (s0.carOwned || s0.carDay === s0.day);
   if (!hasCar) { showToast((s0.license ?? 0) < 3 ? "还没有驾照：去图书馆/车站的「驾校练车」考三科。这次改打车。" : "今天没有车：去车站「租一天车」。这次改打车。"); cost = Math.round(taxiFare(dist) * (evRef.current.taxiMul ?? 1)); energyCost = 1; effMode = "taxi"; modeLabel = "打车"; if (s0.money < cost) { cost = 0; energyCost = Math.round(dist * 0.5); effMode = "walk"; modeLabel = "步行"; } }
-  else { cost = Math.round(5 + dist * 0.5); energyCost = 2; effMode = "car"; modeLabel = "自驾"; }
+  else { const park = parkingFee(to); cost = driveFare(dist) + park; energyCost = 1; effMode = "drive"; modeLabel = "自驾"; if (s0.money < cost) { showToast(`自驾去${to.short}要油费/电费 ${Y}${driveFare(dist)}${park > 0 ? ` + 停车费 ${Y}${park}` : ""}，钱不够，改步行了。`); cost = 0; energyCost = Math.round(dist * 0.5); effMode = "walk"; modeLabel = "步行"; } else if (park > 0) { showToast(`自驾去${to.short}：油费/电费 ${Y}${driveFare(dist)} + 那边停车 ${Y}${park}。开自己的车就是这点好——比打车便宜，停车得自己找车位。`); } }
 }
 else { energyCost = Math.round(dist * 0.5); }
-const jam = ["car", "taxi", "bus"].includes(effMode) && isRushHour(nowMin(s0));
+const jam = ["drive", "taxi", "bus"].includes(effMode) && isRushHour(nowMin(s0));
 if (jam) showToast(`🚦 高峰期，路上堵车，${modeLabel}要多花一半时间。`);
 mutate((s) => { s.money -= cost; s.energy -= energyCost; });
-if (cost > 0) showToast(`${modeLabel}去${to.short}，-¥${cost}${energyCost ? `，能量 -${energyCost}` : ""}，预计约 ${etaMinutes(effMode, dist)} 分钟到。`);
+if (cost > 0) showToast(`${modeLabel}去${to.short}，-${Y}${cost}${energyCost ? `，能量 -${energyCost}` : ""}，预计约 ${etaMinutes(effMode, dist)} 分钟到。`);
 else showToast(`${modeLabel}去${to.short}，预计约 ${etaMinutes(effMode, dist)} 分钟到。${effMode === "walk" ? "换个更快的出行方式能省不少时间。" : ""}`);
 if (nowRainy) {
 if (s0.outfit === "raincoat") showToast("🌧️ 下雨天，你穿着雨衣出门，雨点都顺着衣角滑下去了，没淋着。");
@@ -1327,7 +1351,7 @@ const ms = clamp((dist / modeById(effMode).mapSpeed) * 1000 * (jam ? 1.5 : 1), 4
    （站台等车→上车→坐进车厢看窗外→到站下车）。所有行程都触发，
    不分远近；四步动画按这趟的实际时长 ms 等分缩放，行程到点时
    最后一步没演完就等它演完再收（见 roadRideArrived 的处理）。 */
-if (effMode === "bus" || effMode === "taxi") {
+if (effMode === "bus" || effMode === "taxi" || effMode === "drive") {
 setRoadRide({ mode: effMode, fromName: from.name, toName: to.name, fare: cost, durMs: ms, startedAt: Date.now() });
 setRoadRideStep(0);
 setRoadRideArrived(false);
@@ -1487,51 +1511,76 @@ walkTo("home");
 }
 };
 
-/* ---------- 跨城切换：坐厦深高铁去另一座城市 ----------
-   One save, two cities: the run itself (money, career, home, furniture,
+/* ---------- 跨城切换：高铁去惠州，过关去香港 ----------
+   One save, three cities: the run itself (money, career, home, furniture,
    progress) does NOT change — only the city you stand in. Map, locations,
    real weather, the online channel, foods/gigs and the neighbours' wall
-   all resolve from gs.cityKey, so the switch is: play the in-game 3D
-   下高铁 station scene, then flip cityKey, land at the other city's HSR station （深圳北站 ⇄
-   惠州南站）, and rebuild today's NPC wall for the new city. The presence
+   all resolve from gs.cityKey, so the switch is: play the in-game scene,
+   then flip cityKey, land at the other city's gateway station, and
+   rebuild today's NPC wall for the new city. Shenzhen ⇄ Huizhou rides
+   the 厦深高铁 (no border). Anything touching Hong Kong is a real border
+   crossing — 高铁到西九龙站一地两检，或罗湖/福田/深圳湾口岸过关 — so it
+   plays the 过关 scene （出示证件 → 安检 → 入境） instead. The presence
    heartbeat follows on its own (it syncs gs.cityKey + currentLoc). */
-const INTERCITY_STATION: Record<CityKey, string> = { sz: "north", hz: "hzsouth" };
+const INTERCITY_STATION: Record<CityKey, string> = { sz: "north", hz: "hzsouth", hk: "westkowloon" };
 const INTERCITY_FARE = 40;
-const switchCity = () => {
+/** Real-ish one-way fares: 深圳北↔惠州南 ≈ ¥40 （厦深）; 深圳北↔西九龙
+    二等座 ¥75 （广深港高铁）; 惠州南↔西九龙 ≈ ¥120 (via 深圳）. The fare
+    is always NAMED in the departure city's currency (crossFareLabel):
+    the same 75 reads ¥75（深圳出发 · 人民币）one way and HK$75（西九龙
+    出发 · 港币）the other. */
+function intercityFare(from: CityKey, to: CityKey): number {
+  const pair = [from, to].sort().join("-");
+  if (pair === "hk-sz") return 75;
+  if (pair === "hk-hz") return 120;
+  return INTERCITY_FARE;
+}
+const switchCity = (to: CityKey) => {
 const s0 = gsRef.current;
 if (!s0) return;
-if (walking || carriage || lifeAnim) { showToast("先等这趟行程结束，再去坐跨城高铁。"); return; }
+if (walking || carriage || lifeAnim) { showToast("先等这趟行程结束，再去坐跨城的车。"); return; }
 const from = s0.cityKey;
-const to: CityKey = from === "sz" ? "hz" : "sz";
+if (to === from) return;
+const fare = intercityFare(from, to);
+const crossing = from === "hk" || to === "hk";
+/* Fare as the player sees it: cross-border fares are labelled in the
+   DEPARTURE currency (West Kowloon → HK$, Shenzhen/Huizhou → ¥, named
+   as such); the domestic Shenzhen⇄Huizhou fare stays a plain ¥40. */
+const fareTxt = crossing ? crossFareLabel(from, fare) : `¥${fare}`;
 /* The fare is charged when the player can afford it, but a switch is
    NEVER blocked by an empty wallet （绝不拦路， same rule as cycling):
    broke players ride free and are told so plainly. */
-const charged = s0.money >= INTERCITY_FARE;
-const fromStation = locById(INTERCITY_STATION[from]).name;
+const charged = s0.money >= fare;
+const fromStation = getLocations(from).find((l) => l.id === INTERCITY_STATION[from])?.name ?? CITIES[from].name;
 const toStationLoc = getLocations(to).find((l) => l.id === INTERCITY_STATION[to]);
 const toStation = toStationLoc?.name ?? CITIES[to].name;
 const arrive = () => {
 const wall = generateDailyPosts({ day: s0.day, cityKey: to, playerName: profileRef.current?.name ?? "我" }, [], gsRef.current?.npcMem ?? {});
 mutate((s) => {
 s.cityKey = to;
-if (charged) s.money -= INTERCITY_FARE;
+if (charged) s.money -= fare;
 s.energy = clamp(s.energy - 6, 1, 100);
 s.metroRides = (s.metroRides ?? 0) + 1;
 s.npcFeed = wall.posts;
 s.npcMem = wall.mems;
-s.log = [{ day: s.day, text: `坐厦深高铁从${fromStation}到${toStation}，接下来在${CITIES[to].name}过日子——进度、家当都原样带着走${charged ? `（车票 ¥${INTERCITY_FARE}）` : "（钱包不够车票钱，这趟免费坐）"}。` }, ...s.log].slice(0, 40);
+s.log = [{ day: s.day, text: crossing
+  ? `过关啦：坐高铁从${fromStation}出发，在${to === "hk" ? "西九龙站一地两检" : "口岸"}办完出示证件、安检、入境手续，抵达${toStation}——接下来在${CITIES[to].name}过日子，进度、家当原样带着走${charged ? `（车票 ${fareTxt}）` : "（钱包不够车票钱，这趟免费坐）"}。`
+  : `坐厦深高铁从${fromStation}到${toStation}，接下来在${CITIES[to].name}过日子——进度、家当都原样带着走${charged ? `（车票 ${fareTxt}）` : "（钱包不够车票钱，这趟免费坐）"}。` }, ...s.log].slice(0, 40);
 });
 setCurrentLoc(INTERCITY_STATION[to]); currentLocRef.current = INTERCITY_STATION[to];
 setSelectedLoc(INTERCITY_STATION[to]);
 setAsideTab("place"); autoOpenAside();
 setMapFocus({ locId: INTERCITY_STATION[to], nonce: Date.now() });
-showToast(charged ? `🚄 到${toStation}了！这里是${CITIES[to].name}——地图、天气、街坊都换了，进度原样带着（车票 ¥${INTERCITY_FARE}）。` : `🚄 到${toStation}了！钱包不够车票钱——这趟免费坐，绝不拦路。这里是${CITIES[to].name}，进度原样带着。`);
-burstDanmaku([`🚄 ${profileRef.current?.name ?? "我"} 坐高铁去了${CITIES[to].name}`, `欢迎来到${CITIES[to].name} 🎉`]);
-postFeed("life", `坐厦深高铁去了${CITIES[to].name}，换座城市过日子`);
+showToast(charged
+  ? `${crossing ? "🛃 过关成功" : "🚄 到站"}——${toStation}！这里是${CITIES[to].name}——地图、天气、街坊都换了，进度原样带着（车票 ${fareTxt}）。`
+  : `${crossing ? "🛃 过关成功" : "🚄 到站"}——${toStation}！钱包不够车票钱，这趟免费坐，绝不拦路。这里是${CITIES[to].name}，进度原样带着。`);
+burstDanmaku([`${crossing ? "🛃" : "🚄"} ${profileRef.current?.name ?? "我"} ${crossing ? "过关去了" : "坐高铁去了"}${CITIES[to].name}`, `欢迎来到${CITIES[to].name} 🎉`]);
+postFeed("life", crossing ? `过关去了${CITIES[to].name}，换座城市过日子` : `坐厦深高铁去了${CITIES[to].name}，换座城市过日子`);
 };
-/* The crossing is acted out on the game's own 3D station set — the
-   下高铁 platform scene — then the arrival callback flips the city. */
-playLifeAnim("alightRail", arrive);
+/* The trip is acted out on the game's own 3D sets — the 过关 concourse
+   sequence for Hong Kong, the 下高铁 platform scene for Huizhou — then
+   the arrival callback flips the city. */
+playLifeAnim(crossing ? "crossing" : "alightRail", arrive);
 };
 
 /* ---------- core numbers ---------- */
@@ -1741,7 +1790,7 @@ msg = "自己做了一顿饭：洗菜、切菜、下锅，热气腾腾端上桌�
 break;
 }
 case "buy-groceries": {
-if (s.money < 28) { msg = "买菜要 ¥28，钱包不够。"; break; }
+if (s.money < 28) { msg = `买菜要 ${fmt(28)}，钱包不够。`; break; }
 s.money -= 28; s.groceries += 1;
 msg = `买了一篮子菜（青菜、鸡蛋、肉），食材 +1，现在有 ${s.groceries} 份，回家就能做饭。`;
 break;
@@ -1860,7 +1909,7 @@ msg = `认真练了一次，体质 +1（已练 ${s.fit} 次）。`;
 break;
 case "bank-buy":
 s.money -= 1000; s.invest += 1000;
-msg = "买入理财 ¥1,000，每晚结算收益。";
+msg = `买入理财 ${fmt(1000)}，每晚结算收益。`;
 break;
 case "bank-sell": {
 const amt = s.invest;
@@ -1880,10 +1929,10 @@ case "market-phone": {
 s.money -= 400;
 if (Math.random() < 0.5) {
 s.money += 650; s.earned += 250; s.mood += 5;
-msg = "眼光不错！二手手机转手 +¥650，净赚 ¥250。";
+msg = `眼光不错！二手手机转手 +${fmt(650)}，净赚 ${fmt(250)}。`;
 } else {
 s.mood -= 4;
-msg = "踩坑了，手机只值自用。-¥400，心情 -4。";
+msg = `踩坑了，手机只值自用。-${fmt(400)}，心情 -4。`;
 }
 break;
 }
@@ -2164,7 +2213,7 @@ money: s0.money, energy: s0.energy, mood: s0.mood, earned: s0.earned,
 xp: s0.xp, skill: s0.skill, network: s0.network,
 pay: iden.pay, payMul: CITIES[s0.cityKey].payMul,
 };
-const text = choice.apply(fx);
+const text = locText(choice.apply(fx), s0.cityKey);
 mutate((s) => {
 s.money = fx.money; s.energy = fx.energy; s.mood = fx.mood; s.earned = fx.earned;
 s.xp = fx.xp; s.skill = fx.skill; s.network = fx.network;
@@ -2202,7 +2251,7 @@ addLog(`${text}`);
       apecTasks: [], apecCheckins: [],
       seenEvents: [], greeted: [], visitedScenic: [], album: [], tourIdx: 0, tourDone: false, metroRides: 0, outfit: "casual", ownedOutfits: ["casual", "pajamas"], groceries: 1,
       npcMem: day1Wall.mems, npcFeed: day1Wall.posts, npcNews: [],
-      log: [{ day: 1, text: `来到${cityInfo.name}，住进${cityInfo.scene}。目标：30 天攒到 ${fmt(iden.id === "rich" ? 30000 : iden.id === "flat" ? 5000 : cityInfo.goal)}。` }],
+      log: [{ day: 1, text: `来到${cityInfo.name}，住进${cityInfo.scene}。目标：30 天攒到 ${fmt(iden.id === "rich" ? 30000 : iden.id === "flat" ? 5000 : cityInfo.goal, city)}。` }],
       finished: false,
       signDay: 0, dayBase: { day: 1, work: 0, meal: 0, scenic: 0 }, dayClaim: [],
       employer: "startup", offers: [], interviews: [], referrals: [],
@@ -2310,7 +2359,7 @@ addLog(`${text}`);
     if (!s0) return;
     const fromL = locById(currentLocRef.current); const toL = locById(locId);
     const fare = Math.round(taxiFare(Math.hypot(toL.x - fromL.x, toL.z - fromL.z)) * (evRef.current.taxiMul ?? 1));
-    if (s0.money < fare) { showToast(`打车到${toL.short}要 ¥${fare}，钱不够。`); return; }
+    if (s0.money < fare) { showToast(`打车到${toL.short}要 ${Y}${fare}，钱不够。`); return; }
     mutate((s) => { s.money -= fare; });
     setPhoneOpen(false);
     if (walkTimer.current) window.clearTimeout(walkTimer.current);
@@ -2322,7 +2371,7 @@ addLog(`${text}`);
     setAsideTab("place");
     setCurrentLoc(locId);
     currentLocRef.current = locId;
-    showToast(`打车到${locById(locId).short}，-¥${fare}（按距离计价）。`);
+    showToast(`打车到${locById(locId).short}，-${Y}${fare}（按距离计价）。`);
   };
 
   /* ---------- NPC simulation: chat, favours, gifts, the street wall ---------- */
@@ -2345,7 +2394,7 @@ addLog(`${text}`);
     const npc = NPCS.find((n) => n.name === npcChat);
     if (!s0 || !npc || !npcChat) return;
     if (action === "help" && s0.energy < 6) { showToast("能量不够，帮人也得先顾好自己——先吃点东西或歇会儿。"); return; }
-    if (action === "gift" && s0.money < 25) { showToast("送个小礼物要 ¥25，钱包不够。先攒点钱，或者帮他个忙也一样暖心。"); return; }
+    if (action === "gift" && s0.money < 25) { showToast(`送个小礼物要 ${fmt(25)}，钱包不够。先攒点钱，或者帮他个忙也一样暖心。`); return; }
     const mem = memOf(s0.npcMem ?? {}, npcChat);
     const repeatedToday = mem.lastDay === s0.day;
     const outcome = chatReply(npc, mem, action, dayCtx(), repeatedToday);
@@ -2375,7 +2424,7 @@ addLog(`${text}`);
       apec: "峰会这事儿，你怎么看？",
       joke: "跟你讲个笑话：为什么程序员分不清万圣节和圣诞节？因为 Oct 31 == Dec 25。",
       help: "看你忙的，需要搭把手吗？我来帮你。",
-      gift: "这个送你（¥25 的小礼物），不值钱，就图个乐呵，别嫌弃。",
+      gift: `这个送你（${fmt(25)} 的小礼物），不值钱，就图个乐呵，别嫌弃。`,
     };
     setNpcLog((log) => [...log, { from: "me", text: playerLines[action] }, { from: "npc", text: outcome.reply }]);
     if (outcome.favour) addLog(`帮了${npc.name}一个忙，他记下了这份人情。`);
@@ -2729,12 +2778,12 @@ playLifeAnim("shopping");
   const stayOvernight = (lodgingId: string) => {
     const l = LODGINGS.find((x) => x.id === lodgingId); const s0 = gsRef.current;
     if (!l || !s0) return;
-    if (s0.money < l.price) { showToast(`住一晚要 ¥${l.price}，钱不够。`); return; }
+    if (s0.money < l.price) { showToast(`住一晚要 ${Y}${l.price}，钱不够。`); return; }
     const hostelNet = lodgingId === "hostel" && Math.random() < 0.6;
     mutate((s) => { s.money -= l.price; s.mood += l.mood; if (hostelNet) s.network += 1; });
     setVenueScene(null);
-    showToast(`🛏️ 在「${l.name}」住下了，-¥${l.price}。${hostelNet ? "客厅里聊得投机，人脉 +1。" : ""}好好睡一觉到明天。`);
-    addLog(`在「${l.name}」过夜，-¥${l.price}，心情 +${l.mood}。`);
+    showToast(`🛏️ 在「${l.name}」住下了，-${Y}${l.price}。${hostelNet ? "客厅里聊得投机，人脉 +1。" : ""}好好睡一觉到明天。`);
+    addLog(`在「${l.name}」过夜，-${Y}${l.price}，心情 +${l.mood}。`);
     window.setTimeout(() => playLifeAnim("sleep", () => doSleep()), 350);
   };
   const signRent = () => {
@@ -2809,7 +2858,7 @@ playLifeAnim("shopping");
           { kind: "__sleep", title: "睡一觉", emoji: "😴", desc: "每天第一次睡觉回满能量；日子跟着北京时间走，睡觉不会跳到明天", cost: "能量回满" },
           { kind: "wash", title: "起床洗漱", emoji: "🪥", desc: "刷牙、洗脸、整理自己，新的一天从卫生间开始", cost: "能量 +6 · 心情 +6 · 免费" },
           { kind: "cook", title: "自己做饭", emoji: "🍳", desc: `用冰箱里的食材做一顿（当前食材 ×${s.groceries}）：洗菜、切菜、下锅、上桌`, cost: "食材 -1 · 能量 +34 · 心情 +9", disabled: s.groceries <= 0 },
-          { kind: "buy-groceries", title: "楼下买菜", emoji: "🥬", desc: "下楼到菜摊买一篮子菜，囤进冰箱慢慢做", cost: "-¥28 · 食材 +1", disabled: s.money < 28 },
+          { kind: "buy-groceries", title: "楼下买菜", emoji: "🥬", desc: "下楼到菜摊买一篮子菜，囤进冰箱慢慢做", cost: `-${Y}28 · 食材 +1`, disabled: s.money < 28 },
           { kind: "rest", title: "躺平摸鱼", emoji: "🛋️", desc: "刷手机、睡午觉，不花钱回血（穿睡衣恢复更多）", cost: "能量 +14 · 心情 +8 · 免费" },
         ];
       case "work":
@@ -2820,15 +2869,21 @@ playLifeAnim("shopping");
       case "transit":
         return [
           { kind: "gig", title: loc.gigName ?? city.gigName, emoji: "🛵", desc: "在站点附近接单，灵活、来钱快一点点", cost: `+${fmt(Math.round(base * 0.55))} 起 · 能量 -18`, disabled: s.energy < 18 },
-          ...(loc.id === "port" ? [{ kind: "ferry", title: "坐轮渡出海", emoji: "⛴️", desc: "蛇口出发，甲板看海、看大桥", cost: "-¥60 · 心情 +18 · 能量 -6" }] : []),
-          ...(loc.id === "airport" || loc.id === "pingtan-airport" ? [{ kind: "flight", title: "坐飞机远行一天", emoji: "✈️", desc: "挑个便宜航线出门看看，晚上回来", cost: "-¥420 · 心情 +26 · 能量 -14", disabled: s.money < 420 }] : []),
+          ...(loc.id === "port" ? [{ kind: "ferry", title: "坐轮渡出海", emoji: "⛴️", desc: "蛇口出发，甲板看海、看大桥", cost: `-${Y}60 · 心情 +18 · 能量 -6` }] : []),
+          ...(loc.id === "airport" || loc.id === "pingtan-airport" ? [{ kind: "flight", title: "坐飞机远行一天", emoji: "✈️", desc: "挑个便宜航线出门看看，晚上回来", cost: `-${Y}420 · 心情 +26 · 能量 -14`, disabled: s.money < 420 }] : []),
           { kind: "rest", title: "在站里歇会儿", emoji: "🧋", desc: "买杯水、坐一会儿，看人来人往", cost: "能量 +14 · 心情 +8 · 免费" },
         ];
       case "port":
         return [
           { kind: "gig", title: loc.gigName ?? city.gigName, emoji: "🛵", desc: "口岸附近接单，跨境客流不断", cost: `+${fmt(Math.round(base * 0.55))} 起 · 能量 -18`, disabled: s.energy < 18 },
-          { kind: "hk-trip", title: "过关去香港一日游", emoji: "🇭🇰", desc: "旺角、天星小轮、茶餐厅，过关当天来回", cost: "-¥180 · 心情 +22 · 能量 -16 · 人脉 +1", disabled: s.money < 180 },
-          { kind: "rest", title: "在口岸歇会儿", emoji: "🧋", desc: "看人来人往过关，买杯水坐一会儿", cost: "能量 +14 · 心情 +8 · 免费" },
+          ...(s.cityKey === "hk" ? [
+            { kind: "__gocity-sz", title: "过关回深圳", emoji: "🛃", desc: "出示证件、过安检、入境——过桥就是罗湖，或者去西九龙站坐高铁。搬回深圳过日子，进度、家当原样带着", cost: `高铁 ${crossFareLabel("hk", intercityFare("hk", "sz"))} · 进度不变 · 钱不够免费过` },
+            { kind: "rest", title: "在口岸歇会儿", emoji: "🧋", desc: "看人来人往过关，买杯水坐一会儿", cost: "能量 +14 · 心情 +8 · 免费" },
+          ] : [
+            { kind: "hk-trip", title: "过关去香港一日游", emoji: "🇭🇰", desc: "旺角、天星小轮、茶餐厅，过关当天来回", cost: `-${Y}180 · 心情 +22 · 能量 -16 · 人脉 +1`, disabled: s.money < 180 },
+            { kind: "__gocity-hk", title: "过关去香港过日子", emoji: "🛃", desc: "不只是一日游——搬过去住一段：坐高铁到西九龙站，一地两检过关（出示证件、安检、入境），地图、港铁、街坊全换成香港的", cost: `高铁 ${crossFareLabel(s.cityKey, intercityFare(s.cityKey, "hk"))} · 进度不变 · 钱不够免费过` },
+            { kind: "rest", title: "在口岸歇会儿", emoji: "🧋", desc: "看人来人往过关，买杯水坐一会儿", cost: "能量 +14 · 心情 +8 · 免费" },
+          ]),
         ];
       case "scenic":
       case "mountain":
@@ -2840,7 +2895,7 @@ playLifeAnim("shopping");
           { kind: "rest", title: "原地发呆", emoji: "🌤️", desc: "什么都不做，也是一种恢复", cost: "能量 +14 · 心情 +8 · 免费" },
         ];
       case "food":
-        return [{ kind: "buy-groceries", title: "买菜囤食材", emoji: "🥬", desc: `在摊位上挑新鲜的菜、蛋、肉，拎回家放冰箱（当前食材 ×${s.groceries}）`, cost: "-¥28 · 食材 +1", disabled: s.money < 28 },
+        return [{ kind: "buy-groceries", title: "买菜囤食材", emoji: "🥬", desc: `在摊位上挑新鲜的菜、蛋、肉，拎回家放冰箱（当前食材 ×${s.groceries}）`, cost: `-${Y}28 · 食材 +1`, disabled: s.money < 28 },
         ...FOODS[s.cityKey].map((f, i) => ({
           kind: "eat", arg: i, title: f.name, emoji: f.emoji, desc: f.desc,
           cost: `-${fmt(f.cost)} · 能量 +${f.energy} · 心情 +${f.mood}`,
@@ -2853,7 +2908,7 @@ playLifeAnim("shopping");
         ];
       case "learn":
         return [
-          { kind: "learn-course", title: "夜校充电课", emoji: "🎓", desc: "职业技能课，升职的硬通货", cost: "-¥30 · 能量 -15 · 技能 +1 · 经验 +1", disabled: s.energy < 15 },
+          { kind: "learn-course", title: "夜校充电课", emoji: "🎓", desc: "职业技能课，升职的硬通货", cost: `-${Y}30 · 能量 -15 · 技能 +1 · 经验 +1`, disabled: s.energy < 15 },
           { kind: "learn-self", title: "自习备考", emoji: "📖", desc: "免费自习，慢慢攒技能", cost: "能量 -10 · 技能 +1 · 心情 +2 · 免费", disabled: s.energy < 10 },
         ];
       case "apec": {
@@ -2867,23 +2922,23 @@ playLifeAnim("shopping");
           ...(task && task.venueLocId === loc.id ? [{ kind: "apec-task", title: taskDone ? `今日任务 ✓ ${task.title}` : `${task.roleEmoji} 今日任务：${task.title}`, emoji: task.roleEmoji, desc: taskDone ? "今天的班已经上完了，明天还有新任务" : `${task.dateLabel} · ${task.event}——你当${task.role}。${checked ? task.desc : "先打卡，再上岗。" + task.desc}`, cost: taskDone ? "已完成" : `+${fmt(Math.round(base * task.payMul))} · 能量 -${task.energy} · 经验 +${task.xp} · 人脉 +${task.network}`, disabled: taskDone || !checked || s.energy < task.energy }] : []),
           { kind: "apec-staff", title: "会务服务兼职", emoji: "🎪", desc: `布展、引导、物料分发——以工作人员身份参与${mulTxt}`, cost: `+${fmt(Math.round(base * 0.9 * mul))} · 能量 -22 · 经验 +2`, disabled: s.energy < 22 },
           { kind: "apec-host", title: "外宾接待引导", emoji: "🌐", desc: s.skill < 1 ? "需要技能 ≥1（先去图书馆/夜校学一课）" : `陪代表团参观、答疑、引导，最锻炼人也最长脸${mulTxt}`, cost: `+${fmt(Math.round(base * 1.25 * mul))} · 能量 -20 · 经验 +3 · 人脉 +1`, disabled: s.energy < 20 || s.skill < 1 },
-          { kind: "apec-visit", title: "参观主题展陈", emoji: "🎫", desc: "各方嘉宾带来的展陈挨个看，集章、看会徽背后的故事", cost: "-¥20 · 心情 +10 · 可能 +人脉" },
+          { kind: "apec-visit", title: "参观主题展陈", emoji: "🎫", desc: "各方嘉宾带来的展陈挨个看，集章、看会徽背后的故事", cost: `-${Y}20 · 心情 +10 · 可能 +人脉` },
         ];
       }
       case "mall":
         return [
-          { kind: "mall-shop", title: "逛街购物", emoji: "🛍️", desc: "日用品、小玩意儿，快乐很直接", cost: "-¥120 · 心情 +14" },
-          { kind: "mall-cloth", title: "买身新衣服", emoji: "👔", desc: "人靠衣装，面试和社交都体面些", cost: "-¥300 · 心情 +20 · 人脉 +1" },
+          { kind: "mall-shop", title: "逛街购物", emoji: "🛍️", desc: "日用品、小玩意儿，快乐很直接", cost: `-${Y}120 · 心情 +14` },
+          { kind: "mall-cloth", title: "买身新衣服", emoji: "👔", desc: "人靠衣装，面试和社交都体面些", cost: `-${Y}300 · 心情 +20 · 人脉 +1` },
           { kind: "mall-promo", title: "商场促销兼职", emoji: "📣", desc: "站柜台发传单，活儿不重", cost: `+${fmt(Math.round(base * 0.5))} · 能量 -16 · 经验 +1`, disabled: s.energy < 16 },
         ];
       case "health":
         return [
-          { kind: "health-check", title: "全面体检", emoji: "🩺", desc: "查个明白，顺便把作息调整过来", cost: "-¥150 · 能量 +8 · 心情 +6 · 体质 +1" },
-          { kind: "health-cure", title: "看病调理", emoji: "💊", desc: "小毛病别拖，调理完神清气爽", cost: "-¥80 · 能量 +18 · 心情 +3" },
+          { kind: "health-check", title: "全面体检", emoji: "🩺", desc: "查个明白，顺便把作息调整过来", cost: `-${Y}150 · 能量 +8 · 心情 +6 · 体质 +1` },
+          { kind: "health-cure", title: "看病调理", emoji: "💊", desc: "小毛病别拖，调理完神清气爽", cost: `-${Y}80 · 能量 +18 · 心情 +3` },
         ];
       case "gym":
         return [
-          { kind: "gym", title: "认真练一次", emoji: "💪", desc: `练够 3 次体质变好，上班能量消耗 -3（当前已练 ${s.fit} 次）`, cost: "-¥30 · 能量 -10 · 心情 +10 · 体质 +1", disabled: s.energy < 10 },
+          { kind: "gym", title: "认真练一次", emoji: "💪", desc: `练够 3 次体质变好，上班能量消耗 -3（当前已练 ${s.fit} 次）`, cost: `-${Y}30 · 能量 -10 · 心情 +10 · 体质 +1`, disabled: s.energy < 10 },
           { kind: "rest", title: "拉伸放松", emoji: "🧘", desc: "不花钱，活动活动筋骨", cost: "能量 +14 · 心情 +8 · 免费" },
         ];
       case "lodging":
@@ -2906,18 +2961,18 @@ playLifeAnim("shopping");
         ];
       case "bank":
         return [
-          { kind: "bank-buy", title: "买理财 ¥1,000", emoji: "📈", desc: `每晚约 +0.4% 收益，小概率波动亏损（当前理财 ${fmt(s.invest)}）`, cost: "-¥1,000 现金 · 转入理财", disabled: s.money < 1000 },
+          { kind: "bank-buy", title: `买理财 ${Y}1,000`, emoji: "📈", desc: `每晚约 +0.4% 收益，小概率波动亏损（当前理财 ${fmt(s.invest)}）`, cost: `-${Y}1,000 现金 · 转入理财`, disabled: s.money < 1000 },
           { kind: "bank-sell", title: "取出全部理财", emoji: "💰", desc: "连本带收益回到存款", cost: `+${fmt(s.invest)}`, disabled: s.invest <= 0 },
         ];
       case "social":
         return [
-          { kind: "social-ktv", title: "约朋友唱 K", emoji: "🎤", desc: "吼两嗓子，烦恼减半，朋友加一", cost: "-¥88 · 心情 +18 · 人脉 +1" },
-          { kind: "social-drink", title: "小酌一杯", emoji: "🍻", desc: "微醺刚好，聊聊最近的行情", cost: "-¥45 · 心情 +10 · 能量 +4" },
+          { kind: "social-ktv", title: "约朋友唱 K", emoji: "🎤", desc: "吼两嗓子，烦恼减半，朋友加一", cost: `-${Y}88 · 心情 +18 · 人脉 +1` },
+          { kind: "social-drink", title: "小酌一杯", emoji: "🍻", desc: "微醺刚好，聊聊最近的行情", cost: `-${Y}45 · 心情 +10 · 能量 +4` },
         ];
       case "market":
         return [
-          { kind: "buy-groceries", title: "市集买菜", emoji: "🥬", desc: `郭叔的菜摊新鲜又便宜，买一篮子囤着（当前食材 ×${s.groceries}）`, cost: "-¥28 · 食材 +1", disabled: s.money < 28 },
-          { kind: "market-phone", title: s.cityKey === "sz" ? "淘二手手机" : "淘二手好物", emoji: "📱", desc: "眼力决定收益：捡漏转手能赚，踩坑就自用", cost: "-¥400 · 约一半概率转手 +¥650", disabled: s.money < 400 },
+          { kind: "buy-groceries", title: "市集买菜", emoji: "🥬", desc: `郭叔的菜摊新鲜又便宜，买一篮子囤着（当前食材 ×${s.groceries}）`, cost: `-${Y}28 · 食材 +1`, disabled: s.money < 28 },
+          { kind: "market-phone", title: s.cityKey === "sz" ? "淘二手手机" : "淘二手好物", emoji: "📱", desc: "眼力决定收益：捡漏转手能赚，踩坑就自用", cost: `-${Y}400 · 约一半概率转手 +${Y}650`, disabled: s.money < 400 },
           { kind: "market-fix", title: "装机 / 维修兼职", emoji: "🛠️", desc: "帮摊主装机修小电器，手艺活", cost: `+${fmt(Math.round(base * 0.6))} · 能量 -20 · 经验 +1`, disabled: s.energy < 20 },
         ];
       default:
@@ -3101,7 +3156,7 @@ return (
 {getLocations(s.cityKey).map((l) => (
 <button key={l.id} type="button" onClick={() => taxiTo(l.id)} disabled={l.id === currentLoc} className="act-btn disabled:opacity-40">
 <span className="text-sm font-bold">{l.emoji} {l.name}</span>
-<span className="block text-xs text-[var(--dim)]">{l.id === currentLoc ? "你在这里" : `打车 ¥${taxiFare(Math.hypot(l.x - locById(currentLoc).x, l.z - locById(currentLoc).z))}（按距离），立刻到达`}</span>
+<span className="block text-xs text-[var(--dim)]">{l.id === currentLoc ? "你在这里" : `打车 ${Y}${taxiFare(Math.hypot(l.x - locById(currentLoc).x, l.z - locById(currentLoc).z))}（按距离），立刻到达`}</span>
 </button>
 ))}
 </div>
@@ -3112,7 +3167,7 @@ return (
 <p className="text-sm">存款 <b>{fmt(s.money)}</b> · 理财 <b>{fmt(s.invest)}</b></p>
 <p className="mt-1 text-xs text-[var(--dim)]">理财每晚约 +0.4%，小概率波动亏损约 3%。</p>
 <div className="mt-3 grid grid-cols-2 gap-2">
-<button type="button" disabled={s.money < 1000} onClick={() => { mutate((x) => { x.money -= 1000; x.invest += 1000; }); showToast("买入理财 ¥1,000。"); }} className="rounded-full bg-[var(--text)] py-3 text-sm font-black text-[var(--bg)] disabled:opacity-40">买理财 ¥1,000</button>
+<button type="button" disabled={s.money < 1000} onClick={() => { mutate((x) => { x.money -= 1000; x.invest += 1000; }); showToast(`买入理财 ${fmt(1000)}。`); }} className="rounded-full bg-[var(--text)] py-3 text-sm font-black text-[var(--bg)] disabled:opacity-40">买理财 {fmt(1000)}</button>
 <button type="button" disabled={s.invest <= 0} onClick={() => { mutate((x) => { const a = x.invest; x.money += a; x.invest = 0; }); showToast("理财已全部取出。"); }} className="rounded-full border-2 border-[var(--text)] py-3 text-sm font-black disabled:opacity-40">全部取出</button>
 </div>
 </div>
@@ -3129,7 +3184,7 @@ return (
 </div>
 <p className="mt-4 text-xs font-black tracking-wide text-[var(--dim)]">街坊邻居（每个人都有性格、心情和记性——你帮过谁、得罪过谁，他们都记得）</p>
 <div className="mt-2 grid gap-2">
-{NPCS.map((n) => {
+{npcsForCity(s.cityKey).map((n) => {
 const mem = memOf(s.npcMem ?? {}, n.name);
 const p = personaOf(n);
 return (
@@ -3210,7 +3265,7 @@ return (
 {[
 ["累计收入", fmt(s.earned)], ["已交房租", fmt(s.rentPaid)], ["装修 + 家具", fmt(s.homeSpent)],
 ["理财余额", fmt(s.invest)], ["上班次数", `${s.workCount} 次`], ["加班次数", `${s.otCount} 次`],
-["干饭次数", `${s.mealCount} 次`], ["最高存款", fmt(s.maxMoney)], ["峰会服务", `${s.apecCount} 次`], [s.cityKey === "hz" ? "坐城轨/高铁" : "坐地铁", `${s.metroRides ?? 0} 次`], ["风景打卡", `${(s.visitedScenic ?? []).length} / ${scenicTotal(s.cityKey)} 处`],
+["干饭次数", `${s.mealCount} 次`], ["最高存款", fmt(s.maxMoney)], ["峰会服务", `${s.apecCount} 次`], [s.cityKey === "hz" ? "坐城轨/高铁" : s.cityKey === "hk" ? "坐港铁" : "坐地铁", `${s.metroRides ?? 0} 次`], ["风景打卡", `${(s.visitedScenic ?? []).length} / ${scenicTotal(s.cityKey)} 处`],
 ].map(([k, v]) => (
 <p key={k} className="flex justify-between rounded-[10px] border border-[var(--line)] bg-[var(--bg)] px-3 py-2"><span className="text-[var(--dim)]">{k}</span><b>{v}</b></p>
 ))}
@@ -3270,17 +3325,17 @@ const hereLines = linesForLoc(s.cityKey, currentLoc);
 const dests = allMetroDestinations(s.cityKey, currentLoc);
 return (
 <div>
-<p className="text-sm font-bold">{s.cityKey === "sz" ? "🚇 深圳地铁全线网" : "🚆 惠州城轨 + 城际高铁线网"} · 已坐 {s.metroRides ?? 0} 次</p>
-<p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">全部线路都画在3D地图上了（彩色线+站点）。选「{s.cityKey === "hz" ? "城际" : "地铁"}」出行或在下面点目的地，就会进站走进车厢真实乘车：看拥挤程度、听报站、站站停靠，还能看手机、让座。{s.cityKey === "hz" ? "惠州没有地铁，市内靠公交、打车、骑行，轨道只有莞惠城际和赣深/厦深/广汕高铁。注意：城际的惠州北站和高铁的惠州南站是两个站，中间靠接驳巴士相连——路线规划会自动把这段接驳算进去，城轨和高铁全网连通。" : "注意：去惠州的高铁在深圳北站坐，半小时到惠州南站；惠州没有地铁，市内靠城际和公交。"}</p>
-{hereLines.length > 0 ? <p className="mt-2 text-xs font-bold">你所在的 {locById(currentLoc).name} 经过：{hereLines.map((l) => l.short).join("、")}</p> : <p className="mt-2 text-xs text-[var(--dim)]">{s.cityKey === "hz" ? "你现在不在城轨站旁：用「城际」出行方式点任意地点，会先带你走到最近的车站上车，目的地没站也会在最近的站下车再走过去。" : "你现在不在地铁站旁：用「地铁」出行方式点任意地点，会先带你走到最近的车站上车，目的地没站也会在最近的站下车再走过去。"}</p>}
+<p className="text-sm font-bold">{s.cityKey === "sz" ? "🚇 深圳地铁全线网" : s.cityKey === "hk" ? "🚇 香港港铁全线网 MTR" : "🚆 惠州城轨 + 城际高铁线网"} · 已坐 {s.metroRides ?? 0} 次</p>
+<p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">全部线路都画在3D地图上了（彩色线+站点）。选「{s.cityKey === "hz" ? "城际" : s.cityKey === "hk" ? "港铁" : "地铁"}」出行或在下面点目的地，就会进站走进车厢真实乘车：看拥挤程度、听报站、站站停靠，还能看手机、让座。{s.cityKey === "hz" ? "惠州没有地铁，市内靠公交、打车、骑行，轨道只有莞惠城际和赣深/厦深/广汕高铁。注意：城际的惠州北站和高铁的惠州南站是两个站，中间靠接驳巴士相连——路线规划会自动把这段接驳算进去，城轨和高铁全网连通。" : s.cityKey === "hk" ? "香港只有港铁，没有「地铁」这个说法：十条重铁线加机场快线，八达通一拍入闸。西九龙站和九龙站是两个站，中间靠行人通道相连——路线规划会自动把这段接驳算进去。回深圳过关：东铁线到罗湖，或高铁从西九龙站直达深圳北。" : "注意：去惠州的高铁在深圳北站坐，半小时到惠州南站；惠州没有地铁，市内靠城际和公交。"}</p>
+{hereLines.length > 0 ? <p className="mt-2 text-xs font-bold">你所在的 {locById(currentLoc).name} 经过：{hereLines.map((l) => l.short).join("、")}</p> : <p className="mt-2 text-xs text-[var(--dim)]">{s.cityKey === "hz" ? "你现在不在城轨站旁：用「城际」出行方式点任意地点，会先带你走到最近的车站上车，目的地没站也会在最近的站下车再走过去。" : s.cityKey === "hk" ? "你现在不在港铁站旁：用「港铁」出行方式点任意地点，会先带你走到最近的车站上车，目的地没站也会在最近的站下车再走过去。" : "你现在不在地铁站旁：用「地铁」出行方式点任意地点，会先带你走到最近的车站上车，目的地没站也会在最近的站下车再走过去。"}</p>}
 {dests.length > 0 && (
 <div className="mt-3">
-<p className="text-xs font-black tracking-wide text-[var(--dim)]">从这里坐{s.cityKey === "hz" ? "城轨/高铁" : "地铁/城轨"}能到（含换乘，一次坐到底）</p>
+<p className="text-xs font-black tracking-wide text-[var(--dim)]">从这里坐{s.cityKey === "hz" ? "城轨/高铁" : s.cityKey === "hk" ? "港铁" : "地铁/城轨"}能到（含换乘，一次坐到底）</p>
 <div className="mt-2 grid max-h-[30vh] gap-2 overflow-y-auto pr-1">
 {dests.map(({ locId, route }) => (
 <button key={locId} type="button" onClick={() => { setPhoneOpen(false); startMetroRide(currentLoc, locId); }} className="act-btn">
 <span className="text-sm font-bold">{locById(locId).emoji} {locById(locId).name} <span style={{ color: route.line.colorCss }}>● {route.summary}</span></span>
-<span className="block text-xs text-[var(--dim)]">{route.stops} 站{route.isTransfer ? ` · 在 ${route.transferStations.join("、")} 换乘` : ""}{route.shuttleFrom.length > 0 ? " · 含站外接驳巴士" : ""} · 票价 ¥{route.fare} · 点这里进车厢</span>
+<span className="block text-xs text-[var(--dim)]">{route.stops} 站{route.isTransfer ? ` · 在 ${route.transferStations.join("、")} 换乘` : ""}{route.shuttleFrom.length > 0 ? " · 含站外接驳巴士" : ""} · 票价 {Y}{route.fare} · 点这里进车厢</span>
 </button>
 ))}
 </div>
@@ -3318,19 +3373,21 @@ const legalModal = () => (legalDoc && (() => { const doc = (legalDoc === "terms"
 if (phase === "setup" || !gs) {
 const szCount = world?.onlineSz ?? 0;
 const hzCount = world?.onlineHz ?? 0;
+const hkCount = world?.onlineHk ?? 0;
 return (
 <div className="min-h-screen overflow-x-clip bg-[var(--bg)] text-[var(--text)]">
 <SafeAreaTopScrim backgroundColor="var(--bg)" />
 <main className="mx-auto w-full max-w-2xl px-4 pb-10 pt-6 lg:max-w-5xl">
 <p className="text-xs font-black tracking-[0.2em] text-[var(--accent)]">真人联机 · 同一座城</p>
-<h1 className="font-display mt-2 text-4xl font-black leading-tight">在深圳和惠州，<br />过完这个十一月</h1>
+<h1 className="font-display mt-2 text-4xl font-black leading-tight">在深圳、惠州和香港，<br />过完这个十一月</h1>
 <p className="mt-3 text-sm leading-relaxed text-[var(--dim)]">
-30 天生活模拟：选一座城、一个身份，在 3D 地图上打工、升职、吃饭、装修、攒钱。这次是<b className="text-[var(--text)]">真的联机</b>——其他打开游戏的人会以真身出现在你的地图上，你们共享一个城市频道、一份动态墙和一张排行榜。11 月 14–19 日是深圳湾区峰会周，三个真实会场等你打工。
+30 天生活模拟：选一座城、一个身份，在 3D 地图上打工、升职、吃饭、装修、攒钱。这次是<b className="text-[var(--text)]">真的联机</b>——其他打开游戏的人会以真身出现在你的地图上，你们共享一个城市频道、一份动态墙和一张排行榜。三座城随时互通：坐高铁去惠州，过关去香港（罗湖、福田、深圳湾，或高铁直达西九龙站）。11 月 14–19 日是深圳湾区峰会周，三个真实会场等你打工。
 </p>
 <div className="mt-3 flex flex-wrap gap-2">
 <span className="chip"><span className="live-dot" /> 深圳在线 {szCount} 人</span>
 <span className="chip"><span className="live-dot" /> 惠州在线 {hzCount} 人</span>
-<span className="chip">🗺️ 双城 {getLocations("sz").length + getLocations("hz").length} 个地点 · 地铁/城际/高铁全线 · 大地图</span>
+<span className="chip"><span className="live-dot" /> 香港在线 {hkCount} 人</span>
+<span className="chip">🗺️ 三城 {getLocations("sz").length + getLocations("hz").length + getLocations("hk").length} 个地点 · 地铁/城际/港铁/高铁全线 · 大地图</span>
 <span className="chip">🌐 峰会日程</span>
 </div>
 
@@ -3346,7 +3403,7 @@ return (
 <input id="nickname" value={setupName} onChange={(e) => setSetupName(e.target.value.slice(0, 12))} placeholder="比如：阿深、湾区小陈" className="mt-2 w-full rounded-[12px] border-2 border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-base font-bold outline-none" />
 
 <p className="mt-6 text-sm font-black">选一座城</p>
-<div className="mt-2 grid grid-cols-2 gap-3">
+<div className="mt-2 grid grid-cols-2 gap-3 lg:grid-cols-3">
 {(Object.keys(CITIES) as CityKey[]).map((k) => {
 const c = CITIES[k];
 const active = setupCity === k;
@@ -3354,8 +3411,8 @@ return (
 <button key={k} type="button" aria-label={`选择${c.name}`} onClick={() => setSetupCity(k)} className={`rounded-[16px] border-2 p-4 text-left ${active ? "border-[var(--border)] bg-[var(--surface)] shadow-[5px_5px_0_var(--border)]" : "border-[var(--line)] bg-[var(--surface)]"}`}>
 <p className="text-3xl">{c.emoji}</p>
 <p className="mt-1 text-lg font-black">{c.name}</p>
-<p className="text-xs leading-relaxed text-[var(--dim)]">{k === "sz" ? `${getLocations("sz").length} 个地点 · 峰会主场 · 周租贵、工资高` : `${getLocations("hz").length} 个地点 · 海边慢生活 · 周租便宜、工资低`}</p>
-<p className="mt-1 text-xs font-bold text-[var(--green)]">● {k === "sz" ? szCount : hzCount} 人正在这座城里</p>
+<p className="text-xs leading-relaxed text-[var(--dim)]">{k === "sz" ? `${getLocations("sz").length} 个地点 · 峰会主场 · 周租贵、工资高` : k === "hk" ? `${getLocations("hk").length} 个地点 · 港铁 + 维港 · 港币标价、工资最高、租金最贵` : `${getLocations("hz").length} 个地点 · 海边慢生活 · 周租便宜、工资低`}</p>
+<p className="mt-1 text-xs font-bold text-[var(--green)]">● {k === "sz" ? szCount : k === "hk" ? hkCount : hzCount} 人正在这座城里</p>
 </button>
 );
 })}
@@ -3431,7 +3488,7 @@ return (
 <SafeAreaTopScrim backgroundColor="var(--bg)" />
 <main className="mx-auto max-w-2xl px-4 pb-10 pt-6">
 <div className="hard-card overflow-hidden">
-<div className="p-5 text-white" style={{ background: s.cityKey === "sz" ? "#e63a1f" : "#0369a1" }}>
+<div className="p-5 text-white" style={{ background: s.cityKey === "sz" ? "#e63a1f" : s.cityKey === "hk" ? "#7c3aed" : "#0369a1" }}>
 <p className="text-xs font-black tracking-[0.18em] opacity-90">{seasonMo} 月赛季结算 · {CITIES[s.cityKey].name}</p>
 <h2 className="font-display mt-1 text-4xl font-black">{result.title}</h2>
 <p className="mt-1 text-sm opacity-95">{iden.emoji} {iden.name} · 在{CITIES[s.cityKey].name}活了 {Math.min(s.day, seasonLen)} 天 · 最高存款 {fmt(s.maxMoney)}</p>
@@ -3444,7 +3501,7 @@ return (
 ["玩过的活动", `${s.actCount ?? 0} 次`], ["和真人组局", `${s.partyPlays ?? 0} 次`], ["感情", (() => { const top = Object.entries(s.romance ?? {}).sort((x, y) => y[1] - x[1])[0]; return top ? `${top[0]} · ${ROMANCE_STAGES[romanceStage(top[1])]!.name[0]}` : "单身"; })()],
 ["总收入", fmt(s.earned)], ["交租", fmt(s.rentPaid)], ["最终心情", `${Math.round(s.mood)}`],
 ["职级", (CAREERS[s.careerIdx] ?? CAREERS[0]!).name], ["技能", `${s.skill} 点`], ["人脉", `${s.network} 人`],
-["我的家", homeName(s)], ["舒适度", `${computeComfort(s)}`], ["峰会服务", `${s.apecCount} 次`], [s.cityKey === "hz" ? "坐城轨/高铁" : "坐地铁", `${s.metroRides ?? 0} 次`], ["风景打卡", `${(s.visitedScenic ?? []).length} / ${scenicTotal(s.cityKey)} 处`],
+["我的家", homeName(s)], ["舒适度", `${computeComfort(s)}`], ["峰会服务", `${s.apecCount} 次`], [s.cityKey === "hz" ? "坐城轨/高铁" : s.cityKey === "hk" ? "坐港铁" : "坐地铁", `${s.metroRides ?? 0} 次`], ["风景打卡", `${(s.visitedScenic ?? []).length} / ${scenicTotal(s.cityKey)} 处`],
 ].map(([k, v]) => (
 <div key={k} className="rounded-[12px] bg-[var(--surface2)] px-2 py-3">
 <p className="text-[11px] font-bold text-[var(--dim)]">{k}</p>
@@ -3483,8 +3540,8 @@ return (
 <span className="w-6 font-black">{i + 1}</span>
 <span>{b.emoji}</span>
 <span className="min-w-0 flex-1 truncate">{b.name}{b.id === myId ? "（你）" : ""}</span>
-<span className="text-xs text-[var(--dim)]">{b.cityKey === "sz" ? "深圳" : "惠州"}</span>
-<span className="font-black">{fmt(b.money)}</span>
+<span className="text-xs text-[var(--dim)]">{CITIES[b.cityKey as CityKey]?.name ?? b.cityKey}</span>
+<span className="font-black">{fmt(b.money, b.cityKey as CityKey)}</span>
 <span className="hidden text-xs text-[var(--dim)] sm:inline">{b.status === "finished" ? b.resultTitle ?? "已结算" : `第 ${b.gameDay} 天`}</span>
 </p>
 ))}
@@ -3521,9 +3578,11 @@ return (
 <button type="button" aria-label={`刷新${city.name}真实天气`} title={rwOk ? `${city.name}此刻真实天气（${realWeather!.sourceName}，${new Date(realWeather!.fetchedAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })} 更新）——游戏里的天色、云雨都跟着它走` : "真实天气暂时取不到"} onClick={() => weatherQuery.refetch()} className="chip">
 {weatherQuery.isLoading ? "🌡️ 实况加载中…" : rwOk ? `${RW_EMOJI[realWeather!.kind]} ${city.name}实况 ${realWeather!.description || RW_LABEL[realWeather!.kind]}${realWeather!.temperature != null ? ` ${Math.round(realWeather!.temperature)}°` : ""}${realWeather!.stale ? "（缓存）" : ""}` : "🌡️ 实况暂不可用"}
 </button>
-<button type="button" aria-label={`坐厦深高铁切换城市，去${s.cityKey === "sz" ? "惠州" : "深圳"}，车票 ¥${INTERCITY_FARE}`} title={`坐厦深高铁去${s.cityKey === "sz" ? "惠州" : "深圳"}：地图、天气、街坊全换，进度不变（车票 ¥${INTERCITY_FARE}，钱不够免费坐）`} onClick={switchCity} className="chip shrink-0 border-[var(--accent)] font-black text-[var(--accent)] transition hover:bg-[var(--surface2)]">🚄 去{s.cityKey === "sz" ? "惠州" : "深圳"} · ¥{INTERCITY_FARE}</button>
+{(Object.keys(CITIES) as CityKey[]).filter((k) => k !== s.cityKey).map((k) => (
+<button key={k} type="button" aria-label={`${k === "hk" || s.cityKey === "hk" ? "过关" : "坐高铁"}切换城市，去${CITIES[k].name}，车票 ${k === "hk" || s.cityKey === "hk" ? crossFareLabel(s.cityKey, intercityFare(s.cityKey, k)) : `¥${intercityFare(s.cityKey, k)}`}`} title={`${k === "hk" ? "过关去香港：高铁直达西九龙站，一地两检（出示证件、安检、入境）" : s.cityKey === "hk" ? "过关回内地：西九龙站一地两检，坐高铁出发" : `坐厦深高铁去${CITIES[k].name}`}：地图、天气、街坊全换，进度不变（车票 ${k === "hk" || s.cityKey === "hk" ? crossFareLabel(s.cityKey, intercityFare(s.cityKey, k)) : `¥${intercityFare(s.cityKey, k)}`}，钱不够免费坐）`} onClick={() => switchCity(k)} className="chip shrink-0 border-[var(--accent)] font-black text-[var(--accent)] transition hover:bg-[var(--surface2)]">{k === "hk" || s.cityKey === "hk" ? "🛃" : "🚄"} 去{CITIES[k].name} · {k === "hk" || s.cityKey === "hk" ? crossFareLabel(s.cityKey, intercityFare(s.cityKey, k)) : `¥${intercityFare(s.cityKey, k)}`}</button>
+))}
 <button type="button" title={todayEvent.desc} aria-label={`今日城市事件：${todayEvent.name}`} onClick={() => showToast(`${todayEvent.emoji} 今日城市事件「${todayEvent.name}」：${todayEvent.desc}`)} className="ml-auto chip">{todayEvent.emoji} {todayEvent.name}</button>
-<span className="chip"><span className="live-dot" /> {(world?.onlineSz ?? 0) + (world?.onlineHz ?? 0)} 人在线</span>
+<span className="chip"><span className="live-dot" /> {(world?.onlineSz ?? 0) + (world?.onlineHz ?? 0) + (world?.onlineHk ?? 0)} 人在线</span>
 {langToggle()}
 <button type="button" aria-label="打开每日任务" onClick={() => setDailyOpen(true)} className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-xs font-black transition hover:border-[var(--border)]">📋 任务</button>
 <button type="button" aria-label="分享战绩、邀请朋友" onClick={() => void openShare()} className="rounded-full bg-[var(--accent)] px-3 py-2 text-xs font-black text-white">📤 分享</button>
@@ -3624,7 +3683,7 @@ return (
 <span className="chip">🌐 峰会服务 {s.apecCount} 次</span>
 {s.cityKey === "sz" && <span className="chip">🎖️ 峰会任务 {(s.apecTasks ?? []).length}/{APEC_TASKS.length} · 打卡 {(s.apecCheckins ?? []).length}/3</span>}
 <span className="chip">🏠 舒适度 {computeComfort(s)}</span>
-<span className="chip">{s.cityKey === "hz" ? "🚆 已坐城轨/高铁" : "🚇 已坐地铁"} {s.metroRides ?? 0} 次</span>
+<span className="chip">{s.cityKey === "hz" ? "🚆 已坐城轨/高铁" : s.cityKey === "hk" ? "🚇 已坐港铁" : "🚇 已坐地铁"} {s.metroRides ?? 0} 次</span>
 <span className="chip">{outfitOf(s.outfit).emoji} 穿着{outfitOf(s.outfit).name}</span>
 <span className="chip">🥬 食材 ×{s.groceries}</span>
 <span className="chip">📸 打卡 {(s.visitedScenic ?? []).length} 处</span>
@@ -3656,7 +3715,7 @@ return (
 <div className="mt-1.5 rounded-[12px] bg-white/60 p-2.5">
 <p className="text-xs font-black">{isToday ? "今日任务" : `${task.dateLabel} 第一班（提前认路）`} · {task.dateLabel} {task.event}</p>
 <p className="mt-0.5 text-xs leading-relaxed">{task.roleEmoji} 你当<b>{task.role}</b>：{task.title} —— 地点：{venue.emoji} {venue.name}。{done ? "✅ 已完成" : checked ? "📸 已打卡，到会场就能上岗" : "先坐地铁去会场打卡，再上岗"}</p>
-{plan && <p className="mt-0.5 text-[11px] font-bold">🚇 怎么去：{plan.boardLoc !== currentLoc ? `先步行到${locById(plan.boardLoc).short}站 · ` : ""}{plan.route.summary} · {plan.route.stops} 站 · ¥{plan.route.fare}{plan.alightLoc !== task.venueLocId ? ` · 到${locById(plan.alightLoc).short}站再步行过去` : ""}</p>}
+{plan && <p className="mt-0.5 text-[11px] font-bold">🚇 怎么去：{plan.boardLoc !== currentLoc ? `先步行到${locById(plan.boardLoc).short}站 · ` : ""}{plan.route.summary} · {plan.route.stops} 站 · {Y}{plan.route.fare}{plan.alightLoc !== task.venueLocId ? ` · 到${locById(plan.alightLoc).short}站再步行过去` : ""}</p>}
 {!plan && currentLoc !== task.venueLocId && <p className="mt-0.5 text-[11px] font-bold">🚇 怎么去：离得很近，步行就到。</p>}
 <div className="mt-2 flex flex-wrap gap-2">
 {!atVenue && !done && <button type="button" aria-label={`坐地铁前往${venue.name}打卡`} onClick={() => walkTo(task.venueLocId, "metro")} className="rounded-full bg-[#5c4a00] px-3.5 py-1.5 text-[11px] font-black text-white">🚇 坐地铁去{venue.short}打卡</button>}
@@ -3695,9 +3754,9 @@ return (
 <div ref={mapShellRef} className={mapFullscreen ? "fixed inset-0 z-[38] flex flex-col bg-[var(--bg)] p-3 pt-safe" : "absolute inset-0 flex flex-col p-2.5"}>
 <div className="relative px-1.5 pb-2.5">
 <div className="flex gap-2">
-<input value={mapQuery} onChange={(e) => setMapQuery(e.target.value)} placeholder={s.cityKey === "hz" ? "🔍 搜地点或城轨/高铁站：西湖、老街、惠州南…" : "🔍 搜地点或地铁站：公园、商场、医院、博物馆、海滩…"} aria-label={`搜索地点或${railWord(s.cityKey)}站`} className="min-w-0 flex-1 rounded-full border border-[var(--line)] bg-[var(--surface)] px-3.5 py-2 text-sm outline-none focus:border-[var(--border)]" />
+<input value={mapQuery} onChange={(e) => setMapQuery(e.target.value)} placeholder={s.cityKey === "hz" ? "🔍 搜地点或城轨/高铁站：西湖、老街、惠州南…" : s.cityKey === "hk" ? "🔍 搜地点或港铁站：旺角、中环、山顶、迪士尼…" : "🔍 搜地点或地铁站：公园、商场、医院、博物馆、海滩…"} aria-label={`搜索地点或${railWord(s.cityKey)}站`} className="min-w-0 flex-1 rounded-full border border-[var(--line)] bg-[var(--surface)] px-3.5 py-2 text-sm outline-none focus:border-[var(--border)]" />
 <button type="button" aria-label="打开景点分布图" onClick={() => setPlacesMapOpen(true)} className="shrink-0 rounded-full bg-[var(--green)] px-3.5 py-2 text-xs font-black text-white">🗺️ 景点分布图</button>
-<button type="button" aria-label={s.cityKey === "hz" ? "打开惠州城际高铁线网图" : "打开地铁线路图"} onClick={() => { setMetroMapDest(null); setMetroMapOpen(true); }} className="shrink-0 rounded-full bg-[var(--accent2)] px-3.5 py-2 text-xs font-black text-white">{s.cityKey === "hz" ? "🚆 城际/高铁线网图" : "🚇 地铁线路图"}</button>
+<button type="button" aria-label={s.cityKey === "hz" ? "打开惠州城际高铁线网图" : s.cityKey === "hk" ? "打开香港港铁线网图" : "打开地铁线路图"} onClick={() => { setMetroMapDest(null); setMetroMapOpen(true); }} className="shrink-0 rounded-full bg-[var(--accent2)] px-3.5 py-2 text-xs font-black text-white">{s.cityKey === "hz" ? "🚆 城际/高铁线网图" : "🚇 地铁线路图"}</button>
 <button type="button" aria-label={mapFullscreen ? "退出地图全屏" : "地图全屏"} aria-pressed={mapFullscreen} onClick={toggleMapFullscreen} className={`shrink-0 rounded-full px-3.5 py-2 text-xs font-black text-white ${mapFullscreen ? "bg-[var(--accent)]" : "bg-[#14202b]"}`}>{mapFullscreen ? "⛶ 退出全屏" : "⛶ 全屏看地图"}</button>
 </div>
 {mapQuery.trim() !== "" && (() => {
@@ -3715,7 +3774,7 @@ const plan = l.id !== currentLoc ? planRailTrip(s.cityKey, currentLoc, l.id) : n
 return (
 <button key={l.id} type="button" aria-label={`定位到${l.name}`} onClick={() => { setSelectedLoc(l.id); setAsideTab("place"); autoOpenAside(); setMapFocus({ locId: l.id, nonce: Date.now() }); setMapQuery(""); }} className="flex w-full items-center gap-2 rounded-[10px] px-2 py-1.5 text-left hover:bg-[var(--surface2)]">
 <span className="text-lg">{l.emoji}</span>
-<span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold">{l.name}</span><span className="block truncate text-[11px] text-[var(--dim)]">{l.id === currentLoc ? "你现在在这里" : plan ? `怎么去：${plan.boardLoc !== currentLoc ? `先步行到${locById(plan.boardLoc).short}站 · ` : ""}${railWord(s.cityKey)} ${plan.route.summary} · ${plan.route.stops} 站 · ¥${plan.route.fare}${plan.alightLoc !== l.id ? ` · 到${locById(plan.alightLoc).short}站再步行过去` : ""}` : "怎么去：离得很近，步行就到（在下方选好出行方式，点地点名或地图上的建筑前往）"}</span></span>
+<span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold">{l.name}</span><span className="block truncate text-[11px] text-[var(--dim)]">{l.id === currentLoc ? "你现在在这里" : plan ? `怎么去：${plan.boardLoc !== currentLoc ? `先步行到${locById(plan.boardLoc).short}站 · ` : ""}${railWord(s.cityKey)} ${plan.route.summary} · ${plan.route.stops} 站 · ${Y}${plan.route.fare}${plan.alightLoc !== l.id ? ` · 到${locById(plan.alightLoc).short}站再步行过去` : ""}` : "怎么去：离得很近，步行就到（在下方选好出行方式，点地点名或地图上的建筑前往）"}</span></span>
 <span className="shrink-0 text-[11px] font-black text-[var(--accent2)]">定位 →</span>
 </button>
 );
@@ -3731,7 +3790,7 @@ return (
 );
 })()}
 </div>
-<MapView lite={lite} fill paused={!!(roadRide || carriage || lifeAnim)} cityKey={s.cityKey} selfLocId={selectedLoc} selfEmoji={iden.emoji} selfColor={iden.color} selfName={profile?.name ?? "我"} remotePlayers={remotePlayers} selfOutfitId={s.outfit} travelModeId={travelMode} weatherKind={rwOk ? realWeather!.kind : "unknown"} npcMoodEmoji={Object.fromEntries(NPCS.map((n) => [n.name, moodEmoji(memOf(s.npcMem ?? {}, n.name).mood)]))} apecDay={isApecWeek(s.day)} focusLocId={mapFocus?.locId} focusX={mapFocus?.x} focusZ={mapFocus?.z} focusNonce={mapFocus?.nonce} destLocId={selectedLoc} onSelect={walkTo} onPickActor={pickActor} navOverlay={(
+<MapView lite={lite} fill paused={!!(roadRide || carriage || lifeAnim)} cityKey={s.cityKey} selfLocId={selectedLoc} selfEmoji={iden.emoji} selfColor={iden.color} selfName={profile?.name ?? "我"} remotePlayers={remotePlayers} selfOutfitId={s.outfit} travelModeId={travelMode} weatherKind={rwOk ? realWeather!.kind : "unknown"} npcMoodEmoji={Object.fromEntries(npcsForCity(s.cityKey).map((n) => [n.name, moodEmoji(memOf(s.npcMem ?? {}, n.name).mood)]))} apecDay={isApecWeek(s.day)} focusLocId={mapFocus?.locId} focusX={mapFocus?.x} focusZ={mapFocus?.z} focusNonce={mapFocus?.nonce} destLocId={selectedLoc} onSelect={walkTo} onPickActor={pickActor} navOverlay={(
 <>
 {/* 弹幕层：联机动态 / 聊天 / 街坊发言飘过地图上半区 */}
 {danmakuOn && (
@@ -3755,9 +3814,11 @@ return (
 <button type="button" aria-label={danmakuOn ? "关闭弹幕" : "开启弹幕"} aria-pressed={danmakuOn} onClick={() => setDanmakuOn((v) => !v)} className={`rounded-full border px-3.5 py-2 text-xs font-black shadow-lg ${danmakuOn ? "border-transparent bg-[var(--accent)] text-white" : "border-black/40 bg-[#14202b]/90 text-white"}`}>
 💬 弹幕{danmakuOn ? "开" : "关"}
 </button>
-<button type="button" aria-label={`切换城市：坐厦深高铁去${s.cityKey === "sz" ? "惠州" : "深圳"}，车票 ¥${INTERCITY_FARE}，钱和进度不变`} title="换座城市过日子：地图、地点、天气、街坊全换，进度原样带着（车票钱不够就免费坐）" onClick={switchCity} className="rounded-full border border-black/40 bg-[#14202b]/90 px-3.5 py-2 text-xs font-black text-white shadow-lg">
-🚄 切换城市 · 去{s.cityKey === "sz" ? "惠州" : "深圳"}
+{(Object.keys(CITIES) as CityKey[]).filter((k) => k !== s.cityKey).map((k) => (
+<button key={k} type="button" aria-label={`切换城市：${k === "hk" || s.cityKey === "hk" ? "过关" : "坐高铁"}去${CITIES[k].name}，车票 ${k === "hk" || s.cityKey === "hk" ? crossFareLabel(s.cityKey, intercityFare(s.cityKey, k)) : `¥${intercityFare(s.cityKey, k)}`}，钱和进度不变`} title="换座城市过日子：地图、地点、天气、街坊全换，进度原样带着（车票钱不够就免费坐）" onClick={() => switchCity(k)} className="rounded-full border border-black/40 bg-[#14202b]/90 px-3.5 py-2 text-xs font-black text-white shadow-lg">
+{k === "hk" || s.cityKey === "hk" ? "🛃 过关" : "🚄 切换城市"} · 去{CITIES[k].name}
 </button>
+))}
 </div>
 {navOpen && (
 <div className="absolute left-3 top-[13%] z-20 flex max-h-[74%] w-[min(332px,calc(100%-24px))] flex-col rounded-[16px] border border-black/40 bg-[#0b1622]/95 p-3 text-white shadow-2xl">
@@ -3769,7 +3830,7 @@ return (
 <div className="flex flex-wrap gap-1.5 text-[11px] font-bold">
 <span className="rounded-full bg-white/10 px-2 py-1">📍 {city.name} · {getLocations(s.cityKey).length} 个地点（双城共 {getLocations("sz").length + getLocations("hz").length} 个，含口岸/山区/风景区）</span>
 <span className="rounded-full bg-white/10 px-2 py-1">🟢 同城真人 {onlineHere.length} 人（含你）</span>
-<span className="rounded-full bg-white/10 px-2 py-1">🧑‍🤝‍🧑 街坊 NPC {NPCS.length} 位也在图上散步（名字后是今日心情）</span>
+<span className="rounded-full bg-white/10 px-2 py-1">🧑‍🤝‍🧑 街坊 NPC {npcsForCity(s.cityKey).length} 位也在图上散步（名字后是今日心情）</span>
 {walking && <span className="rounded-full bg-[var(--accent)] px-2 py-1">🚶 正在走过去…</span>}
 </div>
 <p className="mt-2.5 text-[11px] font-black tracking-wide text-white/70">出行方式 · 选好再点地点（或直接点地图上的建筑/标签前往）</p>
@@ -3778,7 +3839,7 @@ return (
 <button key={m.id} type="button" aria-label={`出行方式${m.name}，速度${m.speedTag}`} aria-pressed={travelMode === m.id} onClick={() => setTravelMode(m.id)} className={`rounded-full border px-2.5 py-1.5 text-xs font-bold ${travelMode === m.id ? "border-transparent bg-[var(--accent)] text-white" : "border-white/25 bg-white/10 text-white"}`}>{m.emoji} {m.name} · {m.speedTag}</button>
 ))}
 </div>
-<p className="mt-1.5 text-[11px] leading-relaxed text-white/70">{modesForCity(s.cityKey).find((m) => m.id === travelMode)?.desc} · 速度差别是真的：步行最慢，骑行快近一倍，电动车/公交再快，打车和{railWord(s.cityKey)}更快，高铁/城际最快——地图上人物的移动速度、实际到达时间都按这个来。公交/打车/{railWord(s.cityKey)}/高铁搭乘时都会弹车厢动画。</p>
+<p className="mt-1.5 text-[11px] leading-relaxed text-white/70">{modesForCity(s.cityKey).find((m) => m.id === travelMode)?.desc} · 速度差别是真的：步行最慢，跑步快一半，骑行再快近一倍，电动车/公交再快，打车、自驾和{railWord(s.cityKey)}更快，高铁/城际最快——地图上人物的移动速度、实际到达时间都按这个来。公交/打车/自驾/{railWord(s.cityKey)}/高铁搭乘时都会弹车厢动画；自驾是坐进驾驶座自己开，跟车流一起等红灯、到了找车位。</p>
 {selectedLoc !== currentLoc && (() => {
 const fromL = locById(currentLoc); const toL = locById(selectedLoc);
 const d = Math.hypot(toL.x - fromL.x, toL.z - fromL.z);
@@ -3876,7 +3937,7 @@ return (
 <p className="mt-3.5 flex items-baseline justify-between gap-2"><span className="text-xs font-black tracking-wide">📍 在这里能做 · 常用操作</span><span className="text-[11px] font-bold text-[var(--dim)]">{arrived ? "点一下就行动" : "到了才能做"}</span></p>
 <div className="mt-2 grid gap-2">
 {actionsFor(selLoc, s).map((a) => { const tb = timeBlock(a.kind, s) ?? (a.kind === "__sleep" || a.kind === "rest" ? null : venueClosed(selLoc)); return (
-<button key={a.kind + (a.arg ?? 0)} type="button" disabled={!arrived || a.disabled || !!tb} onClick={() => { if (a.kind === "__sleep") playLifeAnim("sleep", () => doSleep()); else doAction(a.kind, a.arg ?? 0); }} className="act-btn">
+<button key={a.kind + (a.arg ?? 0)} type="button" disabled={!arrived || a.disabled || !!tb} onClick={() => { if (a.kind === "__sleep") playLifeAnim("sleep", () => doSleep()); else if (a.kind.startsWith("__gocity-")) switchCity(a.kind.slice("__gocity-".length) as CityKey); else doAction(a.kind, a.arg ?? 0); }} className="act-btn">
 <span className="flex items-center justify-between text-sm font-black"><span>{a.title}</span><span>{a.emoji}</span></span>
 <span className="mt-0.5 block text-xs leading-relaxed text-[var(--dim)]">{a.desc}</span>
 <span className="mt-1 block text-xs font-bold text-[var(--accent2)]">{a.cost}{a.kind !== "__sleep" && ` · ⏳ ${realMinLabel(actionMinutes(a.kind))}`}</span>
@@ -3950,9 +4011,9 @@ return (
 );
 })()}
 {arrived && selLoc.type === "transit" || arrived && selLoc.type === "port" ? (
-<Fold title={s.cityKey === "hz" ? "🚆 城际 · 高铁线路与出发" : "🚇 线路与坐车出发"} summary={`${linesForLoc(s.cityKey, selLoc.id).length} 条线经过 · 点开选目的地进车厢`} groupKey={`transit-${selLoc.id}`} defaultOpen>
+<Fold title={s.cityKey === "hz" ? "🚆 城际 · 高铁线路与出发" : s.cityKey === "hk" ? "🚇 港铁线路与出发" : "🚇 线路与坐车出发"} summary={`${linesForLoc(s.cityKey, selLoc.id).length} 条线经过 · 点开选目的地进车厢`} groupKey={`transit-${selLoc.id}`} defaultOpen>
 <p className="text-sm font-bold">{s.cityKey === "hz" ? "🚆" : "🚇"} 这里经过的线路</p>
-{linesForLoc(s.cityKey, selLoc.id).length === 0 && selLoc.id !== "metro" && selLoc.id !== "north" && selLoc.id !== "hzsouth" ? <p className="mt-1 text-xs text-[var(--dim)]">{s.cityKey === "hz" ? "本站以公路/接送为主；打开手机「城轨通」看城际/高铁线网，或走到城轨站、惠州南站坐车。" : "本站以公路/接送为主；打开手机「地铁通」看全线网，或走到地铁站坐车。"}</p> : null}
+{linesForLoc(s.cityKey, selLoc.id).length === 0 && selLoc.id !== "metro" && selLoc.id !== "north" && selLoc.id !== "hzsouth" ? <p className="mt-1 text-xs text-[var(--dim)]">{s.cityKey === "hz" ? "本站以公路/接送为主；打开手机「城轨通」看城际/高铁线网，或走到城轨站、惠州南站坐车。" : s.cityKey === "hk" ? "本站以巴士/接送为主；打开手机「港铁通」看港铁线网，或走到就近的港铁站坐车。香港只有港铁，没有地铁。" : "本站以公路/接送为主；打开手机「地铁通」看全线网，或走到地铁站坐车。"}</p> : null}
 <div className="mt-2 flex flex-wrap gap-1.5">{linesForLoc(s.cityKey, selLoc.id).map((l) => <span key={l.id} className="chip" style={{ borderColor: l.colorCss }}><span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: l.colorCss }} />{l.name}</span>)}{s.cityKey === "sz" && selLoc.id === "metro" && <span className="text-xs text-[var(--dim)]">市中心换乘站：1/2/3/4/5/9/11号线在此交汇（见手机地铁通全线）</span>}{s.cityKey === "hz" && selLoc.id === "metro" && <span className="text-xs text-[var(--dim)]">莞惠城际停靠站：往西去东莞，往北到惠州北站（可换乘赣深高铁）；去深圳的高铁在惠州南站坐——两站之间有接驳巴士，路线规划会自动算上。</span>}{selLoc.id === "north" && <span className="text-xs text-[var(--dim)]">4/5/6号线 + 厦深高铁：坐高铁约半小时到惠州南站——点顶部「🚄 去惠州」就能切换到惠州过日子，钱和进度都带着走。</span>}{selLoc.id === "hzsouth" && <span className="text-xs text-[var(--dim)]">厦深高铁 + 广汕高铁大站：半小时回深圳北。回深圳过日子点顶部「🚄 去深圳」；去坐城际要先坐接驳巴士到惠州北站，坐车时路线会自动规划这段接驳。</span>}</div>
 {allMetroDestinations(s.cityKey, selLoc.id).length > 0 && (
 <div className="mt-3"><p className="text-xs font-black tracking-wide text-[var(--dim)]">坐{s.cityKey === "hz" ? "城轨/高铁" : "地铁/城轨"}出发（含换乘规划，点一下进车厢，一次坐到底）</p>
@@ -3960,7 +4021,7 @@ return (
 {allMetroDestinations(s.cityKey, selLoc.id).slice(0, 12).map(({ locId, route }) => (
 <button key={locId} type="button" onClick={() => startMetroRide(selLoc.id, locId)} className="act-btn">
 <span className="text-sm font-bold">{locById(locId).emoji} {locById(locId).name}</span>
-<span className="block text-xs text-[var(--dim)]"><span style={{ color: route.line.colorCss }}>● {route.summary}</span> · {route.stops} 站{route.isTransfer ? ` · ${route.transferStations.join("、")}换乘` : ""}{route.shuttleFrom.length > 0 ? " · 含站外接驳巴士" : ""} · 票价 ¥{route.fare} · 进车厢乘车</span>
+<span className="block text-xs text-[var(--dim)]"><span style={{ color: route.line.colorCss }}>● {route.summary}</span> · {route.stops} 站{route.isTransfer ? ` · ${route.transferStations.join("、")}换乘` : ""}{route.shuttleFrom.length > 0 ? " · 含站外接驳巴士" : ""} · 票价 {Y}{route.fare} · 进车厢乘车</span>
 </button>
 ))}
 </div></div>
@@ -3983,7 +4044,7 @@ return (
 <div key={plat.id} className="mt-2 flex flex-wrap items-center gap-2">
 <span className="chip">{plat.emoji} {plat.name}</span><span className="text-[11px] text-[var(--dim)]">{plat.note}</span>
 {FOODS[s.cityKey].map((f, fi) => (
-<button key={f.name} type="button" aria-label={`${plat.name}点${f.name}`} onClick={() => orderDelivery(pi, fi)} className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-xs font-bold">{f.emoji} {f.name} ¥{Math.round(f.cost * plat.feeMul)}</button>
+<button key={f.name} type="button" aria-label={`${plat.name}点${f.name}`} onClick={() => orderDelivery(pi, fi)} className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-xs font-bold">{f.emoji} {f.name} {Y}{Math.round(f.cost * plat.feeMul)}</button>
 ))}
 </div>
 ))}
@@ -4008,7 +4069,7 @@ return (
 <div className="mt-2 grid gap-2">
 {LODGINGS.map((l) => (
 <button key={l.id} type="button" onClick={() => setVenueScene({ kind: "stay", id: l.id })} className="act-btn">
-<span className="text-sm font-bold">{l.emoji} {l.name} <span className="text-[var(--accent)]">¥{l.id === "rent-flat" ? rentFlatWeekly(s.cityKey) : l.price}/{l.priceUnit}</span></span>
+<span className="text-sm font-bold">{l.emoji} {l.name} <span className="text-[var(--accent)]">{Y}{l.id === "rent-flat" ? rentFlatWeekly(s.cityKey) : l.price}/{l.priceUnit}</span></span>
 <span className="block text-xs text-[var(--dim)]">{l.kind} · {l.perk}</span>
 </button>
 ))}
@@ -4146,8 +4207,8 @@ return (
 <span className="w-6 font-black">{i + 1}</span>
 <span>{b.emoji}</span>
 <span className="min-w-0 flex-1 truncate">{b.name}{b.id === myId ? "（你）" : ""}</span>
-<span className="text-xs text-[var(--dim)]">{b.cityKey === "sz" ? "深圳" : "惠州"}</span>
-<span className="font-black">{fmt(b.money)}</span>
+<span className="text-xs text-[var(--dim)]">{CITIES[b.cityKey as CityKey]?.name ?? b.cityKey}</span>
+<span className="font-black">{fmt(b.money, b.cityKey as CityKey)}</span>
 <span className="hidden text-xs text-[var(--dim)] sm:inline">{b.status === "finished" ? b.resultTitle ?? "已结算" : `第 ${b.gameDay} 天 · ${(CAREERS[b.careerIdx] ?? CAREERS[0]!).name}`}</span>
 </p>
 ))}
@@ -4247,7 +4308,7 @@ return (
 ) : <p className="mt-2 text-[11px] leading-relaxed text-[var(--dim)]">{`按顺序到达每一站自动打卡：每站 +${fmt(tour.rewardPerStop)}，走完全程再 +${fmt(tour.rewardFinish)}。在地图上点地点名、或坐车过去都算到达。`}</p>}
 </div> ); })()}
 <div className="mt-3 rounded-[14px] border-2 border-[var(--border)] bg-[var(--surface)] p-3">
-<p className="text-sm font-black">🔍 看图认地方 <span className="text-[11px] font-bold text-[var(--dim)]">Photo Quiz · 认对 +¥10</span></p>
+<p className="text-sm font-black">🔍 看图认地方 <span className="text-[11px] font-bold text-[var(--dim)]">Photo Quiz · 认对 +{fmt(10)}</span></p>
 {!quiz ? (
 <button type="button" onClick={nextQuiz} className="mt-2 w-full rounded-full bg-[var(--text)] py-2.5 text-sm font-black text-[var(--bg)]">开始认图 →</button>
 ) : (() => { const target = GUIDE.find((g) => g.key === quiz.key); if (!target) return null; return (
@@ -4267,14 +4328,14 @@ return (
 </>
 ); })()}
 </div>
-<p className="mt-4 text-xs font-black tracking-wide">📖 认识{s.cityKey === "sz" ? "深圳" : "惠州"}图鉴 · 已解锁 {(s.album ?? []).length}/{GUIDE.length} <span className="font-bold text-[var(--dim)]">— 到真地方打卡，把它的实拍和城市知识收进来</span></p>
+<p className="mt-4 text-xs font-black tracking-wide">📖 认识{CITIES[s.cityKey].name}图鉴 · 已解锁 {(s.album ?? []).length}/{GUIDE.length} <span className="font-bold text-[var(--dim)]">— 到真地方打卡，把它的实拍和城市知识收进来</span></p>
 <div className="mt-2 grid gap-2.5">
 {GUIDE.map((g) => { const un = (s.album ?? []).includes(g.key); return (
 <div key={g.key} className="overflow-hidden rounded-[12px] border border-[var(--line)] bg-[var(--surface)]">
 <div className="relative">
 <img src={g.photos[0]} alt={un ? `${g.locName}实拍照片` : `${g.locName}图鉴条目（未解锁）`} className={`h-28 w-full object-cover ${un ? "" : "opacity-45 grayscale"}`} />
 {!un && <span className="absolute inset-0 grid place-items-center px-3 text-center text-sm font-black text-white" style={{ textShadow: "0 2px 8px rgba(0,0,0,.85)" }}>🔒 到{g.locName}打卡解锁</span>}
-<span className="absolute left-2 top-2 rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-black text-white">{g.cityKey === "sz" ? "深圳" : "惠州"} · {g.locName}</span>
+<span className="absolute left-2 top-2 rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-black text-white">{CITIES[g.cityKey].name} · {g.locName}</span>
 </div>
 {un && (
 <div className="p-2.5">
@@ -4352,14 +4413,14 @@ return (
 {venueScene && venueScene.kind === "stay" && (() => { const l = LODGINGS.find((x) => x.id === venueScene.id); if (!l) return null; return (
 <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={l.name}>
 <div className="rise max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] shadow-xl">
-<div className="bg-[#1e3a5f] p-4 text-white"><p className="text-xs font-black">{l.emoji} {l.kind} · ¥{l.id === "rent-flat" ? rentFlatWeekly(s.cityKey) : l.price}/{l.priceUnit}</p><p className="font-display mt-1 text-2xl font-black">{l.name} · 房间里</p></div>
+<div className="bg-[#1e3a5f] p-4 text-white"><p className="text-xs font-black">{l.emoji} {l.kind} · {Y}{l.id === "rent-flat" ? rentFlatWeekly(s.cityKey) : l.price}/{l.priceUnit}</p><p className="font-display mt-1 text-2xl font-black">{l.name} · 房间里</p></div>
 <div className="p-4">
 <p className="rounded-[12px] bg-[var(--surface2)] px-3 py-2.5 text-sm leading-relaxed">🛏️ {l.scene}</p>
 <p className="mt-2 text-xs leading-relaxed text-[var(--dim)]">{l.perk}</p>
 {l.id === "rent-flat" ? (
 <button type="button" onClick={signRent} className="mt-4 w-full rounded-full bg-[var(--accent)] py-3.5 text-sm font-black text-white">🔑 就这间，签约（周租 {fmt(rentFlatWeekly(s.cityKey))}）</button>
 ) : (
-<button type="button" onClick={() => stayOvernight(l.id)} disabled={s.money < l.price} className="mt-4 w-full rounded-full bg-[var(--accent)] py-3.5 text-sm font-black text-white disabled:opacity-40">🛏️ 住一晚过夜（-¥{l.price}，睡到明天）</button>
+<button type="button" onClick={() => stayOvernight(l.id)} disabled={s.money < l.price} className="mt-4 w-full rounded-full bg-[var(--accent)] py-3.5 text-sm font-black text-white disabled:opacity-40">🛏️ 住一晚过夜（-{Y}{l.price}，睡到明天）</button>
 )}
 <button type="button" onClick={() => setVenueScene(null)} className="mt-2 w-full rounded-full border-2 border-[var(--text)] py-3 text-sm font-black">再看看别家 →</button>
 </div></div></div> ); })()}
@@ -4370,7 +4431,13 @@ return (
 {roadRide && (() => {
 const rr = roadRide;
 const isBus = rr.mode === "bus";
-const steps: { pose: LifePose; caption: string; sub: string }[] = isBus ? [
+const isDrive = rr.mode === "drive";
+const steps: { pose: LifePose; caption: string; sub: string }[] = isDrive ? [
+{ pose: "walk", caption: "上车，点火出发", sub: "拉开车门坐进驾驶座，系好安全带，点火、看一眼后视镜，慢慢汇入车流" },
+{ pose: "drive", caption: "路口等红灯", sub: "前面路口红灯亮了——跟全城的车一起停下来等。绿灯一亮，脚下给油，车流重新流动起来" },
+{ pose: "drive", caption: "跟着车流走", sub: "双手扶着方向盘，商圈、写字楼、行道树从挡风玻璃前一段段划过——这座城市的路，你越来越熟" },
+{ pose: "walk", caption: "找车位，停好下车", sub: "绕了一小圈找到车位，倒车入库、拉手刹、锁车——到了" },
+] : isBus ? [
 { pose: "walk", caption: "公交进站，上车", sub: "车在站台稳稳停住，前门打开——你刷卡上车，往里走找座位" },
 { pose: "sit", caption: "坐稳了，看窗外", sub: "公交一站站往前开，街景、行道树和店铺在窗外一段段往后退" },
 { pose: "sit", caption: "快到了，准备下车", sub: "车载广播报站：下一站就是你的目的地——按一下下车铃，扶好站起来" },
@@ -4384,16 +4451,16 @@ const steps: { pose: LifePose; caption: string; sub: string }[] = isBus ? [
 const step = steps[Math.min(roadRideStep, steps.length - 1)]!;
 const outfitR = outfitOf(s.outfit);
 return (
-<div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={isBus ? "公交车厢" : "出租车车厢"}>
+<div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-[2px] p-3 sm:items-center" role="dialog" aria-label={isBus ? "公交车厢" : isDrive ? "自驾开车" : "出租车车厢"}>
 <div className="rise w-full max-w-lg overflow-hidden rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] shadow-xl">
-<div className="p-4 pb-3 text-white" style={{ background: isBus ? "#2563eb" : "#b45309" }}>
-<p className="flex items-center justify-between text-xs font-black"><span>{isBus ? "🚌 公交车厢" : "🚕 出租车里"}</span><span>{rr.fare > 0 ? `车费 ¥${rr.fare}` : "免费乘车"}</span></p>
+<div className="p-4 pb-3 text-white" style={{ background: isBus ? "#2563eb" : isDrive ? "#166534" : "#b45309" }}>
+<p className="flex items-center justify-between text-xs font-black"><span>{isBus ? "🚌 公交车厢" : isDrive ? "🚗 自驾 · 驾驶座" : "🚕 出租车里"}</span><span>{rr.fare > 0 ? `${isDrive ? "油费+停车" : "车费"} ${Y}${rr.fare}` : "免费乘车"}</span></p>
 <p className="font-display mt-1 text-2xl font-black">{rr.fromName} → {rr.toName}</p>
-<p className="mt-0.5 text-xs opacity-90">{isBus ? "一站站往前开，窗外是真实的街景" : "点对点直达，窗外风景划过"} · 预计约 {etaMinutes(rr.mode, Math.hypot(locById(selectedLoc).x - locById(currentLoc).x, locById(selectedLoc).z - locById(currentLoc).z))} 分钟</p>
+<p className="mt-0.5 text-xs opacity-90">{isBus ? "一站站往前开，窗外是真实的街景" : isDrive ? "自己开车：跟车流、等红灯、找车位，窗外是真实的街景" : "点对点直达，窗外风景划过"} · 预计约 {etaMinutes(rr.mode, Math.hypot(locById(selectedLoc).x - locById(currentLoc).x, locById(selectedLoc).z - locById(currentLoc).z))} 分钟</p>
 </div>
 <div className="mx-4 mt-3 overflow-hidden rounded-[16px] border-2 border-[var(--line)]">
 <div className="relative h-52">
-<LifeStage3D key={`road-${rr.mode}-${roadRideStep >= 3 ? "out" : roadRideStep === 0 ? "in" : "ride"}`} setKind={rr.mode} pose={step.pose} shirt={outfitR.shirt} pants={outfitR.pants} night={false} emoji={iden.emoji} />
+<LifeStage3D key={`road-${rr.mode}-${roadRideStep >= 3 ? "out" : roadRideStep === 0 ? "in" : "ride"}`} setKind={rr.mode} pose={step.pose} shirt={outfitR.shirt} pants={outfitR.pants} night={false} emoji={iden.emoji} cur={Y} />
 <div className="cine-grade" />
 </div>
 <p className="bg-[var(--surface2)] px-3 py-2 text-xs leading-relaxed"><b>{step.caption}</b> · {step.sub}</p>
@@ -4450,7 +4517,7 @@ return (
 <div className="p-4 pb-3 text-white" style={{ background: curLine.colorCss }}>
 <p className="flex items-center justify-between text-xs font-black"><span>{isRailRide ? "🚄" : "🚇"} {curLine.name}{c.route.isTransfer ? ` · 全程 ${c.route.summary}` : ""}</span><span>{c.crowdLabel}</span></p>
 <p className="font-display mt-1 text-2xl font-black">{c.awaitingTransfer ? `换乘站 · ${curStation?.name}站` : arrivedC ? `已到达 · ${curStation?.name}站` : `下一站 · ${nextStation?.name ?? ""}`}</p>
-<p className="mt-0.5 text-xs opacity-90">{locById(c.fromLoc).name} → {locById(c.toLoc).name} · 共 {c.route.stops} 站{c.route.isTransfer ? ` · 换乘 ${c.route.transferStations.length} 次（${c.route.transferStations.join("、")}）` : ""} · 票价 ¥{c.route.fare} · {c.seated ? "💺 坐着" : "🧍 站着扶杆"}</p>
+<p className="mt-0.5 text-xs opacity-90">{locById(c.fromLoc).name} → {locById(c.toLoc).name} · 共 {c.route.stops} 站{c.route.isTransfer ? ` · 换乘 ${c.route.transferStations.length} 次（${c.route.transferStations.join("、")}）` : ""} · 票价 {Y}{c.route.fare} · {c.seated ? "💺 坐着" : "🧍 站着扶杆"}</p>
 </div>
 {/* route strip */}
 <div ref={routeStripRef} className="relative flex items-center gap-0 overflow-x-auto px-4 pt-3 [scrollbar-width:none]">
@@ -4497,13 +4564,13 @@ return (
 <button type="button" onClick={doTransfer} className="w-full rounded-full bg-[var(--accent)] py-3.5 text-sm font-black text-white">{c.route.shuttleFrom.includes(curStation?.name ?? "") ? `🚌 在${curStation?.name}下车 · 坐接驳巴士到${nextStation?.name ?? "对面站"}换乘 ${(c.route.legs[c.legIdx + 1]?.line.short) ?? "下一条线"}` : `🔁 在${curStation?.name}换乘上车 → ${(c.route.legs[c.legIdx + 1]?.line.name) ?? "下一条线"}`}</button>
 ) : (
 <>
-<button type="button" disabled={!arrivedC} onClick={() => finishMetroRide()} className="w-full rounded-full bg-[var(--accent)] py-3.5 text-sm font-black text-white disabled:opacity-40">{arrivedC ? `🔔 到站了，下车出站 → ${locById(c.toLoc).name}（票 ¥${c.route.fare}）` : `行驶中… 还有 ${total - 1 - c.stopIdx} 站（自动报站中）`}</button>
+<button type="button" disabled={!arrivedC} onClick={() => finishMetroRide()} className="w-full rounded-full bg-[var(--accent)] py-3.5 text-sm font-black text-white disabled:opacity-40">{arrivedC ? `🔔 到站了，下车出站 → ${locById(c.toLoc).name}（票 ${Y}${c.route.fare}）` : `行驶中… 还有 ${total - 1 - c.stopIdx} 站（自动报站中）`}</button>
 {!arrivedC && c.stopIdx > 0 && curStation && (
-<button type="button" onClick={() => finishMetroRide(c.stopIdx)} className="mt-2 w-full rounded-full border-2 border-[var(--border)] bg-[var(--surface)] py-2.5 text-sm font-black">🚪 就在「{curStation.name}」下车（票 ¥{partialFare(c.route, c.stopIdx)}）</button>
+<button type="button" onClick={() => finishMetroRide(c.stopIdx)} className="mt-2 w-full rounded-full border-2 border-[var(--border)] bg-[var(--surface)] py-2.5 text-sm font-black">🚪 就在「{curStation.name}」下车（票 {Y}{partialFare(c.route, c.stopIdx)}）</button>
 )}
 </>
 )}
-<p className="mt-2 text-center text-[11px] text-[var(--dim)]">{s.cityKey === "hz" ? "真实城轨/高铁乘车体验" : "真实深圳地铁体验"}：屏蔽门、先下后上、换乘站广播、早高峰挤车厢。车停稳时可以随时在本站下车，按实际坐的里程扣费。</p>
+<p className="mt-2 text-center text-[11px] text-[var(--dim)]">{s.cityKey === "hz" ? "真实城轨/高铁乘车体验" : s.cityKey === "hk" ? "真实港铁乘车体验" : "真实深圳地铁体验"}：屏蔽门、先下后上、换乘站广播、早高峰挤车厢。车停稳时可以随时在本站下车，按实际坐的里程扣费。</p>
 </div>
 </div>
 </div>
@@ -4524,7 +4591,7 @@ onLocate={(x, z, name) => { setMetroMapOpen(false); setMapFocus({ x, z, nonce: D
 
 {/* ===== LIFE ANIMATION SCENE ===== */}
 {lifeAnim && (() => { const scene = LIFE_SCENES[lifeAnim.kind]; const rawStep = scene.steps[Math.min(lifeAnim.idx, scene.steps.length - 1)]!; /* Huizhou has no metro: in the day montage the 换乘地铁 beat is a 城轨 beat there */ const step = s.cityKey === "hz" && rawStep.caption === "换乘地铁" ? { ...rawStep, caption: "换乘城轨", prop: "🚆", bg: "🚆 👥 👥" } : rawStep; const rainyDay = nowRainy; return (
-<div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/65 p-3 sm:items-center" role="dialog" aria-label={`生活动画：${scene.title}`}>
+<div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/65 backdrop-blur-[3px] p-3 sm:items-center" role="dialog" aria-label={`生活动画：${scene.title}`}>
 <div className="rise w-full max-w-lg overflow-hidden rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] shadow-2xl">
 <div className="flex items-center gap-2 px-4 pt-3.5">
 <span className="chip">📷 真实照片里的 3D 演绎 · Real photo × live 3D</span>
@@ -4769,7 +4836,7 @@ return (
 ...(s.cityKey === "sz" || npc.name === "Lisa" ? [["apec", "🌐 聊峰会", "大会那些事"] as const] : []),
 ["joke", "😂 开个玩笑", p.pride >= 0.6 && p.humor < 0.45 ? "⚠️ 他要面子，可能翻脸" : "逗他一乐"],
 ["help", "🤝 帮个忙", "能量 -6 · 人情 +12"],
-["gift", "🎁 送小礼物", "¥25 · 关系 +8"],
+["gift", "🎁 送小礼物", `${Y}25 · 关系 +8`],
 ] as [ChatAction, string, string][]).map(([act, label, sub]) => (
 <button key={act} type="button" aria-label={`和${npc.name}${label}`} disabled={(act === "help" && s.energy < 6) || (act === "gift" && s.money < 25)} onClick={() => doNpcChat(act)} className="act-btn disabled:opacity-40">
 <span className="text-[13px] font-black">{label}</span>
@@ -4828,8 +4895,8 @@ return (
 <p className="mt-2 text-xs font-bold">{todayEvent.emoji} 今日城市事件「{todayEvent.name}」：<span className="font-normal">{todayEvent.desc}</span></p>
 </div>
 ); })()}
-<button type="button" disabled={signed} aria-label={signed ? "今日已签到" : "每日签到领奖励"} onClick={() => { mutate((x) => { x.signDay = s.day; x.money += 30; x.energy += 10; }); floatReward("+¥30 签到", "gold"); floatReward("能量 +10", "green"); burstDanmaku(["🧧 今天的签到红包到账啦", "陈伯：早啊，又是新的一天", "小美：签到打卡，元气满满 ☀️"]); showToast("签到成功：+¥30，能量 +10。今天的任务在下面，顺手就做了。"); }} className="w-full rounded-[14px] bg-[var(--accent)] py-3.5 text-sm font-black text-white disabled:bg-[var(--surface2)] disabled:text-[var(--dim)]">
-{signed ? "✅ 今日已签到（明天再来）" : "🧧 每日签到 · 领 ¥30 + 能量 10"}
+<button type="button" disabled={signed} aria-label={signed ? "今日已签到" : "每日签到领奖励"} onClick={() => { mutate((x) => { x.signDay = s.day; x.money += 30; x.energy += 10; }); floatReward(`+${fmt(30)} 签到`, "gold"); floatReward("能量 +10", "green"); burstDanmaku(["🧧 今天的签到红包到账啦", "陈伯：早啊，又是新的一天", "小美：签到打卡，元气满满 ☀️"]); showToast(`签到成功：+${fmt(30)}，能量 +10。今天的任务在下面，顺手就做了。`); }} className="w-full rounded-[14px] bg-[var(--accent)] py-3.5 text-sm font-black text-white disabled:bg-[var(--surface2)] disabled:text-[var(--dim)]">
+{signed ? "✅ 今日已签到（明天再来）" : `🧧 每日签到 · 领 ${fmt(30)} + 能量 10`}
 </button>
 <p className="mt-4 text-xs font-black tracking-wide text-[var(--dim)]">今日任务 · 完成点领取，奖励立刻飘字到账</p>
 <div className="mt-2 grid gap-2">
@@ -4862,15 +4929,15 @@ return (
 
 {/* event modal */}
 {activeEvent && (
-<div className="fixed inset-0 z-50 flex items-end justify-center bg-black/55 p-3 sm:items-center" role="dialog" aria-label={activeEvent.title}>
+<div className="fixed inset-0 z-50 flex items-end justify-center bg-black/55 backdrop-blur-[2px] p-3 sm:items-center" role="dialog" aria-label={locText(activeEvent.title)}>
 <div className="rise w-full max-w-md rounded-[20px] border-2 border-[var(--border)] bg-[var(--surface)] p-5">
-<span className="inline-block rounded-full bg-[var(--gold)] px-2.5 py-1 text-xs font-black text-[#3d2f00]">{activeEvent.tag}</span>
-<h3 className="font-display mt-3 text-2xl font-black leading-snug">{activeEvent.title}</h3>
-<p className="mt-1.5 text-sm leading-relaxed text-[var(--dim)]">{activeEvent.desc}</p>
+<span className="inline-block rounded-full bg-[var(--gold)] px-2.5 py-1 text-xs font-black text-[#3d2f00]">{locText(activeEvent.tag)}</span>
+<h3 className="font-display mt-3 text-2xl font-black leading-snug">{locText(activeEvent.title)}</h3>
+<p className="mt-1.5 text-sm leading-relaxed text-[var(--dim)]">{locText(activeEvent.desc)}</p>
 {activeEvent.choices.map((c, i) => (
 <button key={c.t} type="button" onClick={() => chooseEventChoice(i)} className="act-btn mt-2.5">
-<span className="text-sm font-black">{c.t}</span>
-<span className="block text-xs text-[var(--dim)]">{c.s}</span>
+<span className="text-sm font-black">{locText(c.t)}</span>
+<span className="block text-xs text-[var(--dim)]">{locText(c.s)}</span>
 </button>
 ))}
 </div>
@@ -4883,16 +4950,16 @@ return (
 <div className="rise max-h-[86vh] w-full max-w-md overflow-y-auto rounded-[24px] border-2 border-[var(--border)] bg-[var(--surface)] p-5">
 <div className="flex items-center gap-2">
 {phoneApp && <button type="button" aria-label="返回手机桌面" onClick={() => setPhoneApp(null)} className="rounded-full bg-[var(--surface2)] px-3 py-1.5 text-sm font-black">←</button>}
-<h3 className="font-display text-xl font-black">{phoneApp ? (phoneApp === "metro" && s.cityKey === "hz" ? "城轨通" : APPS.find((a) => a.id === phoneApp)?.n ?? "手机") : "📱 我的手机"}</h3>
+<h3 className="font-display text-xl font-black">{phoneApp ? (phoneApp === "metro" && s.cityKey === "hz" ? "城轨通" : phoneApp === "metro" && s.cityKey === "hk" ? "港铁通" : APPS.find((a) => a.id === phoneApp)?.n ?? "手机") : "📱 我的手机"}</h3>
 <button type="button" aria-label="关闭手机" onClick={() => setPhoneOpen(false)} className="ml-auto rounded-full bg-[var(--surface2)] px-3 py-1.5 text-sm font-black">✕</button>
 </div>
 <div className="mt-4">
 {!phoneApp ? (
 <div className="grid grid-cols-4 gap-3">
 {APPS.map((a) => (
-<button key={a.id} type="button" aria-label={`打开${a.id === "metro" && s.cityKey === "hz" ? "城轨通" : a.n}`} onClick={() => setPhoneApp(a.id)} className="grid place-items-center gap-1 rounded-[14px] bg-[var(--surface2)] px-1 py-3">
+<button key={a.id} type="button" aria-label={`打开${a.id === "metro" && s.cityKey === "hz" ? "城轨通" : a.id === "metro" && s.cityKey === "hk" ? "港铁通" : a.n}`} onClick={() => setPhoneApp(a.id)} className="grid place-items-center gap-1 rounded-[14px] bg-[var(--surface2)] px-1 py-3">
 <span className="text-2xl">{a.id === "metro" && s.cityKey === "hz" ? "🚆" : a.e}</span>
-<span className="text-[11px] font-bold">{a.id === "metro" && s.cityKey === "hz" ? "城轨通" : a.n}</span>
+<span className="text-[11px] font-bold">{a.id === "metro" && s.cityKey === "hz" ? "城轨通" : a.id === "metro" && s.cityKey === "hk" ? "港铁通" : a.n}</span>
 </button>
 ))}
 </div>

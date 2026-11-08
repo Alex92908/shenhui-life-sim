@@ -15,7 +15,7 @@
 // so it runs locally on any PC and costs no tokens.
 
 import {
-NPCS, apecPhase, isApecWeek, weatherOf,
+NPCS, apecPhase, isApecWeek, npcsForCity, weatherOf,
 type CityKey, type Npc,
 } from "./data";
 
@@ -62,6 +62,12 @@ export function personaOf(npc: Npc): Persona {
   if (npc.name === "阿琳") { base.humor = 0.6; base.chattiness = 0.65; }
   if (npc.name === "子健") { base.hustle = 0.75; base.humor = 0.55; }
   if (npc.name === "小美") { base.chattiness = 0.6; base.humor = 0.6; }
+  if (npc.name === "华哥") { base.warmth = 0.85; base.chattiness = 0.8; base.hustle = 0.8; }
+  if (npc.name === "阿May") { base.hustle = 0.8; base.chattiness = 0.6; }
+  if (npc.name === "强哥") { base.chattiness = 0.75; base.humor = 0.7; base.pride = 0.5; }
+  if (npc.name === "婆婆珍") { base.warmth = 0.9; base.chattiness = 0.85; }
+  if (npc.name === "船长辉") { base.warmth = 0.75; base.humor = 0.6; }
+  if (npc.name === "肥妈") { base.warmth = 0.95; base.chattiness = 0.8; }
   return base;
 }
 
@@ -79,6 +85,11 @@ export function scheduleOf(npc: Npc): string {
   if (j.includes("通勤")) return "每天 7 点半准时出门，赶固定那一班地铁，雷打不动";
   if (j.includes("同事")) return "朝九晚六，需求评审日会忙到飞起，保温杯不离手";
   if (j.includes("白领")) return "朝九晚六，下班爱去夜市和商场，手机相册全是吃的";
+  if (j.includes("茶餐厅")) return "朝六晚十，早市茶市一脚踢，落场嗰阵先至系自己嘅时间";
+  if (j.includes("的士")) return "早更朝五晚五，交更先食个早餐；边条隧道塞车，佢比导航更早知";
+  if (j.includes("菜贩")) return "凌晨三点去果栏入货，摆档到黄昏，电车喺门口叮叮过几十年";
+  if (j.includes("小轮")) return "跟船期返工，维港的日出日落睇到厌——佢话未厌过";
+  if (j.includes("邻居") && npc.name === "肥妈") return "早起去街市，傍晚煲汤，全层楼嘅晚饭时间由佢嘅汤香决定";
   return "作息规律，白天忙活，晚上歇着";
 }
 
@@ -230,6 +241,12 @@ const LIFE_POSTS: Record<string, string[]> = {
   "你的同事": ["评审会又过了，需求终于定下来了。今晚可以准时下班，普天同庆。", "保温杯里的枸杞泡到第三泡了。养生和加班，我选择一起端着。"],
   "隔壁邻居": ["阳台上的葱又窜高了一截，晚上煲汤正好掐一把。日子就是一餐一饭过出来的。", "今天煲了老火汤，香得整层楼都闻得见。过日子，胃暖了心就暖了。"],
   "菜市场摊主": ["今天的菜新鲜，进价还降了点，熟客都跟着沾光。做生意，实在二字值千金。", "早上进货淋了点雨，不过菜卖得好，心里是晴的。"],
+  "茶餐厅伙计": ["今日出咗 300 杯奶茶，手都撞到软。熟客一坐低，杯茶已经喺台面——呢啲就系默契。Another day, another 300 milk teas.", "收工去阿妈度饮汤。冲茶冲到返屋企，冲凉都闻到自己阵茶味😂"],
+  "中环白领": ["Lunch 一个钟，排队 20 分钟、食 10 分钟、行返公司 10 分钟。呢啲就系中环速度。Central lunch maths: queue 20, eat 10, walk 10.", "今晚兰桂坊有局。放工先系第二场开波，呢啲先叫 Work-life balance 呀？"],
+  "的士司机": ["今朝红隧塞到铜锣湾，我转行东隧，个客问我点解咁熟路——开咗三十年车，条条隧道嘅脾气我都摸透。Trust the driver, not the app.", "收工前最后一程去机场，沿途个天靓到呢。做呢行，最过瘾就系成个城市都系你办公室。"],
+  "街市菜贩": ["今日啲菜心靓，熟客未开口我已经秤定。今朝电车喺门口过嗰阵，有个游客影咗我张相，话呢啲先系香港。Honest scales, forty years.", "凌晨入货嗰阵落雨，而家出太阳喇。做街市就系咁，同个天一齐开工，一齐收工。"],
+  "天星小轮船员": ["今日维港个日落，成船人都喺度哗。HK$5 有找嘅船程，睇到呢个景，抵到烂啦。Best five dollars in the world, I'm telling you.", "开咗几十年船，台风先至停航。维港再忙，船一离岸就静返——呢度系我嘅办公室。"],
+  "深水埗邻居": ["今日煲咗老火汤，成层楼都闻到。隔篱屋个后生仔又加班，我留咗碗汤俾佢返嚟饮。Soup's on — neighbours first.", "去咗鸭寮街行阵，买咗个二手风扇。深水埗咩都有，就系租金贵——唉，唔讲呢啲，饮汤先。"],
 };
 const LIFE_FALLBACK = [
   "今天也是平平淡淡的一天。吃好喝好，明天继续。",
@@ -270,15 +287,16 @@ export function generateDailyPosts(
   const { day, cityKey } = ctx;
   const rng = mulberry(hashStr(`wall:${cityKey}:${day}`));
   const weather = weatherOf(day, cityKey);
+  const cityNpcs = npcsForCity(cityKey);
   const mems: MemMap = {};
   // Mood drift: everyone wakes up with a slightly different mood.
-  for (const npc of NPCS) {
+  for (const npc of cityNpcs) {
     const prev = memOf(prevMems, npc.name);
     const drift = Math.round((rng() - 0.46) * 9); // slight positive bias
     const eventBump = news.length > 0 && rng() < 0.3 ? 2 : 0;
     mems[npc.name] = { ...prev, mood: Math.max(-20, Math.min(20, Math.round(prev.mood * 0.6) + drift + eventBump)) };
   }
-  const byChat = [...NPCS].sort((a, b) => {
+  const byChat = [...cityNpcs].sort((a, b) => {
     const d = personaOf(b).chattiness - personaOf(a).chattiness;
     return d !== 0 ? d : hashStr(a.name) - hashStr(b.name);
   });
@@ -288,7 +306,7 @@ export function generateDailyPosts(
     if (used.has(npc.name)) return;
     used.add(npc.name);
     const prng = mulberry(hashStr(`post:${day}:${npc.name}`));
-    const commenters = NPCS.filter((n) => n.name !== npc.name)
+    const commenters = cityNpcs.filter((n) => n.name !== npc.name)
       .sort((a, b) => (affinity(b.name, npc.name) + personaOf(b).chattiness) - (affinity(a.name, npc.name) + personaOf(a).chattiness));
     const nComments = prng() < 0.25 ? 1 : prng() < 0.6 ? 2 : 3;
     const comments: NpcComment[] = [];
@@ -304,9 +322,9 @@ export function generateDailyPosts(
   };
   // 1) The player's news gets talked about first — by the people closest to it.
   for (const item of news.slice(0, 2)) {
-    const preferred = item.kind === "career" ? NPCS.find((n) => n.name === "阿琳")
-      : item.kind === "apec" ? NPCS.find((n) => n.name === "Lisa")
-      : item.kind === "home" ? NPCS.find((n) => n.name === "林婶") : undefined;
+    const preferred = item.kind === "career" ? cityNpcs.find((n) => n.name === "阿琳") ?? cityNpcs.find((n) => n.name === "阿May")
+      : item.kind === "apec" ? cityNpcs.find((n) => n.name === "Lisa")
+      : item.kind === "home" ? cityNpcs.find((n) => n.name === "林婶") ?? cityNpcs.find((n) => n.name === "肥妈") : undefined;
     const author = preferred && !used.has(preferred.name) ? preferred : byChat.find((n) => !used.has(n.name));
     if (author) addPost(author, "player", playerPost(item, personaOf(author), ctx.playerName, rng));
   }
@@ -318,7 +336,7 @@ export function generateDailyPosts(
   }
   // 3) Summit — Shenzhen only talks about its own summit; Huizhou hears echoes.
   if (cityKey === "sz" && (isApecWeek(day) || (day >= 10 && day < 14) || day === 20)) {
-    const lisa = NPCS.find((n) => n.name === "Lisa");
+    const lisa = cityNpcs.find((n) => n.name === "Lisa");
     const author = lisa && !used.has(lisa.name) && rng() < 0.8 ? lisa : byChat.find((n) => !used.has(n.name));
     if (author) addPost(author, "apec", apecPost(author, personaOf(author), day, rng));
   } else if (cityKey === "hz" && isApecWeek(day) && rng() < 0.5) {
@@ -326,6 +344,12 @@ export function generateDailyPosts(
     if (author) addPost(author, "apec", pick(rng, [
       "深圳那边 峰会开得热闹，惠州这边酒店都跟着住满了。湾区一家亲，沾光！"
       , "看新闻里深圳的会场，真气派。咱们惠州的日子也别闲着，海边一样有奔头。",
+    ]));
+  } else if (cityKey === "hk" && isApecWeek(day) && rng() < 0.5) {
+    const author = byChat.find((n) => !used.has(n.name));
+    if (author) addPost(author, "apec", pick(rng, [
+      "深圳开 APEC，西九龙站呢几日多人到爆——内地客落嚟，外国客过嚟开会顺便游香港。高铁一通，两边都系赢家。Busy days at West Kowloon!",
+      "新闻话 21 个经济体嘅领袖齐集深圳。香港做咗几十年会展之都睇住：呢啲大场面，隔住个海都觉得光荣。",
     ]));
   }
   // 4) Fill the rest of the wall with everyday life until 4–5 posts.
@@ -407,6 +431,12 @@ const HELP_FLAVOUR: Record<string, string> = {
   "Lisa": "帮她把一摞代表团资料分装成册",
   "老周": "在地铁口帮他扶住了差点被挤掉的公文包",
   "小美": "帮她把掉在路上的工牌捡起来追上去还给她",
+  "华哥": "帮他把一箱汽水搬进茶餐厅后栏",
+  "阿May": "在港铁站帮她扶住了差点被人群冲散的公文袋",
+  "强哥": "在的士站帮他把一箱行李搬上车尾箱",
+  "婆婆珍": "帮她把两筐菜从电车路边搬进街市档口",
+  "船长辉": "在码头帮他把一捆缆绳拖上船",
+  "肥妈": "帮她把一煲汤从楼下拎上楼",
 };
 
 export function chatReply(
@@ -417,6 +447,37 @@ export function chatReply(
   const rng = mulberry(hashStr(`chat:${npc.name}:${ctx.day}:${action}:${mem.talks}`));
   const mood = mem.mood;
   const cold = mem.rel <= -8;
+  /* Hong Kong neighbours answer in Cantonese-flavoured bilingual lines —
+     their real stories are Hong Kong stories. */
+  if (npc.cities?.includes("hk")) {
+    switch (action) {
+      case "greet":
+        if (repeatedToday) return { reply: "今日倾过啦，你忙你嘅，听日再倾。We've talked today — go live your day.", relDelta: 0 };
+        return { reply: pick(rng, [
+          "早晨！食咗早餐未？未食嚟我度，一盅两件等紧你。Morning! Breakfast first — that's the Hong Kong rule.",
+          "嚟啦嚟啦，坐低饮杯茶先。香港人再忙，都要饮啖茶嘅。",
+        ]), relDelta: cold ? 1 : 2 };
+      case "weather": {
+        const w = weatherOf(ctx.day, ctx.cityKey);
+        const rainy = w.includes("雨");
+        return { reply: rainy
+          ? pick(rng, ["落雨啊，维港都蒙查查。出门带遮，坐船嗰阵企入少少，唔好俾浪花泼湿。Rainy harbour today — mind the spray on the ferry.", "呢啲天气，茶餐厅最旺场。人人都入嚟避雨顺便饮杯茶——落雨都系生意。"])
+          : pick(rng, ["今日天清气朗，维港蓝到发光。收工去海旁行下啦，唔好嘥咗佢。A day like this, the harbour does the talking.", "好天到呢……上山顶缆车今日实多人，你要去就趁早。"]), relDelta: 2 };
+      }
+      case "work":
+        return { reply: pick(rng, [
+          "忙啊，香港人边个唔忙？但忙得嚟有钱赚，就唔算白忙。Work hard, eat well — that's the deal here.",
+          "呢行水深，捱得住就系赢家。你都系，唔好死顶，身体要紧。",
+        ]), relDelta: 2 };
+      case "apec":
+        return { reply: pick(rng, [
+          "APEC 喺深圳开，西九龙同口岸呢几日旺到爆。香港做咗咁多年会展之都睇住隔篱开大场——有啲牙骹软，不过高铁半个钟就到，咪当自己屋企开派对啰。",
+          "21 个经济体嘅人过晒去深圳开会。香港呢边呢，酒店、的士、茶餐厅个个都接到单——一河两岸，一齐旺场。",
+        ]), relDelta: 2 };
+      default:
+        break; // joke / help / gift fall through to the shared lines
+    }
+  }
   switch (action) {
     case "greet": {
       if (repeatedToday) return { reply: "咱今天都聊过了，你先忙你的，改天接着聊。", relDelta: 0 };

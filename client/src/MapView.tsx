@@ -13,7 +13,7 @@ import { createLandmarks, mergeStatic } from "./landmarks";
 import { AREA_LABELS } from "./areas";
 import { activitiesAt } from "./activities";
 import { SKYLINE } from "./skyline";
-import { LOC_EN, NPCS, getLocations, resolveLoc, placesForCity, PLACE_KINDS, stationLocId, metroLinesForCity, modeById, outfitOf, type CityKey, type TransportModeId } from "./data";
+import { CITIES, LOC_EN, getLocations, resolveLoc, placesForCity, PLACE_KINDS, stationLocId, metroLinesForCity, modeById, npcsForCity, outfitOf, type CityKey, type Loc, type LocType, type Npc, type TransportModeId } from "./data";
 import { makePostFx, type PostFx } from "./postfx";
 
 export interface RemotePlayer {
@@ -77,6 +77,14 @@ interface Actor {
   z: number;
   tx: number;
   tz: number;
+  /** schedule anchor: the place this NPC's current beat of the day belongs
+      to — wander targets cluster around it, so NPCs live somewhere instead
+      of drifting across the whole city at random */
+  ax?: number;
+  az?: number;
+  /** a greeting shown on the name chip while two people pass each other */
+  greet?: string;
+  greetUntil?: number;
   isSelf?: boolean;
   wander?: boolean;
   shirt: number;
@@ -130,6 +138,21 @@ const ROADS: Record<CityKey, Road[]> = {
     { x1: 2, z1: -11, x2: 2, z2: 12, w: 1.7 },
     { x1: -31, z1: 2, x2: 22, z2: 2, w: 1.5 },
   ],
+  hk: [
+    { x1: -6, z1: -6, x2: -2, z2: 5, w: 2.6, name: "弥敦道", lx: -5.4, lz: -0.5 },
+    { x1: -18, z1: 10, x2: 20, z2: 10, w: 2.6, name: "轩尼诗道 · 德辅道", lx: 12, lz: 10 },
+    { x1: -2, z1: 5, x2: -2, z2: 10, w: 2, name: "红磡海底隧道", lx: -2, lz: 7.6 },
+    { x1: -34, z1: 1, x2: -17, z2: -2, w: 2.4, name: "青屿干线", lx: -26, lz: -1.4 },
+    { x1: -24, z1: 4, x2: -28, z2: 8, w: 1.8 },
+    { x1: -31, z1: -16, x2: 12, z2: -14, w: 2.4, name: "新田公路 · 吐露港公路", lx: -8, lz: -15 },
+    { x1: 12, z1: -13, x2: 30, z2: -8, w: 1.9, name: "西贡公路", lx: 22, lz: -10.6 },
+    { x1: -9, z1: -16, x2: -6, z2: 3, w: 2, name: "狮子山隧道 · 龙翔道", lx: -8.4, lz: -9 },
+    { x1: -20, z1: -16, x2: -31, z2: -7, w: 2.2, name: "屯门公路", lx: -26, lz: -12 },
+    { x1: 0, z1: 14, x2: 9, z2: 19, w: 1.7, name: "赤柱峡道", lx: 5, lz: 17 },
+    { x1: -24, z1: 3, x2: -36, z2: 11, w: 1.8, name: "屿南道", lx: -31, lz: 8.4 },
+    { x1: -13, z1: 12, x2: -6, z2: 10, w: 1.6, name: "山顶道", lx: -10, lz: 12.4 },
+    { x1: 2, z1: -6, x2: 18, z2: 2, w: 1.8, name: "观塘道", lx: 11, lz: -1.4 },
+  ],
 };
 
 /* ---- terrain: the real ranges, as low-poly cone clusters ----
@@ -160,6 +183,14 @@ const MOUNTAINS: Record<CityKey, MountainRange[]> = {
     { peaks: [{ x: 28, z: 17, h: 3.2, r: 2.6 }, { x: 35, z: 17.5, h: 2.6, r: 2.2 }] },
     { peaks: [{ x: -24, z: 12, h: 2.4, r: 2.4 }, { x: 6, z: -19, h: 3, r: 2.6 }] },
   ],
+  hk: [
+    { peaks: [{ x: -8, z: -19.5, h: 7.8, r: 3.6 }, { x: -4, z: -20.5, h: 5.2, r: 2.6 }], label: "⛰️ 大帽山 957m · 香港最高峰", lx: -8, lz: -19.5, ly: 9.2 },
+    { peaks: [{ x: -15.5, z: 16.5, h: 4.6, r: 2.8 }, { x: -11, z: 17.5, h: 3.2, r: 2.2 }], label: "⛰️ 太平山 552m · The Peak", lx: -15.5, lz: 16.5, ly: 6 },
+    { peaks: [{ x: -29, z: 17.5, h: 6.8, r: 3.2 }, { x: -25, z: 18.5, h: 5.4, r: 2.6, rock: true }], label: "⛰️ 凤凰山 934m · 大屿山", lx: -29, lz: 17.5, ly: 8.2 },
+    { peaks: [{ x: 4, z: -9.5, h: 3.8, r: 2.6 }], label: "⛰️ 狮子山 495m", lx: 4, lz: -9.5, ly: 5.2 },
+    { peaks: [{ x: 21, z: -14, h: 4.6, r: 2.8 }, { x: 33, z: -13, h: 3.4, r: 2.4 }] },
+    { peaks: [{ x: -33, z: -13, h: 3.6, r: 2.6 }, { x: 24, z: 16, h: 2.8, r: 2.4 }] },
+  ],
 };
 
 /* Reservoirs and lakes drawn as real water patches in the miniature:
@@ -175,6 +206,10 @@ const LAKES: Record<CityKey, { x: number; z: number; r: number }[]> = {
     { x: -18.5, z: 4.8, r: 2.8 },
     { x: -15.5, z: 3.2, r: 1.9 },
     { x: 14, z: -14, r: 2.2 },
+  ],
+  hk: [
+    { x: 33.5, z: -3.5, r: 2 },
+    { x: 15, z: -19.5, r: 2.2 },
   ],
 };
 
@@ -206,6 +241,7 @@ function fitDistForAspect(aspect: number): number {
 
 function coastZ(cityKey: CityKey, x: number): number {
   if (cityKey === "sz") return 16.6 + Math.sin(x * 0.1) * 1.1 + Math.sin(x * 0.23 + 1.7) * 0.7;
+  if (cityKey === "hk") return 21.6 + Math.sin(x * 0.08 + 1) * 1 + Math.sin(x * 0.19 + 0.4) * 0.6;
   return 14.6 + Math.sin(x * 0.09 + 2) * 1.2 + Math.sin(x * 0.21 + 0.6) * 0.7;
 }
 
@@ -214,6 +250,31 @@ function hash(s: string): number {
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
   return Math.abs(h);
 }
+
+/* Where an NPC plausibly is at a given hour of the REAL day — their beat:
+   morning commute, work at the kind of place their job belongs to, lunch
+   at food streets, evening food/social, night back in the home quarter.
+   "stay" roles （摊主/同事/邻居） keep to their corner all day. The map's
+   sky already runs on the real Asia/Shanghai clock; NPC schedules ride
+   the same clock, so the street the player sees matches the hour. */
+function npcAnchorLocId(n: Npc, hour: number, locs: Loc[]): string {
+  const first = locs[0];
+  if (!first) return "home";
+  const byType = (types: LocType[]): Loc | undefined =>
+    locs.find((l) => types.includes(l.type) && n.preferTypes.includes(l.type)) ??
+    locs.find((l) => types.includes(l.type));
+  if (n.behavior === "stay") return (locs.find((l) => n.preferTypes.includes(l.type)) ?? first).id;
+  if (hour >= 7 && hour < 9) return (byType(["transit", "work"]) ?? first).id;
+  if (hour >= 12 && hour < 14) return (byType(["food", "market"]) ?? first).id;
+  if (hour >= 18 && hour < 22) return (byType(["food", "social", "mall", "fun"]) ?? first).id;
+  if (hour >= 22 || hour < 7) return (byType(["home", "fun"]) ?? first).id;
+  return (byType(n.preferTypes) ?? first).id;
+}
+
+/* Street greetings: when two named neighbours pass on the pavement, one
+   of them says something — the city acknowledging itself. */
+const GREETS = ["👋「早啊！」", "👋「吃了吗？」", "💬「今天天儿不错」", "👋「忙着呢？慢点」", "💬「路上小心点」", "👋「又见面了」", "💬「回头一起吃饭」"];
+const GREETS_PLAYER = ["👋「嗨，又碰见你了」", "👋「今天也加油啊」", "💬「出门呢？路上慢点」", "👋「吃了吗你？」"];
 
 function mulberry(seed: number) {
   let a = seed >>> 0;
@@ -320,6 +381,9 @@ export function MapView(p: Props) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const labelsRef = useRef<HTMLDivElement | null>(null);
   const actorsRef = useRef<Map<string, Actor>>(new Map());
+  /* each NPC's current schedule anchor (locId), so a changed beat only
+     retargets them once — they then walk there across the map */
+  const npcAnchorRef = useRef<Map<string, string>>(new Map());
   const propsRef = useRef(p);
   propsRef.current = p;
   const camRef = useRef({ az: -0.55, pol: CAM_POL, dist: 46, distCur: 46, tx: LAND_CX, tz: LAND_CZ, lastUser: 0, cut: 0 });
@@ -350,6 +414,11 @@ export function MapView(p: Props) {
   });
   const cineRef = useRef(true);
   cineRef.current = cine;
+  /* Street-level camera: drops the lens to the pavement behind the player
+     so the miniature stops reading as a model — shopfronts, crossings,
+     signals, traffic and pedestrians at eye height, true-scale streets. */
+  const [streetCam, setStreetCam] = useState(false);
+  const streetRef = useRef(false);
   const focusRef = useRef(0);
   const lookRef = useRef<{ x: number; z: number; until: number } | null>(null);
   /* LOL-style minimap: a live 2D thumbnail of the whole miniature, drawn
@@ -495,13 +564,32 @@ export function MapView(p: Props) {
     for (const rp of p.remotePlayers) {
       upsert({ key: `p-${rp.id}`, name: rp.name, emoji: rp.emoji, color: rp.color, seed: hash(rp.id), heading: 0, phase: hash(rp.id) % 6, blend: 0, startLoc: rp.locId, shirt: rp.color, pants: 0x2e3440, accessory: "none", behavior: "wander", speed: 4.2 });
     }
-    NPCS.forEach((n, i) => {
+    npcsForCity(p.cityKey).forEach((n, i) => {
       const preferred = locs.filter((l) => n.preferTypes.includes(l.type));
       const pool = preferred.length > 0 ? preferred : locs;
       const loc = pool[(hash(n.name) + i) % pool.length];
       const speed = n.behavior === "commute" ? 5.6 : n.behavior === "patrol" ? 3.4 : n.behavior === "stay" ? 2 : 4.2;
       upsert({ key: `npc-${n.name}`, name: `${n.name}·${n.job}${p.npcMoodEmoji?.[n.name] ? ` ${p.npcMoodEmoji[n.name]}` : ""}`, emoji: n.emoji, color: n.color, wander: true, seed: hash(n.name), heading: 0, phase: hash(n.name) % 6, blend: 0, startLoc: loc?.id ?? "home", shirt: n.shirt, pants: n.pants, accessory: n.accessory, behavior: n.behavior, speed });
     });
+    // NPC schedules: the beat changes with the real hour, and when it does
+    // the NPC visibly travels to the new anchor across the map (commuting
+    // to work, heading out for lunch, going home at night) instead of
+    // teleporting or drifting at random.
+    const hourNow = Math.floor(currentPhase() * 24);
+    for (const n of npcsForCity(p.cityKey)) {
+      const a = actors.get(`npc-${n.name}`);
+      if (!a) continue;
+      const anchorId = npcAnchorLocId(n, hourNow, locs);
+      const loc = byId.get(anchorId);
+      if (!loc) continue;
+      a.ax = loc.x;
+      a.az = loc.z;
+      if (npcAnchorRef.current.get(n.name) !== anchorId) {
+        npcAnchorRef.current.set(n.name, anchorId);
+        a.tx = loc.x + ((a.seed % 5) - 2) * 0.4;
+        a.tz = loc.z + ((a.seed % 3) - 1) * 0.4;
+      }
+    }
     for (const key of Array.from(actors.keys())) {
       if (!want.has(key)) actors.delete(key);
     }
@@ -517,7 +605,7 @@ export function MapView(p: Props) {
     const roads = ROADS[cityKey];
     const flagGroups: THREE.Group[] = [];
     const wheelGroups: THREE.Object3D[] = [];
-    const rnd = mulberry(cityKey === "sz" ? 2026 : 2077);
+    const rnd = mulberry(cityKey === "sz" ? 2026 : cityKey === "hk" ? 2088 : 2077);
 
     // WebGL can be unavailable or refuse a context in some webviews (the
     // Mac app's WKWebView among them). That must degrade to the location
@@ -605,6 +693,16 @@ export function MapView(p: Props) {
       river.position.set(-4, 0.18, -18.6);
       scene.add(river);
     }
+    // Hong Kong's Victoria Harbour: a real water channel cut between
+    // Kowloon (north shore, Tsim Sha Tsui) and Hong Kong Island (south
+    // shore, Central/Wan Chai) — the harbour IS the city's centre.
+    if (cityKey === "hk") {
+      const harbour = new THREE.Mesh(new THREE.PlaneGeometry(34, 2.6), waterMat);
+      harbour.rotation.x = -Math.PI / 2;
+      harbour.position.set(0, LAND + 0.04, 7.4);
+      harbour.receiveShadow = true;
+      scene.add(harbour);
+    }
     // reservoirs & lakes as flat water patches in the land
     for (const lk of LAKES[cityKey]) {
       const disc = new THREE.Mesh(new THREE.CylinderGeometry(lk.r, lk.r * 1.04, 0.12, 22), waterMat);
@@ -669,6 +767,151 @@ export function MapView(p: Props) {
         dash.setMatrixAt(i, mat4);
       }
       scene.add(dash);
+    }
+
+    /* ---- streets at true scale: sidewalks, zebra crossings, traffic
+       lights the traffic OBEYS ----
+       The corridors stop being a model railway here. Every road gets a
+       pavement on both sides; where two roads cross there is a zebra
+       crossing and a working signal head for each approach. Signals run
+       an 18-second cycle (offsets per junction so the city doesn't pulse
+       in sync), and the traffic + pedestrian systems below brake for red
+       lights, queue behind each other, and cross on their green. */
+    interface IxStop { t: number; ix: number; slot: 0 | 1; back: number; other: Road; otherT: number }
+    interface Ix { x: number; z: number }
+    const roadLen = (r: Road) => Math.hypot(r.x2 - r.x1, r.z2 - r.z1);
+    const segIx = (a: Road, b: Road) => {
+      const d1x = a.x2 - a.x1, d1z = a.z2 - a.z1;
+      const d2x = b.x2 - b.x1, d2z = b.z2 - b.z1;
+      const den = d1x * d2z - d1z * d2x;
+      if (Math.abs(den) < 1e-6) return null;
+      const ex = b.x1 - a.x1, ez = b.z1 - a.z1;
+      const ta = (ex * d2z - ez * d2x) / den;
+      const tb = (ex * d1z - ez * d1x) / den;
+      if (ta < 0.03 || ta > 0.97 || tb < 0.03 || tb > 0.97) return null;
+      return { x: a.x1 + d1x * ta, z: a.z1 + d1z * ta, ta, tb };
+    };
+    const ixs: Ix[] = [];
+    const roadStops = new Map<Road, IxStop[]>();
+    const addStop = (r: Road, s: IxStop) => {
+      const arr = roadStops.get(r) ?? [];
+      arr.push(s);
+      roadStops.set(r, arr);
+    };
+    for (let i = 0; i < roads.length; i++) {
+      for (let j = i + 1; j < roads.length; j++) {
+        const hit = segIx(roads[i]!, roads[j]!);
+        if (!hit) continue;
+        const ixIdx = ixs.length;
+        ixs.push({ x: hit.x, z: hit.z });
+        addStop(roads[i]!, { t: hit.ta, ix: ixIdx, slot: 0, back: roads[j]!.w / 2 + 1.15, other: roads[j]!, otherT: hit.tb });
+        addStop(roads[j]!, { t: hit.tb, ix: ixIdx, slot: 1, back: roads[i]!.w / 2 + 1.15, other: roads[i]!, otherT: hit.ta });
+      }
+    }
+    const TL_CYCLE = 18;
+    const tlPhaseAt = (ix: number, tSec: number) => (((tSec + ix * 3.7) % TL_CYCLE) + TL_CYCLE) % TL_CYCLE;
+    /* slot 0 runs first (0–8s green), then slot 1 (9.2–17.2s); the gaps are
+       the amber/all-red changeover. Pedestrians may cross a road while the
+       OTHER approach has the green (or during the changeover). */
+    const tlGreen = (ix: number, slot: 0 | 1, tSec: number) => {
+      const ph = tlPhaseAt(ix, tSec);
+      return slot === 0 ? ph < 8 : ph >= 9.2 && ph < 17.2;
+    };
+    const tlYellow = (ix: number, slot: 0 | 1, tSec: number) => {
+      const ph = tlPhaseAt(ix, tSec);
+      return slot === 0 ? ph >= 8 && ph < 9.2 : ph >= 17.2;
+    };
+    const tlPedGreen = (ix: number, slot: 0 | 1, tSec: number) => {
+      const ph = tlPhaseAt(ix, tSec);
+      if (ph >= 8 && ph < 9.2) return true; // changeover: both approaches stopped
+      return slot === 0 ? ph >= 9.2 && ph < 17.2 : ph < 8 || ph >= 17.2;
+    };
+    // sidewalks: a pale pavement strip hugging both sides of every road
+    {
+      const paveMat = new THREE.MeshStandardMaterial({ color: 0xcfc8b2, roughness: 1 });
+      for (const r of roads) {
+        const len = roadLen(r);
+        const ang = Math.atan2(r.z2 - r.z1, r.x2 - r.x1);
+        for (const side of [1, -1]) {
+          const off = (r.w / 2 + 0.5) * side;
+          const m = new THREE.Mesh(new THREE.BoxGeometry(len, 0.07, 0.95), paveMat);
+          m.position.set((r.x1 + r.x2) / 2 + Math.sin(ang) * off, LAND + 0.045, (r.z1 + r.z2) / 2 - Math.cos(ang) * off);
+          m.rotation.y = -ang;
+          m.receiveShadow = true;
+          scene.add(m);
+        }
+      }
+    }
+    // zebra crossings: one instanced set of white bars at every junction,
+    // across each approach road, just before its stop line
+    {
+      const mats4: THREE.Matrix4[] = [];
+      const m4 = new THREE.Matrix4();
+      const q = new THREE.Quaternion();
+      const one = new THREE.Vector3(1, 1, 1);
+      for (let ii = 0; ii < ixs.length; ii++) {
+        const ix = ixs[ii]!;
+        for (const r of roads) {
+          const stops = roadStops.get(r);
+          const st = stops?.find((s) => s.ix === ii);
+          if (!st) continue;
+          const ang = Math.atan2(r.z2 - r.z1, r.x2 - r.x1);
+          const dirx = Math.cos(ang), dirz = Math.sin(ang);
+          const cx = ix.x, cz = ix.z;
+          for (const sgn of [1, -1]) {
+            const bx = cx + dirx * (st.back + 0.55) * sgn;
+            const bz = cz + dirz * (st.back + 0.55) * sgn;
+            q.setFromEuler(new THREE.Euler(0, -ang, 0));
+            const bars = Math.max(3, Math.floor(r.w / 0.62));
+            for (let b = 0; b < bars; b++) {
+              const off = (b - (bars - 1) / 2) * 0.62;
+              m4.compose(new THREE.Vector3(bx + Math.sin(ang) * off, LAND + 0.12, bz - Math.cos(ang) * off), q, one);
+              mats4.push(m4.clone());
+            }
+          }
+        }
+      }
+      if (mats4.length > 0) {
+        const zebra = new THREE.InstancedMesh(new THREE.BoxGeometry(0.85, 0.03, 0.3), new THREE.MeshBasicMaterial({ color: 0xf4f1e6, transparent: true, opacity: 0.85 }), mats4.length);
+        mats4.forEach((mm, i) => zebra.setMatrixAt(i, mm));
+        scene.add(zebra);
+      }
+    }
+    // signal heads: two per junction (one per approach), lamps lit by phase
+    interface LightHead { ix: number; slot: 0 | 1; red: THREE.MeshStandardMaterial; yel: THREE.MeshStandardMaterial; grn: THREE.MeshStandardMaterial }
+    const lightHeads: LightHead[] = [];
+    {
+      const poleMat = new THREE.MeshStandardMaterial({ color: 0x22262b, roughness: 0.7, metalness: 0.4 });
+      const lampGeo = new THREE.SphereGeometry(0.1, 8, 8);
+      for (let ii = 0; ii < ixs.length; ii++) {
+        const ix = ixs[ii]!;
+        for (const r of roads) {
+          const st = roadStops.get(r)?.find((s) => s.ix === ii);
+          if (!st) continue;
+          const ang = Math.atan2(r.z2 - r.z1, r.x2 - r.x1);
+          // pole on the right-hand corner of this approach
+          const pxv = ix.x + Math.cos(ang) * (st.back + 1.7) + Math.sin(ang) * (r.w / 2 + 0.75);
+          const pzv = ix.z + Math.sin(ang) * (st.back + 1.7) - Math.cos(ang) * (r.w / 2 + 0.75);
+          const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 2.5, 6), poleMat);
+          pole.position.set(pxv, LAND + 1.25, pzv);
+          scene.add(pole);
+          const headBox = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.86, 0.22), poleMat);
+          headBox.position.set(pxv, LAND + 2.72, pzv);
+          headBox.rotation.y = -ang;
+          scene.add(headBox);
+          const mkLampMat = (em: number) => new THREE.MeshStandardMaterial({ color: 0x14181d, roughness: 0.4, emissive: em, emissiveIntensity: 0.12 });
+          const red = mkLampMat(0xff2a1e);
+          const yel = mkLampMat(0xffb020);
+          const grn = mkLampMat(0x2ee66b);
+          const lampOffs: [THREE.MeshStandardMaterial, number][] = [[red, 0.28], [yel, 0], [grn, -0.28]];
+          for (const [lm, dy] of lampOffs) {
+            const lamp = new THREE.Mesh(lampGeo, lm);
+            lamp.position.set(pxv - Math.cos(ang) * 0.13, LAND + 2.72 + dy, pzv - Math.sin(ang) * 0.13);
+            scene.add(lamp);
+          }
+          lightHeads.push({ ix: ii, slot: st.slot, red, yel, grn });
+        }
+      }
     }
 
     /* ---- streetlights along the roads (glow wakes up at dusk) ---- */
@@ -1017,7 +1260,7 @@ export function MapView(p: Props) {
     const spots: { x: number; z: number; h: number; c: THREE.Color; w?: number }[] = [];
     const palette = [0xe8e0cc, 0xd8cfb8, 0xc9d4d8, 0xe3d3c2, 0xd5dde3, 0xe9dcc8, 0xcfc4ae];
     const towerPalette = [0xb9cbd6, 0xa7bccb, 0xc9d4d8, 0x9fb4c2, 0xd5dde3];
-    const sky = SKYLINE[cityKey] ?? {};
+    const sky = (SKYLINE as Record<string, Record<string, [number, number]>>)[cityKey] ?? {};
     const skyRich = Object.keys(sky).length >= 60;
     for (let gx = -36; gx <= 36; gx += 2.8) {
       for (let gz = -20; gz <= 14; gz += 2.8) {
@@ -1058,6 +1301,66 @@ export function MapView(p: Props) {
     filler.castShadow = true;
     filler.receiveShadow = true;
     scene.add(filler);
+
+    /* ---- street frontage: shop rows lining the roads ----
+       The corridors get street walls: small shop blocks shoulder to
+       shoulder along both pavements, awnings and lit signs facing the
+       road, windows that light up at night with the towers. This is what
+       makes a street read as a street at ground level. Door points are
+       kept in shopPts — pedestrians below walk in and out of them. */
+    const shopPts: { x: number; z: number; dx: number; dz: number }[] = [];
+    {
+      const shopPalette = [0xe8dcc4, 0xdcc7a8, 0xc9d4d8, 0xe3cdb4, 0xd8e0d2, 0xead9c2, 0xd5c6e0, 0xf0dfc0];
+      let shopCount = 0;
+      for (const r of roads) {
+        if (shopCount >= 120) break;
+        const len = roadLen(r);
+        const ang = Math.atan2(r.z2 - r.z1, r.x2 - r.x1);
+        const steps = Math.floor(len / 3.3);
+        for (let i = 1; i < steps && shopCount < 120; i++) {
+          for (const side of [1, -1]) {
+            if (shopCount >= 120) break;
+            if (rnd() < 0.3) continue;
+            const t = (i + (rnd() - 0.5) * 0.3) / steps;
+            const off = r.w / 2 + 1.85;
+            const x = r.x1 + (r.x2 - r.x1) * t + Math.sin(ang) * off * side;
+            const z = r.z1 + (r.z2 - r.z1) * t - Math.cos(ang) * off * side;
+            if (z > coastZ(cityKey, x) - 1.4) continue;
+            if (nearLoc(x, z) || nearMountain(x, z) || nearLake(x, z)) continue;
+            if (roads.some((o) => o !== r && (() => { const dx = o.x2 - o.x1; const dz = o.z2 - o.z1; const tt = Math.max(0, Math.min(1, ((x - o.x1) * dx + (z - o.z1) * dz) / (dx * dx + dz * dz))); return Math.hypot(x - (o.x1 + dx * tt), z - (o.z1 + dz * tt)) < o.w / 2 + 1.5; })())) continue;
+            if (shopPts.some((s) => Math.hypot(s.x - x, s.z - z) < 2.3)) continue;
+            const gh = 1.5 + rnd() * 2.1;
+            const gw = 2 + rnd() * 0.9;
+            const g = new THREE.Group();
+            const bodyMatS = new THREE.MeshStandardMaterial({ color: shopPalette[Math.floor(rnd() * shopPalette.length)] ?? 0xe8dcc4, roughness: 0.85, emissive: 0xffc873, emissiveMap: winTex, emissiveIntensity: 0 });
+            buildingMats.push(bodyMatS);
+            const bodyS = new THREE.Mesh(new THREE.BoxGeometry(gw, gh, 1.6), bodyMatS);
+            bodyS.position.y = gh / 2;
+            bodyS.castShadow = true;
+            bodyS.receiveShadow = true;
+            g.add(bodyS);
+            // awning + sign strip on the road-facing side: with the group
+            // rotation chosen below, the street face is local +z for both
+            // sides of the road
+            const awnMatS = new THREE.MeshStandardMaterial({ color: new THREE.Color(shopPalette[Math.floor(rnd() * shopPalette.length)] ?? 0xe8dcc4).multiplyScalar(0.7), roughness: 0.8, emissive: 0xffb35c, emissiveIntensity: 0.1 });
+            const awnS = new THREE.Mesh(new THREE.BoxGeometry(gw * 0.82, 0.07, 0.6), awnMatS);
+            awnS.position.set(0, 1.32, 1.06);
+            awnS.rotation.x = 0.35;
+            g.add(awnS);
+            const signMatS = new THREE.MeshStandardMaterial({ color: 0x1a1216, roughness: 0.5, emissive: [0xe63a1f, 0xf5b942, 0x2dd4bf, 0xec4899, 0x3b82f6][Math.floor(rnd() * 5)] ?? 0xe63a1f, emissiveIntensity: 0.4 });
+            const signS = new THREE.Mesh(new THREE.BoxGeometry(Math.min(1.9, gw * 0.7), 0.42, 0.08), signMatS);
+            signS.position.set(0, Math.min(gh - 0.35, 1.95), 0.84);
+            g.add(signS);
+            neonMats.push(signMatS);
+            g.position.set(x, LAND, z);
+            g.rotation.y = -ang + (side > 0 ? 0 : Math.PI);
+            scene.add(g);
+            shopPts.push({ x, z, dx: x - Math.sin(ang) * side * 1.15, dz: z + Math.cos(ang) * side * 1.15 });
+            shopCount++;
+          }
+        }
+      }
+    }
 
     // trees (instanced cones)
     const treeSpots: { x: number; z: number; s: number }[] = [];
@@ -1133,8 +1436,12 @@ export function MapView(p: Props) {
     rainPts.visible = false;
     scene.add(rainPts);
 
-    /* ---- traffic ---- */
-    interface Car { road: Road; t: number; speed: number; dir: 1 | -1; lane: number }
+    /* ---- traffic: cars that drive like traffic ----
+       Every vehicle eases toward its cruise speed, brakes for a red (or
+       late-amber) light at the stop line ahead, and queues behind the
+       vehicle in front — the flow visibly bunches at junctions and
+       releases on green, like the real 深南大道 at rush hour. */
+    interface Car { road: Road; t: number; speed: number; cur: number; dir: 1 | -1; lane: number }
     const cars: Car[] = [];
     const carMesh = new THREE.InstancedMesh(
       new THREE.BoxGeometry(1.15, 0.5, 0.62),
@@ -1144,11 +1451,146 @@ export function MapView(p: Props) {
     const carColors = [0xffffff, 0xe63a1f, 0x2563eb, 0xf5b942, 0x222831, 0x2dd4bf];
     for (let i = 0; i < 30; i++) {
       const road = roads[Math.floor(rnd() * roads.length)] ?? roads[0]!;
-      cars.push({ road, t: rnd(), speed: 0.02 + rnd() * 0.035, dir: rnd() > 0.5 ? 1 : -1, lane: (rnd() - 0.5) * 1.1 });
+      const sp = 0.02 + rnd() * 0.035;
+      cars.push({ road, t: rnd(), speed: sp, cur: sp, dir: rnd() > 0.5 ? 1 : -1, lane: (rnd() - 0.5) * 1.1 });
       carMesh.setColorAt(i, new THREE.Color(carColors[i % carColors.length]));
     }
     carMesh.castShadow = true;
     scene.add(carMesh);
+    /* one traffic step for anything with wheels: returns the speed to
+       ease toward this frame (lights + car-following), the caller eases
+       cur toward it and advances t */
+    const trafficWant = (v: Car, tSec: number): number => {
+      let want = v.speed;
+      const len = roadLen(v.road);
+      const stops = roadStops.get(v.road);
+      if (stops) {
+        for (const st of stops) {
+          const stopT = st.t - v.dir * (st.back / len);
+          const aheadT = (stopT - v.t) * v.dir;
+          if (aheadT < -0.004) continue; // already over the line
+          const dW = aheadT * len;
+          if (dW > 7) continue;
+          const green = tlGreen(st.ix, st.slot, tSec);
+          const yellow = tlYellow(st.ix, st.slot, tSec);
+          if (!green && !(yellow && dW < 1.1)) {
+            want = Math.min(want, v.speed * THREE.MathUtils.clamp((dW - 0.55) / 3.2, 0, 1));
+          }
+        }
+      }
+      for (const o of cars) {
+        if (o === v || o.road !== v.road || o.dir !== v.dir || Math.abs(o.lane - v.lane) > 0.85) continue;
+        const gapW = (o.t - v.t) * v.dir * len;
+        if (gapW > 0 && gapW < 2.6) want = Math.min(want, v.speed * THREE.MathUtils.clamp((gapW - 1.25) / 1.3, 0, 1));
+      }
+      return want;
+    };
+    const trafficAdvance = (v: Car, dt: number, tSec: number) => {
+      const want = trafficWant(v, tSec);
+      if (want < v.cur) v.cur = Math.max(want, v.cur - dt * v.speed * 1.7);
+      else v.cur = Math.min(want, v.cur + dt * v.speed * 0.45);
+      v.t += v.cur * dt * v.dir;
+      if (v.t > 1) v.t -= 1;
+      if (v.t < 0) v.t += 1;
+    };
+    /* 阿强 the delivery rider is part of the traffic: his scooter loops
+       the roads with the flow, stops at the same lights, and carries his
+       name over his head — an NPC earning a living, not a prop. */
+    const riderCar: Car = { road: roads[1] ?? roads[0]!, t: 0.3, speed: 0.045, cur: 0.045, dir: 1, lane: -0.5 };
+    const riderG = new THREE.Group();
+    {
+      const tyreM = new THREE.MeshStandardMaterial({ color: 0x22262b, roughness: 0.9 });
+      const sBody = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.32, 1.15), new THREE.MeshStandardMaterial({ color: 0xf5b301, roughness: 0.45, metalness: 0.25 }));
+      sBody.position.y = 0.48;
+      riderG.add(sBody);
+      const sBox = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.45, 0.5), new THREE.MeshStandardMaterial({ color: 0xe8e4da, roughness: 0.6 }));
+      sBox.position.set(0, 0.85, -0.42);
+      riderG.add(sBox);
+      for (const wz of [-0.5, 0.5]) {
+        const wm = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.1, 10), tyreM);
+        wm.rotation.z = Math.PI / 2;
+        wm.position.set(0, 0.26, wz);
+        riderG.add(wm);
+      }
+      // the rider himself, seated: torso, helmet, legs bent to the boards
+      const rTorso = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.6, 0.32), new THREE.MeshStandardMaterial({ color: 0xf5b301, roughness: 0.7 }));
+      rTorso.position.set(0, 1.22, -0.08);
+      riderG.add(rTorso);
+      const rHead = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 8), new THREE.MeshStandardMaterial({ color: 0xf5b301, roughness: 0.35 }));
+      rHead.position.set(0, 1.78, -0.08);
+      riderG.add(rHead);
+      for (const lx of [-0.15, 0.15]) {
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.55, 0.17), new THREE.MeshStandardMaterial({ color: 0x2e3440, roughness: 0.85 }));
+        leg.position.set(lx, 0.62, 0.18);
+        leg.rotation.x = -0.7;
+        riderG.add(leg);
+      }
+      const tag = emojiSprite("🛵", 0xff8a00);
+      tag.scale.set(1.5, 1.5, 1);
+      tag.position.y = 2.5;
+      riderG.add(tag);
+      riderG.traverse((o) => { if (o instanceof THREE.Mesh) o.castShadow = true; });
+      scene.add(riderG);
+    }
+
+    /* ---- pedestrians: the pavement population ----
+       Two dozen unnamed citizens with small lives: they walk the
+       pavements, wait at the kerb for their green, cross on the zebra,
+       turn at junctions onto other streets, step into shops and come out
+       a while later with their errands done. Light-weight figures (no
+       accessories, no shadows) so the street can afford a crowd. */
+    interface Ped {
+      g: THREE.Group; legL: THREE.Group; legR: THREE.Group; armL: THREE.Group; armR: THREE.Group;
+      road: Road; t: number; dir: 1 | -1; side: 1 | -1; speed: number; phase: number;
+      mode: "walk" | "wait" | "cross" | "toshop" | "inside" | "back";
+      cool: number; waitSide: number;
+      fx: number; fz: number; tx2: number; tz2: number; u: number; dur: number;
+      shop?: { dx: number; dz: number }; insideT: number; crossStop?: IxStop;
+    }
+    const peds: Ped[] = [];
+    {
+      const skinM = new THREE.MeshStandardMaterial({ color: 0xf2c79b, roughness: 0.7 });
+      const pedPalette = [0xe63a1f, 0x2563eb, 0x22c55e, 0xec4899, 0xf5b942, 0x8b5cf6, 0x14b8a6, 0xf97316, 0x64748b, 0xdbe7f5];
+      const mkPedFigure = (shirtHex: number, pantsHex: number) => {
+        const g = new THREE.Group();
+        const shirt = new THREE.MeshStandardMaterial({ color: shirtHex, roughness: 0.75 });
+        const pants = new THREE.MeshStandardMaterial({ color: pantsHex, roughness: 0.9 });
+        const mkLimbP = (m: THREE.Material, w: number, len: number) => {
+          const pivot = new THREE.Group();
+          const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, len, w + 0.02), m);
+          mesh.position.y = -len / 2;
+          pivot.add(mesh);
+          return pivot;
+        };
+        const legL = mkLimbP(pants, 0.16, 0.66); legL.position.set(-0.12, 0.7, 0); g.add(legL);
+        const legR = mkLimbP(pants, 0.16, 0.66); legR.position.set(0.12, 0.7, 0); g.add(legR);
+        const torso = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.58, 0.3), shirt); torso.position.y = 1.0; g.add(torso);
+        const armL = mkLimbP(shirt, 0.14, 0.54); armL.position.set(-0.33, 1.26, 0); g.add(armL);
+        const armR = mkLimbP(shirt, 0.14, 0.54); armR.position.set(0.33, 1.26, 0); g.add(armR);
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.24, 10, 8), skinM); head.position.y = 1.5; g.add(head);
+        const hair = new THREE.Mesh(new THREE.SphereGeometry(0.25, 10, 8), new THREE.MeshStandardMaterial({ color: [0x2b2118, 0x4a3226, 0x1c1c22, 0x6b4a2f][Math.floor(rnd() * 4)] ?? 0x2b2118, roughness: 0.95 }));
+        hair.position.y = 1.57; hair.scale.y = 0.72; g.add(hair);
+        return { g, legL, legR, armL, armR };
+      };
+      const PED_COUNT = 22;
+      for (let i = 0; i < PED_COUNT; i++) {
+        const road = roads[Math.floor(rnd() * roads.length)] ?? roads[0]!;
+        const fig = mkPedFigure(pedPalette[Math.floor(rnd() * pedPalette.length)] ?? 0x2563eb, [0x2e3440, 0x3a3f4a, 0x4a3226, 0x374151][Math.floor(rnd() * 4)] ?? 0x2e3440);
+        fig.g.scale.setScalar(0.92);
+        scene.add(fig.g);
+        peds.push({
+          ...fig,
+          road, t: 0.05 + rnd() * 0.9, dir: rnd() > 0.5 ? 1 : -1, side: rnd() > 0.5 ? 1 : -1,
+          speed: 0.85 + rnd() * 0.55, phase: rnd() * 6, mode: "walk", cool: 0, waitSide: 0,
+          fx: 0, fz: 0, tx2: 0, tz2: 0, u: 0, dur: 1, insideT: 0,
+        });
+      }
+    }
+    const pedPoint = (road: Road, t: number, side: number) => {
+      const ang = Math.atan2(road.z2 - road.z1, road.x2 - road.x1);
+      const off = (road.w / 2 + 0.5) * side;
+      return { x: road.x1 + (road.x2 - road.x1) * t + Math.sin(ang) * off, z: road.z1 + (road.z2 - road.z1) * t - Math.cos(ang) * off, ang };
+    };
 
     /* ---- player trail: a dashed line tracing the current trip ----
        Points are sampled while the player figure moves; choosing a new
@@ -1457,6 +1899,35 @@ export function MapView(p: Props) {
             bus.add(wm);
           }
           veh.add(bus);
+          // your own car for 自驾： same honest glass cabin as the taxi (you
+          // sit inside it, on the seat), but painted in YOUR colour and no
+          // taxi sign — the body material is kept so it can be re-tinted
+          const drive = new THREE.Group();
+          drive.name = "veh-drive";
+          const dBodyMat = new THREE.MeshStandardMaterial({ color: 0xe63a1f, roughness: 0.32, metalness: 0.35 });
+          const dBody = new THREE.Mesh(new THREE.BoxGeometry(1.06, 0.52, 2.2), dBodyMat);
+          dBody.position.set(0, 0.55, 0);
+          dBody.castShadow = true;
+          drive.add(dBody);
+          const dCab = new THREE.Mesh(new THREE.BoxGeometry(0.94, 1.2, 1.5), new THREE.MeshStandardMaterial({ color: 0xbfe3f2, roughness: 0.15, metalness: 0.3, transparent: true, opacity: 0.45 }));
+          dCab.position.set(0, 1.4, 0);
+          drive.add(dCab);
+          const dRoof = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.06, 1.55), dBodyMat);
+          dRoof.position.set(0, 2.03, 0);
+          drive.add(dRoof);
+          const dSeat = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.4, 0.5), new THREE.MeshStandardMaterial({ color: 0x374151, roughness: 0.9 }));
+          dSeat.position.set(0, 0.62, 0.05);
+          drive.add(dSeat);
+          const dSeatBack = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.55, 0.12), dSeat.material);
+          dSeatBack.position.set(0, 0.95, -0.24);
+          drive.add(dSeatBack);
+          for (const wx of [-0.53, 0.53]) for (const wz of [-0.8, 0.8]) {
+            const wm = mkWheelZ(0.28, 0.1);
+            wm.position.set(wx, 0.28, wz);
+            drive.add(wm);
+          }
+          veh.add(drive);
+          (v.userData as { driveMat?: THREE.MeshStandardMaterial }).driveMat = dBodyMat;
           v.add(veh);
           (v.userData as { veh?: THREE.Group }).veh = veh;
         }
@@ -1596,6 +2067,7 @@ export function MapView(p: Props) {
     const v3 = new THREE.Vector3();
     let raf = 0;
     let declutterTick = 0;
+    let greetTick = 0;
     let last = performance.now();
     const clockStart = performance.now();
 
@@ -1689,12 +2161,20 @@ export function MapView(p: Props) {
       }
       water.position.y = Math.sin(tSec * 0.7) * 0.05;
 
+      // traffic lights: lamps follow the same phase the cars obey
+      for (const lh of lightHeads) {
+        const ph = tlPhaseAt(lh.ix, tSec);
+        const green = lh.slot === 0 ? ph < 8 : ph >= 9.2 && ph < 17.2;
+        const yellow = lh.slot === 0 ? ph >= 8 && ph < 9.2 : ph >= 17.2;
+        lh.grn.emissiveIntensity = green ? 2.4 : 0.12;
+        lh.yel.emissiveIntensity = !green && yellow ? 2.4 : 0.12;
+        lh.red.emissiveIntensity = !green && !yellow ? 2.4 : 0.12;
+      }
+
       // traffic
       {
         cars.forEach((car, i) => {
-          car.t += car.speed * dt * car.dir;
-          if (car.t > 1) car.t -= 1;
-          if (car.t < 0) car.t += 1;
+          trafficAdvance(car, dt, tSec);
           const r = car.road;
           const ang = Math.atan2(r.z2 - r.z1, r.x2 - r.x1);
           const pxv = r.x1 + (r.x2 - r.x1) * car.t + Math.sin(ang) * car.lane;
@@ -1704,6 +2184,144 @@ export function MapView(p: Props) {
           carMesh.setMatrixAt(i, carMat4);
         });
         carMesh.instanceMatrix.needsUpdate = true;
+        // 阿强's scooter rides the same rules (it just isn't in the queue
+        // check — one scooter slipping past a queue is true to life)
+        trafficAdvance(riderCar, dt, tSec);
+        {
+          const r = riderCar.road;
+          const ang = Math.atan2(r.z2 - r.z1, r.x2 - r.x1);
+          riderG.position.set(r.x1 + (r.x2 - r.x1) * riderCar.t + Math.sin(ang) * riderCar.lane, LAND + 0.1, r.z1 + (r.z2 - r.z1) * riderCar.t - Math.cos(ang) * riderCar.lane);
+          riderG.rotation.y = -ang + (riderCar.dir < 0 ? Math.PI : 0) + Math.PI / 2;
+        }
+      }
+
+      // pedestrians: walk the pavements, cross on green, duck into shops
+      for (const pd of peds) {
+        const len = roadLen(pd.road);
+        let px = 0, pz = 0, heading = 0, walking = false;
+        pd.cool = Math.max(0, pd.cool - dt);
+        if (pd.mode === "walk") {
+          pd.t += (pd.speed / len) * dt * pd.dir;
+          if (pd.t > 0.985) { pd.t = 0.985; pd.dir = -1 as const; }
+          if (pd.t < 0.015) { pd.t = 0.015; pd.dir = 1 as const; }
+          const pt = pedPoint(pd.road, pd.t, pd.side);
+          px = pt.x; pz = pt.z;
+          heading = Math.atan2((pd.road.x2 - pd.road.x1) * pd.dir, (pd.road.z2 - pd.road.z1) * pd.dir);
+          walking = true;
+          // at a junction, life happens: cross, turn, or duck into a shop
+          if (pd.cool <= 0) {
+            const stops = roadStops.get(pd.road);
+            const st = stops?.find((s) => Math.abs(s.t - pd.t) < (1.6 / len));
+            if (st) {
+              pd.cool = 2.2;
+              const roll = Math.random();
+              if (roll < 0.3) {
+                // cross THIS road at the junction — wait for the ped green
+                const from = pedPoint(pd.road, pd.t, pd.side);
+                const to = pedPoint(pd.road, pd.t, -pd.side);
+                pd.fx = from.x; pd.fz = from.z; pd.tx2 = to.x; pd.tz2 = to.z;
+                pd.crossStop = st;
+                pd.u = 0;
+                pd.dur = Math.max(0.7, Math.hypot(to.x - from.x, to.z - from.z) / (pd.speed * 1.25));
+                pd.mode = tlPedGreen(st.ix, st.slot, tSec) ? "cross" : "wait";
+              } else if (roll < 0.55) {
+                // turn onto the crossing street and keep walking
+                pd.road = st.other;
+                pd.t = THREE.MathUtils.clamp(st.otherT + (Math.random() > 0.5 ? 0.012 : -0.012), 0.02, 0.98);
+                pd.dir = Math.random() > 0.5 ? 1 : -1;
+              } else if (roll < 0.68 && shopPts.length > 0) {
+                const near = shopPts.filter((s) => Math.hypot(s.x - px, s.z - pz) < 4.2);
+                const shop = near[Math.floor(Math.random() * near.length)];
+                if (shop) {
+                  pd.shop = shop;
+                  pd.fx = px; pd.fz = pz; pd.tx2 = shop.dx; pd.tz2 = shop.dz;
+                  pd.u = 0;
+                  pd.dur = Math.max(0.4, Math.hypot(shop.dx - px, shop.dz - pz) / pd.speed);
+                  pd.mode = "toshop";
+                }
+              }
+            }
+          }
+        } else if (pd.mode === "wait") {
+          const pt = pedPoint(pd.road, pd.t, pd.side);
+          px = pt.x; pz = pt.z;
+          heading = Math.atan2(pd.tx2 - px, pd.tz2 - pz);
+          if (pd.crossStop && tlPedGreen(pd.crossStop.ix, pd.crossStop.slot, tSec)) pd.mode = "cross";
+        } else if (pd.mode === "cross") {
+          pd.u += dt / pd.dur;
+          const u = Math.min(1, pd.u);
+          px = pd.fx + (pd.tx2 - pd.fx) * u;
+          pz = pd.fz + (pd.tz2 - pd.fz) * u;
+          heading = Math.atan2(pd.tx2 - pd.fx, pd.tz2 - pd.fz);
+          walking = true;
+          if (u >= 1) { pd.side = (pd.side * -1) as 1 | -1; pd.mode = "walk"; pd.cool = 1.6; }
+        } else if (pd.mode === "toshop") {
+          pd.u += dt / pd.dur;
+          const u = Math.min(1, pd.u);
+          px = pd.fx + (pd.tx2 - pd.fx) * u;
+          pz = pd.fz + (pd.tz2 - pd.fz) * u;
+          heading = Math.atan2(pd.tx2 - pd.fx, pd.tz2 - pd.fz);
+          walking = true;
+          if (u >= 1) { pd.mode = "inside"; pd.insideT = 3.5 + Math.random() * 6; pd.g.visible = false; }
+        } else if (pd.mode === "inside") {
+          pd.insideT -= dt;
+          if (pd.insideT <= 0 && pd.shop) {
+            pd.g.visible = true;
+            const pt = pedPoint(pd.road, pd.t, pd.side);
+            pd.fx = pd.shop.dx; pd.fz = pd.shop.dz; pd.tx2 = pt.x; pd.tz2 = pt.z;
+            pd.u = 0;
+            pd.dur = Math.max(0.3, Math.hypot(pt.x - pd.shop.dx, pt.z - pd.shop.dz) / pd.speed);
+            pd.mode = "back";
+          }
+          continue;
+        } else {
+          // back: out of the shop, rejoin the pavement
+          pd.u += dt / pd.dur;
+          const u = Math.min(1, pd.u);
+          px = pd.fx + (pd.tx2 - pd.fx) * u;
+          pz = pd.fz + (pd.tz2 - pd.fz) * u;
+          heading = Math.atan2(pd.tx2 - pd.fx, pd.tz2 - pd.fz);
+          walking = true;
+          if (u >= 1) { pd.mode = "walk"; pd.cool = 1.2; }
+        }
+        pd.phase += dt * (walking ? 7.5 : 0);
+        const swing = walking ? Math.sin(pd.phase) * 0.55 : 0;
+        pd.legL.rotation.x = swing;
+        pd.legR.rotation.x = -swing;
+        pd.armL.rotation.x = -swing * 0.7;
+        pd.armR.rotation.x = swing * 0.7;
+        pd.g.position.set(px, LAND + 0.08 + (walking ? Math.abs(Math.sin(pd.phase)) * 0.05 : Math.sin(tSec * 1.7 + pd.phase) * 0.012), pz);
+        pd.g.rotation.y = heading;
+      }
+
+      // street greetings: when two named neighbours pass on the pavement
+      // one of them says something (and they greet YOU when you pass) —
+      // the city acknowledging itself, Sleeping-Dogs style street life
+      greetTick++;
+      if (greetTick % 40 === 0) {
+        const npcActors = [...actorsRef.current.values()].filter((a) => a.key.startsWith("npc-"));
+        const selfA = actorsRef.current.get("self");
+        const tNow = performance.now();
+        for (let i = 0; i < npcActors.length; i++) {
+          const a = npcActors[i]!;
+          if (a.greetUntil && a.greetUntil > tNow) continue;
+          if (selfA && Math.hypot(a.x - selfA.x, a.z - selfA.z) < 2.3 && Math.random() < 0.4) {
+            a.greet = GREETS_PLAYER[Math.floor(Math.random() * GREETS_PLAYER.length)];
+            a.greetUntil = tNow + 2600;
+            continue;
+          }
+          for (let j = i + 1; j < npcActors.length; j++) {
+            const b = npcActors[j]!;
+            if (Math.hypot(a.x - b.x, a.z - b.z) < 2.3 && Math.random() < 0.3) {
+              const speaker = Math.random() > 0.5 ? a : b;
+              if (!speaker.greetUntil || speaker.greetUntil <= tNow) {
+                speaker.greet = GREETS[Math.floor(Math.random() * GREETS.length)];
+                speaker.greetUntil = tNow + 2600;
+              }
+              break;
+            }
+          }
+        }
       }
 
       // actors
@@ -1722,12 +2340,17 @@ export function MapView(p: Props) {
           // behaviour by identity: stay roles keep to their corner (摊主守摊、
           // 同事守工位、邻居在家附近), patrol roles roam a beat (保安、保洁),
           // commuters cross the city between stations and workplaces (骑手、
-          // 通勤族), everyone else wanders freely.
+          // 通勤族). Everyone's small movements cluster around their
+          // schedule anchor for this hour — they live in a neighbourhood,
+          // with the occasional longer stroll somewhere they like.
           const chance = a.behavior === "stay" ? 0.0016 : a.behavior === "patrol" ? 0.006 : a.behavior === "commute" ? 0.0032 : 0.004;
           if (Math.random() < chance) {
             if (a.behavior === "stay") {
               a.tx += (Math.random() - 0.5) * 2.4;
               a.tz += (Math.random() - 0.5) * 2;
+            } else if (a.ax !== undefined && a.az !== undefined && Math.random() < 0.8) {
+              a.tx = a.ax + (Math.random() - 0.5) * 3.4;
+              a.tz = a.az + (Math.random() - 0.5) * 2.8;
             } else {
               const loc = locsNow[Math.floor(Math.random() * locsNow.length)];
               if (loc) {
@@ -1741,7 +2364,9 @@ export function MapView(p: Props) {
         const moving = dist > 0.06;
         a.blend += ((moving ? 1 : 0) - a.blend) * Math.min(1, dt * 7);
         if (moving) {
-          a.phase += dt * (a.isSelf ? 10.5 : 8.5);
+          // stride cadence follows the actual travel speed: a walker
+          // strolls, a runner's legs blur, a commuter hurries
+          a.phase += dt * 1.62 * (a.speed || 4.2);
           const targetHeading = Math.atan2(dx, dz);
           let dh = targetHeading - a.heading;
           while (dh > Math.PI) dh -= Math.PI * 2;
@@ -1772,7 +2397,7 @@ export function MapView(p: Props) {
           const bodyG = (view.userData as { body?: THREE.Group }).body;
           if (veh && bodyG) {
             const mode = propsRef.current.travelModeId ?? "walk";
-            const wantMode = mode === "bike" || mode === "moto" || mode === "taxi" || mode === "bus" ? mode : null;
+            const wantMode = mode === "bike" || mode === "moto" || mode === "taxi" || mode === "bus" || mode === "drive" ? mode : null;
             if (wantMode) a.rideMode = wantMode;
             const ridingNow = wantMode !== null && moving;
             a.rideBlend = (a.rideBlend ?? 0) + ((ridingNow ? 1 : 0) - (a.rideBlend ?? 0)) * Math.min(1, dt * 6);
@@ -1782,7 +2407,7 @@ export function MapView(p: Props) {
             const limbs0 = (view.userData as { limbs?: ActorLimbs }).limbs;
             if (veh.visible && limbs0) {
               for (const child of veh.children) child.visible = child.name === `veh-${rm}`;
-              const seat = rm === "bike" ? { y: -0.14, s: 1 } : rm === "moto" ? { y: -0.1, s: 1 } : rm === "taxi" ? { y: 0.03, s: 0.9 } : { y: 0.18, s: 0.9 };
+              const seat = rm === "bike" ? { y: -0.14, s: 1 } : rm === "moto" ? { y: -0.1, s: 1 } : rm === "taxi" || rm === "drive" ? { y: 0.03, s: 0.9 } : { y: 0.18, s: 0.9 };
               bodyG.position.y = seat.y * rb;
               const sc = 1 + (seat.s - 1) * rb;
               bodyG.scale.set(sc, sc, sc);
@@ -1833,10 +2458,17 @@ export function MapView(p: Props) {
           mats.dark.color.copy(shirtTmp.setHex(a.shirt).multiplyScalar(0.78));
           mats.pants.color.setHex(a.pants);
         }
+        // your own car wears your identity colour
+        const driveMat = (view.userData as { driveMat?: THREE.MeshStandardMaterial }).driveMat;
+        if (driveMat) driveMat.color.setHex(a.color);
         const acc = (view.userData as { acc?: THREE.Group }).acc;
         if (acc) for (const child of acc.children) child.visible = child.name === `acc-${a.accessory}`;
         const chip = actorChips.get(a.key);
-        if (chip) { const t = a.isSelf ? `${a.name}（你）` : a.name; if (chip.src !== t) { chip.src = t; chip.el.textContent = t; } }
+        if (chip) {
+          const greeting = a.greet && a.greetUntil && performance.now() < a.greetUntil ? ` ${a.greet}` : "";
+          const t = a.isSelf ? `${a.name}（你）` : `${a.name}${greeting}`;
+          if (chip.src !== t) { chip.src = t; chip.el.textContent = t; }
+        }
       }
       for (const key of Array.from(actorViews.keys())) {
         if (!actorsRef.current.has(key)) {
@@ -1896,6 +2528,13 @@ export function MapView(p: Props) {
       const cutEase = cam.cut * cam.cut;
       const wantDist = cam.dist * (1 - pulse * 0.16) * (1 - cutEase * 0.1);
       cam.distCur += (wantDist - cam.distCur) * Math.min(1, dt * 3.2);
+      if (streetRef.current) {
+        // street level: near-horizontal lens, close behind the player —
+        // the follow logic above already tracks the figure, so the world
+        // streams past at eye height like walking the real street
+        cam.pol += (1.47 - cam.pol) * Math.min(1, dt * 3);
+        cam.distCur += (9.5 - cam.distCur) * Math.min(1, dt * 3);
+      }
       const distNow = cam.distCur;
       const azNow = cam.az + cutEase * 0.5;
       const cx = cam.tx + Math.sin(azNow) * Math.sin(cam.pol) * distNow;
@@ -2100,6 +2739,18 @@ export function MapView(p: Props) {
     camRef.current.dist = fitDistRef.current;
     setZoomPct(100);
   };
+  const toggleStreetCam = () => {
+    const next = !streetRef.current;
+    streetRef.current = next;
+    setStreetCam(next);
+    if (next) {
+      autoFitRef.current = false;
+      setCine(true);
+    } else {
+      camRef.current.pol = CAM_POL;
+      resetCam();
+    }
+  };
 
   /* ---- minimap: world bounds shared by the draw + click mapping ---- */
   const MINI = { xMin: -40, xMax: 40, zMin: -25, zMax: 19 };
@@ -2234,6 +2885,7 @@ export function MapView(p: Props) {
         <button type="button" aria-label="跳到夜晚" onClick={() => jumpToPhase(0.93)} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow">🌙</button>
         <button type="button" aria-label="回到真实时间：天色按深圳/惠州当地此刻走" onClick={backToRealTime} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow">🕐</button>
         <button type="button" aria-label={demo ? "停止延时演示" : "延时演示：一昼夜30秒，看昼夜光影全程"} aria-pressed={demo} onClick={toggleDemo} className={`grid h-9 w-9 place-items-center rounded-full border text-base shadow ${demo ? "border-[var(--accent)] bg-[#14202b]/95" : "border-black/40 bg-[#fffdf8]/95"}`}>🎥</button>
+        <button type="button" aria-label={streetCam ? "回到全景视角" : "街景视角：贴到街面上，站在街道里看车流、红绿灯和行人"} aria-pressed={streetCam} onClick={toggleStreetCam} className={`grid h-9 w-9 place-items-center rounded-full border text-base shadow ${streetCam ? "border-[var(--accent)] bg-[#14202b]/95" : "border-black/40 bg-[#fffdf8]/95"}`}>🚶</button>
         <button type="button" aria-label={cine ? "关闭电影镜头" : "开启电影镜头"} aria-pressed={cine} onClick={() => setCine((c) => !c)} className={`grid h-9 w-9 place-items-center rounded-full border text-base shadow ${cine ? "border-[var(--accent)] bg-[#14202b]/95" : "border-black/40 bg-[#fffdf8]/95"}`}>🎬</button>
         <span className="grid h-9 min-w-9 place-items-center rounded-full border border-black/40 bg-[#14202b]/90 px-2 text-[11px] font-black text-white shadow" aria-label={`当前缩放 ${zoomPct}%`} title="当前缩放比例（⌂ 回到 100%）">{zoomPct}%</span>
         <button type="button" aria-label="放大地图" onClick={() => zoomBy(0.78)} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">＋</button>
@@ -2242,14 +2894,14 @@ export function MapView(p: Props) {
         <button type="button" aria-label="重置视角" onClick={resetCam} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">⌂</button>
       </div>
       <p className="pointer-events-none absolute left-3 top-3 z-10 rounded-full bg-[#0b1622]/70 px-3 py-1.5 text-[11px] font-bold text-white/90">
-        拖动旋转 · 滚轮/＋－缩放（右下角显示比例） · 点建筑或标签前往 · 左下小地图看全城、点它定位镜头 · 天色按当地真实时间、云雨按真实天气走 · 右下 ☀️🌇🌙 预览时间 · 🕐 回到真实时间 · 🎥 延时演示 · 🎬 电影镜头
+        拖动旋转 · 滚轮/＋－缩放（右下角显示比例） · 点建筑或标签前往 · 左下小地图看全城、点它定位镜头 · 天色按当地真实时间、云雨按真实天气走 · 右下 ☀️🌇🌙 预览时间 · 🕐 回到真实时间 · 🎥 延时演示 · 🎬 电影镜头 · 🚶 街景视角贴到街面：看车流等红灯、行人过马路、NPC 打招呼
       </p>
       {/* LOL-style minimap: whole-city thumbnail, live-linked to the big map */}
       <div className="absolute bottom-3 left-3 z-10">
         {miniOpen ? (
           <div className="overflow-hidden rounded-[12px] border border-black/50 bg-[#0b1622]/85 shadow-xl">
             <div className="flex items-center gap-1 px-2 py-1">
-              <span className="min-w-0 flex-1 truncate text-[11px] font-black text-white/90">🗺️ 小地图 · {p.cityKey === "sz" ? "深圳" : "惠州"}全城</span>
+              <span className="min-w-0 flex-1 truncate text-[11px] font-black text-white/90">🗺️ 小地图 · {CITIES[p.cityKey].name}全城</span>
               <button type="button" aria-label="收起小地图" onClick={() => setMiniOpen(false)} className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-black text-white/85 transition hover:bg-white/20">收起 ▾</button>
             </div>
             <canvas

@@ -35,7 +35,7 @@ export interface Activity {
 const N = (l: Loc) => l.name;
 /* Buildings that merely carry a water word in their name (海岸城商场, 香蜜湖 会议中心, 湖畔酒店…) are not water. */
 const notBuilding = (l: Loc) => !["work", "mall", "apec", "bank", "learn", "health", "lodging", "home", "service", "social", "port"].includes(l.type) && l.placeKind !== "mall" && l.placeKind !== "hospital" && l.placeKind !== "police";
-const isBeach = (l: Loc) => notBuilding(l) && (l.placeKind === "beach" || /海滩|沙滩|海边|海滨|双月湾|巽寮|黄金海岸|西涌|杨梅坑|大梅沙|小梅沙|较场尾|三角洲|海龟/.test(N(l)));
+const isBeach = (l: Loc) => notBuilding(l) && !/维多利亚港/.test(N(l)) && (l.placeKind === "beach" || /海滩|沙滩|海边|海滨|双月湾|巽寮|黄金海岸|西涌|杨梅坑|大梅沙|小梅沙|较场尾|三角洲|海龟/.test(N(l)));
 const isSea = (l: Loc) => notBuilding(l) && (isBeach(l) || /渔港|海鲜街|码头|港湾|湾公园|栈道|海上田园|海岸线|海滨/.test(N(l)));
 const isLake = (l: Loc) => notBuilding(l) && /湖|水库|东江|河|江公园|植物园/.test(N(l));
 const isMountain = (l: Loc) => l.type === "mountain" || l.placeKind === "peak" || (l.placeKind === "nature" && /山/.test(N(l))) || /^(罗浮山|梧桐山|七娘山|南昆山|象头山|高榜山)/.test(N(l));
