@@ -4,7 +4,7 @@ import { SafeAreaTopScrim } from "@hatch/space-sdk/client";
 import { loadMeta, saveMeta, touchStreak, streakReward, bump, rollWeek, checkAchievements, dailyEvent, dateKey, ACHIEVEMENTS, WEEKLY_GOALS, type Meta, type CityEvent } from "./meta";
 import { api, type ApiResponse } from "./api";
 import { TERMS, PRIVACY, LEGAL_VERSION } from "./legal";
-import { getLang, setLangStored, installTranslator, LANGS, type Lang } from "./i18n";
+import { getLang, setLangStored, installTranslator, LANGS, trText, type Lang } from "./i18n";
 import { cloudCode, newCloudCode, setCloudCode, prettyCode, liteDefault, setQuality, readInvite, inviteLink, clearInviteParams, drawShareCard } from "./share";
 import {
 APPS, CAREERS, COMPANIES, companyAt, companyById, companyGaps, employerHere, type Company, CITIES, FOODS, FURNITURE, IDENTITIES, NPCS, OFFERS, TEMPLATES,
@@ -27,6 +27,10 @@ import { PlacesMapModal } from "./PlacesMap";
 import { LifeStage3D, type LifeSet, type LifePose } from "./LifeStage";
 import { GUIDE, SCENE_PHOTOS, guideForLocName, tourForCity, type DayTour, type GuidePlace } from "./experience";
 import { creditFor } from "./photo-credits";
+import { DAY_START, DAY_END, actionMinutes, metroMinutes, clockStr, durLabel, timeBlock, morningEnergy, nowMin } from "./clock";
+import { PERKS, MAX_EQUIP, perkById, runPoints } from "./legacy";
+import { STORIES, PART, storyOf, storyStatus, type StoryFx, type StoryProg } from "./stories";
+import { storyEN } from "./stories-en";
 
 /** Unique station names of a city with the lines serving each — the index
     behind the map search box. */
@@ -126,6 +130,13 @@ offers?: string[];
 interviews?: string[];
 /* 别的玩家送来的内推（公司 id）：面试门槛降低 */
 referrals?: string[];
+/* 一天的时间预算：现在几点（分钟），今天歇了几次、上没上班、加没加班 */
+minute?: number;
+restDay?: number; restN?: number;
+workDay?: number; otDay?: number;
+/* 街坊连续剧进度 + 本局带上的深漂档案传承 */
+story?: Record<string, StoryProg>;
+perks?: string[];
 }
 
 interface Profile {
@@ -582,6 +593,9 @@ const [restoreCode, setRestoreCode] = useState("");
 const [placesMapOpen, setPlacesMapOpen] = useState(false);
 /* 语言 + 用户协议 / 隐私政策 */
 const [lang, setLangState] = useState<Lang>(() => getLang());
+/* 剧情 / 传承的文案：英文界面直接取英文稿（整段长句交给 DOM 翻译器容易漏） */
+const L = (zh: string) => (lang === "en" ? storyEN(zh) : zh.split(PART).join(""));
+const en = lang === "en";
 const switchLang = (l: Lang) => {
 setLangStored(l);
 // back to Chinese: reload so every translated text node returns to its source
@@ -692,11 +706,14 @@ const [dailyOpen, setDailyOpen] = useState(false);
 const dailyShownRef = useRef(0);
 const [chatInput, setChatInput] = useState("");
 const [result, setResult] = useState<ReturnType<typeof computeResult> | null>(null);
+const [legacyGain, setLegacyGain] = useState<{ pts: number; parts: string[] } | null>(null);
 const [lifeAnim, setLifeAnim] = useState<{ kind: LifeKind; idx: number } | null>(null);
 const lifeAfterRef = useRef<(() => void) | null>(null);
 /* NPC simulation: who you're chatting with + the running conversation */
 const [npcChat, setNpcChat] = useState<string | null>(null);
 const [npcLog, setNpcLog] = useState<{ from: "me" | "npc"; text: string }[]>([]);
+/* 街坊连续剧：聊天窗里当前摊开的这一章（等你做选择） */
+const [storyOpen, setStoryOpen] = useState<string | null>(null);
 const [setupName, setSetupName] = useState("");
 const [setupCity, setSetupCity] = useState<CityKey>("sz");
 const [setupIden, setSetupIden] = useState(IDENTITIES[0]!.id);
@@ -1060,6 +1077,11 @@ employer: typeof g.employer === "string" && COMPANIES.some((c) => c.id === g.emp
 offers: strArr(g.offers).filter((id) => COMPANIES.some((c) => c.id === id)),
 interviews: strArr(g.interviews),
 referrals: strArr(g.referrals),
+minute: num(g.minute, DAY_START),
+restDay: num(g.restDay, 0), restN: num(g.restN, 0),
+workDay: num(g.workDay, 0), otDay: num(g.otDay, 0),
+story: g.story && typeof g.story === "object" && !Array.isArray(g.story) ? Object.fromEntries(Object.entries(g.story as Record<string, unknown>).filter(([k, v]) => storyOf(k) && v && typeof v === "object").map(([k, v]) => { const o = v as Record<string, unknown>; return [k, { ch: num(o.ch, 0), day: num(o.day, 0), flags: strArr(o.flags), ...(typeof o.done === "string" ? { done: o.done } : {}) }]; })) : {},
+perks: strArr(g.perks).filter((id) => perkById(id)),
 };
 return { profile: { playerId: prof.playerId, name: prof.name }, gs };
 };
@@ -1134,7 +1156,8 @@ pendingSleep.current = false;
 }
 const isRail = c.route.legs.some((l) => ["szhz-rail", "guangshen", "hz-intercity", "ganshen-rail", "guangshan-rail"].includes(l.line.id));
 const fareNow = evRef.current.metroFree ? 0 : c.route.fare;
-mutate((s) => { s.money -= fareNow; s.energy -= Math.max(3, Math.round(c.route.stops * 1.2)) + (c.gaveSeat ? 2 : 0); s.metroRides = (s.metroRides ?? 0) + 1; if (c.gaveSeat) { s.network += 1; s.mood += 4; } if (c.phoneUsed) s.mood += 2; });
+const rideMin = Math.round(Math.max(isRail ? 35 : 0, metroMinutes(c.route.stops, c.route.isTransfer)) * ((s0.perks ?? []).includes("route") ? 0.8 : 1));
+mutate((s) => { s.minute = nowMin(s) + rideMin; s.money -= fareNow; s.energy -= Math.max(3, Math.round(c.route.stops * 1.2)) + (c.gaveSeat ? 2 : 0); s.metroRides = (s.metroRides ?? 0) + 1; if (c.gaveSeat) { s.network += 1; s.mood += 4; } if (c.phoneUsed) s.mood += 2; });
 setCurrentLoc(c.toLoc); currentLocRef.current = c.toLoc; setSelectedLoc(c.toLoc);
 const lastSt = c.route.stations[c.route.stations.length - 1]?.name ?? "";
 showToast(`${isRail ? "🚄" : "🚇"} 到达${lastSt && !locById(c.toLoc).name.includes(lastSt) ? `${lastSt}站，出站就是${locById(c.toLoc).short}` : locById(c.toLoc).name}，车票 ${fareNow ? `-¥${fareNow}` : "免费（绿色出行日）"}，共 ${c.route.stops} 站${c.route.isTransfer ? `（换乘 ${c.route.transferStations.length} 次：${c.route.summary}）` : ""}${pendingAfterRide.current && pendingAfterRide.current !== c.toLoc ? `，出站再步行到${locById(pendingAfterRide.current).short}` : ""}。`);
@@ -1208,7 +1231,8 @@ else if (mode === "bus") { cost = busFare(dist); energyCost = Math.max(1, Math.r
 else if (mode === "ferry") { cost = 60; energyCost = 4; effMode = "ferry"; modeLabel = "轮渡"; if (s0.money < cost) { showToast(`轮渡船票要 ¥${cost}，钱不够，改步行了。`); cost = 0; energyCost = Math.round(dist * 0.5); effMode = "walk"; modeLabel = "步行"; } }
 else if (mode === "flight") { cost = 420; energyCost = 6; effMode = "flight"; modeLabel = "飞机"; if (s0.money < cost) { showToast(`机票要 ¥${cost}，钱不够，改步行了。`); cost = 0; energyCost = Math.round(dist * 0.5); effMode = "walk"; modeLabel = "步行"; } }
 else { energyCost = Math.round(dist * 0.5); }
-if (cost > 0 || energyCost > 0) mutate((s) => { s.money -= cost; s.energy -= energyCost; });
+const tripMin = Math.round(etaMinutes(effMode, dist) * ((s0.perks ?? []).includes("route") ? 0.8 : 1));
+mutate((s) => { s.money -= cost; s.energy -= energyCost; s.minute = nowMin(s) + tripMin; });
 if (cost > 0) showToast(`${modeLabel}去${to.short}，-¥${cost}${energyCost ? `，能量 -${energyCost}` : ""}，预计约 ${etaMinutes(effMode, dist)} 分钟到。`);
 else showToast(`${modeLabel}去${to.short}，预计约 ${etaMinutes(effMode, dist)} 分钟到。${effMode === "walk" ? "换个更快的出行方式能省不少时间。" : ""}`);
 if (nowRainy) {
@@ -1528,6 +1552,8 @@ showToast(`${gm.emoji} 给${toName}送了${gm.name}${gm.cost ? `，-¥${gm.cost}
 const doAction = (kind: string, arg = 0) => {
 const s0 = gsRef.current;
 if (!s0 || walking || currentLoc!== selectedLoc || activeEvent) return;
+const tBlock = timeBlock(kind, s0);
+if (tBlock) { showToast(`⏰ ${tBlock}。`); return; }
 const loc = locById(selectedLoc);
 const base = basePay(s0);
 const fitSave = s0.fit >= 3? 3: 0;
@@ -1537,7 +1563,9 @@ const co = co0 ? effCompany(co0, ev, s0.referrals) : null;
 const colleagues = co ? (world?.online ?? []).filter((p) => p.id !== myPubRef.current && p.employer === co.id && p.cityKey === s0.cityKey) : [];
 let msg = "";
 const feeds: { kind: "career" | "apec" | "home" | "money" | "life"; text: string }[] = [];
+let spent = 0;
 mutate((s) => {
+const snap = JSON.stringify([s.money, s.energy, s.mood, s.xp, s.skill, s.groceries, s.offers, s.employer, s.fit, s.invest, s.network, s.outfit, s.album, s.apecTasks, s.apecCheckins, s.visitedScenic]);
 switch (kind) {
 case "rest":
 s.energy += 14 + (s.outfit === "pajamas" ? 6 : 0); s.mood += 8;
@@ -1822,7 +1850,20 @@ break;
 default:
 break;
 }
+/* 一天的时间预算：真正做成了的行动才走表 */
+if (msg && JSON.stringify([s.money, s.energy, s.mood, s.xp, s.skill, s.groceries, s.offers, s.employer, s.fit, s.invest, s.network, s.outfit, s.album, s.apecTasks, s.apecCheckins, s.visitedScenic]) !== snap) {
+spent = actionMinutes(kind);
+s.minute = nowMin(s) + spent;
+if (kind === "rest") { s.restN = s.restDay === s.day ? (s.restN ?? 0) + 1 : 1; s.restDay = s.day; }
+if (kind === "work") s.workDay = s.day;
+if (kind === "overtime") s.otDay = s.day;
+}
 });
+if (msg && spent) {
+const nowM = nowMin(gsRef.current ?? s0);
+window.setTimeout(() => floatReward(`⏱ ${durLabel(spent)} → ${clockStr(nowM)}`, "blue"), 250);
+if (nowM >= DAY_END) window.setTimeout(() => floatReward("🌙 过了午夜，回家睡觉吧", "red"), 700);
+}
 if (msg) {
 showToast(msg);
 addLog(msg);
@@ -1901,8 +1942,12 @@ rentMsg += ` 理财收益 +${fmt(gain)}。`;
 }
 }
 const lowMood = s.mood <= 5;
+const morning = morningEnergy(nowMin(s));
+if (morning.note) rentMsg += ` ${morning.note}`;
+if (nowMin(s) <= 22 * 60) s.mood += 4;
 s.day += 1;
-s.energy = 100;
+s.energy = morning.energy;
+s.minute = DAY_START - ((s.perks ?? []).includes("early") ? 60 : 0);
 s.mood = lowMood? 25: s.mood + homeMoodBonus(s);
 if (lowMood) rentMsg += " 心情见底，睡了一觉缓过来一点。";
 s.greeted = [];
@@ -1937,6 +1982,12 @@ s.dayBase = { day: s.day, work: s.workCount, meal: s.mealCount, scenic: (s.visit
 s.dayClaim = [];
 });
 gen.posts.slice(0, 2).forEach((p, i) => window.setTimeout(() => pushDanmakuRef.current(`${p.author}：${p.text}`), 600 + i * 900));
+/* 街坊连续剧的钩子：谁今天有新的一章，早上就冒个弹幕提醒 */
+{
+const g2 = gsRef.current;
+const ready = g2 ? STORIES.filter((st) => { const k = storyStatus(st, g2.story?.[st.npc], memOf(g2.npcMem ?? {}, st.npc).rel, g2.day).kind; return (k === "ready" && (g2.story?.[st.npc]?.ch ?? 0) > 0) || k === "ending"; }) : [];
+ready.slice(0, 2).forEach((st, i) => window.setTimeout(() => pushDanmakuRef.current(en ? `📖 ${trText(st.npc)}'s story "${L(st.title)}" continues — go and talk to ${trText(st.npc)}` : `📖 ${st.npc}的故事「${st.title}」有后续了——去找${st.npc}聊聊`), 2600 + i * 1200));
+}
 }
 showToast(`第 ${next.day} 天 · ${weekday(next.day)} · ${weatherOf(next.day, next.cityKey)}${rentMsg? " " + rentMsg: ""}`);
 if (Math.random() < 0.55) {
@@ -1957,7 +2008,10 @@ setResult(r);
 mutate((s) => { s.finished = true;});
 const prof = profileRef.current;
 if (prof) {
-updMeta((m) => { m.runs += 1; });
+const storiesDone = Object.values(s0.story ?? {}).filter((p) => p.done).length;
+const lp = runPoints({ reason, money: s0.money, goal: s0.goal, careerIdx: s0.careerIdx, bigCo: (s0.employer ?? "startup") !== "startup", stories: storiesDone });
+setLegacyGain(lp);
+updMeta((m) => { m.runs += 1; m.legacy = { ...m.legacy, pts: m.legacy.pts + lp.pts, total: m.legacy.total + lp.pts, history: [{ title: r.title, pts: lp.pts, day: dateKey() }, ...m.legacy.history].slice(0, 20) }; });
 void api.finishSeason({
 playerId: prof.playerId,
 money: Math.round(s0.money),
@@ -2024,6 +2078,17 @@ addLog(`${text}`);
       signDay: 0, dayBase: { day: 1, work: 0, meal: 0, scenic: 0 }, dayClaim: [],
       employer: "startup", offers: [], interviews: [], referrals: [],
     };
+    /* 深漂档案：本局带上的传承（最多 MAX_EQUIP 个） */
+    const perks = metaRef.current.legacy.equipped.filter((id) => metaRef.current.legacy.owned.includes(id) && perkById(id)).slice(0, MAX_EQUIP);
+    state.perks = perks;
+    state.minute = DAY_START - (perks.includes("early") ? 60 : 0);
+    if (perks.includes("cash")) { state.money += 800; state.maxMoney = state.money; }
+    if (perks.includes("wardrobe")) state.ownedOutfits = [...new Set([...state.ownedOutfits, "formal", "raincoat"])];
+    if (perks.includes("skill")) state.skill += 2;
+    if (perks.includes("xp")) state.xp += 6;
+    if (perks.includes("rent")) { state.rent = Math.round((state.rent * 0.9) / 10) * 10; state.baseRent = state.rent; }
+    if (perks.includes("friends")) state.npcMem = Object.fromEntries(NPCS.map((n) => { const m0 = memOf(state.npcMem, n.name); return [n.name, { ...m0, rel: Math.max(15, m0.rel), talks: Math.max(1, m0.talks) }]; }));
+    if (perks.length) state.log = [{ day: 1, text: `深漂档案传承：${perks.map((id) => perkById(id)!.name).join("、")}。` }, ...state.log];
     // Came in through a friend's invite link: welcome bonus + an intro
     // (内推) to the friend's company.
     if (invite && invite.fromId !== myPubRef.current) {
@@ -2179,6 +2244,65 @@ addLog(`${text}`);
     if (outcome.favour) addLog(`帮了${npc.name}一个忙，他记下了这份人情。`);
     else if (outcome.slight) addLog(`和${npc.name}聊天，玩笑开过了头，他有点不高兴。`);
     else if (outcome.giftGiven) addLog(`送了${npc.name}一份小礼物，关系暖和了些。`);
+  };
+
+  /* ---------- 街坊连续剧 ---------- */
+  const applyStoryFx = (s: GameState, npcName: string, fx: StoryFx) => {
+    s.money += fx.money ?? 0; s.mood += fx.mood ?? 0; s.energy += fx.energy ?? 0;
+    s.xp += fx.xp ?? 0; s.skill += fx.skill ?? 0; s.network = Math.max(0, s.network + (fx.network ?? 0));
+    if (fx.money && fx.money > 0) s.earned += fx.money;
+    if (fx.rel) { const m = { ...memOf(s.npcMem ?? {}, npcName) }; m.rel = Math.max(-100, Math.min(100, m.rel + fx.rel)); s.npcMem = { ...(s.npcMem ?? {}), [npcName]: m }; }
+  };
+  const fxText = (fx: StoryFx) => [
+    fx.money ? `${fx.money > 0 ? "+" : "-"}${fmt(Math.abs(fx.money))}` : "", fx.mood ? `${en ? "Mood" : "心情"} ${fx.mood > 0 ? "+" : ""}${fx.mood}` : "",
+    fx.energy ? `${en ? "Energy" : "能量"} ${fx.energy}` : "", fx.xp ? `${en ? "XP" : "经验"} +${fx.xp}` : "", fx.skill ? `${en ? "Skill" : "技能"} +${fx.skill}` : "",
+    fx.network ? `${en ? "Network" : "人脉"} ${fx.network > 0 ? "+" : ""}${fx.network}` : "", fx.rel ? `${en ? "Bond" : "关系"} +${fx.rel}` : "",
+  ].filter(Boolean).join(" · ");
+  const openStory = () => {
+    const s0 = gsRef.current; const name = npcChat; if (!s0 || !name) return;
+    const story = storyOf(name); if (!story) return;
+    const tb = timeBlock("story", s0); if (tb) { showToast(`⏰ ${tb}。`); return; }
+    const st = storyStatus(story, s0.story?.[name], memOf(s0.npcMem ?? {}, name).rel, s0.day);
+    if (st.kind === "ready") {
+      setStoryOpen(name);
+      setNpcLog((log) => [...log, { from: "npc", text: `📖 ${en ? `Chapter ${st.idx + 1}/${st.total}` : `第 ${st.idx + 1}/${st.total} 章`} · ${L(st.chapter.title)}\n${L(st.chapter.text)}` }]);
+    } else if (st.kind === "ending") {
+      const prog = s0.story?.[name] ?? { ch: 0, day: 0, flags: [] };
+      const end = story.ending(prog.flags);
+      mutate((s) => {
+        applyStoryFx(s, name, end.fx);
+        s.story = { ...(s.story ?? {}), [name]: { ...prog, done: end.title, day: s.day } };
+        s.minute = nowMin(s) + actionMinutes("story");
+        s.npcNews = [...(s.npcNews ?? []), { kind: "home" as const, text: `见证了${name}的故事「${end.title}」`, day: s.day }];
+      });
+      setNpcLog((log) => [...log, { from: "npc", text: `🏁 ${en ? "Ending" : "结局"} · ${L(end.title)}\n${L(end.text)}` }]);
+      const fxs = fxText(end.fx);
+      showToast(en ? `🏁 ${L(story.title)} · ${L(end.title)}${fxs ? ` (${fxs})` : ""}. This story goes into your ending: +2 legacy points.` : `🏁 ${story.title} · ${end.title}${fxs ? `（${fxs}）` : ""}。这个故事会写进你的结局，档案点 +2。`);
+      addLog(`📖 ${name}的故事「${story.title}」结局：${end.title}。`);
+      floatReward(`📖 ${L(end.title)}`, "gold");
+    }
+  };
+  const chooseStory = (idx: number) => {
+    const s0 = gsRef.current; const name = storyOpen; if (!s0 || !name) return;
+    const story = storyOf(name); if (!story) return;
+    const prog = s0.story?.[name] ?? { ch: 0, day: 0, flags: [] };
+    const ch = story.chapters[prog.ch]; const choice = ch?.choices[idx];
+    if (!ch || !choice) return;
+    if ((choice.fx.money ?? 0) < 0 && s0.money < -(choice.fx.money ?? 0)) { showToast(`这个选择要 ${fmt(-(choice.fx.money ?? 0))}，钱包不够。`); return; }
+    if ((choice.fx.energy ?? 0) < 0 && s0.energy < -(choice.fx.energy ?? 0)) { showToast("能量不够了，先歇歇或吃点东西。"); return; }
+    mutate((s) => {
+      applyStoryFx(s, name, choice.fx);
+      s.story = { ...(s.story ?? {}), [name]: { ch: prog.ch + 1, day: s.day, flags: choice.flag ? [...prog.flags, choice.flag] : prog.flags } };
+      s.minute = nowMin(s) + actionMinutes("story");
+    });
+    setStoryOpen(null);
+    setNpcLog((log) => [...log, { from: "me", text: L(choice.label) }, { from: "npc", text: L(choice.reply) }]);
+    const fxs = fxText(choice.fx);
+    const last = prog.ch + 1 >= story.chapters.length;
+    showToast(en
+      ? `📖 ${L(story.title)} · chapter ${prog.ch + 1} done${fxs ? ` (${fxs})` : ""}. ${last ? `Come back to ${trText(name)} tomorrow for the ending.` : `More tomorrow — get a little closer to ${trText(name)} to unlock the next chapter.`}`
+      : `📖 ${story.title} · 第 ${prog.ch + 1} 章完${fxs ? `（${fxs}）` : ""}。${last ? `明天再来找${name}，看看结局。` : `后续明天揭晓——和${name}关系再近一些就能看下一章。`}`);
+    addLog(`📖 ${name}：${ch.title}——你选了「${choice.label}」。`);
   };
 
   const likeNpcPost = (postId: string) => {
@@ -2719,6 +2843,7 @@ return (
 <p className="text-[11px] text-[var(--dim)]">作息：{scheduleOf(n)}</p>
 <p className="text-[11px] text-[var(--dim)]">性格：{p.warmth >= 0.65 ? "热心肠" : p.warmth <= 0.35 ? "慢热" : "随和"} · {p.humor >= 0.55 ? "开得起玩笑" : p.pride >= 0.6 ? "要面子，别乱开玩笑" : "不太爱开玩笑"} · {p.chattiness >= 0.6 ? "话多，爱发动态" : p.chattiness <= 0.35 ? "话少" : "话量适中"}</p>
 {mem.note ? <p className="text-[11px] font-bold text-[var(--accent2)]">🧠 他记得：{mem.note}</p> : mem.talks > 0 ? <p className="text-[11px] text-[var(--dim)]">聊过 {mem.talks} 次，还没什么特别的事</p> : null}
+{(() => { const st0 = storyOf(n.name); if (!st0) return null; const k = storyStatus(st0, s.story?.[n.name], mem.rel, s.day); return <p className={`text-[11px] font-bold ${k.kind === "ready" || k.kind === "ending" ? "text-[var(--accent)]" : "text-[var(--dim)]"}`}>{en ? `📖 "${L(st0.title)}" ${k.kind === "done" ? `· Ending: ${L(k.title)}` : k.kind === "ending" ? "· The ending is ready!" : k.kind === "ready" ? `· Chapter ${k.idx + 1} is ready!` : k.kind === "tomorrow" ? "· More tomorrow" : `· Bond +${k.need} unlocks the next chapter`}` : `📖「${st0.title}」${k.kind === "done" ? `· 结局：${k.title}` : k.kind === "ending" ? "· 结局可以看了！" : k.kind === "ready" ? `· 第 ${k.idx + 1} 章可以看了！` : k.kind === "tomorrow" ? "· 明天有后续" : `· 关系到 +${k.need} 解锁下一章`}`}</p>; })()}
 </div>
 <button type="button" aria-label={`找${n.name}聊天`} onClick={() => { setPhoneOpen(false); openNpcChat(n.name); }} className="shrink-0 rounded-full bg-[var(--text)] px-3 py-2 text-xs font-black text-[var(--bg)]">
 💬 聊天
@@ -2962,6 +3087,24 @@ return (
 })}
 </div>
 
+{(() => { const lg = meta.legacy; return (
+<div className="mt-6 rounded-[16px] border-2 border-[var(--border)] bg-[var(--surface)] p-4">
+<p className="flex flex-wrap items-baseline justify-between gap-2"><span className="font-display text-lg font-black">{en ? "🗂️ Drifter's File" : "🗂️ 深漂档案"}</span><span className="text-xs font-black">{en ? `Legacy points ${lg.pts} · ${lg.total} earned · ${meta.runs} runs` : `档案点 ${lg.pts} · 累计 ${lg.total} · 已过 ${meta.runs} 局`}</span></p>
+<p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">{en ? `Every finished run earns legacy points (for your ending, career level, and the neighbours' stories you saw through). Spend them to unlock permanent perks; take up to ${MAX_EQUIP} into each run.${lg.total === 0 ? " Finish your first run to earn some." : ""}` : `每过完一局都会攒档案点（看结局、职级、陪街坊走完的故事）。用档案点永久解锁「传承」，每局开局最多带 ${MAX_EQUIP} 个。${lg.total === 0 ? "先过完第一局，档案点就来了。" : ""}`}</p>
+<div className="mt-3 grid gap-2 sm:grid-cols-2">
+{PERKS.map((pk) => { const owned = lg.owned.includes(pk.id); const on = lg.equipped.includes(pk.id); return (
+<button key={pk.id} type="button" disabled={!owned && lg.pts < pk.cost} onClick={() => updMeta((m) => {
+if (!m.legacy.owned.includes(pk.id)) { if (m.legacy.pts < pk.cost) return; m.legacy = { ...m.legacy, pts: m.legacy.pts - pk.cost, owned: [...m.legacy.owned, pk.id], equipped: m.legacy.equipped.length < MAX_EQUIP ? [...m.legacy.equipped, pk.id] : m.legacy.equipped }; return; }
+m.legacy = { ...m.legacy, equipped: m.legacy.equipped.includes(pk.id) ? m.legacy.equipped.filter((x) => x !== pk.id) : m.legacy.equipped.length < MAX_EQUIP ? [...m.legacy.equipped, pk.id] : m.legacy.equipped };
+})} className={`flex items-start gap-2 rounded-[12px] border-2 p-2.5 text-left disabled:opacity-45 ${on ? "border-[var(--accent)] bg-[var(--surface2)]" : "border-[var(--line)]"}`}>
+<span className="text-xl">{pk.emoji}</span>
+<span className="min-w-0 flex-1"><span className="block text-sm font-black">{L(pk.name)}</span><span className="block text-xs text-[var(--dim)]">{L(pk.desc)}</span></span>
+<span className="shrink-0 text-[11px] font-black">{!owned ? (en ? `🔓 ${pk.cost} pts` : `🔓 ${pk.cost} 点`) : on ? (en ? "✅ Equipped" : "✅ 本局带上") : (en ? "Owned · tap to equip" : "已解锁 · 点击带上")}</span>
+</button> ); })}
+</div>
+{lg.history.length > 0 && <p className="mt-2 text-[11px] text-[var(--dim)]">{en ? "Recent runs: " : "最近几局："}{lg.history.slice(0, 4).map((h) => `${en ? trText(h.title) : h.title} +${h.pts}`).join(" · ")}</p>}
+</div> ); })()}
+
 <label className="mt-5 flex items-start gap-2 text-xs leading-relaxed">
 <input type="checkbox" checked={agreed} onChange={(e) => setAgreedStored(e.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--accent)]" aria-label={lang === "en" ? "I agree to the Terms and Privacy Policy" : "同意用户协议和隐私政策"} />
 <span>{lang === "en" ? <>I have read and agree to the <button type="button" onClick={() => setLegalDoc("terms")} className="font-black underline">Terms of Service</button> and <button type="button" onClick={() => setLegalDoc("privacy")} className="font-black underline">Privacy Policy</button>. Companies and events in the game are fictional.</> : <>我已阅读并同意<button type="button" onClick={() => setLegalDoc("terms")} className="font-black underline">《用户协议》</button>和<button type="button" onClick={() => setLegalDoc("privacy")} className="font-black underline">《隐私政策》</button>。游戏中的公司与活动均为虚构。</>}</span>
@@ -2969,7 +3112,7 @@ return (
 <button type="button" disabled={!setupName.trim() || !agreed} onClick={() => startGame(setupName.trim(), setupCity, setupIden)} className="mt-6 w-full rounded-full bg-[var(--accent)] py-4 text-base font-black text-white shadow-[5px_5px_0_var(--border)] disabled:opacity-40">
 进城，开始过日子 →
 </button>
-<p className="mt-3 text-center text-xs leading-relaxed text-[var(--dim)]">规则：30 天，每天去不同地点行动消耗能量；每周六睡前交租，存款跌破 -¥500 会被房东请出门；第 30 天结束结算并登上全城排行榜。</p>
+<p className="mt-3 text-center text-xs leading-relaxed text-[var(--dim)]">规则：30 天，每天从 8:00 到午夜，上班、出行、玩都花时间和能量；每周六睡前交租，存款跌破 -¥500 会被房东请出门；第 30 天结束结算并登上全城排行榜。</p>
 </main>
 {legalModal()}
 </div>
@@ -3010,6 +3153,19 @@ return (
 <p className="mt-4 flex flex-wrap gap-1.5">
 {result.badges.map((b) => <span key={b} className="chip">{b}</span>)}
 </p>
+)}
+{Object.values(s.story ?? {}).some((p) => p.done) && (
+<div className="mt-4 rounded-[12px] bg-[var(--surface2)] p-3">
+<p className="text-xs font-black">{en ? "📖 Neighbours' stories you saw through these 30 days" : "📖 这 30 天你陪街坊走完的故事"}</p>
+{STORIES.filter((st) => s.story?.[st.npc]?.done).map((st) => <p key={st.npc} className="mt-1 text-xs">{NPCS.find((n) => n.name === st.npc)?.emoji} {en ? `${trText(st.npc)} · "${L(st.title)}" → ` : `${st.npc}「${st.title}」→ `}<b>{L(s.story?.[st.npc]?.done ?? "")}</b></p>)}
+</div>
+)}
+{legacyGain && (
+<div className="mt-4 rounded-[12px] border-2 border-[var(--accent)] p-3">
+<p className="text-sm font-black">{en ? `🗂️ Drifter's File +${legacyGain.pts} pts ` : `🗂️ 深漂档案 +${legacyGain.pts} 点 `}<span className="text-xs font-bold text-[var(--dim)]">{en ? `(${meta.legacy.pts} pts total)` : `（现在共 ${meta.legacy.pts} 点）`}</span></p>
+<p className="mt-1 text-xs text-[var(--dim)]">{legacyGain.parts.join(" · ")}</p>
+<p className="mt-1 text-xs">{en ? "Spend points on perks before your next run: start with cash or skill, get up an hour earlier, have the neighbours remember you…" : "下一局开局可以用档案点解锁传承：开局带钱、带技能、每天早起一小时、街坊记得你……"}</p>
+</div>
 )}
 <p className="mt-3 text-xs text-[var(--dim)]">这个成绩已经发到全城动态和排行榜，其他玩家打开游戏就能看到。</p>
 <p className="mt-2 text-center text-xs font-black text-[var(--dim)]">🌐 {APEC_SLOGAN}</p>
@@ -3100,6 +3256,7 @@ return (
 </div>
 <span className="flex items-center gap-1 text-xs font-bold">⚡<span className="h-2 w-10 overflow-hidden rounded-full bg-[var(--surface2)]"><span className="block h-full bg-amber-500 transition-all" style={{ width: `${s.energy}%` }} /></span>{Math.round(s.energy)}</span>
 <span className="flex items-center gap-1 text-xs font-bold">😊<span className="h-2 w-10 overflow-hidden rounded-full bg-[var(--surface2)]"><span className="block h-full bg-emerald-500 transition-all" style={{ width: `${s.mood}%` }} /></span>{Math.round(s.mood)}</span>
+<span className={`chip ${nowMin(s) >= 22 * 60 ? "text-[var(--accent)]" : ""}`} title="一天从早上 8:00 到午夜：上班、出行、玩都花时间，过了午夜只能回家睡觉，熬夜第二天能量少">{`🕘 ${clockStr(nowMin(s))}${nowMin(s) >= DAY_END ? " · 该睡了" : ` · 剩 ${durLabel(DAY_END - nowMin(s))}`}`}</span>
 <span className="chip" title={iden.name}>{iden.emoji} {career.name} ×{career.mul}</span>
 {(() => { const co = employerHere(s); return co ? <span className="chip" title={co.culture}>{co.emoji} {co.short}</span> : null; })()}
 {meta.title && <span className="chip" style={{ borderColor: "var(--gold)", color: "var(--gold)" }}>🏅 {meta.title}</span>}
@@ -3411,13 +3568,14 @@ return (
 {(() => { const g = guideForLocName(selLoc.name); if (!g) return null; return <ExperienceCard g={g} here={arrived} unlocked={(s.album ?? []).includes(g.key)} onCheckin={() => checkinGuide(g)} />; })()}
 <p className="mt-3.5 flex items-baseline justify-between gap-2"><span className="text-xs font-black tracking-wide">📍 在这里能做 · 常用操作</span><span className="text-[11px] font-bold text-[var(--dim)]">{arrived ? "点一下就行动" : "到了才能做"}</span></p>
 <div className="mt-2 grid gap-2">
-{actionsFor(selLoc, s).map((a) => (
-<button key={a.kind + (a.arg ?? 0)} type="button" disabled={!arrived || a.disabled} onClick={() => { if (a.kind === "__sleep") playLifeAnim("sleep", () => doSleep()); else doAction(a.kind, a.arg ?? 0); }} className="act-btn">
+{actionsFor(selLoc, s).map((a) => { const tb = timeBlock(a.kind, s); return (
+<button key={a.kind + (a.arg ?? 0)} type="button" disabled={!arrived || a.disabled || !!tb} onClick={() => { if (a.kind === "__sleep") playLifeAnim("sleep", () => doSleep()); else doAction(a.kind, a.arg ?? 0); }} className="act-btn">
 <span className="flex items-center justify-between text-sm font-black"><span>{a.title}</span><span>{a.emoji}</span></span>
 <span className="mt-0.5 block text-xs leading-relaxed text-[var(--dim)]">{a.desc}</span>
-<span className="mt-1 block text-xs font-bold text-[var(--accent2)]">{a.cost}</span>
+<span className="mt-1 block text-xs font-bold text-[var(--accent2)]">{a.cost}{a.kind !== "__sleep" && ` · ⏱ ${durLabel(actionMinutes(a.kind))}`}</span>
+{tb && <span className="mt-0.5 block text-[11px] font-bold text-[var(--accent)]">⏰ {tb}</span>}
 </button>
-))}
+); })}
 </div>
 {(() => {
 const svc = nearbyServices(s.cityKey, selLoc.id).filter((r) => r.id !== selLoc.id);
@@ -4064,7 +4222,7 @@ onLocate={(x, z, name) => { setMetroMapOpen(false); setMapFocus({ x, z, nonce: D
 {mem.slights > 0 && <span className="rounded-full bg-black/25 px-2 py-0.5 text-[11px] font-bold">得罪过 {mem.slights} 次</span>}
 </div>
 </div>
-<button type="button" aria-label="结束聊天" onClick={() => setNpcChat(null)} className="shrink-0 rounded-full bg-black/25 px-3 py-1.5 text-sm font-black">✕</button>
+<button type="button" aria-label="结束聊天" onClick={() => { setNpcChat(null); setStoryOpen(null); }} className="shrink-0 rounded-full bg-black/25 px-3 py-1.5 text-sm font-black">✕</button>
 </div>
 <div className="px-4 pt-2.5">
 <p className="text-[11px] leading-relaxed text-[var(--dim)]">🕐 作息：{scheduleOf(npc)} · 性格：{p.warmth >= 0.65 ? "热心肠" : p.warmth <= 0.35 ? "慢热" : "随和"}、{p.humor >= 0.55 ? "开得起玩笑" : p.pride >= 0.6 ? "要面子" : "不爱开玩笑"}、{p.chattiness >= 0.6 ? "话多" : p.chattiness <= 0.35 ? "话少" : "话量适中"}</p>
@@ -4074,10 +4232,23 @@ onLocate={(x, z, name) => { setMetroMapOpen(false); setMapFocus({ x, z, nonce: D
 {npcLog.map((m, i) => (
 <div key={i} className={`max-w-[88%] rounded-[12px] px-3 py-2 text-[13px] leading-relaxed ${m.from === "me" ? "justify-self-end bg-[var(--text)] text-[var(--bg)]" : "justify-self-start border border-[var(--line)] bg-[var(--bg)]"}`}>
 {m.from === "npc" && <p className="text-[11px] font-black text-[var(--dim)]">{npc.name}</p>}
-<p>{m.text}</p>
+<p className="whitespace-pre-line">{m.text}</p>
 </div>
 ))}
 </div>
+{(() => { const story = storyOf(npc.name); if (!story) return null; const st = storyStatus(story, s.story?.[npc.name], mem.rel, s.day); const ch = storyOpen === npc.name ? story.chapters[s.story?.[npc.name]?.ch ?? 0] : null; return (
+<div className="mx-3 mt-2 rounded-[12px] border-2 border-[var(--gold)] bg-[var(--surface2)] p-2.5">
+<p className="flex items-center justify-between gap-2 text-xs font-black"><span>{en ? `📖 ${trText(npc.name)}'s story · "${L(story.title)}"` : `📖 ${npc.name}的故事 ·「${story.title}」`}</span><span className="text-[var(--dim)]">{st.kind === "done" ? (en ? "Finished" : "已完结") : `${Math.min(st.kind === "ending" ? st.total : st.idx + 1, st.total)}/${st.total}`}</span></p>
+{ch ? (
+<div className="mt-2 grid gap-1.5">{ch.choices.map((c, i) => (
+<button key={i} type="button" onClick={() => chooseStory(i)} className="act-btn text-left"><span className="text-[13px] font-black">{L(c.label)}</span>{fxText(c.fx) && <span className="block text-[11px] text-[var(--dim)]">{fxText(c.fx)}</span>}</button>
+))}</div>
+) : st.kind === "ready" ? <button type="button" onClick={openStory} className="mt-2 w-full rounded-full bg-[var(--text)] py-2 text-xs font-black text-[var(--bg)]">{en ? `▶ Read chapter ${st.idx + 1}: "${L(st.chapter.title)}" · ⏱ 30 min` : `▶ 看第 ${st.idx + 1} 章「${st.chapter.title}」 · ⏱ 30 分钟`}</button>
+: st.kind === "ending" ? <button type="button" onClick={openStory} className="mt-2 w-full rounded-full bg-[var(--accent)] py-2 text-xs font-black text-white">🏁 看结局 · ⏱ 30 分钟</button>
+: st.kind === "locked" ? <p className="mt-1 text-[11px] text-[var(--dim)]">{en ? `🔒 Bond +${st.need} unlocks the next chapter (now ${mem.rel > 0 ? "+" : ""}${mem.rel}) — helping out, small gifts and daily hellos all bring you closer.` : `🔒 关系到 +${st.need} 解锁下一章（现在 ${mem.rel > 0 ? "+" : ""}${mem.rel}）——帮个忙、送小礼物、天天打招呼都能拉近关系。`}</p>
+: st.kind === "tomorrow" ? <p className="mt-1 text-[11px] text-[var(--dim)]">{en ? `🌙 That's today's chapter. Come back to ${trText(npc.name)} tomorrow for more.` : `🌙 今天的故事看完了，明天再来找${npc.name}看后续。`}</p>
+: <p className="mt-1 text-[11px] font-bold">{en ? `🏁 Ending: ${L(st.title)}` : `🏁 结局：${st.title}`}</p>}
+</div> ); })()}
 <div className="grid grid-cols-2 gap-1.5 p-3 pt-2 sm:grid-cols-3">
 {([
 ["greet", "👋 打招呼", "聊聊近况"],

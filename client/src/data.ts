@@ -710,11 +710,14 @@ export const OFFERS = [
 ];
 
 export const WEEK = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+/* 游戏第 N 天 = 2026 年 11 月 N 日（峰会 14–19 日），星期按真实日历算 */
+export const GAME_YEAR = 2026;
+const realDow = (day: number) => (new Date(GAME_YEAR, 10, day).getDay() + 6) % 7; // 0 = 周一
 export function weekday(day: number): string {
-  return WEEK[(day - 1) % 7] ?? "周一";
+  return WEEK[realDow(day)] ?? "周一";
 }
 export function isSaturday(day: number): boolean {
-  return (day - 1) % 7 === 5;
+  return realDow(day) === 5;
 }
 
 /* ================= 交通方式 ================= */

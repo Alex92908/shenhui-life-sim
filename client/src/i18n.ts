@@ -15,6 +15,7 @@ import { COMPANIES, LOC_EN, PLACE_KINDS, getLocations, placesForCity } from "./d
 import { SZ_STATION_EN } from "./metro-sz";
 import { ACHIEVEMENTS, WEEKLY_GOALS } from "./meta";
 import { EN_EXACT, EN_TEMPLATES } from "./i18n-en";
+import { storyEN } from "./stories-en";
 import { AREA_LABELS } from "./areas";
 import { HZ_PLACE_EN_AUTO, SZ_PLACE_EN_AUTO, SZ_STATION_EN_AUTO } from "./places-en";
 
@@ -79,7 +80,7 @@ const EN: Record<string, string> = {
   "惠州躺平青年": "Huizhou slacker", "拒绝内卷，海边租房。工资不高，但每天睡到自然醒。": "Opted out of the rat race and rents by the sea. Low pay, but sleeps in every day.",
   "996 程序员": "996 programmer", "发量换工资。日薪最高，但能量和心情掉得比头发还快。": "Trades hair for salary. Highest pay, but energy and mood drop faster than hair.",
   "外卖骑手": "Delivery rider", "城市最熟悉的陌生人。多跑多得，风里来雨里去。": "The city's most familiar stranger. More runs, more money, rain or shine.",
-  "规则：30 天，每天去不同地点行动消耗能量；每周六睡前交租，存款跌破 -¥500 会被房东请出门；第 30 天结束结算并登上全城排行榜。": "Rules: 30 days. Actions at different places cost energy; rent is due before bed every Saturday, and dropping below -¥500 gets you evicted. Day 30 ends the run and puts you on the city leaderboard.",
+  "规则：30 天，每天从 8:00 到午夜，上班、出行、玩都花时间和能量；每周六睡前交租，存款跌破 -¥500 会被房东请出门；第 30 天结束结算并登上全城排行榜。": "Rules: 30 days. Each day runs from 8:00 to midnight, and work, travel and fun all cost time and energy; rent is due before bed every Saturday, and dropping below -¥500 gets you evicted. Day 30 ends the run and puts you on the city leaderboard.",
   "选择深圳": "Choose Shenzhen", "选择惠州": "Choose Huizhou", "切换到中文": "Switch to Chinese",
   "选择身份深漂打工人": "Choose Shenzhen hustler", "选择身份深圳富二代": "Choose rich kid", "选择身份惠州躺平青年": "Choose Huizhou slacker", "选择身份996 程序员": "Choose 996 programmer", "选择身份外卖骑手": "Choose delivery rider",
   "页面没能加载出来": "The page didn't load", "重新打开": "Reload", "清除本地存档并重新开始": "Clear local save and restart",
@@ -320,6 +321,36 @@ const PATTERNS: [RegExp, string | ((...m: string[]) => string)][] = [
   [/^(\d+(?:\/\d+)?)号线$/, "Line $1"], [/^有轨(\d)号线$/, "Tram $1"], [/^(\d+)号线（(.+)）$/, "Line $1"],
   [/^· 还有 (\d+) 天$/, "· $1 days to go"], [/^11 月 (\d+) 日$/, "Nov $1"], [/^11 月 (\d+)–(\d+) 日$/, "Nov $1–$2"], [/^(.+) ([\d.]+)m · (.+)$/, (_m, a, h, b) => `${EN[a!] ?? a} ${h}m · ${EN[b!] ?? b}`],
 ];
+/* ---- 时间预算 / 深漂档案 / 街坊连续剧 ---- */
+{
+  const blocks: Record<string, string> = {
+    "已经过了午夜，回家睡觉吧": "It's past midnight — go home and sleep",
+    "今天已经上过班了": "You've already worked today",
+    "下午一点后就别去打卡了，今天接零活或者去玩吧": "Too late to clock in after 1 p.m. — take a gig or go have fun",
+    "先正常上完班才能加班": "Finish a normal shift before overtime",
+    "今天已经加过班了": "You've already done overtime today",
+    "今天已经歇了 2 次，再躺就要躺废了": "You've rested twice today — any more and you'll never get up",
+    "早睡早起，心情 +4。": "Early to bed, early to rise: mood +4.",
+    "🌙 过了午夜，回家睡觉吧": "🌙 Past midnight — go home and sleep",
+    "一天从早上 8:00 到午夜：上班、出行、玩都花时间，过了午夜只能回家睡觉，熬夜第二天能量少": "Each day runs from 8:00 to midnight: work, travel and fun all take time. After midnight you can only go home and sleep, and staying up late costs next morning's energy",
+  };
+  for (const [zh, e] of Object.entries(blocks)) { EN[zh] = e; EN[`${zh}。`] = `${e}.`; }
+}
+const durEN = (n: string, u: string) => `${n} ${u === "小时" ? "h" : "min"}`;
+PATTERNS.unshift(
+  [/^🕘 (\d\d:\d\d) · 该睡了$/, "🕘 $1 · bedtime"],
+  [/^🕘 (\d\d:\d\d) · 剩 ([\d.]+) (小时|分钟)$/, (_m, c, n, u) => `🕘 ${c} · ${durEN(n!, u!)} left`],
+  [/^([\d.]+) (小时|分钟)$/, (_m, n, u) => durEN(n!, u!)],
+  [/^· ⏱ ([\d.]+) (小时|分钟)$/, (_m, n, u) => `· ⏱ ${durEN(n!, u!)}`],
+  [/^⏱ ([\d.]+) (小时|分钟) → (\d\d:\d\d)$/, (_m, n, u, c) => `⏱ ${durEN(n!, u!)} → ${c}`],
+  [/^(.*?)\s*昨晚熬到 (\d\d:\d\d)，早上能量只有 (\d+)。$/, (_m, pre, c, e) => `${pre ? `${trOr(pre)} ` : ""}Up until ${c} last night: only ${e} energy this morning.`],
+  [/^(.*?)\s*早睡早起，心情 \+4。$/, (_m, pre) => `${pre ? `${trOr(pre)} ` : ""}Early to bed, early to rise: mood +4.`],
+  [/^深漂档案传承：(.+)。$/, (_m, l) => `Legacy perks this run: ${l!.split("、").map((x) => storyEN(x)).join(", ")}.`],
+  [/^📖 (.+?)：(.+)——你选了「(.+)」。$/, (_m, n, t, c) => `📖 ${nameEN(n!)}: ${storyEN(t!)} — you chose "${storyEN(c!)}".`],
+  [/^📖 (.+?)的故事「(.+)」结局：(.+)。$/, (_m, n, t, e) => `📖 ${nameEN(n!)}'s story "${storyEN(t!)}" ending: ${storyEN(e!)}.`],
+  [/^(被请出门|超额达成|达成目标|撑满 30 天|月光收场|职级|进过大厂) \+(\d+)$/, (_m, k, n) => `${({ 被请出门: "Evicted", 超额达成: "Beat the goal", 达成目标: "Reached the goal", "撑满 30 天": "Lasted 30 days", 月光收场: "Ended broke", 职级: "Career level", 进过大厂: "Worked at a big company" } as Record<string, string>)[k!]} +${n}`],
+  [/^街坊故事 (\d+) 个 \+(\d+)$/, "Neighbour stories ×$1 +$2"],
+);
 const nameEN = (zh: string) => EN[zh] ?? EN[`${zh}站`] ?? zh;
 PATTERNS.push(
   [/^前往(.+)$/, (_m, n) => `Go to ${nameEN(n!)}`],

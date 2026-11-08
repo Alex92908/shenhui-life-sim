@@ -28,6 +28,8 @@ export interface Meta {
   runs: number;
   giftsSent: number;
   eventsSeen: string[];
+  /** 深漂档案：跨局积累的档案点和已解锁 / 本局带上的传承 */
+  legacy: { pts: number; total: number; owned: string[]; equipped: string[]; history: { title: string; pts: number; day: string }[] };
 }
 
 const KEY = "shhr-meta-v1";
@@ -36,6 +38,7 @@ const blank = (): Meta => ({
   streak: { last: "", count: 0, best: 0, claimed: "" },
   week: { key: "", prog: {}, claimed: [] },
   runs: 0, giftsSent: 0, eventsSeen: [],
+  legacy: { pts: 0, total: 0, owned: [], equipped: [], history: [] },
 });
 
 export function loadMeta(): Meta {
@@ -55,6 +58,12 @@ export function loadMeta(): Meta {
       runs: typeof m.runs === "number" ? m.runs : 0,
       giftsSent: typeof m.giftsSent === "number" ? m.giftsSent : 0,
       eventsSeen: arr(m.eventsSeen),
+      legacy: m.legacy && typeof m.legacy === "object" ? {
+        pts: typeof m.legacy.pts === "number" ? m.legacy.pts : 0,
+        total: typeof m.legacy.total === "number" ? m.legacy.total : 0,
+        owned: arr(m.legacy.owned), equipped: arr(m.legacy.equipped),
+        history: Array.isArray(m.legacy.history) ? m.legacy.history.filter((h) => h && typeof h.title === "string" && typeof h.pts === "number").slice(0, 20) : [],
+      } : b.legacy,
     };
   } catch {
     return blank();
