@@ -1,0 +1,7 @@
+.git
+node_modules
+standalone/node_modules
+standalone/dist
+standalone/data
+tools
+*.tsbuildinfo

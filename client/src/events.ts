@@ -1,4 +1,4 @@
-// Random life events, ported from the previous edition. APEC events only
+// Random life events, ported from the previous edition. Summit events only
 // enter the pool during leaders' week (game days 14–19 = Nov 14–19).
 import type { CityKey } from "./data";
 
@@ -77,11 +77,11 @@ export const EVENTS: GameEvent[] = [
     { t: "关手机，睡觉", s: "别人的进度条不是我的", apply: (S) => { S.mood += 6; S.energy += 8; return "关掉手机睡了个好觉，心情 +6，能量 +8。"; } },
     { t: "emo到凌晨三点", s: "越刷越清醒", apply: (S) => { S.mood -= 12; S.energy -= 12; return "刷到三点，心情 -12，能量 -12。"; } },
   ] },
-  { ctx: "apec", tag: "APEC 国际周", title: "一位外宾向你问路", desc: "会场门口，一位外宾拿着地图有点迷路，看到你像看到救星。你的英语，还够用吗？", choices: [
-    { t: "热心指路 + 带一段", s: "顺便练口语", apply: (S) => { S.network += 1; S.mood += 8; return "你连说带比划把人带到会场门口，外宾送了你一枚 APEC 纪念徽章。人脉 +1，心情 +8。"; } },
+  { ctx: "apec", tag: "峰会国际周", title: "一位外宾向你问路", desc: "会场门口，一位外宾拿着地图有点迷路，看到你像看到救星。你的英语，还够用吗？", choices: [
+    { t: "热心指路 + 带一段", s: "顺便练口语", apply: (S) => { S.network += 1; S.mood += 8; return "你连说带比划把人带到会场门口，外宾送了你一枚 峰会纪念徽章。人脉 +1，心情 +8。"; } },
     { t: "微笑摇头，快步走开", s: "怕说错话", apply: (S) => { S.mood -= 3; return "你笑着摆摆手走开了，心里有点后悔没多学两句英语。心情 -3。去图书馆学一课吧。"; } },
   ] },
-  { ctx: "apec", tag: "APEC 国际周", title: "会务组招募临时志愿者", desc: "Lisa 在群里喊人：APEC 领导人周会务缺人手，先培训半天，之后接待外宾优先排你。", choices: [
+  { ctx: "apec", tag: "峰会国际周", title: "会务组招募临时志愿者", desc: "Lisa 在群里喊人：湾区峰会周会务缺人手，先培训半天，之后接待外宾优先排你。", choices: [
     { t: "报名参加培训", s: "半天时间，换长期机会", apply: (S) => { S.energy -= 10; S.skill += 1; S.xp += 2; return "培训完拿到志愿者证，技能 +1，经验 +2。外宾接待的门槛，你达到了。"; } },
     { t: "这周只想搞钱", s: "培训不发钱", apply: (S) => { S.mood += 2; return "你婉拒了，先把这周的房租赚出来再说。心情 +2。"; } },
   ] },

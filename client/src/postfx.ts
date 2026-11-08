@@ -9,6 +9,9 @@
 //   OutputPass (tone mapping + sRGB).
 // Any failure (old GPU, blocked extension) degrades to the plain renderer:
 // makePostFx returns null and callers fall back to renderer.render.
+// Callers create their renderer with antialias:false on purpose: the
+// composer renders the scene into its own (non-MSAA) target, so canvas
+// MSAA never touched the 3D scene — it only cost fill rate.
 import * as THREE from "three";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";

@@ -1,11 +1,15 @@
 // Static game data for 深惠人生模拟电脑高配版.
 // Locations / identities / careers / foods ported from the previous edition;
 // ZhuyaHome style templates, furniture and material prices are ZhuyaHome's
-// real catalog data. APEC venues and dates follow the real 33rd APEC in
-// Shenzhen: leaders' week opens Nov 14, welcome banquet Nov 16 at 太子湾 MGM,
+// real catalog data. Summit venues follow a fictional 湾区国际峰会 (no real event) in
+// Shenzhen: leaders' week opens Nov 14, welcome banquet Nov 16 at 太子湾 海景酒店,
 // CEO Summit Nov 17–18 at 前海国际会议中心, leaders' meeting Nov 18–19 at
 // 深圳国际交流中心 (香蜜湖). The 30-day season is November, so game day N is
 // November N.
+
+import { SZ_KM_PER_UNIT, SZ_METRO_LINES, SZ_REAL_KM } from "./metro-sz";
+import { SZ_PLACES, type CityPlace, type PlaceKind } from "./places-sz";
+import { HZ_LOC_KM, HZ_PLACES, HZ_REAL_KM } from "./places-hz";
 
 export type CityKey = "sz" | "hz" | "hk";
 
@@ -39,7 +43,7 @@ export const CITIES: Record<CityKey, CityInfo> = {
     funDesc: "沿着湾边走一走，看对岸的灯一盏盏亮",
     gigName: "跑腿 / 闪送单",
     scene: "深圳 · 城中村握手楼",
-    sky: "平安金融中心",
+    sky: "某安金融中心",
   },
   hz: {
     name: "惠州",
@@ -103,6 +107,71 @@ export const CAREERS = [
   { name: "城市合伙人", mul: 2.6, needXp: 42, needSkill: 8 },
 ];
 
+/* ---- 公司 / 大厂：面试、拿 offer、跳槽 ----
+   You start at the small 科技园公司. Every big company HQ on the map can be
+   interviewed at; pass the bar (skill / xp / 职级) and you get an offer, take
+   it and that company becomes where you clock in. Each pays and wears you
+   down differently. Each company belongs to one city (default Shenzhen);
+   Huizhou has its own: 仲恺's electronics and battery makers and the Daya
+   Bay petrochemical base. Huizhou's 仲恺公司 stays the walk-in job there. */
+export interface Company {
+  id: string; name: string; short: string; emoji: string;
+  /** Which city's map it is on (default "sz"). */
+  city?: CityKey;
+  /** Map locations you can work / interview at. */
+  locIds: string[];
+  /** Day-wage multiplier on top of identity × city × 职级. */
+  payMul: number;
+  /** Overtime pay multiplier (on top of the usual ×1.75). */
+  otMul: number;
+  /** Energy a normal workday costs, and its mood change. */
+  energy: number; mood: number;
+  needSkill: number; needXp: number; needCareer: number;
+  /** The interviewer wants 正装. */
+  formal?: boolean;
+  /** Has a staff canteen: cheap meal for employees. */
+  canteen?: boolean;
+  culture: string;
+}
+export const COMPANIES: Company[] = [
+  { id: "startup", name: "科技园创业公司", short: "创业公司", emoji: "🏢", locIds: ["work"], payMul: 1, otMul: 1, energy: 28, mood: 0, needSkill: 0, needXp: 0, needCareer: 0, culture: "小公司什么都要干，工资一般，但没人管你几点到。" },
+  { id: "tencent", name: "某讯", short: "某讯", emoji: "🐧", locIds: ["co-tencent", "co-penguin"], payMul: 1.6, otMul: 1, energy: 30, mood: -1, needSkill: 3, needXp: 10, needCareer: 1, canteen: true, culture: "福利好、食堂出名，滨海大厦和大铲湾园区两个园区都能上班。" },
+  { id: "bytedance", name: "某音集团", short: "某音", emoji: "🎵", locIds: ["co-bytedance"], payMul: 1.8, otMul: 1.1, energy: 34, mood: -4, needSkill: 3, needXp: 8, needCareer: 1, canteen: true, culture: "钱给得最多，项目节奏快。" },
+  { id: "huawei", name: "某为", short: "某为", emoji: "📶", locIds: ["co-huawei"], payMul: 1.7, otMul: 1.25, energy: 34, mood: -3, needSkill: 4, needXp: 12, needCareer: 1, canteen: true, culture: "研发氛围浓，加班费和年终也给得足。" },
+  { id: "dji", name: "某疆", short: "某疆", emoji: "🚁", locIds: ["co-dji"], payMul: 1.65, otMul: 1, energy: 32, mood: -2, needSkill: 4, needXp: 10, needCareer: 1, canteen: true, culture: "对产品要求极高，面试看技术，进去能玩到最新的无人机。" },
+  { id: "baidu", name: "某度", short: "某度", emoji: "🔎", locIds: ["co-baidu"], payMul: 1.45, otMul: 1, energy: 29, mood: -1, needSkill: 2, needXp: 6, needCareer: 0, culture: "老牌大厂，节奏比新贵们稳一些。" },
+  { id: "zte", name: "某兴通讯", short: "某兴", emoji: "📡", locIds: ["co-zte"], payMul: 1.3, otMul: 1, energy: 28, mood: 0, needSkill: 1, needXp: 4, needCareer: 0, canteen: true, culture: "通信老厂，稳定，门槛比互联网大厂低。" },
+  { id: "cmb", name: "某商银行", short: "某商行", emoji: "🏦", locIds: ["co-cmb"], payMul: 1.45, otMul: 0.9, energy: 26, mood: 1, needSkill: 2, needXp: 6, needCareer: 1, formal: true, culture: "金融业的体面工作：准点下班多，但面试必须穿正装。" },
+  { id: "pingan", name: "某安集团", short: "某安", emoji: "🏙️", locIds: ["bank"], payMul: 1.4, otMul: 1, energy: 28, mood: 0, needSkill: 2, needXp: 6, needCareer: 0, formal: true, culture: "在某安金融中心上班，深圳最高楼里看日落。面试要穿正装。" },
+  { id: "vanke", name: "某科", short: "某科", emoji: "🏗️", locIds: ["co-vanke"], payMul: 1.35, otMul: 1, energy: 26, mood: 3, needSkill: 2, needXp: 6, needCareer: 0, culture: "在大梅沙海边上班，通勤远，但心情好。" },
+  { id: "byd", name: "某亚迪", short: "某亚迪", emoji: "🔋", locIds: ["co-byd"], payMul: 1.2, otMul: 1.1, energy: 30, mood: 0, needSkill: 0, needXp: 2, needCareer: 0, canteen: true, culture: "新能源大厂招人多，门槛低，包吃，坪山离市区有点远。" },
+  { id: "tcl", city: "hz", name: "某CL集团", short: "某CL", emoji: "📺", locIds: ["co-tcl"], payMul: 1.25, otMul: 1.1, energy: 28, mood: 1, needSkill: 1, needXp: 4, needCareer: 0, canteen: true, culture: "仲恺的老牌电子大厂，电视、面板、手机一条龙，园区大、食堂便宜，惠州人眼里的「铁饭碗」。" },
+  { id: "desay", city: "hz", name: "某赛西威", short: "某赛", emoji: "🚗", locIds: ["co-desay"], payMul: 1.35, otMul: 1, energy: 27, mood: 2, needSkill: 2, needXp: 6, needCareer: 0, culture: "做智能座舱和车载电子的上市公司，研发楼对着测试车道，工程师文化，面试会考你懂不懂车。" },
+  { id: "eve", city: "hz", name: "某纬锂能", short: "某纬", emoji: "🔋", locIds: ["co-eve"], payMul: 1.2, otMul: 1.15, energy: 30, mood: 0, needSkill: 0, needXp: 2, needCareer: 0, canteen: true, culture: "锂电池大厂扩产快、招人多、门槛低，三班倒，加班费给得足。" },
+  { id: "petro", city: "hz", name: "某海油大亚湾石化", short: "某海油", emoji: "🛢️", locIds: ["co-petro"], payMul: 1.5, otMul: 1, energy: 30, mood: -1, needSkill: 2, needXp: 8, needCareer: 1, formal: true, culture: "大亚湾石化区的央企炼化基地，待遇在惠州数一数二，安全规矩极严，面试要穿正装。" },
+];
+/** What the player still lacks for this company's hiring bar (empty = qualified). */
+export function companyGaps(co: Company, s: { skill: number; xp: number; careerIdx: number }): string[] {
+  const out: string[] = [];
+  if (s.skill < co.needSkill) out.push(`技能 ${s.skill}/${co.needSkill}`);
+  if (s.xp < co.needXp) out.push(`经验 ${s.xp}/${co.needXp}`);
+  if (s.careerIdx < co.needCareer) out.push(`职级要到「${CAREERS[co.needCareer]?.name ?? ""}」`);
+  return out;
+}
+export const companyById = (id: string | undefined): Company => COMPANIES.find((c) => c.id === id) ?? COMPANIES[0]!;
+/** The company that has a workplace at this location in this city. */
+export function companyAt(cityKey: CityKey, locId: string): Company | null {
+  return COMPANIES.find((c) => (c.city ?? "sz") === cityKey && c.locIds.includes(locId)) ?? null;
+}
+/** The company you clock in at in this city: your employer when it is
+    here; otherwise the city's walk-in job (Shenzhen's 创业公司; Huizhou's
+    仲恺公司, which is a plain workplace — null). */
+export function employerHere(s: { employer?: string; cityKey: CityKey }): Company | null {
+  const co = companyById(s.employer);
+  if ((co.city ?? "sz") === s.cityKey) return co;
+  return s.cityKey === "sz" ? companyById("startup") : null;
+}
+
 export type NpcBehavior = "stay" | "patrol" | "wander" | "commute";
 export type NpcAccessory = "cap" | "apron" | "tie" | "vest" | "bag" | "helmet" | "none";
 export interface Npc {
@@ -122,7 +191,7 @@ export const NPCS: Npc[] = [
   { name: "阿强", job: "外卖骑手", emoji: "🛵", color: 0xff8a00, line: "跑单路过，顺手帮你扶了下快倒的电动车。", outfit: "黄色骑手服 + 头盔，保温箱不离身", shirt: 0xf5b301, pants: 0x2e3440, accessory: "helmet", behavior: "commute", preferTypes: ["food", "transit"] },
   { name: "小美", job: "南山白领", emoji: "💼", color: 0xec4899, line: "总在夜市碰到她，拼桌吃猪脚饭认识的。", outfit: "粉色衬衫 + 西装裤，挎通勤包", shirt: 0xec4899, pants: 0x3a3f4a, accessory: "bag", behavior: "commute", preferTypes: ["work", "food", "mall"] },
   { name: "陈伯", job: "小区保安", emoji: "🧢", color: 0x64748b, line: "门岗陈伯，谁晚归他都记得，热心肠。", outfit: "藏青保安制服 + 大檐帽，腰间别着对讲机", shirt: 0x2c3e63, pants: 0x232a3a, accessory: "cap", behavior: "patrol", preferTypes: ["home", "mall"] },
-  { name: "Lisa", job: "APEC 外宾联络员", emoji: "🌐", color: 0x8b5cf6, line: "APEC 筹备组的外联，英语超好，常在各个会场出没。", outfit: "深色西装套装 + 丝巾，胸前挂工作证", shirt: 0x5b4a8a, pants: 0x2b2b33, accessory: "tie", behavior: "wander", preferTypes: ["apec", "lodging"] },
+  { name: "Lisa", job: "峰会外宾联络员", emoji: "🌐", color: 0x8b5cf6, line: "峰会筹备组的外联，英语超好，常在各个会场出没。", outfit: "深色西装套装 + 丝巾，胸前挂工作证", shirt: 0x5b4a8a, pants: 0x2b2b33, accessory: "tie", behavior: "wander", preferTypes: ["apec", "lodging"] },
   { name: "大芬姐", job: "夜市摊主", emoji: "🍢", color: 0xf59e0b, line: "烧烤摊老板娘，熟客永远多送一串。", outfit: "碎花围裙 + 袖套，头发利落地扎起来", shirt: 0xd97706, pants: 0x4a3226, accessory: "apron", behavior: "stay", preferTypes: ["food", "market"] },
   { name: "子健", job: "职院学生", emoji: "🎒", color: 0x22c55e, line: "在图书馆夜校总坐你隔壁，一起备考。", outfit: "绿色连帽卫衣 + 双肩包", shirt: 0x22c55e, pants: 0x374151, accessory: "bag", behavior: "wander", preferTypes: ["learn", "gym"] },
   { name: "王姨", job: "保洁阿姨", emoji: "🧹", color: 0x14b8a6, line: "写字楼和车站的保洁，拖把水桶是她的全套装备，地砖被她拖得能照人。", outfit: "橙色保洁马甲 + 胶手套", shirt: 0xe07b39, pants: 0x3f4a3a, accessory: "vest", behavior: "patrol", preferTypes: ["transit", "work", "mall"] },
@@ -251,7 +320,7 @@ export const FURNITURE: Furniture[] = [
   { id: "bathtub", emoji: "🛁", name: "独立浴缸", price: 5600, comfort: 20, styles: ["轻奢现代", "北欧轻奢", "日式"], color: 0xf1f5f9, desc: "卫生间升级款，加班回来泡个澡，一天的累都化在水里。", room: "bathroom" },
 ];
 
-/* ---- APEC 真实日程（第 33 届，深圳，2026 年 11 月） ---- */
+/* ---- 峰会日程 ---- */
 export type ApecPhaseId = "before" | "prep" | "banquet" | "ceo" | "leaders" | "after";
 
 export interface ApecPhase {
@@ -262,23 +331,25 @@ export interface ApecPhase {
 
 /** Game day N = November N. Leaders' week: 14–19. */
 export function apecPhase(day: number): ApecPhase {
+  if (!isApecSeason()) day = 99;
   if (day < 14)
-    return { id: "before", label: "APEC 倒计时", detail: `第 33 届 APEC 领导人周 11 月 14 日在深圳开启，主题「建设亚太共同体，促进共同繁荣」，21 个成员经济体参加。会场周边的会务兼职正在招人。` };
+    return { id: "before", label: "峰会倒计时", detail: `湾区国际峰会周 11 月 14 日在深圳开启，各方嘉宾云集。会场周边的会务兼职正在招人。` };
   if (day <= 15)
-    return { id: "prep", label: "领导人周 · 筹备", detail: "领导人周已经开启，各会场在做最后布展和联调。三个会场的筹备兼职都加了人手，收入 ×1.2。" };
+    return { id: "prep", label: "峰会周 · 筹备", detail: "峰会周已经开启，各会场在做最后布展和联调。三个会场的筹备兼职都加了人手，收入 ×1.2。" };
   if (day === 16)
-    return { id: "banquet", label: "欢迎晚宴日", detail: "今晚欢迎晚宴在南山太子湾的 MGM 酒店举行。太子湾晚宴服务收入 ×1.5，其他会场筹备 ×1.2。" };
+    return { id: "banquet", label: "欢迎晚宴日", detail: "今晚欢迎晚宴在南山太子湾的海景酒店举行。太子湾晚宴服务收入 ×1.5，其他会场筹备 ×1.2。" };
   if (day === 17)
-    return { id: "ceo", label: "CEO 峰会", detail: "APEC 工商领导人峰会（CEO 峰会）在前海国际会议中心举行（17–18 日）。前海会务与接待收入 ×1.5。" };
+    return { id: "ceo", label: "工商峰会", detail: "湾区工商峰会在前海国际会议中心举行（17–18 日）。前海会务与接待收入 ×1.5。" };
   if (day === 18)
-    return { id: "leaders", label: "领导人会议 · CEO 峰会收官", detail: "领导人非正式会议在香蜜湖深圳国际交流中心开幕（18–19 日），前海 CEO 峰会今天收官。两个会场收入都 ×1.5。" };
+    return { id: "leaders", label: "峰会主会议 · 工商峰会收官", detail: "峰会主会议在香蜜湖深圳国际交流中心开幕（18–19 日），前海工商峰会今天收官。两个会场收入都 ×1.5。" };
   if (day === 19)
-    return { id: "leaders", label: "领导人会议 · 收官", detail: "领导人会议今天收官，会徽上的 21 根羽毛对应 21 个成员经济体。香蜜湖会场服务收入 ×1.5。" };
-  return { id: "after", label: "APEC 已落幕", detail: "领导人周已经结束，志愿者证书和这段经历还在。人脉和经验，是这周留给你最实在的东西。" };
+    return { id: "leaders", label: "峰会主会议 · 收官", detail: "峰会主会议今天收官，会徽上是深圳湾的海浪和木棉花。香蜜湖会场服务收入 ×1.5。" };
+  return { id: "after", label: "峰会已落幕", detail: "峰会周已经结束，志愿者证书和这段经历还在。人脉和经验，是这周留给你最实在的东西。" };
 }
 
 /** Which venue is peaking on a given day, for per-venue multipliers. */
 export function apecVenueMul(day: number, locId: string): number {
+  if (!isApecSeason()) return 1;
   if (day >= 14 && day <= 15) return locId.startsWith("apec") ? 1.2 : 1;
   if (day === 16) return locId === "apec-taiziwan" ? 1.5 : locId.startsWith("apec") ? 1.2 : 1;
   if (day === 17) return locId === "apec-qianhai" ? 1.5 : locId.startsWith("apec") ? 1.2 : 1;
@@ -288,14 +359,14 @@ export function apecVenueMul(day: number, locId: string): number {
 }
 
 export function isApecWeek(day: number): boolean {
-  return day >= 14 && day <= 19;
+  return isApecSeason() && day >= 14 && day <= 19;
 }
 
-/* ---- APEC 领导人周活动（公开上线版）：每天一个任务，按真实日程 ----
-   玩家只能以志愿者 / 记者 / 司机的身份参与——领导人周的闭门会议不对
-   公众开放，游戏里也绝不让玩家扮领导人进会场。完成 = 先到会场打卡
+/* ---- 湾区峰会周活动（公开上线版）：每天一个任务，按日程 ----
+   玩家只能以志愿者 / 记者 / 司机的身份参与——峰会周的闭门会议不对
+   公众开放，游戏里也绝不让玩家扮与会嘉宾进会场。完成 = 先到会场打卡
    （按真实地铁线路去），再做当天的岗位任务。六天全做完发服务证书。 */
-export const APEC_SLOGAN = "来深圳看 APEC、玩游戏认深圳";
+export const APEC_SLOGAN = "来深圳看峰会、玩游戏认深圳";
 
 export type ApecRole = "志愿者" | "记者" | "司机";
 
@@ -317,14 +388,14 @@ export interface ApecTask {
 
 export const APEC_TASKS: ApecTask[] = [
   {
-    id: "apec-d14", day: 14, dateLabel: "11 月 14 日", event: "领导人周开幕 · 高官会与工商咨询理事会",
+    id: "apec-d14", day: 14, dateLabel: "11 月 14 日", event: "峰会周开幕 · 筹备会与工商论坛",
     role: "志愿者", roleEmoji: "🎽", venueLocId: "apec-xiangmihu",
     title: "开幕日志愿引导",
-    desc: "领导人周今天开幕，高官会和工商咨询理事会在香蜜湖国际交流中心开场。会议是闭门的，你的岗位在门外：引导、答疑、分发物料——盛会少不了门外的人。",
+    desc: "峰会周今天开幕，筹备会和工商论坛在香蜜湖国际交流中心开场。会议是闭门的，你的岗位在门外：引导、答疑、分发物料——盛会少不了门外的人。",
     energy: 20, payMul: 1.1, xp: 3, network: 1,
   },
   {
-    id: "apec-d15", day: 15, dateLabel: "11 月 15 日", event: "领导人周 · 高官会与工商咨询理事会续会",
+    id: "apec-d15", day: 15, dateLabel: "11 月 15 日", event: "峰会周 · 筹备会与工商论坛续会",
     role: "司机", roleEmoji: "🚐", venueLocId: "apec-xiangmihu",
     title: "会场通勤摆渡司机",
     desc: "开摆渡车在香蜜湖会场、周边酒店和地铁站之间接送记者与工作人员。路线要熟、时间要准，车上听各国记者聊花絮，比新闻里热闹。",
@@ -334,42 +405,45 @@ export const APEC_TASKS: ApecTask[] = [
     id: "apec-d16", day: 16, dateLabel: "11 月 16 日晚", event: "太子湾欢迎晚宴",
     role: "志愿者", roleEmoji: "🎽", venueLocId: "apec-taiziwan",
     title: "欢迎晚宴礼宾服务",
-    desc: "今晚欢迎晚宴在南山太子湾的 MGM 酒店举行。你做礼宾引导和晚宴服务：嘉宾从邮轮港一路走来，海风、灯光、乐队都在你的班次里。",
+    desc: "今晚欢迎晚宴在南山太子湾的海景酒店举行。你做礼宾引导和晚宴服务：嘉宾从邮轮港一路走来，海风、灯光、乐队都在你的班次里。",
     energy: 20, payMul: 1.5, xp: 3, network: 1,
   },
   {
-    id: "apec-d17", day: 17, dateLabel: "11 月 17 日", event: "前海 CEO 峰会 · 第一天",
+    id: "apec-d17", day: 17, dateLabel: "11 月 17 日", event: "前海工商峰会 · 第一天",
     role: "记者", roleEmoji: "🎤", venueLocId: "apec-qianhai",
-    title: "CEO 峰会跑会记者",
-    desc: "APEC 工商领导人峰会在前海国际会议中心开场。你在新闻中心当跑会记者：抢机位、记要点、发快讯，把企业高管们的原话第一时间传出去。",
+    title: "工商峰会跑会记者",
+    desc: "湾区工商峰会在前海国际会议中心开场。你在新闻中心当跑会记者：抢机位、记要点、发快讯，把企业高管们的原话第一时间传出去。",
     energy: 20, payMul: 1.3, xp: 3, network: 1,
   },
   {
-    id: "apec-d18", day: 18, dateLabel: "11 月 18 日", event: "领导人会议开幕 · CEO 峰会收官",
+    id: "apec-d18", day: 18, dateLabel: "11 月 18 日", event: "峰会主会议开幕 · 工商峰会收官",
     role: "司机", roleEmoji: "🚐", venueLocId: "apec-xiangmihu",
-    title: "领导人会议外围保障司机",
-    desc: "领导人非正式会议今天在香蜜湖开幕，前海 CEO 峰会同日收官。你开保障车跑会场外围路线，接送媒体与后勤——离会场最近的普通人岗位之一。",
+    title: "峰会主会议外围保障司机",
+    desc: "峰会主会议今天在香蜜湖开幕，前海工商峰会同日收官。你开保障车跑会场外围路线，接送媒体与后勤——离会场最近的普通人岗位之一。",
     energy: 24, payMul: 1.5, xp: 3, network: 1,
   },
   {
-    id: "apec-d19", day: 19, dateLabel: "11 月 19 日", event: "领导人会议 · 收官日",
+    id: "apec-d19", day: 19, dateLabel: "11 月 19 日", event: "峰会主会议 · 收官日",
     role: "志愿者", roleEmoji: "🎽", venueLocId: "apec-xiangmihu",
     title: "收官日志愿服务",
-    desc: "领导人周最后一天。你做完最后一班志愿服务，在签退台领到这周的服务证书——21 根羽毛的会徽下面，印着你的名字。",
+    desc: "峰会周最后一天。你做完最后一班志愿服务，在签退台领到这周的服务证书——峰会会徽下面，印着你的名字。",
     energy: 18, payMul: 1.4, xp: 4, network: 1,
   },
 ];
 
 export function apecTaskOfDay(day: number): ApecTask | null {
+  if (!isApecSeason()) return null;
   return APEC_TASKS.find((t) => t.day === day) ?? null;
 }
 
-export const APEC_CERT_NAME = "🎖️ APEC 领导人周服务证书";
+export const APEC_CERT_NAME = "🎖️ 湾区峰会服务证书";
 
 /* ---- 地点：深圳 25 + 惠州 21 = 46，坐标按双城真实地理方位铺在大地图上 ---- */
 export type LocType =
   | "home" | "work" | "learn" | "market" | "apec" | "health" | "gym"
-  | "transit" | "mall" | "bank" | "fun" | "food" | "social" | "scenic" | "port" | "mountain" | "lodging";
+  | "transit" | "mall" | "bank" | "fun" | "food" | "social" | "scenic" | "port" | "mountain" | "lodging"
+  /** 公共服务：派出所、药店、游客中心 */
+  | "service";
 
 export interface Loc {
   id: string;
@@ -388,26 +462,44 @@ export interface Loc {
   funCost?: number;
   funMood?: number;
   funDesc?: string;
+  /** Real places only (OSM): what kind, and practical details when mapped. */
+  placeKind?: PlaceKind;
+  en?: string;
+  tel?: string;
+  addr?: string;
+  hours?: string;
+  er?: boolean;
 }
 
 const SZ_LOCS: Loc[] = [
-  { id: "airport", type: "transit", emoji: "✈️", name: "宝安国际机场", short: "机场", desc: "T3 航站楼人流昼夜不停。机场摆渡、行李寄存、接机跑腿的单子多，APEC 周外宾抵离高峰更缺人。", gigName: "机场摆渡 / 接机跑腿", x: -27, z: -3, color: 0x38bdf8, h: 2.2, w: 4.2 },
-  { id: "apec-qianhai", type: "apec", emoji: "🏙️", name: "前海国际会议中心", short: "前海会议中心", desc: "APEC 工商领导人峰会（CEO 峰会，11 月 17–18 日）的举办地。各国企业高管云集，会务、接待、同传协助都缺人。", x: -21, z: 5, color: 0xb91c1c, h: 3.6, w: 3.6 },
+  { id: "airport", type: "transit", emoji: "✈️", name: "宝安国际机场", short: "机场", desc: "T3 航站楼人流昼夜不停。机场摆渡、行李寄存、接机跑腿的单子多，峰会周外宾抵离高峰更缺人。", gigName: "机场摆渡 / 接机跑腿", x: -27, z: -3, color: 0x38bdf8, h: 2.2, w: 4.2 },
+  { id: "apec-qianhai", type: "apec", emoji: "🏙️", name: "前海国际会议中心", short: "前海会议中心", desc: "湾区工商峰会（11 月 17–18 日）的举办地。各国企业高管云集，会务、接待、同传协助都缺人。", x: -21, z: 5, color: 0xb91c1c, h: 3.6, w: 3.6 },
   { id: "happyvalley", type: "fun", emoji: "🎢", name: "欢乐谷", short: "欢乐谷", desc: "过山车的尖叫声隔着一条街都听得见。深漂的快乐老家，一张门票换一天不管不顾。", funName: "欢乐谷玩一整天", funCost: 120, funMood: 30, funDesc: "排最长的队，坐最快的过山车，下来腿软心飞", x: -19, z: -6, color: 0xe879f9, h: 3, w: 3.4 },
-  { id: "work", type: "work", emoji: "🏢", name: "科技园公司", short: "公司", desc: "南山科技园，灯火通明到深夜。上班和加班都在这儿，工资和职级也在这儿。", x: -17, z: 0, color: 0x3b82f6, h: 6, w: 3.2 },
+  { id: "work", type: "work", emoji: "🏢", name: "科技园公司", short: "公司", desc: "南山科技园里一家几十人的创业公司，灯火通明到深夜。你在深圳的第一份工；想跳槽，就去各大厂总部面试。", x: -17, z: 0, color: 0x3b82f6, h: 6, w: 3.2 },
+  /* 大厂总部：都能面试、拿 offer、跳槽过去上班（见 COMPANIES）。位置按真实地铁站摆放。 */
+  { id: "co-tencent", type: "work", emoji: "🐧", name: "某讯滨海大厦", short: "某讯", desc: "后海的某讯总部：两栋塔楼用三座空中连廊连在一起。", x: -15.6, z: 7.8, color: 0x2563eb, h: 6, w: 2.6 },
+  { id: "co-penguin", type: "work", emoji: "🏝️", name: "某讯 · 大铲湾总部", short: "大铲湾园区", desc: "宝安大铲湾填海建起的某讯新总部园区，2025 年 10 月起试运营，规划能容纳 8–10 万人，滨海栈道和红树林对市民开放。", x: -24, z: 3.9, color: 0x0ea5e9, h: 3, w: 2.8 },
+  { id: "co-bytedance", type: "work", emoji: "🎵", name: "某音集团 · 后海中心", short: "某音", desc: "某音集团在深圳的第一座自建总部，后海约 150 米高的塔楼。", x: -17.3, z: 5, color: 0x111827, h: 5.5, w: 2.4 },
+  { id: "co-baidu", type: "work", emoji: "🔎", name: "某度国际大厦", short: "某度", desc: "后海的某度深圳总部，东西两座塔楼。", x: -14, z: 1.8, color: 0x2563eb, h: 5, w: 2.4 },
+  { id: "co-dji", type: "work", emoji: "🚁", name: "某疆总部大楼", short: "某疆", desc: "西丽留仙洞的某疆总部：两座塔楼之间悬挑出一层层平台，无人机在楼顶试飞。", x: -12.7, z: -0.8, color: 0x1f2937, h: 6, w: 2.4 },
+  { id: "co-huawei", type: "work", emoji: "📶", name: "某为坂田基地", short: "某为", desc: "龙岗坂田的某为总部园区，大片低层研发楼、湖和绿地。", x: 6.2, z: -11.9, color: 0xdc2626, h: 2, w: 3.0 },
+  { id: "co-zte", type: "work", emoji: "📡", name: "某兴通讯大厦", short: "某兴", desc: "南山科技园的某兴总部，深南大道边的老牌通信大厂。", x: -19.3, z: 2.4, color: 0x0284c7, h: 4.5, w: 2.4 },
+  { id: "co-cmb", type: "work", emoji: "🏦", name: "某商银行大厦", short: "某商行", desc: "福田深南大道上的某商银行总部，银行的规矩多，面试要穿正装。", x: -3.8, z: 0.7, color: 0xb91c1c, h: 6.5, w: 2.4 },
+  { id: "co-vanke", type: "work", emoji: "🏗️", name: "某科中心", short: "某科", desc: "大梅沙海边的「水平摩天楼」：整栋楼架在空中，下面是公园，开窗就是海。", x: 29.3, z: 8, color: 0xf97316, h: 1.6, w: 3.0 },
+  { id: "co-byd", type: "work", emoji: "🔋", name: "某亚迪坪山总部", short: "某亚迪", desc: "坪山的某亚迪总部和工厂，新能源车和电池，招工量大，门槛低。", x: 35, z: -6.4, color: 0x16a34a, h: 2.5, w: 3.0 },
   { id: "talent", type: "fun", emoji: "🏃", name: "人才公园", short: "人才公园", desc: "海边跑道和求贤阁。晨跑的人、看海的人、聊 offer 的人，都在这儿。", funName: "沿海边跑道散步", funCost: 10, funMood: 20, funDesc: "跑道灯光一路亮到海边，跑完一身轻", x: -16, z: 11, color: 0x14b8a6, h: 0.8, w: 3 },
   { id: "mall", type: "mall", emoji: "🛍️", name: "海岸城商场", short: "商场", desc: "逛街、买衣服、看人花钱。也能接周末促销兼职，站柜台赚点外快。", x: -14, z: 5, color: 0xec4899, h: 3.4, w: 3.4 },
   { id: "home", type: "home", emoji: "🏠", name: "城中村握手楼", short: "出租屋", desc: "你租的小单间，窗户对着隔壁楼——握手楼名不虚传。睡觉、躺平都在这儿。", x: -13, z: -4, color: 0xff6b4a, h: 2.4, w: 2.8 },
   { id: "gym", type: "gym", emoji: "🏋️", name: "社区健身房", short: "健身房", desc: "铁馆月卡不贵。体质练上去（健身 3 次后），上班都没那么耗能量了。", x: -11, z: -8, color: 0x84cc16, h: 2.4, w: 2.8 },
-  { id: "apec-taiziwan", type: "apec", emoji: "🚢", name: "太子湾 · MGM 欢迎晚宴", short: "太子湾晚宴", desc: "南山太子湾，11 月 16 日晚 APEC 欢迎晚宴在太子湾 MGM 酒店举行。晚宴服务、礼宾引导是普通人离这场盛会最近的岗位。", x: -22, z: 12, color: 0x991b1b, h: 3, w: 3.4 },
+  { id: "apec-taiziwan", type: "apec", emoji: "🚢", name: "太子湾 · 峰会欢迎晚宴", short: "太子湾晚宴", desc: "南山太子湾，11 月 16 日晚 峰会欢迎晚宴在太子湾海景酒店举行。晚宴服务、礼宾引导是普通人离这场盛会最近的岗位。", x: -22, z: 12, color: 0x991b1b, h: 3, w: 3.4 },
   { id: "port", type: "transit", emoji: "🛳️", name: "蛇口邮轮母港", short: "邮轮港", desc: "邮轮靠港时行李搬运、接送单特别多，外国游客也多，练口语的好地方。", gigName: "邮轮行李搬运 / 接送", x: -27, z: 11, color: 0x0ea5e9, h: 1.6, w: 3.2 },
   { id: "szbayport", type: "port", emoji: "🛃", name: "深圳湾口岸", short: "深圳湾口岸", desc: "过大桥就是香港。跨境代购、接送、行李帮忙的单子不断，口岸越忙越有赚头。", gigName: "口岸接送 / 跨境跑腿", x: -18, z: 15, color: 0x22d3ee, h: 1.8, w: 3.4 },
   { id: "fun", type: "fun", emoji: "🌅", name: "深圳湾公园", short: "海边公园", desc: "看海、吹风、看日落。花小钱回大心情，深漂的充电站。", x: -8, z: 12, color: 0x10b981, h: 0.8, w: 3.2 },
-  { id: "apec-xiangmihu", type: "apec", emoji: "🌐", name: "深圳国际交流中心 · 香蜜湖", short: "国际交流中心", desc: "福田香蜜湖北侧，第 33 届 APEC 领导人非正式会议的主会场（11 月 18–19 日）。领导人周不对公众开放，普通人以志愿者、会务、接待、司机的身份参与。", x: -4, z: -7, color: 0xdc2626, h: 4.4, w: 3.6 },
+  { id: "apec-xiangmihu", type: "apec", emoji: "🌐", name: "深圳国际交流中心 · 香蜜湖", short: "国际交流中心", desc: "福田香蜜湖北侧，湾区国际峰会的主会场（11 月 18–19 日）。峰会周不对公众开放，普通人以志愿者、会务、接待、司机的身份参与。", x: -4, z: -7, color: 0xdc2626, h: 4.4, w: 3.6 },
   { id: "lianhua", type: "fun", emoji: "⛰️", name: "莲花山公园", short: "莲花山", desc: "登顶看福田灯火，邓小平像前吹吹风。免费，心情照样回满。", funName: "登莲花山看夜景", funCost: 0, funMood: 16, funDesc: "一分钱不花，爬到山顶看整座城市亮起来", x: -3, z: -13, color: 0x059669, h: 1.2, w: 3.2 },
   { id: "library", type: "learn", emoji: "📚", name: "深圳图书馆 · 夜校", short: "图书馆", desc: "北馆夜校和自习区灯火通明。攒技能点的地方——想升职，先来这儿充电。", x: 0, z: -4, color: 0x7c3aed, h: 3.2, w: 3.2 },
   { id: "north", type: "transit", emoji: "🚄", name: "深圳北站", short: "北站", desc: "高铁站人流如织。车站跑腿、闪送单不少，赶上出差潮还能多赚点。", gigName: "车站跑腿 / 闪送", x: 1, z: -15, color: 0x6366f1, h: 1.8, w: 3.6 },
-  { id: "bank", type: "bank", emoji: "🏦", name: "平安银行大厦", short: "银行", desc: "存款、理财都在这儿办。闲钱买理财，每晚有点收益——但投资有波动，别上头。", x: 2, z: 1, color: 0xf59e0b, h: 5.2, w: 3 },
+  { id: "bank", type: "bank", emoji: "🏦", name: "某安金融中心", short: "银行", desc: "存款、理财都在这儿办。闲钱买理财，每晚有点收益——但投资有波动，别上头。", x: 2, z: 1, color: 0xf59e0b, h: 5.2, w: 3 },
   { id: "metro", type: "transit", emoji: "🚇", name: "地铁站", short: "地铁站", desc: "早高峰能把鞋挤掉的地方。也能在这附近接跑腿/外卖兼职单。", x: 5, z: 3, color: 0x8b5cf6, h: 1.2, w: 3.2 },
   { id: "hq", type: "market", emoji: "📱", name: "华强北电子市场", short: "华强北", desc: "一米柜台走出过无数传奇。能淘二手手机捡漏，也能接装机兼职练手。", x: 6, z: -6, color: 0x06b6d4, h: 4.6, w: 3.2 },
   { id: "food", type: "food", emoji: "🍜", name: "东门夜市食街", short: "夜市", desc: "猪脚饭、沙县、海底捞全在这一条街。没能量了就来这儿回血。", x: 10, z: 3, color: 0xf59e0b, h: 1.8, w: 3.2 },
@@ -463,7 +555,7 @@ const HZ_LOCS: Loc[] = [
   { id: "hzsouth", type: "transit", emoji: "🚄", name: "惠州南站", short: "惠州南站", desc: "厦深高铁大站，去深圳北只要半小时。出站口的接送、跑腿单常年不断。", gigName: "车站接送 / 跑腿", x: 2, z: 7, color: 0x6366f1, h: 1.8, w: 3.6 },
   { id: "danshui", type: "market", emoji: "🏮", name: "淡水老城", short: "淡水老城", desc: "惠阳淡水的老骑楼街，客家小吃和老字号挤满一条街。帮工、摆摊、修小电器的活儿都找得到。", gigName: "老城摆摊 / 帮工", x: 7, z: 3, color: 0xf59e0b, h: 2, w: 3.2 },
   { id: "dayawan", type: "fun", emoji: "🏝️", name: "大亚湾黄金海岸", short: "黄金海岸", desc: "沙子细、海水清，本地人周末拖家带口来。摆个小摊卖椰子也能赚点零花。", funName: "黄金海岸踏浪", funCost: 12, funMood: 24, funDesc: "踩着细沙走完整条海岸线，烦恼都被浪带走了", x: 11, z: 10, color: 0x0891b2, h: 0.7, w: 3.4 },
-  { id: "hotel", type: "transit", emoji: "♨️", name: "温泉酒店", short: "温泉酒店", desc: "巽寮湾边的温泉酒店，周末客流旺。帮工、接待、行李单都不少，APEC 周深圳客多，这边也跟着旺。", gigName: "温泉酒店帮工 / 接待", x: 17, z: 1, color: 0xf97316, h: 2.8, w: 3.2 },
+  { id: "hotel", type: "transit", emoji: "♨️", name: "温泉酒店", short: "温泉酒店", desc: "巽寮湾边的温泉酒店，周末客流旺。帮工、接待、行李单都不少，峰会周深圳客多，这边也跟着旺。", gigName: "温泉酒店帮工 / 接待", x: 17, z: 1, color: 0xf97316, h: 2.8, w: 3.2 },
   { id: "xunliao", type: "transit", emoji: "⛵", name: "巽寮湾渔港", short: "巽寮湾", desc: "渔船回港时最热闹。帮渔家分拣、给游客当向导，旺季不缺活儿。", gigName: "渔港帮工 / 海钓向导", x: 20, z: 8, color: 0x0284c7, h: 1.4, w: 3.4 },
   { id: "home", type: "home", emoji: "🏠", name: "海边出租屋", short: "出租屋", desc: "推窗能闻到海风的老房子，租金便宜。睡觉、躺平都在这儿。", x: 23, z: 4, color: 0xfb923c, h: 2.2, w: 2.8 },
   { id: "fun", type: "fun", emoji: "🏖️", name: "双月湾海边", short: "海边", desc: "沙滩、海浪、日落，全免费。心情崩了就来这儿坐一会儿。", x: 27, z: 10, color: 0x06b6d4, h: 0.6, w: 3.4 },
@@ -478,6 +570,11 @@ const HZ_LOCS: Loc[] = [
   { id: "xiayong", type: "market", emoji: "🦞", name: "霞涌海鲜街", short: "霞涌海鲜街", desc: "大亚湾霞涌的老海鲜街，现捞现称现加工。旅游旺季整条街都是人，帮工、摆摊、代客加工的活儿不断。", gigName: "海鲜街帮工 / 摆摊", x: 13, z: 13.5, color: 0xf59e0b, h: 1.6, w: 3.2 },
   { id: "dongjiangpark", type: "fun", emoji: "🌳", name: "东江公园", short: "东江公园", desc: "东江北岸的滨江公园，绿道沿着江走。晨练、放风筝、江边钓鱼，惠城人晚饭后的散步主场。", funName: "东江边散步放风筝", funCost: 0, funMood: 19, funDesc: "沿着江边绿道走，晚风把一天的闷热吹散", x: -1, z: 4, color: 0x10b981, h: 0.8, w: 3.2 },
   { id: "hzbotanic", type: "scenic", emoji: "🌿", name: "惠州植物园", short: "惠州植物园", desc: "惠城丰山脚下的植物园，温室、沙地植物区和山顶的丰山公园连成一片。本地人周末遛娃吸氧的地方。", funName: "植物园温室看花", funCost: 10, funMood: 21, funDesc: "钻进温室看热带植物，再爬上丰山看老城", x: -16, z: -10, color: 0x65a30d, h: 1.2, w: 3.2 },
+  { id: "tanyue", type: "fun", emoji: "🏨", name: "檀悦豪生度假酒店", short: "檀悦豪生", desc: "巽寮湾海边的大型度假酒店，海景房和户外泳池是招牌。住不起也能来泳池和沙滩泡一天，周末和节假日深圳来的客人最多。", funName: "海景度假一天：泳池 + 沙滩", funCost: 380, funMood: 32, funDesc: "上午泡泳池，下午沙滩晒太阳，傍晚在海景餐厅看日落", x: 24, z: 7.2, color: 0x0ea5e9, h: 3.2, w: 3 },
+  { id: "co-tcl", type: "work", emoji: "📺", name: "某CL科技园", short: "某CL", desc: "仲恺高新区的某CL总部和液晶产业园：总部大楼、成排的厂房和员工宿舍，上下班高峰园区门口全是电动车。", x: -25, z: -5, color: 0xdc2626, h: 5, w: 2.8 },
+  { id: "co-desay", type: "work", emoji: "🚗", name: "某赛西威研发中心", short: "某赛", desc: "仲恺的某赛西威：蓝玻璃研发楼，楼下一条测试车道，智能座舱样车天天在跑。", x: -24, z: 0, color: 0x2563eb, h: 4, w: 2.4 },
+  { id: "co-eve", type: "work", emoji: "🔋", name: "某纬锂能产业园", short: "某纬", desc: "仲恺潼湖的锂电池产业园，锯齿屋顶的厂房一排排，三班倒，宿舍和食堂都在园区里。", x: -28.5, z: -1, color: 0x16a34a, h: 2.5, w: 2.8 },
+  { id: "co-petro", type: "work", emoji: "🛢️", name: "某海油大亚湾石化区", short: "某海油", desc: "大亚湾石化区：炼化塔、球罐和码头，夜里灯火通明像一座钢铁城。待遇好、规矩严。", x: 15, z: 6, color: 0x64748b, h: 4, w: 3.2 },
 ];
 
 /* ---- 香港：按真实地理铺——北面是新界（元朗/屯门/沙田/西贡），中间九龙
@@ -521,6 +618,146 @@ const HK_LOCS: Loc[] = [
 export function getLocations(cityKey: CityKey): Loc[] {
   return cityKey === "sz" ? SZ_LOCS : cityKey === "hk" ? HK_LOCS : HZ_LOCS;
 }
+/** A metro station with no game location of its own is still a place the
+    player can stand: its id is "st:<站名>". These are resolved on demand
+    and never added to getLocations(), so place lists stay short. */
+export const STATION_PREFIX = "st:";
+export const stationLocId = (name: string) => `${STATION_PREFIX}${name}`;
+export const isStationLoc = (id: string) => id.startsWith(STATION_PREFIX);
+
+/* ---- 城市地点 (OSM): parks, malls, hospitals, museums, beaches … ----
+   Real places from OpenStreetMap (places-sz.ts), id "pl:<osm id>". Like
+   stations they resolve on demand and stay out of getLocations(); each
+   kind maps to an existing place type so it gets that type's actions. */
+export const PLACE_PREFIX = "pl:";
+export const isPlaceLoc = (id: string) => id.startsWith(PLACE_PREFIX);
+export interface PlaceKindMeta { label: string; emoji: string; type: LocType; color: number; funName?: string; funCost?: number; funMood?: number; funDesc?: string; }
+export const PLACE_KINDS: Record<PlaceKind, PlaceKindMeta> = {
+  park: { label: "公园", emoji: "🌳", type: "scenic", color: 0x22c55e, funName: "逛公园", funCost: 0, funMood: 14, funDesc: "深圳的公园免费开放：绿道、湖边、草坪，走一圈整个人松下来" },
+  nature: { label: "湿地 / 保护区", emoji: "🦢", type: "scenic", color: 0x15803d, funName: "看红树林和候鸟", funCost: 0, funMood: 18, funDesc: "带上望远镜，冬天能看到成群的候鸟" },
+  beach: { label: "海滩", emoji: "🏖️", type: "scenic", color: 0x38bdf8, funName: "去海边玩水", funCost: 30, funMood: 24, funDesc: "踩沙、吹海风、看日落，周末人多要早点去" },
+  peak: { label: "山峰", emoji: "⛰️", type: "mountain", color: 0x4d7c0f, funName: "登顶看全城", funCost: 0, funMood: 22, funDesc: "沿登山道一路往上，山顶能看到海和城市" },
+  mall: { label: "商场", emoji: "🛍️", type: "mall", color: 0xf472b6 },
+  hospital: { label: "医院", emoji: "🏥", type: "health", color: 0xef4444 },
+  university: { label: "大学", emoji: "🎓", type: "learn", color: 0x6366f1 },
+  library: { label: "图书馆", emoji: "📚", type: "learn", color: 0x8b5cf6 },
+  museum: { label: "博物馆 / 美术馆", emoji: "🏛️", type: "fun", color: 0xd97706, funName: "看一场展览", funCost: 0, funMood: 14, funDesc: "深圳大部分公立博物馆、美术馆免费，提前在公众号预约" },
+  theatre: { label: "剧院 / 音乐厅", emoji: "🎭", type: "fun", color: 0xbe185d, funName: "看一场演出", funCost: 180, funMood: 26, funDesc: "话剧、音乐会、儿童剧，周末场次多，学生票更便宜" },
+  stadium: { label: "体育场馆", emoji: "🏟️", type: "gym", color: 0x0ea5e9 },
+  themepark: { label: "主题乐园", emoji: "🎢", type: "fun", color: 0xe879f9, funName: "玩一整天", funCost: 150, funMood: 30, funDesc: "排队、尖叫、拍照，玩到闭园" },
+  attraction: { label: "景点", emoji: "📍", type: "scenic", color: 0xf59e0b, funName: "慢慢逛一圈", funCost: 0, funMood: 16, funDesc: "边走边看，顺手查查这里的故事" },
+  historic: { label: "古迹 / 纪念地", emoji: "🏯", type: "scenic", color: 0x92400e, funName: "看看历史遗迹", funCost: 0, funMood: 12, funDesc: "读一读碑文和介绍，深圳不只有四十年" },
+  police: { label: "派出所 / 警务", emoji: "🚓", type: "service", color: 0x1d4ed8 },
+  pharmacy: { label: "药店", emoji: "💊", type: "service", color: 0x0d9488 },
+  info: { label: "游客 / 志愿服务中心", emoji: "ℹ️", type: "service", color: 0x0891b2 },
+};
+/** Real places whose signature experience deserves its own action (and life scene). */
+const PLACE_FUN: Record<string, Partial<PlaceKindMeta>> = {
+  "欢乐港湾": { funName: "坐「湾区之光」摩天轮", funCost: 100, funMood: 26, funDesc: "透明胶囊轿厢慢慢升到海湾上空，前海和伶仃洋尽收眼底" },
+  "小梅沙海洋世界": { funName: "逛海洋世界 · 走海底隧道", funCost: 150, funMood: 28, funDesc: "鱼群、鳐鱼和鲨鱼从头顶游过，再去水母馆慢慢看" },
+};
+/** OSM places minus the ones the game already has as a hand-made location
+    (same name, or one name containing the other, e.g. 深圳人才公园 / 人才公园). */
+const placesDeduped: Partial<Record<CityKey, CityPlace[]>> = {};
+export function placesForCity(cityKey: CityKey): CityPlace[] {
+  const hit = placesDeduped[cityKey];
+  if (hit) return hit;
+  const locs = getLocations(cityKey);
+  const clean = (n: string) => n.replace(/\s|·/g, "");
+  const core = (n: string) => clean(n).replace(/^(深圳|惠州)(市)?/, "");
+  const cores = new Set(locs.flatMap((l) => [core(l.name), core(l.short)]).filter((n) => n.length >= 3));
+  const fulls = locs.map((l) => clean(l.name)).filter((n) => n.length >= 5);
+  const out = (cityKey === "sz" ? SZ_PLACES : HZ_PLACES).filter((p) => !cores.has(core(p.name)) && !fulls.some((f) => clean(p.name).includes(f)));
+  placesDeduped[cityKey] = out;
+  return out;
+}
+const placeById = new Map([...SZ_PLACES, ...HZ_PLACES].map((p) => [`${PLACE_PREFIX}${p.id}`, p]));
+const placeCity = (id: string): CityKey => (id.startsWith(`${PLACE_PREFIX}hz`) ? "hz" : "sz");
+/** Real km of a rail / metro station, in the city's frame. */
+export const stationRealKm = (cityKey: CityKey, name: string): [number, number] | undefined => (cityKey === "sz" ? SZ_REAL_KM : HZ_REAL_KM)[name];
+/** Where a location really is, in km (Shenzhen: same frame as SZ_REAL_KM;
+    Huizhou: east/south of 惠州西湖). Real places carry their own
+    coordinates; game locations use the station they are linked to (the
+    hand-placed miniature is not to scale, so map distance would point to
+    the wrong neighbourhood); anything else falls back to the nearest
+    station on the map. Huizhou's game locations have their real spot. */
+export function realKmOf(cityKey: CityKey, locId: string): [number, number] | null {
+  if (isPlaceLoc(locId)) { const p = placeById.get(locId); return p && placeCity(locId) === cityKey ? [p.kx, p.ky] : null; }
+  if (isStationLoc(locId)) return stationRealKm(cityKey, locId.slice(STATION_PREFIX.length)) ?? null;
+  if (cityKey === "hz" && HZ_LOC_KM[locId]) return HZ_LOC_KM[locId]!;
+  const lines = metroLinesForCity(cityKey);
+  for (const l of lines) for (const st of l.stations) { const k = stationRealKm(cityKey, st.name); if (st.locId === locId && k) return k; }
+  const loc = getLocations(cityKey).find((l) => l.id === locId);
+  if (!loc) return null;
+  let best: [number, number] | null = null; let bd = Infinity;
+  for (const l of lines) for (const st of l.stations) {
+    const k = stationRealKm(cityKey, st.name); if (!k) continue;
+    const d = Math.hypot(st.x - loc.x, st.z - loc.z);
+    if (d < bd) { bd = d; best = k; }
+  }
+  return best;
+}
+type Near = { place: CityPlace; id: string; dist: number };
+/** Real places around a location, by real distance in km. */
+function placesAround(cityKey: CityKey, locId: string): Near[] {
+  const at = realKmOf(cityKey, locId);
+  if (!at) return [];
+  return placesForCity(cityKey)
+    .map((p) => ({ place: p, id: `${PLACE_PREFIX}${p.id}`, dist: Math.hypot(p.kx - at[0], p.ky - at[1]) }))
+    .filter((r) => r.id !== locId)
+    .sort((a, b) => a.dist - b.dist);
+}
+/** 附近服务：the nearest real hospital (24h emergency first), pharmacy,
+    police station and visitor centre, by real distance — for anyone who
+    needs help, Summit delegates and volunteers included. */
+export function nearbyServices(cityKey: CityKey, locId: string): Near[] {
+  const all = placesAround(cityKey, locId);
+  const pick = (kind: PlaceKind, n: number, pref?: (p: CityPlace) => boolean) => {
+    const of = all.filter((r) => r.place.kind === kind);
+    const best = pref ? of.filter((r) => pref(r.place) && r.dist < 8).slice(0, 1) : [];
+    return [...best, ...of.filter((r) => !best.includes(r))].slice(0, n);
+  };
+  // hospitals always show (however far); smaller services only when close
+  return [...pick("hospital", 2, (p) => !!p.er), ...[...pick("pharmacy", 1), ...pick("police", 1), ...pick("info", 1)].filter((r) => r.dist <= 5)];
+}
+/** Places worth visiting around a location (not services), real km. */
+export function nearbyPlaces(cityKey: CityKey, locId: string, n = 4, maxKm = 3): Near[] {
+  return placesAround(cityKey, locId).filter((r) => r.dist <= maxKm && PLACE_KINDS[r.place.kind].type !== "service" && r.place.kind !== "hospital").slice(0, n);
+}
+const stationLocCache = new Map<string, Loc>();
+export function resolveLoc(cityKey: CityKey, id: string): Loc | undefined {
+  const real = getLocations(cityKey).find((l) => l.id === id);
+  if (real) return real;
+  if (isPlaceLoc(id)) {
+    const p = placeById.get(id);
+    if (!p || placeCity(id) !== cityKey) return undefined;
+    const k = { ...PLACE_KINDS[p.kind], ...(PLACE_FUN[p.name] ?? {}) };
+    const walkMin = Math.max(1, Math.round((p.stKm * 1.3) / 0.075));
+    const how = p.stKm < 0.3 ? "出站就到" : p.stKm <= 3 ? `约 ${p.stKm.toFixed(1)} 公里，步行 ${walkMin} 分钟左右` : `约 ${p.stKm.toFixed(1)} 公里，打车或坐公交过去`;
+    return {
+      id, type: k.type, emoji: k.emoji, name: p.name, short: p.name.length > 8 ? `${p.name.slice(0, 8)}…` : p.name,
+      desc: `${k.label}${p.en ? ` · ${p.en}` : ""}。最近的${cityKey === "sz" ? "地铁站" : "城轨 / 高铁站"}是「${p.st}」，${how}。`,
+      x: p.x, z: p.z, color: k.color, h: 0, w: 0,
+      funName: k.funName, funCost: k.funCost, funMood: k.funMood, funDesc: k.funDesc,
+      placeKind: p.kind, en: p.en, tel: p.tel, addr: p.addr, hours: p.hours, er: p.er,
+    };
+  }
+  if (!isStationLoc(id)) return undefined;
+  const key = `${cityKey}|${id}`;
+  const hit = stationLocCache.get(key);
+  if (hit) return hit;
+  const name = id.slice(STATION_PREFIX.length);
+  const lines = metroLinesForCity(cityKey).filter((l) => l.stations.some((x) => x.name === name));
+  const st = lines[0]?.stations.find((x) => x.name === name);
+  if (!st || !lines[0]) return undefined;
+  const loc: Loc = {
+    id, type: "transit", emoji: "🚇", name: `${name}站`, short: name,
+    desc: `地铁站：${lines.map((l) => l.short).join("、")}。出站就是街区，可以从这里步行、骑车、打车去别处，或者再进站坐车。`,
+    x: st.x, z: st.z, color: lines[0].color, h: 0, w: 0,
+  };
+  stationLocCache.set(key, loc);
+  return loc;
+}
 
 export const APPS = [
   { id: "career", e: "📈", n: "职业中心" },
@@ -533,7 +770,7 @@ export const APPS = [
   { id: "weather", e: "🌦️", n: "天气" },
   { id: "ledger", e: "🧾", n: "记账本" },
   { id: "map", e: "🗺️", n: "城市地图" },
-  { id: "apec", e: "🌐", n: "APEC资讯" },
+  { id: "apec", e: "🌐", n: "峰会资讯" },
   { id: "home", e: "🏠", n: "我的家" },
   { id: "metro", e: "🚇", n: "地铁通" },
 ] as const;
@@ -541,7 +778,7 @@ export const APPS = [
 export type AppId = (typeof APPS)[number]["id"];
 
 export const OFFERS = [
-  { name: "会展临时接待", mul: 1.5, note: "APEC 周最缺人，手快有" },
+  { name: "会展临时接待", mul: 1.5, note: "峰会周最缺人，手快有" },
   { name: "夜市地推兼职", mul: 1.2, note: "晚上出摊，氛围组" },
   { name: "高端代驾大单", mul: 1.4, note: "要驾照，更要好脾气" },
   { name: "商场周末促销", mul: 1.25, note: "站柜台，活儿稳" },
@@ -549,11 +786,23 @@ export const OFFERS = [
 ];
 
 export const WEEK = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+/* 游戏第 N 天 = 2026 年 11 月 N 日（峰会 14–19 日），星期按真实日历算 */
+export const GAME_YEAR = 2026;
+/* 当前赛季（北京时间的一个自然月）。App 载入存档时设置；星期、峰会活动都按它算。 */
+let SEASON = { y: GAME_YEAR, m: 11 };
+export function setSeason(startKey: string): void {
+  const y = Number(startKey.slice(0, 4)), m = Number(startKey.slice(5, 7));
+  if (y > 2000 && m >= 1 && m <= 12) SEASON = { y, m };
+}
+export const seasonOf = () => SEASON;
+/** 湾区峰会周只在 2026 年 11 月赛季举行。 */
+export const isApecSeason = () => SEASON.y === 2026 && SEASON.m === 11;
+const realDow = (day: number) => (new Date(SEASON.y, SEASON.m - 1, day).getDay() + 6) % 7; // 0 = 周一
 export function weekday(day: number): string {
-  return WEEK[(day - 1) % 7] ?? "周一";
+  return WEEK[realDow(day)] ?? "周一";
 }
 export function isSaturday(day: number): boolean {
-  return (day - 1) % 7 === 5;
+  return realDow(day) === 5;
 }
 
 /* ================= 交通方式 ================= */
@@ -573,7 +822,7 @@ export const TRANSPORT_MODES: TransportMode[] = [
   { id: "bus", emoji: "🚌", name: "公交", desc: "¥2起，要等车、站站停，比电动车稳但快不了多少", energyPerUnit: 0.12, mapSpeed: 16.5, etaPerUnit: 1.0, etaFixed: 5, speedTag: "中速" },
   { id: "metro", emoji: "🚇", name: "地铁", desc: "按站收费，不堵车，进车厢真实乘车——中长途比地面交通快得多", energyPerUnit: 0.1, mapSpeed: 22, etaPerUnit: 0.62, etaFixed: 7, speedTag: "快" },
   { id: "taxi", emoji: "🚕", name: "打车", desc: "按距离计价，地面最快，点对点直达不用等站", energyPerUnit: 0.04, mapSpeed: 20, etaPerUnit: 0.72, etaFixed: 3, speedTag: "快" },
-  { id: "drive", emoji: "🚗", name: "自驾", desc: "开自己的车：油费/电费比打车便宜得多，点对点直达；路上跟车流一起等红灯，到了还要找车位、交停车费", energyPerUnit: 0.05, mapSpeed: 24, etaPerUnit: 0.6, etaFixed: 5, speedTag: "快" },
+  { id: "drive", emoji: "🚗", name: "自驾", desc: "要驾照和车（租一天或自己买）：点对点直达，油费/电费比打车便宜；路上跟车流一起等红灯，高峰会堵，到了还要找车位、交停车费", energyPerUnit: 0.05, mapSpeed: 24, etaPerUnit: 0.6, etaFixed: 5, speedTag: "快" },
   { id: "rail", emoji: "🚄", name: "城际/高铁", desc: "全场最快：深惠跨城，深圳北↔惠州南，含进站安检时间", energyPerUnit: 0.06, mapSpeed: 34, etaPerUnit: 0.3, etaFixed: 12, speedTag: "最快" },
   { id: "ferry", emoji: "⛴️", name: "轮渡", desc: "蛇口邮轮港出发看海，船速不慢但要等班次", energyPerUnit: 0.08, mapSpeed: 15, etaPerUnit: 1.0, etaFixed: 15, speedTag: "中速" },
   { id: "flight", emoji: "✈️", name: "飞机", desc: "飞起来最快，但值机安检的固定开销最大，短途反而不划算", energyPerUnit: 0.05, mapSpeed: 30, etaPerUnit: 0.22, etaFixed: 50, speedTag: "最快" },
@@ -700,18 +949,18 @@ export const SCENIC_SPOTS: ScenicSpot[] = [
   { locId: "tramroad", cityKey: "hk", name: "湾仔电车路", tag: "叮叮车", tip: "HK$3 坐百年电车，上层前排是移动观景台" },
 ];
 
-/* ---- 双语地名 + 景区等级 + 城市简介（帮 APEC 外宾和新玩家认识这座城） ----
+/* ---- 双语地名 + 景区等级 + 城市简介（帮 峰会外宾和新玩家认识这座城） ----
    English names keyed by the location's Chinese name (names are unique per
    city). Grades follow the official Shenzhen A-level scenic-area list
    (深圳市文化广电旅游体育局 A级旅游景区一览表): 华侨城旅游度假区（世界之窗/
    锦绣中华/欢乐谷）与欢乐海岸、观澜湖为 5A，东部华侨城、青青世界、野生动物园、
    海上田园、光明农场大观园、仙湖植物园、大梅沙、大鹏所城为 4A。 */
 export const LOC_EN: Record<string, string> = {
-  "宝安国际机场": "Bao'an International Airport", "前海国际会议中心": "Qianhai Int'l Convention Center", "欢乐谷": "Happy Valley", "科技园公司": "Science & Technology Park", "人才公园": "Talent Park", "海岸城商场": "Coastal City Mall", "城中村握手楼": "Urban Village Rental", "社区健身房": "Community Gym", "太子湾 · MGM 欢迎晚宴": "Prince Bay · MGM Welcome Banquet", "蛇口邮轮母港": "Shekou Cruise Homeport", "深圳湾口岸": "Shenzhen Bay Port", "深圳湾公园": "Shenzhen Bay Park", "深圳国际交流中心 · 香蜜湖": "Shenzhen Int'l Exchange Center, Xiangmihu", "莲花山公园": "Lianhuashan Park", "深圳图书馆 · 夜校": "Shenzhen Library & Night School", "深圳北站": "Shenzhen North Station", "平安银行大厦": "Ping An Bank Tower", "地铁站": "Metro Station", "华强北电子市场": "Huaqiangbei Electronics Market", "东门夜市食街": "Dongmen Night Market", "深圳市人民医院": "Shenzhen People's Hospital", "酒吧街 · KTV": "Bar Street & KTV", "罗湖口岸": "Luohu Port", "大芬油画村": "Dafen Oil Painting Village", "大梅沙海滨公园": "Dameisha Beach Park", "深圳湾滨海酒店 · 青旅": "Shenzhen Bay Hotel & Hostel", "皇岗口岸": "Huanggang Port", "梧桐山": "Wutong Mountain", "福田口岸": "Futian Port", "莲塘口岸": "Liantang Port", "仙湖植物园 · 弘法寺": "Fairy Lake Botanical Garden & Hongfa Temple", "盐田海滨栈道": "Yantian Seaside Boardwalk",
+  "宝安国际机场": "Bao'an International Airport", "前海国际会议中心": "Qianhai Int'l Convention Center", "欢乐谷": "Happy Valley", "科技园公司": "Science & Technology Park", "某讯滨海大厦": "Xun Tech Binhai Tower", "某讯 · 大铲湾总部": "Xun Tech Bay Campus", "某音集团 · 后海中心": "Yin Group Houhai Center", "某度国际大厦": "Du Tech International Building", "某疆总部大楼": "Jiang Robotics Tower", "某为坂田基地": "Wei Tech Bantian Campus", "某兴通讯大厦": "Xing Telecom Building", "某商银行大厦": "Shang Bank Tower", "某科中心": "Ke Center", "某亚迪坪山总部": "Di Auto HQ", "人才公园": "Talent Park", "海岸城商场": "Coastal City Mall", "城中村握手楼": "Urban Village Rental", "社区健身房": "Community Gym", "太子湾 · 峰会欢迎晚宴": "Prince Bay · Summit Welcome Banquet", "蛇口邮轮母港": "Shekou Cruise Homeport", "深圳湾口岸": "Shenzhen Bay Port", "深圳湾公园": "Shenzhen Bay Park", "深圳国际交流中心 · 香蜜湖": "Shenzhen Int'l Exchange Center, Xiangmihu", "莲花山公园": "Lianhuashan Park", "深圳图书馆 · 夜校": "Shenzhen Library & Night School", "深圳北站": "Shenzhen North Station", "某安金融中心": "An Finance Center", "地铁站": "Metro Station", "华强北电子市场": "Huaqiangbei Electronics Market", "东门夜市食街": "Dongmen Night Market", "深圳市人民医院": "Shenzhen People's Hospital", "酒吧街 · KTV": "Bar Street & KTV", "罗湖口岸": "Luohu Port", "大芬油画村": "Dafen Oil Painting Village", "大梅沙海滨公园": "Dameisha Beach Park", "深圳湾滨海酒店 · 青旅": "Shenzhen Bay Hotel & Hostel", "皇岗口岸": "Huanggang Port", "梧桐山": "Wutong Mountain", "福田口岸": "Futian Port", "莲塘口岸": "Liantang Port", "仙湖植物园 · 弘法寺": "Fairy Lake Botanical Garden & Hongfa Temple", "盐田海滨栈道": "Yantian Seaside Boardwalk",
   "世界之窗": "Window of the World", "锦绣中华 · 民俗村": "Splendid China Folk Village", "深圳野生动物园": "Shenzhen Safari Park", "东部华侨城": "OCT East", "青青世界": "Evergreen World", "海上田园": "Sea Garden Eco-Tourism Area", "光明农场大观园": "Guangming Farm Grand View Garden", "大鹏所城": "Dapeng Fortress", "欢乐海岸": "OCT Harbour", "观澜湖旅游休闲度假区": "Mission Hills Resort",
   "七娘山": "Qiniang Mountain", "杨梅坑": "Yangmeikeng Coastal Valley", "西涌海滩": "Xichong Beach", "中英街": "Chung Ying Street", "塘朗山郊野公园": "Tanglangshan Country Park", "凤凰山森林公园": "Fenghuangshan Forest Park", "深圳博物馆": "Shenzhen Museum", "海上世界文化艺术中心": "Sea World Culture & Arts Center", "深圳湾体育中心 · 春茧": "Shenzhen Bay Sports Center (Spring Cocoon)", "龙岗大运中心": "Longgang Universiade Center",
   "海龟湾自然保护区": "Sea Turtle Bay Nature Reserve", "三角洲岛": "Delta Island (Sanjiaozhou)", "惠州博物馆": "Huizhou Museum", "霞涌海鲜街": "Xiayong Seafood Street", "东江公园": "Dongjiang Park", "惠州植物园": "Huizhou Botanical Garden",
-  "罗浮山": "Luofu Mountain", "仲恺公司": "Zhongkai (Office)", "红花湖骑行站": "Honghuahu Lake Cycling", "惠州市图书馆": "Huizhou Library", "惠州西湖": "West Lake", "桥东二手市集": "Qiaodong Second-hand Market", "城轨站": "Intercity Rail Station", "港惠商场": "Ganghui Mall", "惠州市第一人民医院": "Huizhou First People's Hospital", "江北华贸天地": "Huamao Centre, Jiangbei", "惠州农商银行": "Huizhou Rural Commercial Bank", "老街夜市": "Old Street Night Market", "东江酒吧街": "Dongjiang Bar Street", "合江楼 · 东江夜游": "Hejiang Tower & Dongjiang Night Cruise", "惠州南站": "Huizhou South Station", "淡水老城": "Danshui Old Town", "大亚湾黄金海岸": "Daya Bay Golden Coast", "温泉酒店": "Hot Spring Hotel", "巽寮湾渔港": "Xunliao Bay Fishing Port", "海边出租屋": "Seaside Rental", "双月湾海边": "Shuangyue Bay Beach", "西湖青旅 · 湖畔民宿": "West Lake Hostel & B&B", "南昆山": "Nankun Mountain", "象头山": "Xiangtou Mountain", "高榜山 · 挂榜阁": "Gaobang Mountain & Guabang Pavilion", "惠州平潭机场": "Huizhou Pingtan Airport",
+  "罗浮山": "Luofu Mountain", "仲恺公司": "Zhongkai (Office)", "檀悦豪生度假酒店": "Tanyue Howard Johnson Resort", "某CL科技园": "CL Tech Park", "某赛西威研发中心": "Saixiwei R&D Center", "某纬锂能产业园": "Wei Lithium Industrial Park", "某海油大亚湾石化区": "Daya Bay Petrochemical Zone", "红花湖骑行站": "Honghuahu Lake Cycling", "惠州市图书馆": "Huizhou Library", "惠州西湖": "West Lake", "桥东二手市集": "Qiaodong Second-hand Market", "城轨站": "Intercity Rail Station", "港惠商场": "Ganghui Mall", "惠州市第一人民医院": "Huizhou First People's Hospital", "江北华贸天地": "Huamao Centre, Jiangbei", "惠州农商银行": "Huizhou Rural Commercial Bank", "老街夜市": "Old Street Night Market", "东江酒吧街": "Dongjiang Bar Street", "合江楼 · 东江夜游": "Hejiang Tower & Dongjiang Night Cruise", "惠州南站": "Huizhou South Station", "淡水老城": "Danshui Old Town", "大亚湾黄金海岸": "Daya Bay Golden Coast", "温泉酒店": "Hot Spring Hotel", "巽寮湾渔港": "Xunliao Bay Fishing Port", "海边出租屋": "Seaside Rental", "双月湾海边": "Shuangyue Bay Beach", "西湖青旅 · 湖畔民宿": "West Lake Hostel & B&B", "南昆山": "Nankun Mountain", "象头山": "Xiangtou Mountain", "高榜山 · 挂榜阁": "Gaobang Mountain & Guabang Pavilion", "惠州平潭机场": "Huizhou Pingtan Airport",
   "深水埗唐楼": "Sham Shui Po Tong Lau", "香港西九龙站": "Hong Kong West Kowloon Station", "罗湖站 · 边境": "Lo Wu Station · Boundary", "中环金融区": "Central Financial District", "观塘工厦区": "Kwun Tong Industrial Buildings", "上环 · 茶餐廳食街": "Sheung Wan · Cha Chaan Teng Street", "油麻地 · 庙街夜市": "Yau Ma Tei · Temple Street Night Market", "旺角 · 女人街": "Mong Kok · Ladies' Market", "北角 · 春秧街街市": "North Point · Chun Yeung Street Market", "铜锣湾": "Causeway Bay", "沙田新城市广场": "New Town Plaza, Sha Tin", "汇丰银行总行": "HSBC Main Building", "玛丽医院": "Queen Mary Hospital", "香港中央图书馆": "Hong Kong Central Library", "维多利亚公园": "Victoria Park", "尖沙咀海滨 · 维多利亚港": "Tsim Sha Tsui Promenade · Victoria Harbour", "太平山顶": "Victoria Peak", "湾仔电车路": "Wan Chai Tramway", "香港迪士尼乐园": "Hong Kong Disneyland", "昂坪 · 天坛大佛": "Ngong Ping · Tian Tan Buddha", "大澳渔村": "Tai O Fishing Village", "东涌": "Tung Chung", "香港国际机场": "Hong Kong International Airport", "海洋公园": "Ocean Park Hong Kong", "赤柱": "Stanley", "西贡海鲜街": "Sai Kung Seafood Street", "黄大仙祠": "Wong Tai Sin Temple", "将军澳 · 海滨新市镇": "Tseung Kwan O Waterfront", "元朗 · 大马路": "Yuen Long Main Road", "屯门 · 黄金海岸": "Tuen Mun · Gold Coast", "兰桂坊": "Lan Kwai Fong", "尖沙咀酒店 · 宾馆": "Tsim Sha Tsui Hotels & Guesthouses",
 };
 
@@ -725,7 +974,7 @@ export const CITY_INTRO: Record<CityKey, CityIntro> = {
   sz: {
     title: "认识深圳",
     en: "Shenzhen at a Glance",
-    facts: "中国第一个经济特区（1980 年设立）· 面积 1,997 km² · 常住人口约 1,798 万 · 平安金融中心 599 米，中国第二高楼 · 第一高峰梧桐山 943.7 米 · 地铁运营 600+ 公里 · 海岸线约 260 公里，深圳湾大桥直通香港 · 第 33 届 APEC 领导人会议 2026 年 11 月在这里举行。地图上的景区和会场都带英文名，点开地点就能看到——外宾跟着这张图就能认深圳。",
+    facts: "中国第一个经济特区（1980 年设立）· 面积 1,997 km² · 常住人口约 1,798 万 · 某安金融中心 599 米，中国第二高楼 · 第一高峰梧桐山 943.7 米 · 地铁运营 600+ 公里 · 海岸线约 260 公里，深圳湾大桥直通香港 · 游戏里 11 月中旬有一场虚构的「湾区国际峰会」。地图上的景区和会场都带英文名，点开地点就能看到——外宾跟着这张图就能认深圳。",
   },
   hz: {
     title: "认识惠州",
@@ -746,28 +995,24 @@ export function scenicOf(cityKey: CityKey, locId: string): ScenicSpot | undefine
 export interface MetroStation { name: string; x: number; z: number; locId?: string; }
 export interface MetroLine { id: string; name: string; short: string; color: number; colorCss: string; city: CityKey | "both"; stations: MetroStation[]; }
 const S = (name: string, x: number, z: number, locId?: string): MetroStation => ({ name, x, z, locId });
+/* Shenzhen: the full metro / tram / APM network plus 穗深城际, generated
+   from OpenStreetMap by tools/metro/gen_sz_metro.py (see metro-sz.ts).
+   Below: the hand-made Huizhou intercity + high-speed rail lines. */
+/** A generated Shenzhen station by name (keeps rail lines that stop there
+    exactly on the metro station's position). */
+const szSt = (name: string): MetroStation => {
+  for (const l of SZ_METRO_LINES) { const st = l.stations.find((x) => x.name === name); if (st) return { name, x: st.x, z: st.z }; }
+  throw new Error(`station ${name} missing from metro-sz.ts`);
+};
 export const METRO_LINES: MetroLine[] = [
-  { id: "1", name: "1号线（罗宝线）", short: "1号线", color: 0x008c2e, colorCss: "#008C2E", city: "sz", stations: [S("罗湖",15,-2,"luohu"),S("老街",11,0),S("科学馆",4,-3),S("华强路",6,-6,"hq"),S("会展中心",0,-1),S("车公庙",-9,-1),S("世界之窗",-19,-4),S("高新园",-17,0,"work"),S("深大",-15,2),S("前海湾",-21,5,"apec-qianhai"),S("宝安中心",-23,1),S("机场东",-27,-3,"airport")] },
-  { id: "2", name: "2号线（蛇口线）", short: "2号线", color: 0xf39800, colorCss: "#F39800", city: "sz", stations: [S("赤湾",-27,11,"port"),S("海上世界",-22,12,"apec-taiziwan"),S("后海",-14,5,"mall"),S("世界之窗",-19,-4),S("侨城北",-12,-6),S("香蜜",-4,-7,"apec-xiangmihu"),S("市民中心",0,-4,"library"),S("华强北",6,-6,"hq"),S("黄贝岭",11,-4),S("莲塘",19,-5,"liantangport"),S("仙湖路",12,-12,"xianhuhu")] },
-  { id: "3", name: "3号线（龙岗线）", short: "3号线", color: 0x0096d6, colorCss: "#0096D6", city: "sz", stations: [S("福保",-1,10),S("福田",0,-1),S("少年宫",-2,-6),S("华新",3,-6),S("老街",11,0),S("布吉",14,-8),S("大芬",17,-10,"dafen"),S("大运",22,-8),S("双龙",26,-6)] },
-  { id: "4", name: "4号线（龙华线）", short: "4号线", color: 0xe60012, colorCss: "#E60012", city: "sz", stations: [S("福田口岸",-1,16,"futianport"),S("福民",0,6),S("会展中心",0,-1),S("市民中心",0,-4,"library"),S("少年宫",-2,-6),S("上梅林",-1,-10),S("深圳北站",1,-15,"north"),S("红山",3,-17),S("龙华",5,-18),S("清湖",7,-19)] },
-  { id: "5", name: "5号线（环中线）", short: "5号线", color: 0x7b2d8b, colorCss: "#7B2D8B", city: "sz", stations: [S("赤湾",-27,11,"port"),S("前海湾",-21,5,"apec-qianhai"),S("宝安中心",-23,1),S("翻身",-19,-2),S("西丽",-10,-9),S("深圳北站",1,-15,"north"),S("布吉",14,-8),S("黄贝岭",11,-4),S("太安",13,-2)] },
-  { id: "6", name: "6号线（光明线）", short: "6号线", color: 0x1aa17a, colorCss: "#1AA17A", city: "sz", stations: [S("科学馆",4,-3),S("通新岭",4,-6),S("八卦岭",6,-9),S("梅林关",0,-12),S("深圳北站",1,-15,"north"),S("红山",3,-17),S("光明",-6,-19),S("松岗",-16,-14)] },
-  { id: "6b", name: "6号线支线", short: "6号线支线", color: 0x1aa17a, colorCss: "#1AA17A", city: "sz", stations: [S("光明",-6,-19),S("圳美",-8,-18),S("中山大学",-9,-17),S("深理工",-10,-16)] },
-  { id: "7", name: "7号线（西丽线）", short: "7号线", color: 0x003f87, colorCss: "#003F87", city: "sz", stations: [S("西丽湖",-12,-10),S("茶光",-11,-6),S("安托山",-8,-4),S("车公庙",-9,-1),S("上沙",-4,4),S("皇岗村",1,3),S("华新",3,-6),S("黄木岗",6,-8),S("太安",13,-2)] },
-  { id: "8", name: "8号线（盐田线）", short: "8号线", color: 0xf39800, colorCss: "#F39800", city: "sz", stations: [S("黄贝岭",11,-4),S("莲塘",19,-5,"liantangport"),S("仙湖路",12,-12,"xianhuhu"),S("梧桐山南",21,-13,"wutongshan"),S("沙头角",20,-4),S("海山",22,0),S("盐田港西",23,3,"yantian"),S("深外高中",24,5),S("小梅沙",25,7),S("大梅沙",26,8,"dameisha")] },
-  { id: "9", name: "9号线（梅林线）", short: "9号线", color: 0x8b7d6b, colorCss: "#8B7D6B", city: "sz", stations: [S("前湾",-21,5,"apec-qianhai"),S("梦海",-18,6),S("南油",-15,4),S("粤海门",-14,5,"mall"),S("深大南",-15,1),S("下沙",-7,3),S("香梅",-4,-7,"apec-xiangmihu"),S("景田",-3,-10),S("梅景",0,-11),S("孖岭",4,-9),S("红岭",6,-6,"hq")] },
-  { id: "10", name: "10号线（坂田线）", short: "10号线", color: 0xf5a9b8, colorCss: "#F5A9B8", city: "sz", stations: [S("福田口岸",-1,16,"futianport"),S("福民",0,6),S("岗厦",2,0),S("莲花村",-1,-7),S("冬瓜岭",1,-11),S("五和",6,-14),S("坂田",8,-15),S("贝尔路",9,-16),S("平湖",12,-18)] },
-  { id: "11", name: "11号线（机场线）", short: "11号线", color: 0x6c1d45, colorCss: "#6C1D45", city: "sz", stations: [S("岗厦北",2,0),S("福田",0,-1),S("车公庙",-9,-1),S("后海",-14,5,"mall"),S("南山",-16,2),S("前海湾",-21,5,"apec-qianhai"),S("宝安",-24,0),S("碧海湾",-26,-1),S("机场",-27,-3,"airport"),S("机场北",-28,-6),S("松岗",-24,-12)] },
-  { id: "12", name: "12号线（南宝线）", short: "12号线", color: 0x009b8c, colorCss: "#009B8C", city: "sz", stations: [S("左炮台东",-25,12),S("太子湾",-22,12,"apec-taiziwan"),S("海上世界",-22,11),S("南油",-15,4),S("南山",-16,2),S("桃园",-15,-1),S("中山公园",-13,-4),S("灵芝",-18,-3),S("上川",-21,-2),S("松岗",-24,-12)] },
-  { id: "13", name: "13号线（石岩线·在建开通段）", short: "13号线", color: 0xe8b400, colorCss: "#E8B400", city: "sz", stations: [S("深圳湾口岸",-18,15,"szbayport"),S("人才公园",-16,11,"talent"),S("后海",-14,5,"mall"),S("石鼓",-12,-2),S("留仙洞",-10,-9),S("应人石",-8,-14),S("石岩",-6,-17)] },
-  { id: "14", name: "14号线（东部快线）", short: "14号线", color: 0xe6007e, colorCss: "#E6007E", city: "sz", stations: [S("岗厦北",2,0),S("黄木岗",6,-8),S("罗湖北",12,-6),S("布吉",14,-8),S("石芽岭",16,-10),S("大运",22,-8),S("坪山围",28,-6),S("沙田",32,-4)] },
-  { id: "16", name: "16号线（龙坪线）", short: "16号线", color: 0x0072bc, colorCss: "#0072BC", city: "sz", stations: [S("大运",22,-8),S("大运中心",23,-9),S("龙城公园",24,-10),S("黄阁坑",25,-11),S("坪山站",24,-9),S("新和",32,-7),S("田心",34,-6)] },
-  { id: "20", name: "20号线（会展线）", short: "20号线", color: 0x7fb3e8, colorCss: "#7FB3E8", city: "sz", stations: [S("机场北",-28,-6),S("国展",-30,-9),S("国展北",-31,-11),S("会展城",-32,-13)] },
-  { id: "apm", name: "坪山云巴1号线（APM）", short: "云巴", color: 0x00a0a0, colorCss: "#00A0A0", city: "sz", stations: [S("坪山站",24,-9),S("文化聚落",31,-7),S("坪山中心",32,-6),S("燕子岭",33,-5)] },
-  { id: "guangshen", name: "广深城际（穗深城际）", short: "广深城际", color: 0xc1272d, colorCss: "#C1272D", city: "both", stations: [S("深圳机场",-27,-3,"airport"),S("福海西",-25,-7),S("沙井西",-23,-10),S("松岗",-21,-13),S("新桥",-18,-15),S("东莞西",-8,-18),S("广州南·新塘方向",2,-19)] },
+  ...SZ_METRO_LINES,
   { id: "hz-intercity", name: "莞惠城际 · 惠州城轨", short: "惠州城轨", color: 0x0ea5e9, colorCss: "#0EA5E9", city: "hz", stations: [S("仲恺",-20,-3,"work"),S("沥林北",-17,-4),S("陈江南",-15,-5),S("惠环",-13,-5),S("龙丰",-11,-3),S("惠州西湖",-13,1,"xihu"),S("云山",-9,-4),S("江北·小金口",-3,-14,"huamao"),S("惠州北",0,-16)] },
-  { id: "szhz-rail", name: "厦深高铁（深圳北↔惠州南）", short: "高铁", color: 0x6366f1, colorCss: "#6366F1", city: "both", stations: [S("深圳北站",1,-15,"north"),S("坪山站",24,-9),S("惠州南站",2,7,"hzsouth"),S("惠东站",18,2)] },
+  /* 厦深高铁 crosses between the two cities' maps, which use different
+     coordinate frames — so each city draws only its own end, ending in a
+     direction stub (a name ending in 方向: drawn, not ridable; changing city is the
+     高铁 trip in 切换城市). */
+  { id: "szhz-rail", name: "厦深高铁（深圳北↔惠州南）", short: "高铁", color: 0x6366f1, colorCss: "#6366F1", city: "sz", stations: [S("深圳北站",1,-15,"north"),szSt("坪山站"),S("惠州南·惠州方向",37.5,-6.5)] },
+  { id: "szhz-rail", name: "厦深高铁（深圳北↔惠州南）", short: "高铁", color: 0x6366f1, colorCss: "#6366F1", city: "hz", stations: [S("深圳北·深圳方向",-8,9),S("惠州南站",2,7,"hzsouth"),S("惠东站",18,2)] },
   /* Huizhou has NO metro — its rail is intercity + high-speed rail only.
      赣深高铁 serves 惠州北/仲恺 (transfers with 莞惠城际 at both), 广汕高铁
      serves 惠州南 (transfers with 厦深高铁 there). */
@@ -794,7 +1039,7 @@ export function metroLinesForCity(cityKey: CityKey): MetroLine[] {
   return METRO_LINES.filter((l) => l.city === cityKey || l.city === "both");
 }
 export function linesForLoc(cityKey: CityKey, locId: string): MetroLine[] {
-  return metroLinesForCity(cityKey).filter((l) => l.stations.some((s) => s.locId === locId));
+  return metroLinesForCity(cityKey).filter((l) => l.stations.some((s) => s.locId === locId || stationLocId(s.name) === locId));
 }
 export interface MetroLeg { line: MetroLine; stations: MetroStation[]; stops: number; }
 export interface MetroRoute { line: MetroLine; fromIdx: number; toIdx: number; stops: number; fare: number; stations: MetroStation[]; legs: MetroLeg[]; transferStations: string[]; shuttleFrom: string[]; isTransfer: boolean; summary: string; }
@@ -804,70 +1049,96 @@ export interface MetroRoute { line: MetroLine; fromIdx: number; toIdx: number; s
  * without this link the Huizhou intercity network and the high-speed rail
  * network would be two disconnected islands. */
 export const SHUTTLE_LINKS: [string, string][] = [["惠州北", "惠州南站"], ["香港西九龙", "九龙"]];
-/** BFS over the station graph: ride along a line, change lines at a
- * same-name station, or cross between the paired stations in SHUTTLE_LINKS
- * by shuttle bus. Returns the fewest-stops route, with legs split at each
- * transfer so the carriage can announce and perform the change. */
-export function findMetroRoute(cityKey: CityKey, fromLocId: string, toLocId: string): MetroRoute | null {
-  if (fromLocId === toLocId) return null;
+/** Relative time cost per map unit for each line: express / rail lines
+ * cover ground much faster than an all-stops metro (11号线 runs at
+ * 120 km/h vs 80 km/h; intercity / high-speed rail faster still). */
+const LINE_SPEED: Record<string, number> = { "11": 0.6, "14": 0.7, tram1: 1.6, tram2: 1.6, apm: 1.3, guangshen: 0.45, "szhz-rail": 0.3, "ganshen-rail": 0.3, "guangshan-rail": 0.3, "hz-intercity": 0.5 };
+/** Cost of changing lines (walk between platforms + wait), in map units —
+ * roughly 8–10 minutes, so the router never ping-pongs between lines to
+ * shave a little distance off a schematic that is not to scale. */
+const TRANSFER_COST = 15;
+/** Intercity / high-speed rail: priced by the old flat stop formula. */
+const RAIL_LINE_IDS = new Set(["guangshen", "szhz-rail", "hz-intercity", "ganshen-rail", "guangshan-rail"]);
+/** 深圳地铁里程计价: first 4 km ¥2; 4–12 km +¥1 per 4 km; 12–24 km +¥1 per
+ * 6 km; beyond 24 km +¥1 per 8 km. Distance = the ridden stations' real
+ * (OSM) positions, falling back to map distance for any station without one. */
+function metroFare(stations: MetroStation[]): number {
+  let km = 0;
+  for (let i = 1; i < stations.length; i++) {
+    const a = stations[i - 1]!, b = stations[i]!;
+    const ra = SZ_REAL_KM[a.name], rb = SZ_REAL_KM[b.name];
+    km += ra && rb ? Math.hypot(rb[0] - ra[0], rb[1] - ra[1]) : Math.hypot(b.x - a.x, b.z - a.z) * SZ_KM_PER_UNIT;
+  }
+  // track runs ~1.25× the straight line between stations
+  km *= 1.25;
+  if (km <= 4) return 2;
+  if (km <= 12) return 2 + Math.ceil((km - 4) / 4);
+  if (km <= 24) return 4 + Math.ceil((km - 12) / 6);
+  return 6 + Math.ceil((km - 24) / 8);
+}
+/** Cost of an out-of-station shuttle-bus hop. */
+const SHUTTLE_COST = 8;
+/** Shortest-time route over the station graph (Dijkstra): ride along a line
+ * (cost = distance × line speed), change lines at a same-name station, or
+ * cross between the paired stations in SHUTTLE_LINKS by shuttle bus. The
+ * schematic lists lines at very different station densities, so ranking by
+ * stop count would mislead; distance × speed + transfer penalty does not.
+ * Legs are split at each transfer so the carriage can announce the change. */
+function routeWhere(cityKey: CityKey, isStart: (st: MetroStation) => boolean, isGoal: (st: MetroStation) => boolean): MetroRoute | null {
   const lines = metroLinesForCity(cityKey);
   const keyOf = (lineId: string, name: string) => `${lineId}::${name}`;
-  // station name -> lines serving it (transfer index)
   const byName = new Map<string, { line: MetroLine; idx: number }[]>();
   for (const line of lines) line.stations.forEach((st, idx) => {
     const arr = byName.get(st.name) ?? []; arr.push({ line, idx }); byName.set(st.name, arr);
   });
-  // station name -> shuttle-bus partner station names
   const shuttleTo = new Map<string, string[]>();
   for (const [a, b] of SHUTTLE_LINKS) {
     shuttleTo.set(a, [...(shuttleTo.get(a) ?? []), b]);
     shuttleTo.set(b, [...(shuttleTo.get(b) ?? []), a]);
   }
-  // node keys that were first reached via a shuttle-bus hop (for copy/legs)
   const shuttleEdges = new Set<string>();
-  const starts: { line: MetroLine; idx: number }[] = [];
+  const startKeys = new Set<string>();
   const goals = new Set<string>();
-  for (const line of lines) line.stations.forEach((st, idx) => {
-    if (st.locId === fromLocId) starts.push({ line, idx });
-    if (st.locId === toLocId) goals.add(keyOf(line.id, st.name));
-  });
-  if (starts.length === 0 || goals.size === 0) return null;
   type Prev = { prevKey: string; line: MetroLine; station: MetroStation } | null;
   const dist = new Map<string, number>();
   const prev = new Map<string, Prev>();
-  const queue: string[] = [];
+  const done = new Set<string>();
   const nodeStation = new Map<string, MetroStation>();
   const nodeLine = new Map<string, MetroLine>();
-  for (const s of starts) {
-    const k = keyOf(s.line.id, s.line.stations[s.idx]!.name);
-    if (!dist.has(k)) { dist.set(k, 0); prev.set(k, null); queue.push(k); nodeStation.set(k, s.line.stations[s.idx]!); nodeLine.set(k, s.line); }
-  }
+  for (const line of lines) line.stations.forEach((st) => {
+    const k = keyOf(line.id, st.name);
+    if (isStart(st)) { startKeys.add(k); dist.set(k, 0); prev.set(k, null); nodeStation.set(k, st); nodeLine.set(k, line); }
+    if (isGoal(st)) goals.add(k);
+  });
+  if (startKeys.size === 0 || goals.size === 0) return null;
+  const relax = (from: string, line: MetroLine, st: MetroStation, cost: number, viaShuttle = false) => {
+    const nk = keyOf(line.id, st.name);
+    if (done.has(nk)) return;
+    if (cost < (dist.get(nk) ?? Infinity)) {
+      dist.set(nk, cost); prev.set(nk, { prevKey: from, line, station: st }); nodeStation.set(nk, st); nodeLine.set(nk, line);
+      if (viaShuttle) shuttleEdges.add(nk); else shuttleEdges.delete(nk);
+    }
+  };
   let goalKey: string | null = null;
-  while (queue.length > 0) {
-    const k = queue.shift()!;
-    if (goals.has(k) && (dist.get(k) ?? 0) > 0) { goalKey = k; break; }
+  for (;;) {
+    let k: string | null = null; let best = Infinity;
+    for (const [nk, d] of dist) if (!done.has(nk) && d < best) { best = d; k = nk; }
+    if (k === null) break;
+    done.add(k);
+    if (goals.has(k) && !startKeys.has(k)) { goalKey = k; break; }
     const line = nodeLine.get(k)!; const st = nodeStation.get(k)!;
     const idx = line.stations.findIndex((x) => x.name === st.name);
-    const d = dist.get(k) ?? 0;
-    // ride to neighbours on the same line
+    const speed = LINE_SPEED[line.id] ?? 1;
     for (const ni of [idx - 1, idx + 1]) {
       const nst = line.stations[ni]; if (!nst) continue;
-      const nk = keyOf(line.id, nst.name);
-      if (!dist.has(nk)) { dist.set(nk, d + 1); prev.set(nk, { prevKey: k, line, station: nst }); queue.push(nk); nodeStation.set(nk, nst); nodeLine.set(nk, line); }
+      relax(k, line, nst, best + Math.hypot(nst.x - st.x, nst.z - st.z) * speed + 1);
     }
-    // transfer to other lines at the same station name (free, same node distance)
     for (const alt of byName.get(st.name) ?? []) {
       if (alt.line.id === line.id) continue;
-      const nst = alt.line.stations[alt.idx]!; const nk = keyOf(alt.line.id, nst.name);
-      if (!dist.has(nk)) { dist.set(nk, d); prev.set(nk, { prevKey: k, line: alt.line, station: nst }); queue.unshift(nk); nodeStation.set(nk, nst); nodeLine.set(nk, alt.line); }
+      relax(k, alt.line, alt.line.stations[alt.idx]!, best + (startKeys.has(k) ? 0 : TRANSFER_COST));
     }
-    // shuttle-bus hop to a paired station across town (costs extra stops, so
-    // the router only uses it when it is the bridge between two networks)
     for (const partnerName of shuttleTo.get(st.name) ?? []) {
-      for (const alt of byName.get(partnerName) ?? []) {
-        const nst = alt.line.stations[alt.idx]!; const nk = keyOf(alt.line.id, nst.name);
-        if (!dist.has(nk)) { dist.set(nk, d + 2); prev.set(nk, { prevKey: k, line: alt.line, station: nst }); queue.push(nk); nodeStation.set(nk, nst); nodeLine.set(nk, alt.line); shuttleEdges.add(nk); }
-      }
+      for (const alt of byName.get(partnerName) ?? []) relax(k, alt.line, alt.line.stations[alt.idx]!, best + SHUTTLE_COST, true);
     }
   }
   if (!goalKey) return null;
@@ -918,10 +1189,43 @@ export function findMetroRoute(cityKey: CityKey, fromLocId: string, toLocId: str
     }
   }
   const stops = fullStations.length - 1;
-  const fare = Math.min(14, 2 + stops + transferStations.length);
+  const fare = legs.every((l) => !RAIL_LINE_IDS.has(l.line.id))
+    ? metroFare(fullStations)
+    : Math.min(14, 2 + stops + transferStations.length);
   const firstLine = legs[0]?.line ?? nodeLine.get(goalKey)!;
   const summary = legs.map((l) => l.line.short).join(" → ");
   return { line: firstLine, fromIdx: 0, toIdx: fullStations.length - 1, stops, fare, stations: fullStations, legs, transferStations, shuttleFrom, isTransfer: legs.length > 1, summary };
+}
+/** Fare for riding a route only as far as station index `uptoIdx` (getting
+    off early). Metro-only trips use the distance tariff; rail trips scale. */
+export function partialFare(route: MetroRoute, uptoIdx: number): number {
+  const last = route.stations.length - 1;
+  if (uptoIdx >= last) return route.fare;
+  if (route.legs.every((l) => !RAIL_LINE_IDS.has(l.line.id))) return metroFare(route.stations.slice(0, uptoIdx + 1));
+  return Math.max(2, Math.round((route.fare * uptoIdx) / Math.max(1, last)));
+}
+/** Route between two game locations (each must be a station location). */
+export function findMetroRoute(cityKey: CityKey, fromLocId: string, toLocId: string): MetroRoute | null {
+  if (fromLocId === toLocId) return null;
+  const at = (id: string) => (st: MetroStation) => st.locId === id || stationLocId(st.name) === id;
+  return routeWhere(cityKey, at(fromLocId), at(toLocId));
+}
+/** Route between ANY two stations by name — stations need no game location. */
+export function findStationRoute(cityKey: CityKey, fromName: string, toName: string): MetroRoute | null {
+  if (fromName === toName) return null;
+  return routeWhere(cityKey, (st) => st.name === fromName, (st) => st.name === toName);
+}
+/** Where the player stands after exiting a station: the station's own game
+    location when it has one, otherwise the station itself ("st:<站名>"). */
+export function exitLocForStation(cityKey: CityKey, stationName: string): string | null {
+  const locs = getLocations(cityKey);
+  let st: MetroStation | undefined;
+  for (const line of metroLinesForCity(cityKey)) {
+    const hit = line.stations.find((x) => x.name === stationName);
+    if (hit && hit.locId && locs.some((l) => l.id === hit.locId)) return hit.locId;
+    st ??= hit;
+  }
+  return st ? stationLocId(st.name) : null;
 }
 export function allMetroDestinations(cityKey: CityKey, fromLocId: string): { locId: string; route: MetroRoute }[] {
   const out: { locId: string; route: MetroRoute }[] = [];
@@ -973,12 +1277,23 @@ export interface RailTripPlan {
 export function planRailTrip(cityKey: CityKey, fromLocId: string, toLocId: string): RailTripPlan | null {
   if (fromLocId === toLocId) return null;
   const locs = getLocations(cityKey);
-  const from = locs.find((l) => l.id === fromLocId);
-  const to = locs.find((l) => l.id === toLocId);
+  const from = resolveLoc(cityKey, fromLocId);
+  const to = resolveLoc(cityKey, toLocId);
   if (!from || !to) return null;
   const anchors = stationLocIds(cityKey)
     .map((id) => locs.find((l) => l.id === id))
     .filter((l): l is Loc => Boolean(l));
+  // Every station is a possible boarding / alighting point: stations with no
+  // game location of their own join as "st:<站名>", so a trip boards at the
+  // station truly nearest you and alights at the one nearest the target.
+  const anchorIds = new Set(anchors.map((a) => a.id));
+  for (const line of metroLinesForCity(cityKey)) for (const st of line.stations) {
+    if (st.name.endsWith("方向") || (st.locId && anchorIds.has(st.locId))) continue;
+    const id = stationLocId(st.name);
+    if (anchorIds.has(id)) continue;
+    const l = resolveLoc(cityKey, id);
+    if (l) { anchors.push(l); anchorIds.add(id); }
+  }
   if (anchors.length === 0) return null;
   const near = (p: Loc, n: number) =>
     anchors
