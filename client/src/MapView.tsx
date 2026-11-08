@@ -10,6 +10,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import * as THREE from "three";
 import { createLandmarks, mergeStatic } from "./landmarks";
+import { AREA_LABELS } from "./areas";
 import { LOC_EN, NPCS, getLocations, resolveLoc, placesForCity, PLACE_KINDS, stationLocId, metroLinesForCity, modeById, outfitOf, type CityKey, type TransportModeId } from "./data";
 import { makePostFx, type PostFx } from "./postfx";
 
@@ -293,6 +294,8 @@ interface Chip {
   station?: boolean;
   /** A real place (park, mall, museum …) — shown only when zoomed in. */
   place?: boolean;
+  /** A neighbourhood / town name over the filler blocks and woods. */
+  area?: "big" | "small";
   /** The small English subtitle line under a place name, if any. */
   sub?: HTMLElement | null;
   w: number;
@@ -1208,6 +1211,19 @@ export function MapView(p: Props) {
       chips.push({ el: d, kind: "road", w: 0, h: 0, lastText: "", visible: true, clampDx: 0, clampDy: 0, getPos: () => ({ x: lx, y: LAND + 0.4, z: lz }) });
     }
 
+    // area names (OSM neighbourhoods, towns, villages): the filler blocks and
+    // woods between game places belong to real neighbourhoods
+    for (const a of AREA_LABELS) {
+      if (a.c !== cityKey) continue;
+      const d = mkChip("", a.k === "big" ? `🏘️ ${a.n}` : a.n);
+      d.title = `${a.n} · ${a.k === "big" ? "街道 / 片区" : "社区 / 村"}（居民楼、城中村和绿地）`;
+      d.style.cssText += a.k === "big"
+        ? "font:800 11px 'Noto Sans SC',sans-serif;letter-spacing:.12em;color:#2f2a1f;text-shadow:0 0 3px #fffaf0,0 0 6px #fffaf0;"
+        : "font:600 10px 'Noto Sans SC',sans-serif;letter-spacing:.06em;color:rgba(47,42,31,.88);text-shadow:0 0 3px #fffaf0,0 0 5px #fffaf0;";
+      const ax = a.x, az = a.z;
+      chips.push({ el: d, kind: "road", area: a.k, w: 0, h: 0, lastText: "", visible: true, clampDx: 0, clampDy: 0, getPos: () => ({ x: ax, y: LAND + 0.3, z: az }) });
+    }
+
     for (const line of metroLinesForCity(cityKey)) {
       const mid = line.stations[Math.floor(line.stations.length / 2)];
       if (!mid) continue;
@@ -1915,6 +1931,16 @@ export function MapView(p: Props) {
           }
         } else if (chip.kind === "loc") {
           prio = (chip.locId !== undefined && chip.locId === propsRef.current.selfLocId ? 1 : 3) + dCam / 60;
+        } else if (chip.area) {
+          // towns/streets show from mid zoom (and city-wide unless 精简);
+          // small neighbourhoods only up close — or under the cursor
+          const show = chip.area === "big" ? (!overview || density !== "few") && dCam < 30 : !overview && dCam < 13;
+          if (!near && !show) {
+            chip.visible = false;
+            chip.el.style.display = "none";
+            continue;
+          }
+          prio = (chip.area === "big" ? 9.1 : 9.6) + dCam / 40;
         } else if (chip.station || chip.place) {
           if (!near && (overview || dCam > (chip.place ? 18 : 14))) {
             chip.visible = false;
@@ -1938,7 +1964,7 @@ export function MapView(p: Props) {
           prio = 9;
         }
         // around the cursor: labels win over the rest, closest first
-        if (near && !chip.self && (chip.kind !== "road" || chip.station || chip.place)) prio = 0.5 + dHover / HOVER_R;
+        if (near && !chip.self && (chip.kind !== "road" || chip.station || chip.place || chip.area)) prio = 0.5 + dHover / HOVER_R;
         // the English subtitle duplicates the name in English mode, and is
         // noise at city scale: show it only zoomed in, in Chinese
         if (chip.sub) {

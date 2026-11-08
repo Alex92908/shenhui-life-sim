@@ -574,6 +574,11 @@ export const PLACE_KINDS: Record<PlaceKind, PlaceKindMeta> = {
   pharmacy: { label: "药店", emoji: "💊", type: "service", color: 0x0d9488 },
   info: { label: "游客 / 志愿服务中心", emoji: "ℹ️", type: "service", color: 0x0891b2 },
 };
+/** Real places whose signature experience deserves its own action (and life scene). */
+const PLACE_FUN: Record<string, Partial<PlaceKindMeta>> = {
+  "欢乐港湾": { funName: "坐「湾区之光」摩天轮", funCost: 100, funMood: 26, funDesc: "透明胶囊轿厢慢慢升到海湾上空，前海和伶仃洋尽收眼底" },
+  "小梅沙海洋世界": { funName: "逛海洋世界 · 走海底隧道", funCost: 150, funMood: 28, funDesc: "鱼群、鳐鱼和鲨鱼从头顶游过，再去水母馆慢慢看" },
+};
 /** OSM places minus the ones the game already has as a hand-made location
     (same name, or one name containing the other, e.g. 深圳人才公园 / 人才公园). */
 const placesDeduped: Partial<Record<CityKey, CityPlace[]>> = {};
@@ -649,7 +654,7 @@ export function resolveLoc(cityKey: CityKey, id: string): Loc | undefined {
   if (isPlaceLoc(id)) {
     const p = placeById.get(id);
     if (!p || placeCity(id) !== cityKey) return undefined;
-    const k = PLACE_KINDS[p.kind];
+    const k = { ...PLACE_KINDS[p.kind], ...(PLACE_FUN[p.name] ?? {}) };
     const walkMin = Math.max(1, Math.round((p.stKm * 1.3) / 0.075));
     const how = p.stKm < 0.3 ? "出站就到" : p.stKm <= 3 ? `约 ${p.stKm.toFixed(1)} 公里，步行 ${walkMin} 分钟左右` : `约 ${p.stKm.toFixed(1)} 公里，打车或坐公交过去`;
     return {

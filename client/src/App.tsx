@@ -25,7 +25,8 @@ import { MapView } from "./MapView";
 import { MetroMapModal } from "./MetroMap";
 import { PlacesMapModal } from "./PlacesMap";
 import { LifeStage3D, type LifeSet, type LifePose } from "./LifeStage";
-import { GUIDE, guideForLocName, tourForCity, type DayTour, type GuidePlace } from "./experience";
+import { GUIDE, SCENE_PHOTOS, guideForLocName, tourForCity, type DayTour, type GuidePlace } from "./experience";
+import { creditFor } from "./photo-credits";
 
 /** Unique station names of a city with the lines serving each — the index
     behind the map search box. */
@@ -222,7 +223,7 @@ return { title, quote, badges};
    in with eased motion, props act (typing, steam, chewing, lifting), and
    captions tell the beat. Triggered by the real actions (finishing a rail
    ride, working, eating, cooking, sleeping…) and by the 今日生活 replay. */
-type LifeKind = "day" | "alightRail" | "metro" | "code" | "overtime" | "eat" | "cook" | "sleep" | "wash" | "groceries" | "shopping" | "gym" | "stroll" | "gathering";
+type LifeKind = "day" | "alightRail" | "metro" | "code" | "overtime" | "eat" | "cook" | "sleep" | "wash" | "groceries" | "shopping" | "gym" | "stroll" | "gathering" | "cruise" | "wheel" | "aquarium" | "turtle";
 interface LifeStep { bg: string; prop: string; caption: string; sub: string; move?: "walk" | "stay"; fx?: "type" | "steam" | "zzz" | "rain" | "chew" | "lift" | "shine"; dawn?: boolean; }
 interface LifeScene { title: string; tone?: "night" | "indoor"; steps: LifeStep[]; }
 const LIFE_SCENES: Record<LifeKind, LifeScene> = {
@@ -299,6 +300,26 @@ stroll: { title: "散步", steps: [
   { bg: "🌳 🚶 🌤️", prop: "🚶", caption: "慢慢走", sub: "不赶时间，沿着树荫和水边走", move: "walk" },
   { bg: "🌅 🪑 🌊", prop: "🌅", caption: "坐下来看看风景", sub: "风把一天的疲惫吹散了不少", move: "stay", fx: "shine" },
 ] },
+cruise: { title: "东江夜游 · 坐游船", tone: "night", steps: [
+  { bg: "⛴️ 🏮 🌃", prop: "🎫", caption: "检票上船", sub: "码头的灯串亮了，踩着跳板上船，找个靠栏杆的位置坐下", move: "walk" },
+  { bg: "🌊 🏯 ✨", prop: "⛴️", caption: "船开了，两岸灯火慢慢后退", sub: "江风迎面吹来，灯笼在头顶轻轻晃，江面上碎成一片金光", move: "stay", fx: "shine" },
+  { bg: "🏯 🌉 📸", prop: "📸", caption: "合江楼就在正前方", sub: "两江交汇处，楼体的灯影倒映在水里——拍一张，今晚值了", move: "stay", fx: "shine" },
+] },
+wheel: { title: "坐摩天轮", steps: [
+  { bg: "🎡 🎫 👥", prop: "🎫", caption: "走进透明轿厢", sub: "舱门合上，轿厢轻轻一晃，开始慢慢往上升", move: "stay" },
+  { bg: "🏙️ ⬇️ 🌤️", prop: "🎡", caption: "城市一点点沉下去", sub: "楼顶、马路、海湾都变小了，脚下是整片前海", move: "stay", fx: "shine" },
+  { bg: "🌇 🌊 ✨", prop: "📸", caption: "到最高点了", sub: "海风、晚霞、远处的大桥——在最高点拍一张，再慢慢转下来", move: "stay", fx: "shine" },
+] },
+aquarium: { title: "海洋馆 · 海底隧道", steps: [
+  { bg: "🐠 🌊 🐟", prop: "🐟", caption: "走进海底隧道", sub: "四周一下子变成蓝色，鱼群就在头顶和身边游", move: "walk" },
+  { bg: "🦈 🐠 💙", prop: "🦈", caption: "一条鲨鱼从头顶滑过", sub: "鳐鱼像风筝一样扇着翅膀，小朋友们趴在玻璃上不肯走", move: "stay", fx: "shine" },
+  { bg: "🪼 💡 📸", prop: "🪼", caption: "水母馆里慢慢看", sub: "灯光下的水母一呼一吸地漂着，整个人都安静下来", move: "stay" },
+] },
+turtle: { title: "海龟湾 · 看海龟", steps: [
+  { bg: "🏖️ 🐢 🌊", prop: "🐢", caption: "走到保护区的观景沙滩", sub: "工作人员提醒：别用闪光灯，别伸手摸，远远看就好", move: "walk" },
+  { bg: "🐢 🐢 🌊", prop: "🐢", caption: "海龟慢慢爬向大海", sub: "鳍肢一下一下划着沙子，留下一道道爬痕", move: "stay", fx: "shine" },
+  { bg: "🐣 🌊 💚", prop: "🌊", caption: "小海龟奔向浪花", sub: "一个浪打上来，小家伙们就不见了——祝你们一路顺风", move: "stay", fx: "shine" },
+] },
 gathering: { title: "朋友聚餐", tone: "indoor", steps: [
   { bg: "🍻 👥 🎤", prop: "🍻", caption: "朋友们到齐了", sub: "拼桌坐下，先碰一杯，聊聊最近怎么样", move: "stay", fx: "shine" },
   { bg: "🍲 🥢 😂", prop: "🍲", caption: "边吃边聊", sub: "菜一盘盘上，笑声一阵阵——人脉就是这样攒下的", move: "stay", fx: "chew" },
@@ -321,6 +342,10 @@ case "shopping": return { set: "mall", pose: idx === 1 ? "idle" : "walk" };
 case "gym": return { set: "gym", pose: idx === 1 ? "lift" : "idle" };
 case "stroll": return { set: "park", pose: idx === 0 ? "walk" : "idle" };
 case "gathering": return { set: "restaurant", pose: "eat" };
+case "cruise": return { set: "cruise", pose: idx === 0 ? "walk" : "sit" };
+case "wheel": return { set: "wheel", pose: idx === 0 ? "idle" : "sit" };
+case "aquarium": return { set: "aquarium", pose: idx === 0 ? "walk" : "idle" };
+case "turtle": return { set: "turtle", pose: idx === 0 ? "walk" : "idle" };
 }
 }
 
@@ -349,6 +374,7 @@ return (
 )}
 <span className="absolute left-2 top-2 rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-black tracking-wide text-white">📷 真实经历 · 实拍 {g.nameEn}</span>
 </div>
+<PhotoCreditLine url={photo} note={g.photoNote} />
 <div className="p-3">
 <p className="text-xs leading-relaxed"><span className="font-black">📍 地址 </span>{g.address}</p>
 <p className="mt-1 text-xs leading-relaxed"><span className="font-black">🎫 价格 </span>{g.price}<span className="mx-1.5 text-[var(--dim)]">·</span><span className="font-black">🕘 时间 </span>{g.hours}</p>
@@ -363,6 +389,18 @@ return (
 </div>
 </div>
 </div>
+);
+}
+
+/** Attribution under a real photo (CC BY / BY-SA need it): author · licence · file page. */
+function PhotoCreditLine({ url, note }: { url: string | undefined; note?: string }) {
+const c = creditFor(url);
+if (!c && !note) return null;
+return (
+<p className="px-3 pt-1.5 text-[10px] leading-snug text-[var(--dim)]">
+{note && <span className="mr-1">ℹ️ {note}。</span>}
+{c && <>📷 <a href={c.page} target="_blank" rel="noreferrer" className="underline">{c.artist || c.title}</a> · {c.license} · Wikimedia Commons</>}
+</p>
 );
 }
 
@@ -1793,7 +1831,13 @@ if (msg && kind === "apec-task") {
 burstDanmaku([`🎉 峰会今日任务完成！`, "Lisa：干得漂亮，这就是深圳服务 🌐", "阿强：给 峰会打工的人点赞", "陈伯：盛会办得好，街坊脸上有光", "王姨：辛苦啦，回来喝碗糖水"]);
 }
 const animMap: Partial<Record<string, LifeKind>> = { work: "code", overtime: "overtime", eat: "eat", canteen: "eat", interview: "code", "campus-tour": "stroll", gym: "gym", wash: "wash", cook: "cook", "buy-groceries": "groceries", stroll: "stroll", "social-ktv": "gathering", "social-drink": "gathering", "mall-shop": "shopping", "mall-cloth": "shopping", fun: "stroll" };
-const ak = animMap[kind];
+// signature rides and sights get their own scene instead of a plain stroll
+const special: LifeKind | undefined = kind !== "fun" && kind !== "stroll" && kind !== "checkin" ? undefined
+  : loc.id === "hejiang" || loc.id === "sanjiaozhou" ? "cruise"
+  : loc.name === "欢乐港湾" ? "wheel"
+  : loc.name.includes("海洋世界") || loc.name.includes("水族") ? "aquarium"
+  : loc.id === "haiguiwan" ? "turtle" : undefined;
+const ak = special ?? animMap[kind];
 if (ak && msg && !(kind === "cook" && s0.groceries <= 0) && !(kind === "buy-groceries" && s0.money < 28)) playLifeAnim(ak);
 };
 
@@ -3956,6 +4000,7 @@ onLocate={(x, z, name) => { setMetroMapOpen(false); setMapFocus({ x, z, nonce: D
 <div aria-hidden="true" className="cine-grade" />
 {rainyDay && lifeAnim.kind === "day" && <div className="life-rain" aria-hidden="true" />}
 </div> ); })()}
+<PhotoCreditLine url={SCENE_PHOTOS[lifeStageFor(lifeAnim.kind, lifeAnim.idx).set]} />
 <div key={`cap-${lifeAnim.idx}`} className="life-fade px-4 pb-2 pt-3">
 <p className="font-display text-xl font-black">{step.caption}</p>
 <p className="mt-0.5 text-sm leading-relaxed text-[var(--dim)]">{step.sub}</p>

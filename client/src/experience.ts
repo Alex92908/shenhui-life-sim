@@ -44,6 +44,18 @@ import placeXh2 from "./assets/place-xh2.jpg";
 import placeLf1 from "./assets/place-lf1.jpg";
 import placeLf2 from "./assets/place-lf2.jpg";
 import placeSy from "./assets/place-sy.jpg";
+import placeSy2 from "./assets/place-sy2.jpg";
+import placeWow2 from "./assets/place-wow2.jpg";
+import placeDameisha2 from "./assets/place-dameisha2.jpg";
+import placeHejiang from "./assets/place-hejiang.jpg";
+import placeHejiang2 from "./assets/place-hejiang2.jpg";
+import placeTurtle from "./assets/place-turtle.jpg";
+import placeTurtle2 from "./assets/place-turtle2.jpg";
+import placeXunliao from "./assets/place-xunliao.jpg";
+import placeAquarium from "./assets/place-aquarium.jpg";
+import placeAquarium2 from "./assets/place-aquarium2.jpg";
+import placeWheel from "./assets/place-wheel.jpg";
+import placeWheel2 from "./assets/place-wheel2.jpg";
 
 /** LifeSet name -> real photo backdrop for the acted 3D stage. */
 export const SCENE_PHOTOS: Record<string, string> = {
@@ -64,6 +76,10 @@ export const SCENE_PHOTOS: Record<string, string> = {
   bus: sceneBus,
   taxi: sceneTaxi,
   home: sceneHome,
+  cruise: placeHejiang,
+  wheel: placeWheel,
+  aquarium: placeAquarium,
+  turtle: placeTurtle,
 };
 
 export interface GuidePlace {
@@ -83,12 +99,14 @@ export interface GuidePlace {
   story: string;
   sourceName: string;
   sourceUrl: string;
+  /** Set when the photos show the kind of place, not this exact one. */
+  photoNote?: string;
 }
 
 export const GUIDE: GuidePlace[] = [
   {
     key: "wow", cityKey: "sz", locName: "世界之窗", nameEn: "Window of the World",
-    photos: [placeWow],
+    photos: [placeWow, placeWow2],
     address: "南山区华侨城深南大道 9037 号", price: "全日票成人 ¥220 · 夜场 ¥120 起", hours: "9:00–21:30（夜场 18:00 起）",
     tip: "工作日人少；只想看灯光和建筑，买夜场票更划算。",
     fact: "48 万㎡的园子里按比例仿建了 130 多处世界名胜——埃菲尔铁塔、金字塔、泰姬陵，一天走遍五大洲。",
@@ -128,7 +146,7 @@ export const GUIDE: GuidePlace[] = [
   },
   {
     key: "dameisha", cityKey: "sz", locName: "大梅沙海滨公园", nameEn: "Dameisha Beach Park",
-    photos: [placeDameisha],
+    photos: [placeDameisha, placeDameisha2],
     address: "盐田区盐梅路 105 号", price: "免费入园", hours: "6:30–23:00（23:00 清场）",
     tip: "地铁 8 号线大梅沙站直达；旺季周末自驾前往要提前预约通行。",
     fact: "约 1.8 公里金色沙滩，1999 年建成开放，是深圳最老牌的免费海滨浴场。",
@@ -188,13 +206,65 @@ export const GUIDE: GuidePlace[] = [
   },
   {
     key: "shuangyue", cityKey: "hz", locName: "双月湾海边", nameEn: "Double Moon Bay",
-    photos: [placeSy],
+    photos: [placeSy, placeSy2],
     address: "惠东县平海镇双月湾", price: "海滩免费 · 观景台免费", hours: "全天开放（浴场时段以公告为准）",
     tip: "登大星山观景台，左右两湾同框才是完整的「双月」；左湾看日出，右湾看日落。",
     fact: "左湾水平如镜、右湾波涛汹涌，两道半月形海湾并排，被大星山隔成一静一动。",
     factEn: "Two crescent bays side by side — the left mirror-calm, the right surf-pounded — split by Daxing Mountain.",
     npc: "阿强", story: "阿强说小时候跟阿爸出海收网，天没亮左湾的渔船灯一排排的；现在他带客人出海看日出，还是这片海。",
     sourceName: "携程 · 双月湾简介", sourceUrl: "http://raysuo.com.cn/p/5oOg5bee5Y+M5pyI5rm+566A5LuL.html",
+  },
+  {
+    key: "hejiang", cityKey: "hz", locName: "合江楼 · 东江夜游", nameEn: "Hejiang Tower & Dongjiang Night Cruise",
+    photos: [placeHejiang, placeHejiang2],
+    address: "惠城区 · 东江与西枝江交汇处（桥东水东街一带）", price: "合江楼外观免费 · 夜游船票以码头公告为准", hours: "游船多在傍晚后开航，以码头公告为准",
+    tip: "天黑后楼体亮灯再上船，船行到两江交汇处时合江楼在正前方，最好拍。",
+    fact: "合江楼立在东江与西枝江的交汇处，北宋绍圣元年（1094 年）苏东坡被贬惠州，最初就寓居在这里。",
+    factEn: "The tower stands where the Dongjiang and Xizhi rivers meet; Su Dongpo first lodged here when exiled to Huizhou in 1094.",
+    npc: "林婶", story: "林婶说小时候两江边全是渡船和疍家艇，现在夜里游船一过，合江楼的灯影碎在水里，像一座会晃的楼。",
+    sourceName: "维基百科 · 合江楼", sourceUrl: "https://zh.wikipedia.org/wiki/合江楼",
+  },
+  {
+    key: "haiguiwan", cityKey: "hz", locName: "海龟湾自然保护区", nameEn: "Huidong Sea Turtle National Nature Reserve",
+    photos: [placeTurtle, placeTurtle2],
+    address: "惠东县港口镇", price: "以保护区公告为准", hours: "以保护区公告为准（夏季产卵季部分沙滩限制进入）",
+    tip: "看海龟别用闪光灯、别伸手摸；产卵季晚上沙滩上的海龟要远远地看。",
+    fact: "广东惠东海龟国家级自然保护区是中国大陆唯一的海龟（绿海龟）产卵场，每年夏天有海龟上岸产卵，小海龟孵化后放归大海。",
+    factEn: "The only green-turtle nesting beach on the Chinese mainland: turtles come ashore to lay each summer, and hatchlings are released to the sea.",
+    npc: "阿强", story: "阿强说他跟着保护站的人放过一次小海龟，几十只小家伙往浪里爬，一个浪过来就全不见了——那一下他差点哭出来。",
+    sourceName: "Wikimedia Commons · 惠东海龟", sourceUrl: "https://commons.wikimedia.org/wiki/File:Sea_Turtle_Pool_in_Huidong,_Huizhou.jpg",
+    photoNote: "第 1 张摄于惠东海龟保护区；第 2 张小海龟为示意",
+  },
+  {
+    key: "xunliao", cityKey: "hz", locName: "巽寮湾渔港", nameEn: "Xunliao Bay",
+    photos: [placeXunliao],
+    address: "惠东县巽寮镇", price: "海滩免费 · 出海、海钓另计", hours: "全天（浴场时段以公告为准）",
+    tip: "清晨去渔港看渔船回港最热闹；海边礁石多，退潮时别走太远。",
+    fact: "巽寮湾在大亚湾东岸，海水清、沙子白、海上散落着小岛和奇石，三角洲岛就在湾里，是惠州最热门的海滨度假地之一。",
+    factEn: "On the east shore of Daya Bay: clear water, white sand and scattered islets — one of Huizhou's busiest seaside resorts.",
+    npc: "阿强", story: "阿强说渔船一靠岸，鱼虾蟹按筐往岸上搬，游客围着挑，砍价声比海浪还响。",
+    sourceName: "Wikimedia Commons · Xunliao Bay", sourceUrl: "https://commons.wikimedia.org/wiki/File:Seascape_of_Xunliao_Bay.jpg",
+  },
+  {
+    key: "baylight", cityKey: "sz", locName: "欢乐港湾", nameEn: "OH Bay · Bay Glory Ferris Wheel",
+    photos: [placeWheel, placeWheel2],
+    address: "宝安区 · 欢乐港湾（前海湾畔）", price: "摩天轮票价以官方公告为准", hours: "以官方公告为准（傍晚和夜场最热门）",
+    tip: "傍晚上去最值：先看海湾日落，转一圈下来城市刚好亮灯。",
+    fact: "「湾区之光」摩天轮立在宝安欢乐港湾的海边，轿厢是透明的胶囊舱，转一圈能看到前海、宝安中心区和伶仃洋。",
+    factEn: "Bay Glory stands on the waterfront at OH Bay in Bao'an; its glass capsules look over Qianhai and the Lingdingyang.",
+    npc: "子健", story: "子健说他跟女朋友就是在这摩天轮最高点表的白，下来以后才发现手心全是汗。",
+    sourceName: "Wikimedia Commons · Bay Glory", sourceUrl: "https://commons.wikimedia.org/wiki/File:Bay_Glory_2022.jpg",
+  },
+  {
+    key: "xiaomeisha", cityKey: "sz", locName: "小梅沙海洋世界", nameEn: "Xiaomeisha Sea World",
+    photos: [placeAquarium, placeAquarium2],
+    address: "盐田区 · 小梅沙", price: "以官方公告为准", hours: "以官方公告为准",
+    tip: "海底隧道和水母馆是招牌，周末上午人最多，下午晚点去更从容。",
+    fact: "小梅沙是深圳东部的海湾，海洋世界里能走进海底隧道看鲨鱼和鱼群从头顶游过。",
+    factEn: "In the bay of Xiaomeisha in east Shenzhen; walk through an underwater tunnel with sharks overhead.",
+    npc: "王姨", story: "王姨带外孙来过三次，小家伙每次都趴在隧道玻璃上不肯走，非说那条鳐鱼在跟他打招呼。",
+    sourceName: "Wikimedia Commons", sourceUrl: "https://commons.wikimedia.org/wiki/Category:Aquarium_tunnels",
+    photoNote: "照片为其他海洋馆的海底隧道和水母，示意参观体验",
   },
 ];
 
