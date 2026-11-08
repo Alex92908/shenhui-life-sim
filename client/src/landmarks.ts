@@ -984,6 +984,74 @@ export function createLandmarks(winTex: THREE.Texture) {
     add("深中通道", -42, -5.5, 0, (k) => seaBridge(k, 20, -3, 5.5), 0.06);
     // 深圳湾公路大桥: towards Hong Kong, a single leaning pylon
     add("深圳湾大桥", -26, 21.5, 0, (k) => seaBridge(k, 26, 3, 6.5, 0.18), 0.32);
+    // 明华轮：蛇口海上世界广场上那艘退役的法国邮轮（1962 年下水、1983 年起停在陆地上）——
+    // 深蓝船身、五层白色上层建筑、红顶黑边的烟囱、桅杆和橙色救生艇，船头朝着海
+    const mh = pl("明华轮");
+    if (mh) add("明华轮", mh.x, mh.z, 1.8, (k) => {
+      plate(k, 1.9, PAVE, 0.08);
+      k.cyl(WATER, 0.5, 0.5, 0.04, 1.2, 0.08, 1.0, 16);                       // 广场喷泉
+      const L = 3.4, B = 0.62;
+      const hullBlue = M(0x1f3b63, { rough: 0.55 });
+      const hullRed = M(0x9b2c2c, { rough: 0.7 });
+      k.box(hullRed, L * 0.94, 0.12, B * 0.92, 0, 0.08, 0);                   // 水线下的红色船底
+      k.box(hullBlue, L, 0.42, B, 0, 0.2, 0);                                 // 深蓝船身
+      k.add(new THREE.CylinderGeometry(0.01, B / 2, 0.55, 3, 1), hullBlue, L / 2 + 0.24, 0.41, 0, 0, Math.PI, Math.PI / 2, 1, 1, 1.2); // 尖船头
+      k.cyl(hullBlue, B / 2, B / 2, 0.42, -L / 2, 0.2, 0, 14);                 // 圆船尾
+      k.box(M(0xf3efe6, { rough: 0.5 }), L * 1.02, 0.05, B * 1.02, 0, 0.62, 0); // 主甲板
+      const decks = [[2.6, 0.2], [2.2, 0.2], [1.8, 0.18], [1.3, 0.18], [0.7, 0.16]] as const;
+      let y = 0.67;
+      decks.forEach(([len, h], i) => {
+        k.box(WHITE, len, h, B * (0.86 - i * 0.06), -0.15 + i * 0.05, y, 0);
+        k.box(glass(0x2b3a4a), len * 0.96, h * 0.32, B * (0.87 - i * 0.06), -0.15 + i * 0.05, y + h * 0.42, 0); // 一排舷窗
+        y += h;
+      });
+      k.box(glass(0x9ec3dc), 0.5, 0.14, B * 0.6, 0.55, y - 0.16, 0);           // 驾驶台
+      k.cyl(M(0xf1f1ec), 0.15, 0.18, 0.55, -0.35, y, 0, 14);                   // 烟囱
+      k.cyl(M(0xc0392b), 0.15, 0.15, 0.12, -0.35, y + 0.43, 0, 14);
+      k.cyl(M(0x111111), 0.152, 0.152, 0.05, -0.35, y + 0.55, 0, 14);
+      for (const [mx, mh2] of [[1.25, 0.9], [-1.2, 0.7]] as const) k.cyl(STEEL, 0.025, 0.03, mh2, mx, 0.67, 0, 6);
+      for (let i = 0; i < 5; i++) for (const sz of [-1, 1]) k.box(M(0xf97316, { rough: 0.6 }), 0.2, 0.08, 0.08, -0.9 + i * 0.42, 0.98, sz * (B / 2 + 0.03)); // 救生艇
+      k.box(neon(0xfbbf24), 0.7, 0.12, 0.02, 0.1, 0.45, B / 2 + 0.01);         // 「明华轮」灯字
+      return y + 0.8;
+    }, -0.5);
+    // 南头古城：城门、城墙和城楼——深圳建城的源头
+    const nt = pl("南头古城");
+    if (nt) add("南头古城", nt.x, nt.z, 1.2, (k) => {
+      const wall = M(0x8d7b68, { rough: 0.95 });
+      k.box(wall, 2.4, 0.55, 0.45, 0, 0.1, 0);
+      k.box(M(0x2b211b), 0.42, 0.36, 0.47, 0, 0.1, 0);                       // 城门洞
+      k.box(M(0xb23a2e, { rough: 0.7 }), 1.0, 0.35, 0.35, 0, 0.65, 0);         // 城楼
+      k.add(new THREE.ConeGeometry(0.85, 0.32, 4), ROOF_TILE, 0, 1.16, 0, 0, Math.PI / 4, 0, 1, 1, 0.5);
+      for (let i = -5; i <= 5; i++) k.box(wall, 0.12, 0.1, 0.46, i * 0.22, 0.65, 0); // 垛口
+      return 1.6;
+    });
+    // 深圳市民中心：中轴线上的「大鹏展翅」——两头方楼，中间一片起伏的大屋顶
+    const smz = st("市民中心");
+    if (smz) add("市民中心", smz.x + 0.3, smz.z - 1.0, 1.9, (k) => {
+      plate(k, 2.0, PAVE, 0.08);
+      for (const x of [-1.5, 1.5]) k.box(solid(0xd9d5cc), 0.8, 1.1, 1.0, x, 0.1, 0);
+      k.box(solid(0xe4e0d7), 1.1, 1.5, 0.9, 0, 0.1, 0);
+      const roofPts: THREE.Vector2[] = [];
+      for (let i = 0; i <= 20; i++) { const t = i / 20; roofPts.push(new THREE.Vector2(-2.1 + t * 4.2, 1.75 + Math.sin(t * Math.PI) * 0.35 - Math.abs(t - 0.5) * 0.2)); }
+      const shape = new THREE.Shape();
+      shape.moveTo(roofPts[0]!.x, roofPts[0]!.y);
+      for (const pt of roofPts) shape.lineTo(pt.x, pt.y);
+      for (let i = roofPts.length - 1; i >= 0; i--) shape.lineTo(roofPts[i]!.x, roofPts[i]!.y - 0.12);
+      const roofGeo = new THREE.ExtrudeGeometry(shape, { depth: 1.5, bevelEnabled: false });
+      roofGeo.translate(0, 0, -0.75);
+      k.add(roofGeo, M(0x7fa0b8, { rough: 0.35, metal: 0.5 }), 0, 0, 0);
+      for (const x of [-1.9, -1.0, 1.0, 1.9]) for (const z of [-0.6, 0.6]) k.cyl(WHITE, 0.05, 0.05, 1.7, x, 0.08, z, 6);
+      return 2.3;
+    });
+    // 当代艺术与城市规划馆：一团像云一样的玻璃壳
+    const moca = pl("深圳市当代艺术与城市规划馆");
+    if (moca) add("当代艺术馆", moca.x, moca.z, 1.1, (k) => {
+      plate(k, 1.2, PAVE, 0.08);
+      k.box(solid(0x4b5563), 1.8, 0.7, 1.2, 0, 0.1, 0);
+      k.ball(M(0xcfe0ea, { glass: true, rough: 0.15, metal: 0.6 }), 0.7, 0.2, 1.0, 0.1, 1.3, 0.6, 0.95, 18);
+      k.ball(M(0xb9cfdc, { glass: true, rough: 0.15, metal: 0.6 }), 0.45, -0.55, 0.95, -0.15, 1.1, 0.7, 0.9, 14);
+      return 1.7;
+    });
     // 欢乐港湾「湾区之光」 ferris wheel
     const ohb = pl("欢乐港湾");
     if (ohb) add("湾区之光", ohb.x - 0.9, ohb.z - 1.0, 1.4, (k, g, spin) => {

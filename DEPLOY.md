@@ -10,8 +10,12 @@
 ## 2. Docker（任意云服务器 / 容器平台）
 
 ```bash
-docker build -t shenhui-life .
-docker run -d --restart unless-stopped -p 8787:8787 -v shenhui-data:/data --name shenhui shenhui-life
+docker build -t shenhui-life \
+  --build-arg VITE_OPERATOR_NAME="你的公司或个人名称" \
+  --build-arg VITE_OPERATOR_CONTACT="support@你的域名" .
+docker run -d --restart unless-stopped -p 8787:8787 -v shenhui-data:/data \
+  -e ADMIN_TOKEN="一串至少 12 位的随机口令" -e TRUST_PROXY=1 \
+  --name shenhui shenhui-life
 ```
 
 - 数据库在卷 `shenhui-data` 里（`/data/app.db`）：玩家、聊天、礼物、云存档都在这，**记得定期备份**。
@@ -29,11 +33,32 @@ HTTPS 是必须的：系统分享面板、复制邀请链接都要求安全上�
 
 ```bash
 cd standalone
-npm ci && npm run build
-HOST=0.0.0.0 PORT=8787 DB_PATH=/srv/shenhui/app.db npx tsx server.ts
+npm ci
+VITE_OPERATOR_NAME="你的公司或个人名称" VITE_OPERATOR_CONTACT="support@你的域名" npm run build
+ADMIN_TOKEN="一串至少 12 位的随机口令" TRUST_PROXY=1 HOST=0.0.0.0 PORT=8787 DB_PATH=/srv/shenhui/app.db npx tsx server.ts
 ```
 
 用 systemd 或 pm2 保持常驻，同样在前面加 HTTPS 反代。
+
+## 上线必填的配置
+
+| 变量 | 什么时候用 | 说明 |
+|---|---|---|
+| `VITE_OPERATOR_NAME` / `VITE_OPERATOR_CONTACT` | **构建时** | 写进用户协议和隐私政策的运营方名称和联系邮箱。不填的话，开始页会显示「上线前提醒」。 |
+| `ADMIN_TOKEN` | 运行时 | 运营后台口令（至少 12 位）。打开 `https://你的域名/#admin` 输入它：看举报、封号、每日活跃、次日 / 7 日留存、报错。不设置则后台关闭。 |
+| `TRUST_PROXY=1` | 运行时 | 前面有反向代理（Caddy / Nginx）时打开，限流才能按真实 IP 计算。 |
+| `WEATHER=off` | 运行时 | 服务器连不上外网时关掉实时天气。 |
+
+## 每天自动备份数据库
+
+玩家、聊天、私信、组局、举报、统计都在一个 SQLite 文件里。用 SQLite 自带的在线备份（不用停服），每天一份，保留 14 天：
+
+```bash
+# crontab -e
+15 4 * * * sqlite3 /srv/shenhui/app.db ".backup '/srv/shenhui/backup/app-$(date +\%F).db'" && find /srv/shenhui/backup -name 'app-*.db' -mtime +14 -delete
+```
+
+Docker 部署时把 `/srv/shenhui/app.db` 换成卷里的路径（`docker volume inspect shenhui-data` 查看），或者在容器里执行同样的命令。备份最好再同步一份到另一台机器或对象存储。
 
 ## 上线前检查
 
@@ -41,4 +66,7 @@ HOST=0.0.0.0 PORT=8787 DB_PATH=/srv/shenhui/app.db npx tsx server.ts
 - 在「📤 分享」里复制邀请链接，用另一台手机打开，确认开局提示「XX 邀请你来」，邀请人几秒后收到 ¥200。
 - 在「🎫 集章」页记下云存档码，换浏览器在开始页输入，能接着玩。
 - 天气用 Open-Meteo（免费、无需 key）；服务器连不上外网时设 `WEATHER=off`。
+- 打开 `/#admin`，输入 `ADMIN_TOKEN`，能看到玩家总数和今日活跃。
+- 用两个浏览器各建一个角色：互相私信、一个举报另一个，后台能看到举报和聊天记录，封号后被封的人发不出消息。
+- 开始页没有「上线前提醒」（说明运营方信息已经填好）。
 - 防作弊：服务器会比对每次心跳，存款 / 职级 / 站章出现不可能的跳变就把玩家标记为可疑并移出所有排行榜（不删数据）。

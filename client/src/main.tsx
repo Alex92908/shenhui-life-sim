@@ -3,6 +3,8 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Component, StrictMode, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { App, LS_KEY } from "./App";
+import { AdminPage } from "./Admin";
+import { installErrorReporting, reportCrash } from "./analytics";
 import "./theme.css";
 
 // The game is a full-window app: a trackpad pinch (ctrl+wheel in Chrome /
@@ -12,6 +14,10 @@ import "./theme.css";
 // zoom (⌘+ / ⌘−) keeps working for anyone who wants bigger text.
 window.addEventListener("wheel", (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
 for (const t of ["gesturestart", "gesturechange"]) document.addEventListener(t, (e) => e.preventDefault(), { passive: false });
+
+installErrorReporting();
+/* 运营后台：网址后面加 #admin 打开（需要服务器上设置的 ADMIN_TOKEN） */
+const isAdminPage = window.location.hash === "#admin";
 
 const rootEl = document.querySelector<HTMLElement>("[data-generated-space-root]");
 if (!rootEl) {
@@ -27,6 +33,9 @@ class RootErrorBoundary extends Component<{ children: ReactNode }, { failed: boo
   override state = { failed: false };
   static getDerivedStateFromError(): { failed: boolean } {
     return { failed: true };
+  }
+  override componentDidCatch(error: Error): void {
+    reportCrash(error);
   }
   override render() {
     if (!this.state.failed) return this.props.children;
@@ -70,7 +79,7 @@ createRoot(rootEl).render(
     <QueryClientProvider client={spaceQueryClient}>
       <div className="hatch-space-root" data-hatch-space-root>
         <RootErrorBoundary>
-          <App />
+          {isAdminPage ? <AdminPage /> : <App />}
         </RootErrorBoundary>
       </div>
     </QueryClientProvider>

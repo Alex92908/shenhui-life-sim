@@ -13,8 +13,8 @@ export const PERKS: Perk[] = [
   { id: "wardrobe", emoji: "👔", name: "衣柜传家", desc: "开局就有正装和雨衣", cost: 2 },
   { id: "skill", emoji: "📚", name: "夜校结业", desc: "开局技能 +2", cost: 4 },
   { id: "xp", emoji: "💼", name: "职场老手", desc: "开局经验 +6，大厂面试更容易", cost: 4 },
-  { id: "route", emoji: "🧭", name: "熟门熟路", desc: "所有出行省 20% 时间", cost: 4 },
-  { id: "early", emoji: "🐦", name: "早起的鸟", desc: "每天 7:00 起床，多出 1 小时", cost: 5 },
+  { id: "route", emoji: "🧭", name: "手脚麻利", desc: "所有行动的冷却时间 -20%", cost: 4 },
+  { id: "early", emoji: "🐦", name: "精力旺盛", desc: "能量自然恢复快 50%", cost: 5 },
   { id: "rent", emoji: "🔑", name: "熟人房东", desc: "房租 -10%", cost: 5 },
   { id: "friends", emoji: "🏘️", name: "街坊记得你", desc: "所有街坊开局就是「熟人」，剧情解锁更快", cost: 6 },
 ];

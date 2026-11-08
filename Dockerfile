@@ -14,6 +14,10 @@ COPY client client
 COPY server server
 COPY drizzle drizzle
 COPY standalone standalone
+# 运营方名称 / 联系方式写进用户协议和隐私政策：docker build --build-arg VITE_OPERATOR_NAME=... --build-arg VITE_OPERATOR_CONTACT=...
+ARG VITE_OPERATOR_NAME=""
+ARG VITE_OPERATOR_CONTACT=""
+ENV VITE_OPERATOR_NAME=$VITE_OPERATOR_NAME VITE_OPERATOR_CONTACT=$VITE_OPERATOR_CONTACT
 RUN cd standalone && npm run build
 
 FROM node:20-bookworm-slim

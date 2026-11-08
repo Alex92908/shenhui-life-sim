@@ -296,6 +296,7 @@ export interface ApecPhase {
 
 /** Game day N = November N. Leaders' week: 14–19. */
 export function apecPhase(day: number): ApecPhase {
+  if (!isApecSeason()) day = 99;
   if (day < 14)
     return { id: "before", label: "峰会倒计时", detail: `湾区国际峰会周 11 月 14 日在深圳开启，各方嘉宾云集。会场周边的会务兼职正在招人。` };
   if (day <= 15)
@@ -313,6 +314,7 @@ export function apecPhase(day: number): ApecPhase {
 
 /** Which venue is peaking on a given day, for per-venue multipliers. */
 export function apecVenueMul(day: number, locId: string): number {
+  if (!isApecSeason()) return 1;
   if (day >= 14 && day <= 15) return locId.startsWith("apec") ? 1.2 : 1;
   if (day === 16) return locId === "apec-taiziwan" ? 1.5 : locId.startsWith("apec") ? 1.2 : 1;
   if (day === 17) return locId === "apec-qianhai" ? 1.5 : locId.startsWith("apec") ? 1.2 : 1;
@@ -322,7 +324,7 @@ export function apecVenueMul(day: number, locId: string): number {
 }
 
 export function isApecWeek(day: number): boolean {
-  return day >= 14 && day <= 19;
+  return isApecSeason() && day >= 14 && day <= 19;
 }
 
 /* ---- 湾区峰会周活动（公开上线版）：每天一个任务，按日程 ----
@@ -395,6 +397,7 @@ export const APEC_TASKS: ApecTask[] = [
 ];
 
 export function apecTaskOfDay(day: number): ApecTask | null {
+  if (!isApecSeason()) return null;
   return APEC_TASKS.find((t) => t.day === day) ?? null;
 }
 
@@ -712,7 +715,16 @@ export const OFFERS = [
 export const WEEK = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 /* 游戏第 N 天 = 2026 年 11 月 N 日（峰会 14–19 日），星期按真实日历算 */
 export const GAME_YEAR = 2026;
-const realDow = (day: number) => (new Date(GAME_YEAR, 10, day).getDay() + 6) % 7; // 0 = 周一
+/* 当前赛季（北京时间的一个自然月）。App 载入存档时设置；星期、峰会活动都按它算。 */
+let SEASON = { y: GAME_YEAR, m: 11 };
+export function setSeason(startKey: string): void {
+  const y = Number(startKey.slice(0, 4)), m = Number(startKey.slice(5, 7));
+  if (y > 2000 && m >= 1 && m <= 12) SEASON = { y, m };
+}
+export const seasonOf = () => SEASON;
+/** 湾区峰会周只在 2026 年 11 月赛季举行。 */
+export const isApecSeason = () => SEASON.y === 2026 && SEASON.m === 11;
+const realDow = (day: number) => (new Date(SEASON.y, SEASON.m - 1, day).getDay() + 6) % 7; // 0 = 周一
 export function weekday(day: number): string {
   return WEEK[realDow(day)] ?? "周一";
 }

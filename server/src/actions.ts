@@ -120,7 +120,7 @@ async function loadWorld(ctx: Ctx, cityKey: string): Promise<World> {
   const onlineRows = await db
     .select()
     .from(schema.players)
-    .where(gte(schema.players.lastSeen, cutoff))
+    .where(and(gte(schema.players.lastSeen, cutoff), eq(schema.players.banned, 0)))
     .orderBy(desc(schema.players.lastSeen))
     .limit(60);
   const chatRows = await db
@@ -134,10 +134,11 @@ async function loadWorld(ctx: Ctx, cityKey: string): Promise<World> {
     .from(schema.feedEvents)
     .orderBy(desc(schema.feedEvents.id))
     .limit(30);
+  /* 排行榜按赛季（北京时间的自然月）分开：只比本月的人生 */
   const boardRows = await db
     .select()
     .from(schema.players)
-    .where(eq(schema.players.suspect, 0))
+    .where(and(eq(schema.players.suspect, 0), eq(schema.players.banned, 0), eq(schema.players.season, bjParts().season)))
     .orderBy(desc(schema.players.money))
     .limit(20);
   const weekAgo = new Date(Date.now() - 7 * 86_400_000);
@@ -153,7 +154,7 @@ async function loadWorld(ctx: Ctx, cityKey: string): Promise<World> {
   const stampRows = await db
     .select()
     .from(schema.players)
-    .where(eq(schema.players.suspect, 0))
+    .where(and(eq(schema.players.suspect, 0), eq(schema.players.banned, 0)))
     .orderBy(desc(schema.players.stamps))
     .limit(10);
   return {
@@ -288,6 +289,16 @@ const realWeatherResponse = z.object({
 type StoredWeather = Omit<z.infer<typeof realWeatherResponse>, "stale">;
 
 
+/* ---- 运营：北京时间日期 / 赛季、封禁、管理员口令 ---- */
+const bjParts = (d = new Date()) => {
+  const f = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+  return { day: f, season: f.slice(0, 7) };
+};
+const BANNED_MSG = "你的账号因违反社区规则被限制了社交功能";
+/** Admin token from the server environment (unset = admin actions disabled). */
+const adminToken = (): string => { try { return String((globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.ADMIN_TOKEN ?? ""); } catch { return ""; } };
+const isAdmin = (t: string) => { const want = adminToken(); return want.length >= 12 && t === want; };
+
 /* ---- 组局 parties ---- */
 type PartyMember = { pid: string; id: string; name: string; emoji: string; score: number | null };
 const PARTY_MAX = 6;
@@ -409,6 +420,7 @@ export const Actions = {
       employer: z.string().min(1).max(24).optional(),
       stamps: z.number().int().min(0).max(999).optional(),
       title: z.string().max(16).nullable().optional(),
+      season: z.string().regex(/^\d{4}-\d{2}$/).optional(),
     }),
     response: z.object({ world: worldResponse, inbox: z.array(giftShape), me: z.string() }),
     async handler(ctx, args) {
@@ -441,6 +453,7 @@ export const Actions = {
           ...(args.employer !== undefined ? { employer: args.employer } : {}),
           ...(args.stamps !== undefined ? { stamps: args.stamps } : {}),
           ...(args.title !== undefined ? { title: args.title } : {}),
+          ...(args.season !== undefined ? { season: args.season } : {}),
           lastSeen: new Date(),
         })
         .where(eq(schema.players.id, args.playerId));
@@ -473,6 +486,7 @@ export const Actions = {
       const [me] = await db.select().from(schema.players).where(eq(schema.players.id, args.playerId)).limit(1);
       const [to] = await db.select().from(schema.players).where(eq(schema.players.pub, args.toId)).limit(1);
       if (me && to && me.id === to.id) return { ok: false, error: "不能送给自己" };
+      if (me?.banned) return { ok: false, error: BANNED_MSG };
       if (!me || !to) return { ok: false, error: "对方不在线了" };
       const dayAgo = new Date(Date.now() - 86_400_000);
       const sent = await db
@@ -558,6 +572,7 @@ export const Actions = {
       const db = ctx.db<typeof schema>();
       const [me] = await db.select().from(schema.players).where(eq(schema.players.id, args.playerId)).limit(1);
       if (!me) return { ok: false, error: "先进城再组局" };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
       const recent = await db.select({ n: sql<number>`count(*)` }).from(schema.parties).where(and(eq(schema.parties.hostId, me.id), gte(schema.parties.createdAt, new Date(Date.now() - 3600_000))));
       if (Number(recent[0]?.n ?? 0) >= 12) return { ok: false, error: "组局太频繁了，歇一会儿" };
       await db.update(schema.parties).set({ status: "cancelled" }).where(and(eq(schema.parties.hostId, me.id), eq(schema.parties.status, "open")));
@@ -578,6 +593,7 @@ export const Actions = {
       const [me] = await db.select().from(schema.players).where(eq(schema.players.id, args.playerId)).limit(1);
       const [p] = await db.select().from(schema.parties).where(eq(schema.parties.id, args.partyId)).limit(1);
       if (!me || !p) return { ok: false, error: "这个局不存在了" };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
       if (p.status !== "open") return { ok: false, error: "这个局已经开始或散了" };
       const members = parseMembers(p.members);
       if (members.some((m) => m.pid === me.id)) return { ok: true };
@@ -645,6 +661,225 @@ export const Actions = {
         }
       }
       return { ok: true, done };
+    },
+  }),
+
+  getPlayerCard: defineAction({
+    description: "Public profile of another player (by public id) for the tap-a-player card: city, career, employer, stamps, how often you've played together, block state.",
+    request: z.object({ playerId: z.string().min(4).max(64), targetId: z.string().min(4).max(64) }),
+    response: z.object({ ok: z.boolean(), card: z.object({ id: z.string(), name: z.string(), emoji: z.string(), cityKey: z.string(), careerIdx: z.number(), employer: z.string(), stamps: z.number(), title: z.string().nullable(), gameDay: z.number(), online: z.boolean(), buddy: z.number(), blocked: z.boolean() }).nullable() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const [t] = await db.select().from(schema.players).where(eq(schema.players.pub, args.targetId)).limit(1);
+      if (!t) return { ok: false, card: null };
+      const [a, b] = pairKey(t.id, args.playerId);
+      const [bd] = await db.select().from(schema.buddies).where(and(eq(schema.buddies.a, a), eq(schema.buddies.b, b))).limit(1);
+      const [bl] = await db.select().from(schema.blocks).where(and(eq(schema.blocks.a, args.playerId), eq(schema.blocks.b, t.id))).limit(1);
+      return { ok: true, card: { id: args.targetId, name: t.name, emoji: t.emoji, cityKey: t.cityKey, careerIdx: t.careerIdx, employer: t.employer, stamps: t.stamps, title: t.title, gameDay: t.gameDay, online: Date.now() - t.lastSeen.getTime() < ONLINE_WINDOW_MS, buddy: bd?.n ?? 0, blocked: !!bl } };
+    },
+  }),
+
+  sendDm: defineAction({
+    description: "Sends a private message to another player (by public id). Filtered for abuse, rate-limited, refused if the receiver blocked the sender.",
+    request: z.object({ playerId: z.string().min(4).max(64), toId: z.string().min(4).max(64), body: z.string().trim().min(1).max(300) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const [me] = await db.select().from(schema.players).where(eq(schema.players.id, args.playerId)).limit(1);
+      const [to] = await db.select().from(schema.players).where(eq(schema.players.pub, args.toId)).limit(1);
+      if (!me || !to) return { ok: false, error: "对方不存在" };
+      if (me.id === to.id) return { ok: false, error: "不能私聊自己" };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      /* 陌生人私聊的规矩：对方回复之前最多发 3 条；新账号 24 小时内只能私聊一起组过局、或先找你说话的人 */
+      const theyWrote = await db.select({ n: sql<number>`count(*)` }).from(schema.messages).where(and(eq(schema.messages.fromId, to.id), eq(schema.messages.toId, me.id)));
+      const replied = Number(theyWrote[0]?.n ?? 0) > 0;
+      if (!replied) {
+        const [ka, kb] = pairKey(me.id, to.id);
+        const [bd] = await db.select().from(schema.buddies).where(and(eq(schema.buddies.a, ka), eq(schema.buddies.b, kb))).limit(1);
+        if (!bd && Date.now() - me.createdAt.getTime() < 24 * 3600_000) return { ok: false, error: "新账号 24 小时内只能私聊一起组过局、或先找你说话的人" };
+        const iWrote = await db.select({ n: sql<number>`count(*)` }).from(schema.messages).where(and(eq(schema.messages.fromId, me.id), eq(schema.messages.toId, to.id)));
+        if (!bd && Number(iWrote[0]?.n ?? 0) >= 3) return { ok: false, error: "对方回复之前，最多只能发 3 条" };
+      }
+      const [bl] = await db.select().from(schema.blocks).where(and(eq(schema.blocks.a, to.id), eq(schema.blocks.b, me.id))).limit(1);
+      if (bl) return { ok: false, error: "对方不接收你的消息" };
+      const recent = await db.select({ n: sql<number>`count(*)` }).from(schema.messages).where(and(eq(schema.messages.fromId, me.id), gte(schema.messages.createdAt, new Date(Date.now() - 10 * 60_000))));
+      if (Number(recent[0]?.n ?? 0) >= 40) return { ok: false, error: "发得太快了，歇一会儿" };
+      const body = /^\[\[party:\d+\]\]$/.test(args.body) ? args.body : cleanText(args.body);
+      if (!body.trim()) return { ok: false, error: "消息被过滤了" };
+      await db.insert(schema.messages).values({ fromId: me.id, toId: to.id, body, read: 0, createdAt: new Date() });
+      return { ok: true };
+    },
+  }),
+
+  getInbox: defineAction({
+    description: "The caller's private conversations: the latest messages with each player, unread counts.",
+    request: z.object({ playerId: z.string().min(4).max(64) }),
+    response: z.object({ threads: z.array(z.object({ peerId: z.string(), peerName: z.string(), peerEmoji: z.string(), unread: z.number(), online: z.boolean(), messages: z.array(z.object({ id: z.number(), mine: z.boolean(), body: z.string(), createdAt: z.string() })) })) }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = args.playerId;
+      const rows = await db.select().from(schema.messages)
+        .where(sql`${schema.messages.fromId} = ${me} OR ${schema.messages.toId} = ${me}`)
+        .orderBy(desc(schema.messages.id)).limit(300);
+      const blockedRows = await db.select().from(schema.blocks).where(eq(schema.blocks.a, me));
+      const blocked = new Set(blockedRows.map((r) => r.b));
+      const byPeer = new Map<string, typeof rows>();
+      for (const r of rows) { const peer = r.fromId === me ? r.toId : r.fromId; if (blocked.has(peer)) continue; (byPeer.get(peer) ?? byPeer.set(peer, []).get(peer)!).push(r); }
+      const threads = [];
+      for (const [peer, list] of byPeer) {
+        const [pl] = await db.select().from(schema.players).where(eq(schema.players.id, peer)).limit(1);
+        if (!pl) continue;
+        threads.push({ peerId: pubOf(peer), peerName: pl.name, peerEmoji: pl.emoji, online: Date.now() - pl.lastSeen.getTime() < ONLINE_WINDOW_MS,
+          unread: list.filter((m) => m.toId === me && !m.read).length,
+          messages: list.slice(0, 60).reverse().map((m) => ({ id: m.id, mine: m.fromId === me, body: m.body, createdAt: m.createdAt.toISOString() })) });
+      }
+      return { threads };
+    },
+  }),
+
+  markDmRead: defineAction({
+    description: "Marks the caller's messages from one player as read.",
+    request: z.object({ playerId: z.string().min(4).max(64), peerId: z.string().min(4).max(64) }),
+    response: z.object({ ok: z.boolean() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const [pl] = await db.select().from(schema.players).where(eq(schema.players.pub, args.peerId)).limit(1);
+      if (!pl) return { ok: false };
+      await db.update(schema.messages).set({ read: 1 }).where(and(eq(schema.messages.toId, args.playerId), eq(schema.messages.fromId, pl.id)));
+      return { ok: true };
+    },
+  }),
+
+  blockPlayer: defineAction({
+    description: "Blocks or unblocks another player: a blocked player can't message you and disappears from your inbox.",
+    request: z.object({ playerId: z.string().min(4).max(64), targetId: z.string().min(4).max(64), block: z.boolean() }),
+    response: z.object({ ok: z.boolean() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const [t] = await db.select().from(schema.players).where(eq(schema.players.pub, args.targetId)).limit(1);
+      if (!t) return { ok: false };
+      if (args.block) await db.insert(schema.blocks).values({ a: args.playerId, b: t.id, createdAt: new Date() }).onConflictDoNothing();
+      else await db.delete(schema.blocks).where(and(eq(schema.blocks.a, args.playerId), eq(schema.blocks.b, t.id)));
+      return { ok: true };
+    },
+  }),
+
+  reportPlayer: defineAction({
+    description: "Reports another player for moderator review, with the recent conversation attached as context.",
+    request: z.object({ playerId: z.string().min(4).max(64), targetId: z.string().min(4).max(64), reason: z.enum(["harassment", "scam", "spam", "inappropriate", "minor", "other"]) }),
+    response: z.object({ ok: z.boolean() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const [t] = await db.select().from(schema.players).where(eq(schema.players.pub, args.targetId)).limit(1);
+      if (!t) return { ok: false };
+      const convo = await db.select().from(schema.messages)
+        .where(sql`(${schema.messages.fromId} = ${args.playerId} AND ${schema.messages.toId} = ${t.id}) OR (${schema.messages.fromId} = ${t.id} AND ${schema.messages.toId} = ${args.playerId})`)
+        .orderBy(desc(schema.messages.id)).limit(30);
+      await db.insert(schema.reports).values({ reporterId: args.playerId, targetId: t.id, reason: args.reason, context: JSON.stringify(convo.map((m) => ({ from: m.fromId === t.id ? "target" : "reporter", body: m.body, at: m.createdAt.toISOString() }))), createdAt: new Date() });
+      return { ok: true };
+    },
+  }),
+
+  /* ---- 自建统计 & 报错 ---- */
+  track: defineAction({
+    description: "Records a small batch of anonymous product events (retention, funnels) for the admin page.",
+    request: z.object({ playerId: z.string().min(4).max(64), events: z.array(z.object({ name: z.string().regex(/^[a-z0-9_:.-]{1,40}$/), props: z.record(z.string(), z.union([z.string().max(60), z.number(), z.boolean()])).optional() })).min(1).max(25) }),
+    response: z.object({ ok: z.boolean() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const player = pubOf(args.playerId);
+      const { day } = bjParts();
+      const recent = await db.select({ n: sql<number>`count(*)` }).from(schema.events).where(and(eq(schema.events.player, player), gte(schema.events.createdAt, new Date(Date.now() - 600_000))));
+      if (Number(recent[0]?.n ?? 0) > 400) return { ok: false };
+      const now = new Date();
+      /* 保留期限（见隐私政策）：统计 12 个月、报错 90 天、已处理举报 12 个月——偶尔顺手清理 */
+      if (Math.random() < 0.01) {
+        await db.delete(schema.events).where(sql`${schema.events.createdAt} < ${Date.now() - 365 * 86_400_000}`);
+        await db.delete(schema.clientErrors).where(sql`${schema.clientErrors.lastAt} < ${Date.now() - 90 * 86_400_000}`);
+        await db.delete(schema.reports).where(sql`${schema.reports.status} != 'open' AND ${schema.reports.resolvedAt} < ${Date.now() - 365 * 86_400_000}`);
+      }
+      for (const e of args.events) await db.insert(schema.events).values({ player, name: e.name, props: e.props ? JSON.stringify(e.props).slice(0, 400) : null, day, createdAt: now });
+      return { ok: true };
+    },
+  }),
+
+  reportError: defineAction({
+    description: "Records a client-side error (deduped by message) so crashes show up on the admin page.",
+    request: z.object({ playerId: z.string().max(64).optional(), message: z.string().min(1).max(300), stack: z.string().max(2000).optional(), url: z.string().max(300).optional(), ua: z.string().max(300).optional() }),
+    response: z.object({ ok: z.boolean() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const [hit] = await db.select().from(schema.clientErrors).where(eq(schema.clientErrors.message, args.message)).limit(1);
+      if (hit) { await db.update(schema.clientErrors).set({ count: hit.count + 1, lastAt: new Date() }).where(eq(schema.clientErrors.id, hit.id)); return { ok: true }; }
+      const total = await db.select({ n: sql<number>`count(*)` }).from(schema.clientErrors);
+      if (Number(total[0]?.n ?? 0) > 5000) return { ok: false };
+      await db.insert(schema.clientErrors).values({ player: args.playerId ? pubOf(args.playerId) : null, message: args.message, stack: args.stack ?? null, url: args.url ?? null, ua: args.ua ?? null, count: 1, createdAt: new Date(), lastAt: new Date() });
+      return { ok: true };
+    },
+  }),
+
+  /* ---- 管理后台（需要服务器环境变量 ADMIN_TOKEN） ---- */
+  adminOverview: defineAction({
+    description: "Admin: players, daily actives, D1/D7 retention, top events, open reports with context, recent errors and chat. Requires the ADMIN_TOKEN.",
+    request: z.object({ token: z.string().max(200) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), data: z.any().optional() }),
+    async handler(ctx, args) {
+      if (!isAdmin(args.token)) return { ok: false, error: adminToken() ? "口令不对" : "服务器没有设置 ADMIN_TOKEN（至少 12 位），后台未开启" };
+      const db = ctx.db<typeof schema>();
+      const totalPlayers = Number((await db.select({ n: sql<number>`count(*)` }).from(schema.players))[0]?.n ?? 0);
+      const banned = Number((await db.select({ n: sql<number>`count(*)` }).from(schema.players).where(eq(schema.players.banned, 1)))[0]?.n ?? 0);
+      const since = new Date(Date.now() - 31 * 86_400_000);
+      const ev = await db.select({ player: schema.events.player, day: schema.events.day }).from(schema.events).where(gte(schema.events.createdAt, since));
+      const daysBy = new Map<string, Set<string>>();
+      for (const e of ev) (daysBy.get(e.player) ?? daysBy.set(e.player, new Set()).get(e.player)!).add(e.day);
+      const dau = new Map<string, number>();
+      for (const days of daysBy.values()) for (const d of days) dau.set(d, (dau.get(d) ?? 0) + 1);
+      const addDays = (d: string, n: number) => { const t = new Date(`${d}T00:00:00Z`); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
+      const today = bjParts().day;
+      const cohort = (n: number) => { let base = 0, kept = 0; for (const days of daysBy.values()) { const first = [...days].sort()[0]!; if (addDays(first, n) > today) continue; base++; if (days.has(addDays(first, n))) kept++; } return { base, kept, rate: base ? Math.round((kept / base) * 1000) / 10 : null }; };
+      const top = await db.select({ name: schema.events.name, n: sql<number>`count(*)` }).from(schema.events).where(gte(schema.events.createdAt, new Date(Date.now() - 7 * 86_400_000))).groupBy(schema.events.name).orderBy(desc(sql`count(*)`)).limit(25);
+      const reps = await db.select().from(schema.reports).where(eq(schema.reports.status, "open")).orderBy(desc(schema.reports.id)).limit(50);
+      const named = async (id: string) => { const [p] = await db.select().from(schema.players).where(eq(schema.players.id, id)).limit(1); return p ? { pub: pubOf(id), name: p.name, banned: !!p.banned } : { pub: pubOf(id), name: "?", banned: false }; };
+      const reports = [];
+      for (const r of reps) reports.push({ id: r.id, reason: r.reason, createdAt: r.createdAt.toISOString(), reporter: await named(r.reporterId), target: await named(r.targetId), context: r.context ? JSON.parse(r.context) : [] });
+      const errors = await db.select().from(schema.clientErrors).orderBy(desc(schema.clientErrors.lastAt)).limit(30);
+      const chat = await db.select().from(schema.chatMessages).orderBy(desc(schema.chatMessages.id)).limit(40);
+      return { ok: true, data: {
+        totalPlayers, banned,
+        dau: [...dau.entries()].sort((a, b) => a[0].localeCompare(b[0])).slice(-30),
+        d1: cohort(1), d7: cohort(7),
+        topEvents: top.map((t) => ({ name: t.name, n: Number(t.n) })),
+        reports,
+        errors: errors.map((e) => ({ id: e.id, message: e.message, stack: e.stack, url: e.url, ua: e.ua, count: e.count, lastAt: e.lastAt.toISOString() })),
+        chat: chat.map((c) => ({ id: c.id, player: pubOf(c.playerId), name: c.playerName, city: c.cityKey, body: c.body, at: c.createdAt.toISOString() })),
+      } };
+    },
+  }),
+
+  adminModerate: defineAction({
+    description: "Admin: resolve a report (dismiss / ban the reported player) or ban / unban a player by public id. Requires the ADMIN_TOKEN.",
+    request: z.object({ token: z.string().max(200), reportId: z.number().int().optional(), targetPub: z.string().max(64).optional(), action: z.enum(["dismiss", "ban", "unban"]) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      if (!isAdmin(args.token)) return { ok: false, error: "口令不对" };
+      const db = ctx.db<typeof schema>();
+      let targetId: string | null = null;
+      if (args.reportId !== undefined) {
+        const [r] = await db.select().from(schema.reports).where(eq(schema.reports.id, args.reportId)).limit(1);
+        if (!r) return { ok: false, error: "举报不存在" };
+        targetId = r.targetId;
+        await db.update(schema.reports).set({ status: args.action === "dismiss" ? "dismissed" : "actioned", resolvedAt: new Date() }).where(eq(schema.reports.id, r.id));
+      } else if (args.targetPub) {
+        const [p] = await db.select().from(schema.players).where(eq(schema.players.pub, args.targetPub)).limit(1);
+        targetId = p?.id ?? null;
+      }
+      if (targetId && args.action !== "dismiss") {
+        const ban = args.action === "ban" ? 1 : 0;
+        await db.update(schema.players).set({ banned: ban, ...(ban ? { suspect: 1 } : {}) }).where(eq(schema.players.id, targetId));
+        if (ban) await db.update(schema.reports).set({ status: "actioned", resolvedAt: new Date() }).where(and(eq(schema.reports.targetId, targetId), eq(schema.reports.status, "open")));
+        dropWorldCache(); ctx.invalidateQueries();
+      }
+      return { ok: true };
     },
   }),
 
@@ -786,6 +1021,7 @@ export const Actions = {
         .limit(1);
       const me = rows[0];
       if (!me) throw new Error("player not registered");
+      if (me.banned) return { ok: false, error: BANNED_MSG };
       /* 限流：同一个人 2.5 秒内只能说一句、1 分钟最多 8 句、1 分钟内不能重复同一句 */
       const recent = await db
         .select()
@@ -828,6 +1064,7 @@ export const Actions = {
         .limit(1);
       const me = rows[0];
       if (!me) throw new Error("player not registered");
+      if (me.banned) return { ok: true };
       const lastHour = await db
         .select({ n: sql<number>`count(*)` })
         .from(schema.feedEvents)

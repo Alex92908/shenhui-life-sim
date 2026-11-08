@@ -11,6 +11,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import * as THREE from "three";
 import { createLandmarks, mergeStatic } from "./landmarks";
 import { AREA_LABELS } from "./areas";
+import { activitiesAt } from "./activities";
+import { SKYLINE } from "./skyline";
 import { LOC_EN, NPCS, getLocations, resolveLoc, placesForCity, PLACE_KINDS, stationLocId, metroLinesForCity, modeById, outfitOf, type CityKey, type TransportModeId } from "./data";
 import { makePostFx, type PostFx } from "./postfx";
 
@@ -40,6 +42,8 @@ interface Props {
   weatherKind?: string;
   apecDay: boolean;
   onSelect: (locId: string) => void;
+  /** Tapped a person on the map: an NPC (by name) or another player (by public id). */
+  onPickActor?: (who: { npc: string } | { player: string }) => void;
   /** Search focus: when focusNonce changes, the camera pans to focusLocId
       for a few seconds so a searched place is actually shown on the map. */
   focusLocId?: string;
@@ -1006,17 +1010,35 @@ export function MapView(p: Props) {
         const t = Math.max(0, Math.min(1, ((x - r.x1) * dx + (z - r.z1) * dz) / (dx * dx + dz * dz)));
         return Math.hypot(x - (r.x1 + dx * t), z - (r.z1 + dz * t)) < r.w / 2 + 1.1;
       });
-    const spots: { x: number; z: number; h: number; c: THREE.Color }[] = [];
+    /* Real skyline: cells where OpenStreetMap has tall buildings get towers
+       as tall as the real 90th-percentile height (and a second tower where
+       they are dense); everywhere else stays low-rise. Cities with little
+       OSM height data keep the old random mix outside the mapped cells. */
+    const spots: { x: number; z: number; h: number; c: THREE.Color; w?: number }[] = [];
     const palette = [0xe8e0cc, 0xd8cfb8, 0xc9d4d8, 0xe3d3c2, 0xd5dde3, 0xe9dcc8, 0xcfc4ae];
+    const towerPalette = [0xb9cbd6, 0xa7bccb, 0xc9d4d8, 0x9fb4c2, 0xd5dde3];
+    const sky = SKYLINE[cityKey] ?? {};
+    const skyRich = Object.keys(sky).length >= 60;
     for (let gx = -36; gx <= 36; gx += 2.8) {
       for (let gz = -20; gz <= 14; gz += 2.8) {
+        const real = sky[`${Math.round((gx + 36) / 2.8)},${Math.round((gz + 20) / 2.8)}`];
         const x = gx + (rnd() - 0.5) * 1.3;
         const z = gz + (rnd() - 0.5) * 1.3;
         if (z > coastZ(cityKey, x) - 1.6) continue;
         if (nearLoc(x, z) || nearRoad(x, z) || nearMountain(x, z) || nearLake(x, z)) continue;
-        if (rnd() < 0.33) continue;
+        if (real) {
+          const [n, h90] = real;
+          const tall = Math.min(13, 1.4 + h90 / 20);
+          const tc = () => new THREE.Color(towerPalette[Math.floor(rnd() * towerPalette.length)] ?? 0xc9d4d8);
+          if (n >= 30) {
+            spots.push({ x: x - 0.45, z: z - 0.3, h: tall * (0.85 + rnd() * 0.15), c: tc(), w: 0.5 });
+            spots.push({ x: x + 0.5, z: z + 0.35, h: tall * (0.6 + rnd() * 0.25), c: tc(), w: 0.55 });
+          } else spots.push({ x, z, h: Math.max(1.5, tall * (0.7 + rnd() * 0.3)), c: tc(), w: n >= 8 ? 0.7 : 0.85 });
+          continue;
+        }
+        if (rnd() < (skyRich ? 0.45 : 0.33)) continue;
         const c = new THREE.Color(palette[Math.floor(rnd() * palette.length)] ?? 0xe8e0cc);
-        spots.push({ x, z, h: 1.2 + rnd() * rnd() * 7.5, c });
+        spots.push({ x, z, h: skyRich ? 0.8 + rnd() * 1.8 : 1.2 + rnd() * rnd() * 7.5, c });
       }
     }
     fillerMat = new THREE.MeshStandardMaterial({ roughness: 0.95, emissive: 0xffc873, emissiveMap: winTex, emissiveIntensity: 0 });
@@ -1028,7 +1050,7 @@ export function MapView(p: Props) {
     {
       const mat4 = new THREE.Matrix4();
       spots.forEach((s, i) => {
-        mat4.makeScale(1, s.h, 1).setPosition(s.x, LAND + s.h / 2, s.z);
+        mat4.makeScale(s.w ?? 1, s.h, s.w ?? 1).setPosition(s.x, LAND + s.h / 2, s.z);
         filler.setMatrixAt(i, mat4);
         filler.setColorAt(i, s.c);
       });
@@ -1186,6 +1208,7 @@ export function MapView(p: Props) {
       }
       b.style.cssText =
         "position:absolute;left:0;top:0;transform:translate(-50%,-100%);white-space:nowrap;pointer-events:auto;cursor:pointer;font:700 11px 'Noto Sans SC',sans-serif;line-height:1.3;padding:3px 8px;border-radius:10px;border:1px solid rgba(20,26,32,.55);background:rgba(255,253,248,.93);color:#14202b;box-shadow:0 1px 4px rgba(10,20,30,.25);";
+      { const nAct = activitiesAt(l).length; if (nAct) b.insertAdjacentHTML("beforeend", ` <b title="🎮" style="font-size:9px;font-weight:800;padding:0 4px;border-radius:6px;background:#ff4d2e;color:#fff">🎮${nAct}</b>`); }
       b.addEventListener("click", () => propsRef.current.onSelect(l.id));
       labels.appendChild(b);
       chips.push({ el: b, kind: "loc", sub: b.querySelector("span"), locId: l.id, w: 0, h: 0, lastText: "", visible: true, clampDx: 0, clampDy: 0, getPos: () => ({ x: l.x, y: LAND + (labelTop.get(l.id) ?? l.h * 1.7 + 1.2) + 1.4, z: l.z }) });
@@ -1441,6 +1464,14 @@ export function MapView(p: Props) {
         actorViews.set(a.key, v);
         const chipEl = mkChip("", "");
         chipEl.style.cssText += `font:700 10.5px 'Noto Sans SC',sans-serif;padding:2px 7px;border-radius:999px;${a.isSelf ? "background:#14202b;color:#fff;" : "background:rgba(255,253,248,.92);color:#14202b;border:1px solid rgba(20,26,32,.4);"}`;
+        /* 点玩家 / NPC 的名字：NPC 直接聊天，玩家弹出名片（私聊、组局、送礼） */
+        if (!a.isSelf) {
+          chipEl.style.cssText += "pointer-events:auto;cursor:pointer;";
+          chipEl.setAttribute("role", "button");
+          const key = a.key;
+          chipEl.addEventListener("pointerdown", (e) => e.stopPropagation());
+          chipEl.addEventListener("click", (e) => { e.stopPropagation(); propsRef.current.onPickActor?.(key.startsWith("npc-") ? { npc: key.slice(4) } : { player: key.slice(2) }); });
+        }
         actorChips.set(a.key, { el: chipEl, kind: "actor", self: !!a.isSelf, w: 0, h: 0, lastText: "", visible: true, clampDx: 0, clampDy: 0, getPos: () => ({ x: a.x, y: LAND + 3.6, z: a.z }) });
         chips.push(actorChips.get(a.key)!);
       }

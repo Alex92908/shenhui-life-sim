@@ -24,6 +24,10 @@ export const players = sqliteTable("players", {
   // 防作弊 (0005): 1 = a heartbeat reported an implausible jump (money,
   // 职级 or stamps); such players are left off every leaderboard.
   suspect: integer("suspect").notNull().default(0),
+  // 运营 (0009): 1 = banned by a moderator (no chat, DMs, parties, gifts,
+  // hidden from the online list and boards); season = "YYYY-MM" of the run.
+  banned: integer("banned").notNull().default(0),
+  season: text("season").notNull().default("2026-11"),
   // 公开编号 (0006): sha256(id) prefix. The id itself is the player's
   // private key and is never sent to other clients; everything shown to
   // others (chat, online list, boards, gifts, invite links) uses pub.
@@ -127,3 +131,52 @@ export const buddies = sqliteTable("buddies", {
   n: integer("n").notNull().default(0),
   lastAt: integer("last_at", { mode: "timestamp_ms" }).notNull(),
 }, (t) => [primaryKey({ columns: [t.a, t.b] })]);
+
+// 私聊 (0008): any player can message any other; the receiver can block
+// (blocks: a blocked b) and report (reports, reviewed by moderators).
+export const messages = sqliteTable("messages", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  fromId: text("from_id").notNull(),
+  toId: text("to_id").notNull(),
+  body: text("body").notNull(),
+  read: integer("read").notNull().default(0),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+export const blocks = sqliteTable("blocks", {
+  a: text("a").notNull(),
+  b: text("b").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+}, (t) => [primaryKey({ columns: [t.a, t.b] })]);
+export const reports = sqliteTable("reports", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  reporterId: text("reporter_id").notNull(),
+  targetId: text("target_id").notNull(),
+  reason: text("reason").notNull(),
+  context: text("context"),
+  status: text("status").notNull().default("open"),
+  resolvedAt: integer("resolved_at", { mode: "timestamp_ms" }),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+
+// 自建统计 (0009): anonymous product events (player = public id, day = Beijing
+// date) for retention / funnel numbers, and client-side errors (deduped by
+// message) for the admin page. No third-party analytics.
+export const events = sqliteTable("events", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  player: text("player").notNull(),
+  name: text("name").notNull(),
+  props: text("props"),
+  day: text("day").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+export const clientErrors = sqliteTable("client_errors", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  player: text("player"),
+  message: text("message").notNull(),
+  stack: text("stack"),
+  url: text("url"),
+  ua: text("ua"),
+  count: integer("count").notNull().default(1),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  lastAt: integer("last_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});

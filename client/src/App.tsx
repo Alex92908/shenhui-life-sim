@@ -3,12 +3,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { SafeAreaTopScrim } from "@hatch/space-sdk/client";
 import { loadMeta, saveMeta, touchStreak, streakReward, bump, rollWeek, checkAchievements, dailyEvent, dateKey, ACHIEVEMENTS, WEEKLY_GOALS, type Meta, type CityEvent } from "./meta";
 import { api, type ApiResponse } from "./api";
-import { TERMS, PRIVACY, LEGAL_VERSION } from "./legal";
+import { TERMS, PRIVACY, LEGAL_VERSION, OPERATOR_MISSING } from "./legal";
 import { getLang, setLangStored, installTranslator, LANGS, trText, type Lang } from "./i18n";
 import { cloudCode, newCloudCode, setCloudCode, prettyCode, liteDefault, setQuality, readInvite, inviteLink, clearInviteParams, drawShareCard } from "./share";
 import {
 APPS, CAREERS, COMPANIES, companyAt, companyById, companyGaps, employerHere, type Company, CITIES, FOODS, FURNITURE, IDENTITIES, NPCS, OFFERS, TEMPLATES,
-apecPhase, apecVenueMul, getLocations, isApecWeek, isSaturday, tplQuote,
+apecPhase, apecVenueMul, getLocations, isApecWeek, isSaturday, tplQuote, setSeason, isApecSeason,
 APEC_TASKS, apecTaskOfDay, APEC_SLOGAN, APEC_CERT_NAME,
 weatherOf, weekday, modesForCity, railWord, etaMinutes, modeById, SCENIC_SPOTS, scenicOf, taxiFare, busFare, bikeFare,
 findMetroRoute, findStationRoute, exitLocForStation, resolveLoc, partialFare, nearbyPlaces, nearbyServices, placesForCity, PLACE_KINDS, type MetroLine, planRailTrip, allMetroDestinations, linesForLoc, metroLinesForCity, crowdForRide, motoFare,
@@ -27,13 +27,14 @@ import { PlacesMapModal } from "./PlacesMap";
 import { LifeStage3D, type LifeSet, type LifePose } from "./LifeStage";
 import { GUIDE, SCENE_PHOTOS, guideForLocName, tourForCity, type DayTour, type GuidePlace } from "./experience";
 import { creditFor } from "./photo-credits";
-import { DAY_START, DAY_END, actionMinutes, metroMinutes, clockStr, durLabel, timeBlock, morningEnergy, nowMin } from "./clock";
+import { SEASON_START, actionMinutes, clockStr, timeBlock, nowMin, countdown, cooldownMs, realMinLabel, venueClosed, inWindow, windowStr, RAIL_HOURS, MODE_HOURS, realGameDay, seasonStartFor, seasonLength, seasonMonth } from "./clock";
 import { PERKS, MAX_EQUIP, perkById, runPoints } from "./legacy";
 import { STORIES, PART, storyOf, storyStatus, type StoryFx, type StoryProg } from "./stories";
 import { storyEN } from "./stories-en";
 import { MiniGame, type GameSpec, type GameResult } from "./MiniGame";
-import { CAT_LABEL, DATE_QUESTIONS, DROP_SETS, ROMANCE_STAGES, activitiesAt, activityById, dropById, romanceStage, type Activity, type ActCat } from "./activities";
+import { ACTIVITIES as ACTIVITIES_LIST, CAT_LABEL, DATE_QUESTIONS, DROP_SETS, ROMANCE_STAGES, activitiesAt, activityById, dropById, romanceStage, type Activity, type ActCat } from "./activities";
 import { resolveActivity, isRushHour } from "./playlogic";
+import { track, setAnalyticsPlayer } from "./analytics";
 
 /** Unique station names of a city with the lines serving each — the index
     behind the map search box. */
@@ -141,6 +142,8 @@ workDay?: number; otDay?: number;
 story?: Record<string, StoryProg>;
 perks?: string[];
 /* 独立玩法：驾照（科目 0–3）、租车日 / 自己的车、宿醉、案底、恋爱、组局次数 */
+/* 真实时间：冷却到什么时候、在忙什么、本局从哪天开始、今天睡没睡、哪天真正上过线、能量自然恢复的计时 */
+busyUntil?: number; busyWhat?: string; startKey?: string; sleptDay?: number; lastActiveDay?: number; regenAt?: number;
 license?: number; licDay?: number; carDay?: number; carOwned?: boolean;
 hangover?: boolean; record?: number;
 romance?: Record<string, number>; cohabit?: boolean;
@@ -725,6 +728,15 @@ const [play, setPlay] = useState<{ act: Activity; spec: GameSpec; partyId?: numb
 const [datePick, setDatePick] = useState<Activity | null>(null);
 const [partyOpen, setPartyOpen] = useState(false);
 const [partyResult, setPartyResult] = useState<number | null>(null);
+/* 点人：玩家名片、私信窗口（peer = 对方公开 id） */
+const [cardOf, setCardOf] = useState<string | null>(null);
+const [dmOpen, setDmOpen] = useState(false);
+const [dmPeer, setDmPeer] = useState<string | null>(null);
+const [dmInput, setDmInput] = useState("");
+/* 「现在能干嘛」总览 */
+const [hubOpen, setHubOpen] = useState(false);
+const [hubCat, setHubCat] = useState<ActCat | "all">("all");
+const [hubOpenOnly, setHubOpenOnly] = useState(true);
 const [lifeAnim, setLifeAnim] = useState<{ kind: LifeKind; idx: number } | null>(null);
 const lifeAfterRef = useRef<(() => void) | null>(null);
 /* NPC simulation: who you're chatting with + the running conversation */
@@ -739,6 +751,10 @@ const finishedSent = useRef(false);
 const toastTimer = useRef<number | null>(null);
 
 const cityKey: CityKey = gs?.cityKey?? "sz";
+/* 赛季 = 北京时间的一个自然月；星期、峰会都按本局所在的月份算 */
+setSeason(gs?.startKey ?? seasonStartFor());
+const seasonLen = seasonLength(gs?.startKey ?? seasonStartFor());
+const seasonMo = seasonMonth(gs?.startKey ?? seasonStartFor());
 /* 今日城市事件：同一天、同城、同游戏日的玩家看到的一样 */
 const todayEvent: CityEvent = useMemo(() => dailyEvent(gs?.cityKey ?? "sz", gs?.day ?? 1, COMPANIES, stationNamesOf(gs?.cityKey ?? "sz")), [gs?.cityKey, gs?.day]);
 const evRef = useRef(todayEvent);
@@ -759,6 +775,26 @@ enabled: !!profile && phase === "game",
 refetchInterval: 4000,
 });
 const parties = partiesQuery.data?.parties ?? [];
+/* 统计：进入游戏算一次会话 */
+useEffect(() => {
+if (phase !== "game" || !profile) return;
+setAnalyticsPlayer(profile.playerId);
+track("session_start", { city: gs?.cityKey ?? "sz", day: gs?.day ?? 0, lang });
+}, [phase, profile?.playerId]);
+/* 私信：5 秒刷新一次收件箱 */
+const inboxQuery = useQuery({
+queryKey: ["inbox", profile?.playerId ?? ""],
+queryFn: () => api.getInbox({ playerId: profile!.playerId }),
+enabled: !!profile && phase === "game",
+refetchInterval: 5000,
+});
+const threads = inboxQuery.data?.threads ?? [];
+const unreadDm = threads.reduce((n, t) => n + t.unread, 0);
+const cardQuery = useQuery({
+queryKey: ["card", cardOf ?? "", profile?.playerId ?? ""],
+queryFn: () => api.getPlayerCard({ playerId: profile!.playerId, targetId: cardOf! }),
+enabled: !!profile && !!cardOf,
+});
 
 /* Real weather for the city being played: drives the HUD readout, the
    raincoat prompts, the wet-weather travel penalty and the 3D sky. */
@@ -948,7 +984,8 @@ return api.syncPresence({
 playerId: prof.playerId,
 cityKey: s.cityKey,
 locId: currentLocRef.current,
-gameDay: Math.min(30, s.day),
+gameDay: Math.min(31, s.day),
+season: (s.startKey ?? SEASON_START).slice(0, 7),
 money: Math.round(s.money),
 careerIdx: s.careerIdx,
 apecCount: s.apecCount,
@@ -1103,7 +1140,8 @@ employer: typeof g.employer === "string" && COMPANIES.some((c) => c.id === g.emp
 offers: strArr(g.offers).filter((id) => COMPANIES.some((c) => c.id === id)),
 interviews: strArr(g.interviews),
 referrals: strArr(g.referrals),
-minute: num(g.minute, DAY_START),
+busyUntil: num(g.busyUntil, 0), busyWhat: typeof g.busyWhat === "string" ? g.busyWhat : "", startKey: typeof g.startKey === "string" && /^\d{4}-\d{2}-\d{2}$/.test(g.startKey) ? g.startKey : SEASON_START,
+sleptDay: num(g.sleptDay, 0), lastActiveDay: num(g.lastActiveDay, 0), regenAt: num(g.regenAt, Date.now()),
 restDay: num(g.restDay, 0), restN: num(g.restN, 0),
 workDay: num(g.workDay, 0), otDay: num(g.otDay, 0),
 story: g.story && typeof g.story === "object" && !Array.isArray(g.story) ? Object.fromEntries(Object.entries(g.story as Record<string, unknown>).filter(([k, v]) => storyOf(k) && v && typeof v === "object").map(([k, v]) => { const o = v as Record<string, unknown>; return [k, { ch: num(o.ch, 0), day: num(o.day, 0), flags: strArr(o.flags), ...(typeof o.done === "string" ? { done: o.done } : {}) }]; })) : {},
@@ -1159,6 +1197,7 @@ return resolveLoc(ck, id) ?? getLocations(ck)[0]!;
 /* ---------- movement ---------- */
 const startMetroRide = (fromLocId: string, toLocId: string, routeOverride?: MetroRoute) => {
 const s0 = gsRef.current; if (!s0) return;
+if (!inWindow(nowMin(), RAIL_HOURS[s0.cityKey])) { showToast(`🚇 ${railWord(s0.cityKey)}已经停运了（运营 ${windowStr(RAIL_HOURS[s0.cityKey])}，北京时间）。打车或者明早再坐。`); return; }
 const route = routeOverride ?? findMetroRoute(s0.cityKey, fromLocId, toLocId);
 if (!route) { showToast("这趟车暂时没规划出来，换个目的地试试。"); return; }
 if (s0.money < route.fare) { showToast(`车票 ¥${route.fare}，钱包不够，先打工攒点钱。`); return; }
@@ -1186,8 +1225,7 @@ pendingSleep.current = false;
 }
 const isRail = c.route.legs.some((l) => ["szhz-rail", "guangshen", "hz-intercity", "ganshen-rail", "guangshan-rail"].includes(l.line.id));
 const fareNow = evRef.current.metroFree ? 0 : c.route.fare;
-const rideMin = Math.round(Math.max(isRail ? 35 : 0, metroMinutes(c.route.stops, c.route.isTransfer)) * ((s0.perks ?? []).includes("route") ? 0.8 : 1));
-mutate((s) => { s.minute = nowMin(s) + rideMin; s.money -= fareNow; s.energy -= Math.max(3, Math.round(c.route.stops * 1.2)) + (c.gaveSeat ? 2 : 0); s.metroRides = (s.metroRides ?? 0) + 1; if (c.gaveSeat) { s.network += 1; s.mood += 4; } if (c.phoneUsed) s.mood += 2; });
+mutate((s) => { s.money -= fareNow; s.energy -= Math.max(3, Math.round(c.route.stops * 1.2)) + (c.gaveSeat ? 2 : 0); s.metroRides = (s.metroRides ?? 0) + 1; if (c.gaveSeat) { s.network += 1; s.mood += 4; } if (c.phoneUsed) s.mood += 2; });
 setCurrentLoc(c.toLoc); currentLocRef.current = c.toLoc; setSelectedLoc(c.toLoc);
 const lastSt = c.route.stations[c.route.stations.length - 1]?.name ?? "";
 showToast(`${isRail ? "🚄" : "🚇"} 到达${lastSt && !locById(c.toLoc).name.includes(lastSt) ? `${lastSt}站，出站就是${locById(c.toLoc).short}` : locById(c.toLoc).name}，车票 ${fareNow ? `-¥${fareNow}` : "免费（绿色出行日）"}，共 ${c.route.stops} 站${c.route.isTransfer ? `（换乘 ${c.route.transferStations.length} 次：${c.route.summary}）` : ""}${pendingAfterRide.current && pendingAfterRide.current !== c.toLoc ? `，出站再步行到${locById(pendingAfterRide.current).short}` : ""}。`);
@@ -1215,7 +1253,12 @@ setSelectedLoc(locId);
 setAsideTab("place");
 autoOpenAside();
 if (locId === currentLocRef.current) return;
-const mode = modeOverride ?? travelMode;
+let mode = modeOverride ?? travelMode;
+{
+const tn = nowMin();
+if ((mode === "metro" || mode === "rail") && !inWindow(tn, RAIL_HOURS[s0.cityKey])) { showToast(`🚇 ${railWord(s0.cityKey)}已经停运（运营 ${windowStr(RAIL_HOURS[s0.cityKey])}，北京时间），这次改打车。`); mode = "taxi"; }
+else if (MODE_HOURS[mode] && !inWindow(tn, MODE_HOURS[mode]!)) { showToast(`这个点${mode === "bus" ? "公交" : mode === "ferry" ? "轮渡" : "航班"}已经没有了（${windowStr(MODE_HOURS[mode]!)}），这次改打车。`); mode = "taxi"; }
+}
 const from = locById(currentLocRef.current);
 const to = locById(locId);
 const dist = Math.hypot(to.x - from.x, to.z - from.z);
@@ -1268,8 +1311,7 @@ else if (mode === "car") {
 else { energyCost = Math.round(dist * 0.5); }
 const jam = ["car", "taxi", "bus"].includes(effMode) && isRushHour(nowMin(s0));
 if (jam) showToast(`🚦 高峰期，路上堵车，${modeLabel}要多花一半时间。`);
-const tripMin = Math.round(etaMinutes(effMode, dist) * ((s0.perks ?? []).includes("route") ? 0.8 : 1) * (jam ? 1.5 : 1));
-mutate((s) => { s.money -= cost; s.energy -= energyCost; s.minute = nowMin(s) + tripMin; });
+mutate((s) => { s.money -= cost; s.energy -= energyCost; });
 if (cost > 0) showToast(`${modeLabel}去${to.short}，-¥${cost}${energyCost ? `，能量 -${energyCost}` : ""}，预计约 ${etaMinutes(effMode, dist)} 分钟到。`);
 else showToast(`${modeLabel}去${to.short}，预计约 ${etaMinutes(effMode, dist)} 分钟到。${effMode === "walk" ? "换个更快的出行方式能省不少时间。" : ""}`);
 if (nowRainy) {
@@ -1280,7 +1322,7 @@ setWalking(true);
 /* Trip duration derives from the mode's real map speed — the same
    number that drives the figure's movement speed on the 3D map, so a
    taxi visibly crosses the city ~3× faster than walking. */
-const ms = clamp((dist / modeById(effMode).mapSpeed) * 1000, 450, 10000);
+const ms = clamp((dist / modeById(effMode).mapSpeed) * 1000 * (jam ? 1.5 : 1), 450, 12000);
 /* 公交/打车不是地图上挪个小人就算搭乘：和地铁一样弹出车厢电影动画
    （站台等车→上车→坐进车厢看窗外→到站下车）。所有行程都触发，
    不分远近；四步动画按这趟的实际时长 ms 等分缩放，行程到点时
@@ -1592,6 +1634,8 @@ if (!s0 || walking || currentLoc!== selectedLoc || activeEvent) return;
 const tBlock = timeBlock(kind, s0);
 if (tBlock) { showToast(`⏰ ${tBlock}。`); return; }
 const loc = locById(selectedLoc);
+const vClosed = kind === "rest" ? null : venueClosed(loc);
+if (vClosed) { showToast(`🔒 ${loc.short}${vClosed}。`); return; }
 const base = basePay(s0);
 const fitSave = s0.fit >= 3? 3: 0;
 const co0 = companyAt(s0.cityKey, loc.id);
@@ -1893,16 +1937,17 @@ break;
 /* 一天的时间预算：真正做成了的行动才走表 */
 if (msg && JSON.stringify([s.money, s.energy, s.mood, s.xp, s.skill, s.groceries, s.offers, s.employer, s.fit, s.invest, s.network, s.outfit, s.album, s.apecTasks, s.apecCheckins, s.visitedScenic]) !== snap) {
 spent = actionMinutes(kind);
-s.minute = nowMin(s) + spent;
+s.busyUntil = Date.now() + cooldownMs(spent, (s.perks ?? []).includes("route"));
+s.busyWhat = ({ work: "上班", overtime: "加班", gig: "接活", "apec-staff": "峰会上岗", "apec-task": "做峰会任务", "learn-course": "上课", "learn-self": "自习", gym: "健身", hike: "爬山", "hk-trip": "去香港", interview: "面试", cook: "做饭", eat: "吃饭", rest: "歇着", fun: "玩" } as Record<string, string>)[kind] ?? "忙";
+s.lastActiveDay = s.day;
 if (kind === "rest") { s.restN = s.restDay === s.day ? (s.restN ?? 0) + 1 : 1; s.restDay = s.day; }
 if (kind === "work") s.workDay = s.day;
 if (kind === "overtime") s.otDay = s.day;
 }
 });
 if (msg && spent) {
-const nowM = nowMin(gsRef.current ?? s0);
-window.setTimeout(() => floatReward(`⏱ ${durLabel(spent)} → ${clockStr(nowM)}`, "blue"), 250);
-if (nowM >= DAY_END) window.setTimeout(() => floatReward("🌙 过了午夜，回家睡觉吧", "red"), 700);
+track(`act:${kind}`);
+window.setTimeout(() => floatReward(`⏳ ${realMinLabel(spent, (s0.perks ?? []).includes("route"))}`, "blue"), 250);
 }
 if (msg) {
 showToast(msg);
@@ -1958,48 +2003,64 @@ if (ak && msg && !(kind === "cook" && s0.groceries <= 0) && !(kind === "buy-groc
 };
 
 /* ---------- sleep / day rollover ---------- */
+/* ---------- 真实时间：睡觉不再跳天，日子跟着北京时间走 ---------- */
 const doSleep = () => {
 const s0 = gsRef.current;
 if (!s0 || s0.finished) return;
+const tb = timeBlock("__sleep", s0);
+if (tb) { showToast(`⏰ ${tb}。`); return; }
+const first = s0.sleptDay !== s0.day;
+const night = inWindow(nowMin(), [20 * 60, 34 * 60]);
+mutate((s) => {
+if (first) { s.energy = 100; s.sleptDay = s.day; s.mood += homeMoodBonus(s) + (night ? 4 : 0); }
+else s.energy = Math.min(100, s.energy + 20);
+s.busyUntil = Date.now() + cooldownMs(first ? actionMinutes("sleep") : 40); s.busyWhat = "睡觉";
+s.lastActiveDay = s.day;
+});
+showToast(first ? `😴 美美睡了一觉，能量回满${night ? "，按时睡觉心情 +4" : ""}。日子跟着北京时间走，睡觉不会跳到明天。` : "😴 又眯了一会儿，能量 +20（今天已经睡过整觉了）。");
+};
+
+/* 北京时间过了零点：把错过的日子一天天过完（没上线的日子自动模拟上班、吃饭），周六照常交租 */
+const advanceDays = (target: number) => {
+const s0 = gsRef.current;
+if (!s0 || s0.finished || target <= s0.day) return;
 let rentMsg = "";
 let broke = false;
+let simDays = 0; let simPay = 0;
 const next = mutate((s) => {
-if (isSaturday(s.day)) {
+while (s.day < target) {
+const d = s.day;
+if (s.lastActiveDay !== d) {
+simDays += 1;
+if (!/周六|周日/.test(weekday(d))) { const w = Math.round(basePay(s) * 0.6); s.money += w; s.earned += w; simPay += w; s.workCount += 1; }
+s.money -= 40; s.mealCount += 2;
+}
+if (isSaturday(d)) {
 s.money -= s.rent;
 s.rentPaid += s.rent;
-rentMsg = `周六交租 -${fmt(s.rent)}。`;
+rentMsg += ` 周六交租 -${fmt(s.rent)}。`;
 if (s.money < -500) broke = true;
 }
 if (s.invest > 0) {
-if (Math.random() < 0.15) {
-const loss = Math.round(s.invest * 0.03);
-s.invest -= loss;
-rentMsg += ` 理财昨夜波动 -${fmt(loss)}。`;
-} else {
-const gain = Math.max(1, Math.round(s.invest * 0.004));
-s.invest += gain;
-rentMsg += ` 理财收益 +${fmt(gain)}。`;
+if (Math.random() < 0.15) { const loss = Math.round(s.invest * 0.03); s.invest -= loss; rentMsg += ` 理财波动 -${fmt(loss)}。`; }
+else { const gain = Math.max(1, Math.round(s.invest * 0.004)); s.invest += gain; }
 }
-}
-const lowMood = s.mood <= 5;
-const morning = morningEnergy(nowMin(s));
-if (s.hangover) { morning.energy = Math.max(30, morning.energy - 25); morning.note += " 宿醉头疼，能量 -25。"; s.hangover = false; }
-if (morning.note) rentMsg += ` ${morning.note}`;
-if (nowMin(s) <= 22 * 60) s.mood += 4;
 s.day += 1;
-s.energy = morning.energy;
-s.minute = DAY_START - ((s.perks ?? []).includes("early") ? 60 : 0);
-s.mood = lowMood? 25: s.mood + homeMoodBonus(s);
-if (lowMood) rentMsg += " 心情见底，睡了一觉缓过来一点。";
+}
+if (s.hangover) { s.energy = Math.max(20, s.energy - 25); s.hangover = false; rentMsg += " 宿醉头疼，能量 -25。"; }
+s.energy = Math.min(100, s.energy + 30);
+if (s.mood <= 5) { s.mood = 25; rentMsg += " 心情见底，过了一夜缓过来一点。"; }
 s.greeted = [];
 });
 if (!next) return;
+if (simDays > 0) track("day_auto", { missed: simDays });
+if (simDays > 0) rentMsg = `你没上线的 ${simDays} 天，日子照常过：模拟上班 +${fmt(simPay)}，吃饭 -${fmt(simDays * 40)}。` + rentMsg;
 if (rentMsg) addLog(rentMsg.trim());
 if (broke) {
 finishSeason("debt");
 return;
 }
-if (next.day > 30) {
+if (next.day > seasonLength(next.startKey ?? SEASON_START)) {
 finishSeason("done");
 return;
 }
@@ -2030,7 +2091,7 @@ const ready = g2 ? STORIES.filter((st) => { const k = storyStatus(st, g2.story?.
 ready.slice(0, 2).forEach((st, i) => window.setTimeout(() => pushDanmakuRef.current(en ? `📖 ${trText(st.npc)}'s story "${L(st.title)}" continues — go and talk to ${trText(st.npc)}` : `📖 ${st.npc}的故事「${st.title}」有后续了——去找${st.npc}聊聊`), 2600 + i * 1200));
 }
 }
-showToast(`第 ${next.day} 天 · ${weekday(next.day)} · ${weatherOf(next.day, next.cityKey)}${rentMsg? " " + rentMsg: ""}`);
+showToast(`🌅 北京时间新的一天：第 ${next.day} 天 · ${weekday(next.day)}${rentMsg ? " " + rentMsg.trim() : ""}`);
 if (Math.random() < 0.55) {
 const ev = pickEvent(next.day, next.cityKey, new Set(next.seenEvents));
 if (ev) {
@@ -2039,6 +2100,32 @@ window.setTimeout(() => setActiveEvent(ev), 450);
 }
 }
 };
+
+/* 真实时钟心跳：过了北京时间零点就推进日子；能量每 3 分钟自然恢复 1 点（早起的鸟 ×1.5）；冷却倒计时每秒刷新 */
+const advanceRef = useRef(advanceDays); advanceRef.current = advanceDays;
+const [, setClockTick] = useState(0);
+const lastBeatKey = useRef(-1);
+useEffect(() => {
+if (phase !== "game") return;
+const beat = () => {
+const s = gsRef.current;
+if (!s || s.finished) return;
+const target = realGameDay(s.startKey ?? SEASON_START);
+if (target > s.day) advanceRef.current(target);
+const now = Date.now();
+const step = (s.perks ?? []).includes("early") ? 120_000 : 180_000;
+const last = s.regenAt ?? now;
+const gained = Math.floor((now - last) / step);
+if (gained > 0) mutate((x) => { x.energy = Math.min(100, x.energy + (x.energy < 100 ? gained : 0)); x.regenAt = last + gained * step; });
+/* 只在分钟变了或者正在冷却时才重绘，免得整个界面每秒刷新 */
+const busy = !!s.busyUntil && now < s.busyUntil + 1000;
+const key = busy ? Math.floor(now / 1000) : nowMin();
+if (key !== lastBeatKey.current) { lastBeatKey.current = key; setClockTick((t) => t + 1); }
+};
+beat();
+const t = window.setInterval(beat, 1000);
+return () => window.clearInterval(t);
+}, [phase]);
 
 const finishSeason = (reason: "done" | "debt") => {
 const s0 = gsRef.current;
@@ -2052,6 +2139,7 @@ if (prof) {
 const storiesDone = Object.values(s0.story ?? {}).filter((p) => p.done).length;
 const lp = runPoints({ reason, money: s0.money, goal: s0.goal, careerIdx: s0.careerIdx, bigCo: (s0.employer ?? "startup") !== "startup", stories: storiesDone, romance: Math.max(0, ...Object.values(s0.romance ?? {}).map(romanceStage)), buddies: s0.partyPlays ?? 0 });
 setLegacyGain(lp);
+track("run_finish", { reason, title: r.title.slice(0, 30), day: s0.day, pts: lp.pts });
 updMeta((m) => { m.runs += 1; m.legacy = { ...m.legacy, pts: m.legacy.pts + lp.pts, total: m.legacy.total + lp.pts, history: [{ title: r.title, pts: lp.pts, day: dateKey() }, ...m.legacy.history].slice(0, 20) }; });
 void api.finishSeason({
 playerId: prof.playerId,
@@ -2122,7 +2210,13 @@ addLog(`${text}`);
     /* 深漂档案：本局带上的传承（最多 MAX_EQUIP 个） */
     const perks = metaRef.current.legacy.equipped.filter((id) => metaRef.current.legacy.owned.includes(id) && perkById(id)).slice(0, MAX_EQUIP);
     state.perks = perks;
-    state.minute = DAY_START - (perks.includes("early") ? 60 : 0);
+    /* 真实时间：本局从今天的北京日期开始；11 月里开局就是第「今天几号」天，目标按剩下的天数折算 */
+    state.startKey = seasonStartFor();
+    setSeason(state.startKey);
+    const sLen = seasonLength(state.startKey);
+    state.day = Math.min(sLen, Math.max(1, realGameDay(state.startKey)));
+    state.regenAt = Date.now();
+    if (state.day > 1) { const left = sLen + 1 - state.day; state.goal = Math.max(1000, Math.round((state.goal * left) / 30 / 100) * 100); state.log = [{ day: state.day, text: `今天是北京时间 ${seasonMonth(state.startKey)} 月 ${state.day} 日，你从第 ${state.day} 天进城，目标按本月剩下的 ${left} 天折算成 ${fmt(state.goal)}。` }, ...state.log]; }
     if (perks.includes("cash")) { state.money += 800; state.maxMoney = state.money; }
     if (perks.includes("wardrobe")) state.ownedOutfits = [...new Set([...state.ownedOutfits, "formal", "raincoat"])];
     if (perks.includes("skill")) state.skill += 2;
@@ -2140,6 +2234,8 @@ addLog(`${text}`);
     finishedSent.current = false;
     profileRef.current = prof;
     setProfile(prof);
+    setAnalyticsPlayer(prof.playerId);
+    track("run_start", { city, iden: iden.id, perks: perks.length, day: state.day });
     setCurrentLoc("home");
     setSelectedLoc("home");
     gsRef.current = state;
@@ -2313,13 +2409,14 @@ addLog(`${text}`);
       mutate((s) => {
         applyStoryFx(s, name, end.fx);
         s.story = { ...(s.story ?? {}), [name]: { ...prog, done: end.title, day: s.day } };
-        s.minute = nowMin(s) + actionMinutes("story");
+        s.busyUntil = Date.now() + cooldownMs(actionMinutes("story")); s.busyWhat = "聊天"; s.lastActiveDay = s.day;
         s.npcNews = [...(s.npcNews ?? []), { kind: "home" as const, text: `见证了${name}的故事「${end.title}」`, day: s.day }];
       });
       setNpcLog((log) => [...log, { from: "npc", text: `🏁 ${en ? "Ending" : "结局"} · ${L(end.title)}\n${L(end.text)}` }]);
       const fxs = fxText(end.fx);
       showToast(en ? `🏁 ${L(story.title)} · ${L(end.title)}${fxs ? ` (${fxs})` : ""}. This story goes into your ending: +2 legacy points.` : `🏁 ${story.title} · ${end.title}${fxs ? `（${fxs}）` : ""}。这个故事会写进你的结局，档案点 +2。`);
       addLog(`📖 ${name}的故事「${story.title}」结局：${end.title}。`);
+      track("story_end", { npc: name });
       floatReward(`📖 ${L(end.title)}`, "gold");
     }
   };
@@ -2334,7 +2431,7 @@ addLog(`${text}`);
     mutate((s) => {
       applyStoryFx(s, name, choice.fx);
       s.story = { ...(s.story ?? {}), [name]: { ch: prog.ch + 1, day: s.day, flags: choice.flag ? [...prog.flags, choice.flag] : prog.flags } };
-      s.minute = nowMin(s) + actionMinutes("story");
+      s.busyUntil = Date.now() + cooldownMs(actionMinutes("story")); s.busyWhat = "聊天"; s.lastActiveDay = s.day;
     });
     setStoryOpen(null);
     setNpcLog((log) => [...log, { from: "me", text: L(choice.label) }, { from: "npc", text: L(choice.reply) }]);
@@ -2344,17 +2441,19 @@ addLog(`${text}`);
       ? `📖 ${L(story.title)} · chapter ${prog.ch + 1} done${fxs ? ` (${fxs})` : ""}. ${last ? `Come back to ${trText(name)} tomorrow for the ending.` : `More tomorrow — get a little closer to ${trText(name)} to unlock the next chapter.`}`
       : `📖 ${story.title} · 第 ${prog.ch + 1} 章完${fxs ? `（${fxs}）` : ""}。${last ? `明天再来找${name}，看看结局。` : `后续明天揭晓——和${name}关系再近一些就能看下一章。`}`);
     addLog(`📖 ${name}：${ch.title}——你选了「${choice.label}」。`);
+    track("story_chapter", { npc: name, ch: prog.ch + 1 });
   };
 
   /* ---------- 独立玩法：活动、组局、约会 ---------- */
   const L2t = (x: [string, string]) => (en ? x[1] : x[0]);
-  const durL = (m: number) => (en ? (m < 60 ? `${m} min` : `${+(m / 60).toFixed(1)} h`) : durLabel(m));
   const NO_PARTY = new Set(["license", "rentcar", "antiscam", "farejump", "scalp", "daijia", "rideshare"]);
-  const actBlock = (a: Activity, s: GameState, here: boolean): string | null => {
+  const actBlock = (a: Activity, s: GameState, here: boolean, loc?: Loc): string | null => {
     if (!here) return en ? "Get there first" : "到了才能玩";
-    const now = nowMin(s);
-    if (now >= DAY_END) return en ? "Past midnight — go home and sleep" : "过了午夜，回家睡觉吧";
-    if (a.hours && (now < a.hours[0] || now >= a.hours[1])) return en ? `Only ${clockStr(a.hours[0])}–${a.hours[1] >= DAY_END ? "24:00" : clockStr(a.hours[1])}` : `${clockStr(a.hours[0])}–${a.hours[1] >= DAY_END ? "24:00" : clockStr(a.hours[1])} 才能玩`;
+    if (s.busyUntil && Date.now() < s.busyUntil) return en ? `Busy (${s.busyWhat ?? ""}) — ${countdown(s.busyUntil - Date.now())} left` : `正在${s.busyWhat ?? "忙"}，还要 ${countdown(s.busyUntil - Date.now())}`;
+    const now = nowMin();
+    if (a.hours && !inWindow(now, a.hours)) return en ? `Only ${windowStr(a.hours)} (Beijing time)` : `北京时间 ${windowStr(a.hours)} 才能玩`;
+    const vc = loc ? venueClosed(loc) : null;
+    if (vc) return en ? "Closed right now" : vc;
     if (a.cost > 0 && s.money < a.cost) return en ? `Needs ¥${a.cost}` : `要 ¥${a.cost}，钱不够`;
     if (a.energy > 0 && s.energy < a.energy) return en ? "Not enough energy" : "能量不够了";
     if (a.needs === "license" && (s.license ?? 0) < 3) return en ? "Needs a driving licence" : "要先考到驾照";
@@ -2369,7 +2468,7 @@ addLog(`${text}`);
   const startActivity = (a: Activity, opts: { partyId?: number; mate?: string; locId?: string } = {}) => {
     const s0 = gsRef.current; if (!s0 || play) return;
     const here = !walking && !carriage && currentLocRef.current === (opts.locId ?? selectedLoc);
-    const why = actBlock(a, s0, here);
+    const why = actBlock(a, s0, here, locById(opts.locId ?? selectedLoc));
     if (why) { showToast(`⏰ ${why}${en ? "." : "。"}`); return; }
     if (a.needs === "date" && !opts.mate) {
       if (datePartners(s0).length === 0) { showToast(en ? "Nobody to ask yet — get to know a neighbour first (bond +15)." : "还没有能约的人：先和街坊混熟（关系到 +15）。"); return; }
@@ -2390,7 +2489,7 @@ addLog(`${text}`);
     mutate((s) => {
       s.money += out.money - a.cost; s.earned += out.money; s.energy -= out.energy; s.mood += out.mood;
       s.xp += out.xp; s.skill += out.skill; s.fit += out.fit; s.network += out.network;
-      s.minute = nowMin(s) + out.minutes;
+      s.busyUntil = Date.now() + cooldownMs(out.minutes, (s.perks ?? []).includes("route")); s.busyWhat = a.name[0]; s.lastActiveDay = s.day;
       s.actCount = (s.actCount ?? 0) + 1;
       if (mates > 0) s.partyPlays = (s.partyPlays ?? 0) + 1;
       if (out.drop?.food) s.groceries += 1;
@@ -2414,7 +2513,7 @@ addLog(`${text}`);
       }
       if (out.risk) {
         const k = out.risk.kind;
-        if (k === "police") { s.money -= out.risk.fine; s.mood -= 15; s.record = (s.record ?? 0) + 1; s.minute = Math.max(nowMin(s), 23 * 60); }
+        if (k === "police") { s.money -= out.risk.fine; s.mood -= 15; s.record = (s.record ?? 0) + 1; s.busyUntil = Date.now() + 20 * 60_000; s.busyWhat = "在派出所做笔录"; }
         else if (k === "injury") { s.energy -= 25; s.money -= out.risk.fine; s.mood -= 8; }
         else if (k === "hangover") s.hangover = true;
         else if (k === "scam") { s.money -= out.risk.fine; s.mood -= 12; }
@@ -2434,6 +2533,7 @@ addLog(`${text}`);
     if (out.risk) { const rk = out.risk; window.setTimeout(() => showToast(`${{ police: "🚓", injury: "🩹", hangover: "🍺", scam: "💸" }[rk.kind]} ${L2t(rk.text)}${rk.fine ? ` -${fmt(rk.fine)}` : ""}${rk.kind === "police" ? (en ? " A record follows you: big companies' background checks may fail." : " 留下案底：大厂背调可能过不了。") : ""}`), delay); addLog(`⚠️ ${rk.text[0]}`); delay += 3600; }
     if (stageMsg) window.setTimeout(() => showToast(stageMsg), delay);
     if (out.drop && firstFind) { const hit = dropById(out.drop.key); if (hit && hit.item.rarity === 3) postFeed("life", `${a.name[0]}收获了稀有的${hit.item.name[0]}`); }
+    track("activity", { id: a.id, tier: out.tier, party: mates > 0, drop: !!out.drop, risk: out.risk?.kind ?? "" });
     const anim = ACT_ANIM[a.id];
     if (anim) playLifeAnim(anim);
     if (p.partyId && profileRef.current) {
@@ -2448,13 +2548,14 @@ addLog(`${text}`);
     void api.createParty({ playerId: prof.playerId, cityKey: s0.cityKey, locId: loc.id, locName: loc.name, activityId: a.id, title: a.name[0] }).then((r) => {
       if (!r.ok) { showToast(r.error ?? (en ? "Couldn't open the party." : "组局失败了。")); return; }
       showToast(en ? `🎉 Party open: ${a.name[1]} at ${trText(loc.name)}. Everyone in the city can see it — start when you're ready; neighbours fill empty seats.` : `🎉 组局成功：在${loc.name}${a.name[0]}。同城玩家都能看到；人到了就开始，没人来街坊会来凑数。`);
-      void partiesQuery.refetch(); setPartyOpen(true);
+      void partiesQuery.refetch(); setPartyOpen(true); track("party_create", { act: a.id });
     }).catch(() => showToast(en ? "Network hiccup — try again." : "网络不太好，再试一次。"));
   };
   const joinPartyNow = (pt: (typeof parties)[number]) => {
     const prof = profileRef.current; if (!prof) return;
     void api.joinParty({ playerId: prof.playerId, partyId: pt.id }).then((r) => {
       if (!r.ok) { showToast(r.error ?? ""); return; }
+      track("party_join", { act: pt.activityId });
       void partiesQuery.refetch();
       if (currentLocRef.current !== pt.locId) { showToast(en ? `Joined! Heading to ${trText(pt.locName)}…` : `加入了！正在赶去${pt.locName}……`); setPartyOpen(false); setSelectedLoc(pt.locId); walkTo(pt.locId); }
       else showToast(en ? "Joined! Wait for the host to start." : "加入了！等发起人开始。");
@@ -2470,6 +2571,38 @@ addLog(`${text}`);
   };
   /* NPC companions for a party nobody joined: deterministic per party */
   const ghostMates = (pid: number) => { const pool = NPCS.slice().sort((x, y) => ((hashStr(x.name + pid) % 97) - (hashStr(y.name + pid) % 97))); return pool.slice(0, 2).map((n, i) => ({ id: `npc-${n.name}`, name: n.name, emoji: n.emoji, score: ((hashStr(`${n.name}:${pid}:${i}`) % 70) + 25) / 100, buddy: 0 })); };
+
+  /* ---------- 点人：名片、私信、邀请组局、拉黑举报 ---------- */
+  const pickActor = (who: { npc: string } | { player: string }) => {
+    if ("npc" in who) { const name = who.npc.split("·")[0]!; if (NPCS.some((n) => n.name === name)) openNpcChat(name); return; }
+    setCardOf(who.player);
+  };
+  const openDm = (peer: string) => {
+    setCardOf(null); setDmPeer(peer); setDmOpen(true);
+    const prof = profileRef.current;
+    if (prof) void api.markDmRead({ playerId: prof.playerId, peerId: peer }).then(() => inboxQuery.refetch());
+  };
+  const sendDmNow = (peer: string, body: string) => {
+    const prof = profileRef.current; if (!prof || !body.trim()) return;
+    void api.sendDm({ playerId: prof.playerId, toId: peer, body: body.trim() }).then((r) => {
+      if (!r.ok) { showToast(r.error ?? (en ? "Message not sent." : "没发出去。")); return; }
+      setDmInput(""); void inboxQuery.refetch(); track("dm_send");
+    }).catch(() => showToast(en ? "Network hiccup — try again." : "网络不太好，再试一次。"));
+  };
+  const inviteToParty = (peer: string) => {
+    const mine = parties.find((pt) => pt.status === "open" && pt.hostId === myPubRef.current);
+    if (!mine) { showToast(en ? "Open a party first: pick a place, then 👥 under \"Things to do here\"." : "先组个局：去一个地点，在「在这里能玩」里点 👥 组局。"); return; }
+    sendDmNow(peer, `[[party:${mine.id}]]`);
+    showToast(en ? "Invite sent." : "邀请已发出。");
+  };
+  const blockNow = (peer: string, block: boolean) => {
+    const prof = profileRef.current; if (!prof) return;
+    void api.blockPlayer({ playerId: prof.playerId, targetId: peer, block }).then(() => { showToast(block ? (en ? "Blocked: they can't message you any more." : "已拉黑：对方不能再给你发消息。") : (en ? "Unblocked." : "已取消拉黑。")); void cardQuery.refetch(); void inboxQuery.refetch(); if (block) { setDmOpen(false); setDmPeer(null); } });
+  };
+  const reportNow = (peer: string, reason: "harassment" | "scam" | "spam" | "inappropriate" | "minor" | "other") => {
+    const prof = profileRef.current; if (!prof) return;
+    void api.reportPlayer({ playerId: prof.playerId, targetId: peer, reason }).then(() => showToast(en ? "Report sent. Moderators will review the conversation. You can also block them." : "举报已提交，管理员会查看你们的聊天记录。你也可以直接拉黑。"));
+  };
 
   const likeNpcPost = (postId: string) => {
     mutate((s) => {
@@ -2673,7 +2806,7 @@ playLifeAnim("shopping");
     switch (loc.type) {
       case "home":
         return [
-          { kind: "__sleep", title: "睡觉到明天", emoji: "😴", desc: "回满能量，周六睡前自动交租（先演一段洗漱入睡）", cost: "能量回满" },
+          { kind: "__sleep", title: "睡一觉", emoji: "😴", desc: "每天第一次睡觉回满能量；日子跟着北京时间走，睡觉不会跳到明天", cost: "能量回满" },
           { kind: "wash", title: "起床洗漱", emoji: "🪥", desc: "刷牙、洗脸、整理自己，新的一天从卫生间开始", cost: "能量 +6 · 心情 +6 · 免费" },
           { kind: "cook", title: "自己做饭", emoji: "🍳", desc: `用冰箱里的食材做一顿（当前食材 ×${s.groceries}）：洗菜、切菜、下锅、上桌`, cost: "食材 -1 · 能量 +34 · 心情 +9", disabled: s.groceries <= 0 },
           { kind: "buy-groceries", title: "楼下买菜", emoji: "🥬", desc: "下楼到菜摊买一篮子菜，囤进冰箱慢慢做", cost: "-¥28 · 食材 +1", disabled: s.money < 28 },
@@ -3021,7 +3154,7 @@ return (
 </div>
 );
 case "cal": {
-const days = Array.from({ length: 30 }, (_, i) => i + 1);
+const days = Array.from({ length: seasonLen }, (_, i) => i + 1);
 return (
 <div>
 <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-bold text-[var(--dim)]">
@@ -3035,7 +3168,7 @@ return (
 </div>
 ))}
 </div>
-<p className="mt-2 text-xs text-[var(--dim)]">本月就是 11 月：14 日湾区峰会周开启，16 日太子湾欢迎晚宴，17–18 日前海工商峰会，18–19 日香蜜湖峰会主会议。每周六睡前交租。</p>
+<p className="mt-2 text-xs text-[var(--dim)]">{isApecSeason() ? "本月就是 11 月：14 日湾区峰会周开启，16 日太子湾欢迎晚宴，17–18 日前海工商峰会，18–19 日香蜜湖峰会主会议。每周六睡前交租。" : `本赛季是 ${seasonMo} 月：月底全服结算。每周六睡前交租。`}</p>
 </div>
 );
 }
@@ -3063,10 +3196,10 @@ return (
 <p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">真实天气暂时取不到（网络或服务问题）。游戏不会编一个假天气糊弄你——先按无雨晴天玩，网络恢复后点「刷新」。</p>
 )}
 </div>
-<p className="mt-1 text-[11px] font-black tracking-wide text-[var(--dim)]">游戏内日历（11 月赛季的剧情天气，和上面的实况是两回事）</p>
-{Array.from({ length: 7 }, (_, i) => s.day + i).filter((d) => d <= 30).map((d) => (
+<p className="mt-1 text-[11px] font-black tracking-wide text-[var(--dim)]">游戏内日历（{seasonMo} 月赛季的剧情天气，和上面的实况是两回事）</p>
+{Array.from({ length: 7 }, (_, i) => s.day + i).filter((d) => d <= seasonLen).map((d) => (
 <p key={d} className="flex justify-between rounded-[10px] border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm">
-<span>11 月 {d} 日 · {weekday(d)}{d === s.day ? "（今天）" : ""}</span><b>{weatherOf(d, s.cityKey)}</b>
+<span>{seasonMo} 月 {d} 日 · {weekday(d)}{d === s.day ? "（今天）" : ""}</span><b>{weatherOf(d, s.cityKey)}</b>
 </p>
 ))}
 </div>
@@ -3201,11 +3334,13 @@ return (
 <span className="chip">🌐 峰会日程</span>
 </div>
 
+{isApecSeason() && (
 <div className="mt-5 rounded-[16px] border-2 border-[var(--gold)] bg-[#fdf6da] p-4 text-[#5c4a00]">
 <p className="font-display text-xl font-black">🌐 {APEC_SLOGAN}</p>
 <p className="mt-1 text-xs leading-relaxed">公开上线活动：湾区国际峰会周 11 月 14–19 日在深圳举行，游戏同步开活动，每天一个任务，按日程走——14 日峰会周开幕（筹备会、工商论坛）→ 16 日晚太子湾欢迎晚宴 → 17–18 日前海工商峰会 → 18–19 日香蜜湖峰会主会议。你以志愿者、记者、司机的身份参与（峰会周的闭门会议不对公众开放，游戏里也进不去），坐真实地铁线路去三个会场打卡上岗，六天任务全做完，领《湾区峰会服务证书》。</p>
 <p className="mt-1.5 text-[11px] font-bold">⏰ 游戏第 N 天 = 11 月 N 日：13 日前先进城认地图、认地铁，14 日准时开幕。选深圳开局就能参加活动。</p>
 </div>
+)}
 
 <label htmlFor="nickname" className="mt-6 block text-sm font-black">先给自己起个城市昵称（别人会看到）</label>
 <input id="nickname" value={setupName} onChange={(e) => setSetupName(e.target.value.slice(0, 12))} placeholder="比如：阿深、湾区小陈" className="mt-2 w-full rounded-[12px] border-2 border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-base font-bold outline-none" />
@@ -3271,6 +3406,7 @@ m.legacy = { ...m.legacy, equipped: m.legacy.equipped.includes(pk.id) ? m.legacy
 {lg.history.length > 0 && <p className="mt-2 text-[11px] text-[var(--dim)]">{en ? "Recent runs: " : "最近几局："}{lg.history.slice(0, 4).map((h) => `${en ? trText(h.title) : h.title} +${h.pts}`).join(" · ")}</p>}
 </div> ); })()}
 
+{OPERATOR_MISSING && <p className="mt-5 rounded-[12px] border-2 border-dashed border-[var(--accent)] px-3 py-2 text-[11px] font-bold text-[var(--accent)]">{lang === "en" ? "Pre-launch: the operator name and contact in the Terms and Privacy Policy are not filled in yet (set VITE_OPERATOR_NAME / VITE_OPERATOR_CONTACT when building)." : "上线前提醒：用户协议和隐私政策里的运营方名称、联系方式还没填（构建时设置 VITE_OPERATOR_NAME / VITE_OPERATOR_CONTACT）。"}</p>}
 <label className="mt-5 flex items-start gap-2 text-xs leading-relaxed">
 <input type="checkbox" checked={agreed} onChange={(e) => setAgreedStored(e.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--accent)]" aria-label={lang === "en" ? "I agree to the Terms and Privacy Policy" : "同意用户协议和隐私政策"} />
 <span>{lang === "en" ? <>I have read and agree to the <button type="button" onClick={() => setLegalDoc("terms")} className="font-black underline">Terms of Service</button> and <button type="button" onClick={() => setLegalDoc("privacy")} className="font-black underline">Privacy Policy</button>. Companies and events in the game are fictional.</> : <>我已阅读并同意<button type="button" onClick={() => setLegalDoc("terms")} className="font-black underline">《用户协议》</button>和<button type="button" onClick={() => setLegalDoc("privacy")} className="font-black underline">《隐私政策》</button>。游戏中的公司与活动均为虚构。</>}</span>
@@ -3278,7 +3414,7 @@ m.legacy = { ...m.legacy, equipped: m.legacy.equipped.includes(pk.id) ? m.legacy
 <button type="button" disabled={!setupName.trim() || !agreed} onClick={() => startGame(setupName.trim(), setupCity, setupIden)} className="mt-6 w-full rounded-full bg-[var(--accent)] py-4 text-base font-black text-white shadow-[5px_5px_0_var(--border)] disabled:opacity-40">
 进城，开始过日子 →
 </button>
-<p className="mt-3 text-center text-xs leading-relaxed text-[var(--dim)]">规则：30 天，每天从 8:00 到午夜，上班、出行、玩都花时间和能量；每周六睡前交租，存款跌破 -¥500 会被房东请出门；第 30 天结束结算并登上全城排行榜。</p>
+<p className="mt-3 text-center text-xs leading-relaxed text-[var(--dim)]">规则：跟着北京时间过日子，每个自然月是一个赛季，第 N 天就是本月 N 号；做事有真实冷却，地铁、商场、景区按真实营业时间；没上线的日子会自动模拟上班吃饭；每周六睡前交租，存款跌破 -¥500 会被房东请出门；第 30 天结束结算并登上全城排行榜。</p>
 </main>
 {legalModal()}
 </div>
@@ -3296,15 +3432,15 @@ return (
 <main className="mx-auto max-w-2xl px-4 pb-10 pt-6">
 <div className="hard-card overflow-hidden">
 <div className="p-5 text-white" style={{ background: s.cityKey === "sz" ? "#e63a1f" : "#0369a1" }}>
-<p className="text-xs font-black tracking-[0.18em] opacity-90">30 天结算 · {CITIES[s.cityKey].name}</p>
+<p className="text-xs font-black tracking-[0.18em] opacity-90">{seasonMo} 月赛季结算 · {CITIES[s.cityKey].name}</p>
 <h2 className="font-display mt-1 text-4xl font-black">{result.title}</h2>
-<p className="mt-1 text-sm opacity-95">{iden.emoji} {iden.name} · 在{CITIES[s.cityKey].name}活了 {Math.min(s.day, 30)} 天 · 最高存款 {fmt(s.maxMoney)}</p>
+<p className="mt-1 text-sm opacity-95">{iden.emoji} {iden.name} · 在{CITIES[s.cityKey].name}活了 {Math.min(s.day, seasonLen)} 天 · 最高存款 {fmt(s.maxMoney)}</p>
 </div>
 <div className="p-5">
 <p className="text-sm leading-relaxed">{result.quote}</p>
 <div className="mt-4 grid grid-cols-3 gap-2 text-center">
 {[
-["最终存款", fmt(s.money)], ["存活天数", `${Math.min(s.day, 30)} 天`], ["上班", `${s.workCount} 次`],
+["最终存款", fmt(s.money)], ["存活天数", `${Math.min(s.day, seasonLen)} 天`], ["上班", `${s.workCount} 次`],
 ["玩过的活动", `${s.actCount ?? 0} 次`], ["和真人组局", `${s.partyPlays ?? 0} 次`], ["感情", (() => { const top = Object.entries(s.romance ?? {}).sort((x, y) => y[1] - x[1])[0]; return top ? `${top[0]} · ${ROMANCE_STAGES[romanceStage(top[1])]!.name[0]}` : "单身"; })()],
 ["总收入", fmt(s.earned)], ["交租", fmt(s.rentPaid)], ["最终心情", `${Math.round(s.mood)}`],
 ["职级", (CAREERS[s.careerIdx] ?? CAREERS[0]!).name], ["技能", `${s.skill} 点`], ["人脉", `${s.network} 人`],
@@ -3380,8 +3516,8 @@ return (
 <SafeAreaTopScrim backgroundColor="var(--bg)" />
 <header className="sticky top-0 z-30 border-b border-[var(--line)] bg-[var(--bg)]/95 pt-safe backdrop-blur">
 <div className="mx-auto flex w-full max-w-[2560px] items-center gap-2 overflow-x-auto px-4 py-2.5 [scrollbar-width:none] 2xl:px-8 [&>*]:shrink-0 [&>*]:whitespace-nowrap">
-<span className="font-display text-lg font-black">第 {Math.min(s.day, 30)} 天</span>
-<span className="hidden text-xs font-bold text-[var(--dim)] lg:inline">11 月 {Math.min(s.day, 30)} 日 · {weekday(s.day)} · {nowWeatherText}</span>
+<span className="font-display text-lg font-black">第 {Math.min(s.day, seasonLen)} 天</span>
+<span className="hidden text-xs font-bold text-[var(--dim)] lg:inline">{seasonMo} 月 {Math.min(s.day, seasonLen)} 日 · {weekday(s.day)} · {nowWeatherText}</span>
 <button type="button" aria-label={`刷新${city.name}真实天气`} title={rwOk ? `${city.name}此刻真实天气（${realWeather!.sourceName}，${new Date(realWeather!.fetchedAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })} 更新）——游戏里的天色、云雨都跟着它走` : "真实天气暂时取不到"} onClick={() => weatherQuery.refetch()} className="chip">
 {weatherQuery.isLoading ? "🌡️ 实况加载中…" : rwOk ? `${RW_EMOJI[realWeather!.kind]} ${city.name}实况 ${realWeather!.description || RW_LABEL[realWeather!.kind]}${realWeather!.temperature != null ? ` ${Math.round(realWeather!.temperature)}°` : ""}${realWeather!.stale ? "（缓存）" : ""}` : "🌡️ 实况暂不可用"}
 </button>
@@ -3423,8 +3559,11 @@ return (
 </div>
 <span className="flex items-center gap-1 text-xs font-bold">⚡<span className="h-2 w-10 overflow-hidden rounded-full bg-[var(--surface2)]"><span className="block h-full bg-amber-500 transition-all" style={{ width: `${s.energy}%` }} /></span>{Math.round(s.energy)}</span>
 <span className="flex items-center gap-1 text-xs font-bold">😊<span className="h-2 w-10 overflow-hidden rounded-full bg-[var(--surface2)]"><span className="block h-full bg-emerald-500 transition-all" style={{ width: `${s.mood}%` }} /></span>{Math.round(s.mood)}</span>
-<span className={`chip ${nowMin(s) >= 22 * 60 ? "text-[var(--accent)]" : ""}`} title="一天从早上 8:00 到午夜：上班、出行、玩都花时间，过了午夜只能回家睡觉，熬夜第二天能量少">{`🕘 ${clockStr(nowMin(s))}${nowMin(s) >= DAY_END ? " · 该睡了" : ` · 剩 ${durLabel(DAY_END - nowMin(s))}`}`}</span>
+<span className="chip" title="游戏时间就是北京时间：每个自然月是一个赛季，第 N 天 = 本月 N 号；做事有真实冷却；地铁、商场、景区按真实营业时间开关">{`🕘 ${clockStr(nowMin())}`}</span>
+{s.busyUntil && Date.now() < s.busyUntil ? <span className="chip border-[var(--accent)] text-[var(--accent)]">{`⏳ ${s.busyWhat ?? "忙"} ${countdown(s.busyUntil - Date.now())}`}</span> : null}
 <button type="button" onClick={() => setPartyOpen(true)} className={`chip ${parties.some((pt) => pt.status === "open") ? "border-[var(--accent)] text-[var(--accent)]" : ""}`} title={en ? "Parties in this city: join other players" : "同城组局：和真人一起玩"}>🎉 {en ? "Parties" : "组局"} {parties.filter((pt) => pt.status === "open").length}</button>
+<button type="button" onClick={() => { setHubOpen(true); track("hub_open"); }} className="chip border-[var(--text)] bg-[var(--text)] text-[var(--bg)]" title={en ? "Everything you can do right now, nearest first" : "现在能做的所有事，按远近排"}>🧭 {en ? "What can I do?" : "现在能干嘛"}</button>
+<button type="button" onClick={() => setDmOpen(true)} className={`chip ${unreadDm ? "border-[var(--accent)] text-[var(--accent)]" : ""}`} title={en ? "Private messages" : "私信"}>💬 {en ? "DMs" : "私信"}{unreadDm ? ` ${unreadDm}` : ""}</button>
 <span className="chip" title={iden.name}>{iden.emoji} {career.name} ×{career.mul}</span>
 {(() => { const co = employerHere(s); return co ? <span className="chip" title={co.culture}>{co.emoji} {co.short}</span> : null; })()}
 {meta.title && <span className="chip" style={{ borderColor: "var(--gold)", color: "var(--gold)" }}>🏅 {meta.title}</span>}
@@ -3592,7 +3731,7 @@ return (
 );
 })()}
 </div>
-<MapView lite={lite} fill paused={!!(roadRide || carriage || lifeAnim)} cityKey={s.cityKey} selfLocId={selectedLoc} selfEmoji={iden.emoji} selfColor={iden.color} selfName={profile?.name ?? "我"} remotePlayers={remotePlayers} selfOutfitId={s.outfit} travelModeId={travelMode} weatherKind={rwOk ? realWeather!.kind : "unknown"} npcMoodEmoji={Object.fromEntries(NPCS.map((n) => [n.name, moodEmoji(memOf(s.npcMem ?? {}, n.name).mood)]))} apecDay={isApecWeek(s.day)} focusLocId={mapFocus?.locId} focusX={mapFocus?.x} focusZ={mapFocus?.z} focusNonce={mapFocus?.nonce} destLocId={selectedLoc} onSelect={walkTo} navOverlay={(
+<MapView lite={lite} fill paused={!!(roadRide || carriage || lifeAnim)} cityKey={s.cityKey} selfLocId={selectedLoc} selfEmoji={iden.emoji} selfColor={iden.color} selfName={profile?.name ?? "我"} remotePlayers={remotePlayers} selfOutfitId={s.outfit} travelModeId={travelMode} weatherKind={rwOk ? realWeather!.kind : "unknown"} npcMoodEmoji={Object.fromEntries(NPCS.map((n) => [n.name, moodEmoji(memOf(s.npcMem ?? {}, n.name).mood)]))} apecDay={isApecWeek(s.day)} focusLocId={mapFocus?.locId} focusX={mapFocus?.x} focusZ={mapFocus?.z} focusNonce={mapFocus?.nonce} destLocId={selectedLoc} onSelect={walkTo} onPickActor={pickActor} navOverlay={(
 <>
 {/* 弹幕层：联机动态 / 聊天 / 街坊发言飘过地图上半区 */}
 {danmakuOn && (
@@ -3736,11 +3875,11 @@ return (
 {(() => { const g = guideForLocName(selLoc.name); if (!g) return null; return <ExperienceCard g={g} here={arrived} unlocked={(s.album ?? []).includes(g.key)} onCheckin={() => checkinGuide(g)} />; })()}
 <p className="mt-3.5 flex items-baseline justify-between gap-2"><span className="text-xs font-black tracking-wide">📍 在这里能做 · 常用操作</span><span className="text-[11px] font-bold text-[var(--dim)]">{arrived ? "点一下就行动" : "到了才能做"}</span></p>
 <div className="mt-2 grid gap-2">
-{actionsFor(selLoc, s).map((a) => { const tb = timeBlock(a.kind, s); return (
+{actionsFor(selLoc, s).map((a) => { const tb = timeBlock(a.kind, s) ?? (a.kind === "__sleep" || a.kind === "rest" ? null : venueClosed(selLoc)); return (
 <button key={a.kind + (a.arg ?? 0)} type="button" disabled={!arrived || a.disabled || !!tb} onClick={() => { if (a.kind === "__sleep") playLifeAnim("sleep", () => doSleep()); else doAction(a.kind, a.arg ?? 0); }} className="act-btn">
 <span className="flex items-center justify-between text-sm font-black"><span>{a.title}</span><span>{a.emoji}</span></span>
 <span className="mt-0.5 block text-xs leading-relaxed text-[var(--dim)]">{a.desc}</span>
-<span className="mt-1 block text-xs font-bold text-[var(--accent2)]">{a.cost}{a.kind !== "__sleep" && ` · ⏱ ${durLabel(actionMinutes(a.kind))}`}</span>
+<span className="mt-1 block text-xs font-bold text-[var(--accent2)]">{a.cost}{a.kind !== "__sleep" && ` · ⏳ ${realMinLabel(actionMinutes(a.kind))}`}</span>
 {tb && <span className="mt-0.5 block text-[11px] font-bold text-[var(--accent)]">⏰ {tb}</span>}
 </button>
 ); })}
@@ -3755,11 +3894,11 @@ return (
 <div key={c} className="mt-2">
 <p className="text-[11px] font-black text-[var(--dim)]">{L2t(CAT_LABEL[c])}</p>
 <div className="mt-1 grid gap-2 sm:grid-cols-2">
-{acts.filter((a) => a.cat === c).map((a) => { const why = actBlock(a, s, arrived); const groupable = !NO_PARTY.has(a.id) && a.cat !== "date"; return (
+{acts.filter((a) => a.cat === c).map((a) => { const why = actBlock(a, s, arrived, selLoc); const groupable = !NO_PARTY.has(a.id) && a.cat !== "date"; return (
 <div key={a.id} className="rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-2.5">
 <p className="text-sm font-black">{a.emoji} {L2t(a.name)}</p>
 <p className="mt-0.5 text-xs leading-relaxed text-[var(--dim)]">{L2t(a.desc)}</p>
-<p className="mt-1 text-[11px] font-bold text-[var(--accent2)]">{[a.cost ? `¥${a.cost}` : (en ? "Free" : "免费"), a.energy > 0 ? `${en ? "Energy" : "能量"} -${a.energy}` : a.energy < 0 ? `${en ? "Energy" : "能量"} +${-a.energy}` : "", `⏱ ${durL(a.min)}`, a.money ? `${en ? "earn up to" : "最多赚"} ¥${Math.round(a.money * CITIES[s.cityKey].payMul)}` : "", a.risk ? (en ? "⚠️ risky" : "⚠️ 有风险") : ""].filter(Boolean).join(" · ")}</p>
+<p className="mt-1 text-[11px] font-bold text-[var(--accent2)]">{[a.cost ? `¥${a.cost}` : (en ? "Free" : "免费"), a.energy > 0 ? `${en ? "Energy" : "能量"} -${a.energy}` : a.energy < 0 ? `${en ? "Energy" : "能量"} +${-a.energy}` : "", `⏳ ${en ? `${+(cooldownMs(a.min) / 60000).toFixed(1)} min` : realMinLabel(a.min)}`, a.money ? `${en ? "earn up to" : "最多赚"} ¥${Math.round(a.money * CITIES[s.cityKey].payMul)}` : "", a.risk ? (en ? "⚠️ risky" : "⚠️ 有风险") : ""].filter(Boolean).join(" · ")}</p>
 {why && <p className="mt-0.5 text-[11px] font-bold text-[var(--accent)]">⏰ {why}</p>}
 <div className="mt-1.5 flex gap-1.5">
 <button type="button" disabled={!!why} onClick={() => startActivity(a)} className="flex-1 rounded-full bg-[var(--text)] py-1.5 text-xs font-black text-[var(--bg)] disabled:opacity-40">{a.needs === "date" ? (en ? "💕 Ask someone" : "💕 约人") : (en ? "▶ Play" : "▶ 自己玩")}</button>
@@ -3972,7 +4111,7 @@ return (
 <p className="text-xs font-black tracking-wide">🎁 给在线的玩家送点东西（对方上线就收到，每天最多 10 份）</p>
 {(world?.online ?? []).filter((p) => p.id !== myId).slice(0, 8).map((p) => (
 <div key={p.id} className="rounded-[12px] border border-[var(--line)] bg-[var(--bg)] px-3 py-2">
-<p className="flex flex-wrap items-center gap-1.5 text-xs font-bold">{p.emoji} {p.name}{p.title && <span className="chip" style={{ borderColor: "var(--gold)", color: "var(--gold)" }}>🏅 {p.title}</span>}<span className="text-[var(--dim)]">{`${CITIES[p.cityKey === "hz" ? "hz" : "sz"].name}${(companyById(p.employer).city ?? "sz") === p.cityKey ? ` · ${companyById(p.employer).short}` : ""}`} · 🎫 {p.stamps} 站章</span>{p.employer === s.employer && p.cityKey === s.cityKey && (companyById(s.employer).city ?? "sz") === s.cityKey && <span className="chip">👥 同事</span>}</p>
+<p className="flex flex-wrap items-center gap-1.5 text-xs font-bold"><button type="button" onClick={() => setCardOf(p.id)} className="underline decoration-dotted">{p.emoji} {p.name}</button><button type="button" onClick={() => openDm(p.id)} className="chip">💬</button>{p.title && <span className="chip" style={{ borderColor: "var(--gold)", color: "var(--gold)" }}>🏅 {p.title}</span>}<span className="text-[var(--dim)]">{`${CITIES[p.cityKey === "hz" ? "hz" : "sz"].name}${(companyById(p.employer).city ?? "sz") === p.cityKey ? ` · ${companyById(p.employer).short}` : ""}`} · 🎫 {p.stamps} 站章</span>{p.employer === s.employer && p.cityKey === s.cityKey && (companyById(s.employer).city ?? "sz") === s.cityKey && <span className="chip">👥 同事</span>}</p>
 <div className="mt-1.5 flex flex-wrap gap-1">
 {(Object.keys(GIFTS) as GiftKind[]).filter((k) => k !== "invite").filter((k) => k !== "referral" || ((s.employer ?? "startup") !== "startup" && p.employer !== s.employer)).map((k) => (
 <button key={k} type="button" aria-label={`给${p.name}送${GIFTS[k].name}`} disabled={s.money < GIFTS[k].cost} onClick={() => sendGift(p.id, p.name, k)} className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1 text-[11px] font-black disabled:opacity-40">{GIFTS[k].emoji} {GIFTS[k].name}{GIFTS[k].cost ? ` ¥${GIFTS[k].cost}` : `（${companyById(s.employer).short}）`}</button>
@@ -4410,6 +4549,106 @@ onLocate={(x, z, name) => { setMetroMapOpen(false); setMapFocus({ x, z, nonce: D
 </div>
 </div> ); })()}
 
+{/* ===== 现在能干嘛 ===== */}
+{hubOpen && (() => {
+const ck = s.cityKey;
+const here = locById(currentLoc);
+const allLocs: Loc[] = [...getLocations(ck), ...placesForCity(ck).map((pl) => resolveLoc(ck, pl.id)).filter((x): x is Loc => !!x)];
+const rows = (Object.keys(CAT_LABEL) as ActCat[]).flatMap((c) => ACTIVITIES_LIST.filter((a) => a.cat === c)).map((a) => {
+  const cands = allLocs.filter((l) => { try { return a.at(l); } catch { return false; } }).map((l) => ({ l, d: Math.hypot(l.x - here.x, l.z - here.z), why: actBlock(a, s, true, l) })).sort((x, y) => (x.why ? 1 : 0) - (y.why ? 1 : 0) || x.d - y.d);
+  return { a, best: cands[0], n: cands.length };
+}).filter((r) => r.best && (hubCat === "all" || r.a.cat === hubCat) && (!hubOpenOnly || !r.best.why));
+const todo: { t: string; go?: () => void }[] = [];
+if (s.workDay !== s.day && employerHere(s)) todo.push({ t: en ? `💼 Haven't worked today — ${companyById(s.employer).short}` : `💼 今天还没上班：${companyById(s.employer).short}`, go: () => { const co = employerHere(s); if (co?.locIds[0]) { setHubOpen(false); walkTo(co.locIds[0]); } } });
+if (s.sleptDay !== s.day && nowMin() >= 21 * 60) todo.push({ t: en ? "😴 Time for bed — go home and sleep" : "😴 不早了，回家睡觉", go: () => { setHubOpen(false); goHomeAndSleep(); } });
+if (isSaturday(s.day)) todo.push({ t: en ? `🏠 Rent ${fmt(s.rent)} is due tonight` : `🏠 今晚交租 ${fmt(s.rent)}` });
+for (const st of STORIES) { const k = storyStatus(st, s.story?.[st.npc], memOf(s.npcMem ?? {}, st.npc).rel, s.day).kind; if (k === "ready" || k === "ending") todo.push({ t: en ? `📖 ${trText(st.npc)}'s story has a new chapter` : `📖 ${st.npc}的故事有新章节`, go: () => { setHubOpen(false); openNpcChat(st.npc); } }); }
+const openParties = parties.filter((pt) => pt.status === "open" && !pt.members.some((m) => m.id === myId));
+if (openParties.length) todo.push({ t: en ? `🎉 ${openParties.length} open part${openParties.length > 1 ? "ies" : "y"} in the city` : `🎉 城里有 ${openParties.length} 个局在等人`, go: () => { setHubOpen(false); setPartyOpen(true); } });
+if (unreadDm) todo.push({ t: en ? `💬 ${unreadDm} unread message${unreadDm > 1 ? "s" : ""}` : `💬 ${unreadDm} 条未读私信`, go: () => { setHubOpen(false); setDmOpen(true); } });
+return (
+<div className="fixed inset-0 z-[66] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={en ? "What can I do now" : "现在能干嘛"}>
+<div className="rise flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)]">
+<div className="border-b border-[var(--line)] p-4">
+<p className="flex items-center justify-between gap-2"><span className="font-display text-xl font-black">🧭 {en ? "What can I do now?" : "现在能干嘛？"}</span><span className="flex items-center gap-2"><span className="text-xs font-bold text-[var(--dim)]">{en ? `Beijing time ${clockStr(nowMin())}` : `北京时间 ${clockStr(nowMin())}`}</span><button type="button" onClick={() => setHubOpen(false)} className="rounded-full border px-3 py-1 text-xs font-black">✕</button></span></p>
+{todo.length > 0 && <div className="mt-2 grid gap-1.5 sm:grid-cols-2">{todo.map((x, i) => <button key={i} type="button" disabled={!x.go} onClick={x.go} className="rounded-[10px] bg-[var(--surface2)] px-3 py-2 text-left text-xs font-black">{x.t}{x.go ? " →" : ""}</button>)}</div>}
+<div className="mt-3 flex flex-wrap gap-1.5">
+<button type="button" onClick={() => setHubCat("all")} className={`chip ${hubCat === "all" ? "bg-[var(--text)] text-[var(--bg)]" : ""}`}>{en ? "All" : "全部"}</button>
+{(Object.keys(CAT_LABEL) as ActCat[]).map((c) => <button key={c} type="button" onClick={() => setHubCat(c)} className={`chip ${hubCat === c ? "bg-[var(--text)] text-[var(--bg)]" : ""}`}>{L2t(CAT_LABEL[c])}</button>)}
+<label className="chip cursor-pointer"><input type="checkbox" checked={hubOpenOnly} onChange={(e) => setHubOpenOnly(e.target.checked)} className="mr-1" />{en ? "Open now only" : "只看现在能玩"}</label>
+</div>
+</div>
+<div className="grid flex-1 gap-2 overflow-y-auto p-4 sm:grid-cols-2">
+{rows.length === 0 && <p className="text-sm text-[var(--dim)]">{en ? "Nothing open in this category right now — untick \"Open now only\" to see when things open." : "这个分类现在没有能玩的——取消「只看现在能玩」，看看什么时候开门。"}</p>}
+{rows.map(({ a, best, n }) => { const atHere = best!.l.id === currentLoc; return (
+<div key={a.id} className="rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-2.5">
+<p className="flex items-center justify-between gap-2 text-sm font-black"><span>{a.emoji} {L2t(a.name)}</span><span className="text-[10px] font-bold text-[var(--dim)]">{L2t(CAT_LABEL[a.cat])}</span></p>
+<p className="mt-0.5 text-xs text-[var(--dim)]">{L2t(a.desc)}</p>
+<p className="mt-1 text-[11px] font-bold">{atHere ? (en ? "📍 Right here" : "📍 就在这儿") : `📍 ${en ? trText(best!.l.name) : best!.l.name} · ${en ? "about" : "约"} ${etaMinutes(travelMode, best!.d)} ${en ? "min away" : "分钟路程"}`}{n > 1 ? (en ? ` · ${n} places` : ` · 共 ${n} 处`) : ""}</p>
+{best!.why && <p className="text-[11px] font-bold text-[var(--accent)]">⏰ {best!.why}</p>}
+<button type="button" onClick={() => { setHubOpen(false); if (atHere) { setSelectedLoc(best!.l.id); startActivity(a, { locId: best!.l.id }); } else { setSelectedLoc(best!.l.id); walkTo(best!.l.id); } }} className="mt-1.5 w-full rounded-full bg-[var(--text)] py-1.5 text-xs font-black text-[var(--bg)]">{atHere ? (en ? "▶ Play here" : "▶ 就在这儿玩") : (en ? "Go there →" : "去这里 →")}</button>
+</div> ); })}
+</div>
+</div>
+</div> ); })()}
+
+{/* ===== 玩家名片 ===== */}
+{cardOf && (() => { const c = cardQuery.data?.card; const ol = (world?.online ?? []).find((x) => x.id === cardOf); return (
+<div className="fixed inset-0 z-[67] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={en ? "Player card" : "玩家名片"}>
+<div className="rise w-full max-w-sm rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] p-4">
+<div className="flex items-start gap-3">
+<span className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-[var(--surface2)] text-3xl">{c?.emoji ?? ol?.emoji ?? "🙂"}</span>
+<div className="min-w-0 flex-1">
+<p className="font-display text-xl font-black">{c?.name ?? ol?.name ?? "…"}</p>
+<p className="text-xs text-[var(--dim)]">{c ? `${c.online ? "🟢 " : "⚪ "}${en ? trText(CITIES[c.cityKey === "hz" ? "hz" : "sz"].name) : CITIES[c.cityKey === "hz" ? "hz" : "sz"].name} · ${en ? "Day" : "第"} ${c.gameDay}${en ? "" : " 天"} · ${(CAREERS[c.careerIdx] ?? CAREERS[0]!).name} · ${companyById(c.employer).short}` : (en ? "Loading…" : "加载中……")}</p>
+{c && <p className="mt-1 flex flex-wrap gap-1">{c.title && <span className="chip" style={{ borderColor: "var(--gold)", color: "var(--gold)" }}>🏅 {c.title}</span>}<span className="chip">🎫 {c.stamps}</span>{c.buddy > 0 && <span className="chip">🤝 {en ? `played together ×${c.buddy}` : `一起玩过 ${c.buddy} 次`}</span>}</p>}
+</div>
+<button type="button" onClick={() => setCardOf(null)} className="shrink-0 rounded-full border px-3 py-1 text-xs font-black">✕</button>
+</div>
+<div className="mt-3 grid grid-cols-2 gap-2">
+<button type="button" disabled={c?.blocked} onClick={() => openDm(cardOf)} className="rounded-full bg-[var(--text)] py-2.5 text-sm font-black text-[var(--bg)] disabled:opacity-40">💬 {en ? "Message" : "私聊"}</button>
+<button type="button" disabled={c?.blocked} onClick={() => inviteToParty(cardOf)} className="rounded-full bg-[var(--accent)] py-2.5 text-sm font-black text-white disabled:opacity-40">👥 {en ? "Invite to party" : "邀请组局"}</button>
+<button type="button" disabled={s.money < GIFTS.tea.cost} onClick={() => sendGift(cardOf, c?.name ?? ol?.name ?? "", "tea")} className="rounded-full border-2 border-[var(--text)] py-2 text-xs font-black disabled:opacity-40">{GIFTS.tea.emoji} {en ? `Send a bubble tea ¥${GIFTS.tea.cost}` : `请杯${GIFTS.tea.name} ¥${GIFTS.tea.cost}`}</button>
+<button type="button" onClick={() => blockNow(cardOf, !c?.blocked)} className="rounded-full border-2 border-[var(--line)] py-2 text-xs font-black">{c?.blocked ? (en ? "Unblock" : "取消拉黑") : (en ? "🚫 Block" : "🚫 拉黑")}</button>
+</div>
+<details className="mt-2 text-xs"><summary className="cursor-pointer font-black text-[var(--dim)]">⚠️ {en ? "Report" : "举报"}</summary>
+<div className="mt-1.5 flex flex-wrap gap-1.5">{([["harassment", "骚扰", "Harassment"], ["scam", "诈骗", "Scam"], ["spam", "广告刷屏", "Spam"], ["inappropriate", "不当内容", "Inappropriate"], ["minor", "疑似未成年人安全问题", "Child safety"], ["other", "其他", "Other"]] as const).map(([k, zh, e]) => <button key={k} type="button" onClick={() => reportNow(cardOf, k)} className="chip">{en ? e : zh}</button>)}</div>
+</details>
+<p className="mt-2 text-[11px] text-[var(--dim)]">{en ? "Never share passwords, codes or payment details in chat. Anyone asking you to move to another app or send money is likely a scam." : "聊天里不要透露密码、验证码和付款信息；让你转到别的 App 或者转账的，大概率是诈骗。"}</p>
+</div>
+</div> ); })()}
+
+{/* ===== 私信 ===== */}
+{dmOpen && (() => { const th = threads.find((t) => t.peerId === dmPeer); const peerName = th?.peerName ?? (world?.online ?? []).find((x) => x.id === dmPeer)?.name ?? ""; return (
+<div className="fixed inset-0 z-[66] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={en ? "Private messages" : "私信"}>
+<div className="rise flex h-[80vh] w-full max-w-2xl overflow-hidden rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)]">
+<div className={`${dmPeer ? "hidden sm:block" : "block"} w-full overflow-y-auto border-r border-[var(--line)] sm:w-56`}>
+<p className="flex items-center justify-between p-3 font-black">💬 {en ? "Messages" : "私信"}<button type="button" onClick={() => { setDmOpen(false); setDmPeer(null); }} className="rounded-full border px-2.5 py-0.5 text-xs">✕</button></p>
+{threads.length === 0 && <p className="px-3 text-xs text-[var(--dim)]">{en ? "No messages yet. Tap a player's name on the map to say hi." : "还没有私信。点地图上玩家的名字，打个招呼吧。"}</p>}
+{threads.map((t) => (
+<button key={t.peerId} type="button" onClick={() => openDm(t.peerId)} className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm ${t.peerId === dmPeer ? "bg-[var(--surface2)]" : ""}`}>
+<span className="text-xl">{t.peerEmoji}</span><span className="min-w-0 flex-1"><span className="block truncate font-black">{t.online ? "🟢 " : ""}{t.peerName}</span><span className="block truncate text-[11px] text-[var(--dim)]">{(t.messages[t.messages.length - 1]?.body ?? "").replace(/^\[\[party:\d+\]\]$/, en ? "🎉 Party invite" : "🎉 组局邀请")}</span></span>{t.unread > 0 && <span className="rounded-full bg-[var(--accent)] px-1.5 text-[10px] font-black text-white">{t.unread}</span>}
+</button>
+))}
+</div>
+{dmPeer && (
+<div className="flex min-w-0 flex-1 flex-col">
+<p className="flex items-center gap-2 border-b border-[var(--line)] p-3 text-sm font-black"><button type="button" onClick={() => setDmPeer(null)} className="sm:hidden">←</button><button type="button" onClick={() => setCardOf(dmPeer)} className="min-w-0 flex-1 truncate text-left underline decoration-dotted">{peerName}</button><button type="button" onClick={() => { setDmOpen(false); setDmPeer(null); }} className="rounded-full border px-2.5 py-0.5 text-xs">✕</button></p>
+<div className="flex-1 overflow-y-auto p-3">
+{(th?.messages ?? []).map((m) => { const inv = /^\[\[party:(\d+)\]\]$/.exec(m.body); const pt = inv ? parties.find((x) => x.id === Number(inv[1])) : undefined; const act = pt ? activityById(pt.activityId) : null; return (
+<div key={m.id} className={`mb-1.5 max-w-[85%] rounded-[12px] px-3 py-2 text-[13px] ${m.mine ? "ml-auto bg-[var(--text)] text-[var(--bg)]" : "border border-[var(--line)] bg-[var(--bg)]"}`}>
+{inv ? (pt && act ? <span>🎉 {en ? `Party invite: ${act.name[1]} at ${trText(pt.locName)}` : `组局邀请：${pt.locName} · ${act.name[0]}`}{!m.mine && pt.status === "open" && !pt.members.some((x) => x.id === myId) && <button type="button" onClick={() => { setDmOpen(false); joinPartyNow(pt); }} className="ml-2 rounded-full bg-[var(--accent)] px-2.5 py-0.5 text-[11px] font-black text-white">{en ? "Join" : "加入"}</button>}</span> : <span className="opacity-70">{en ? "🎉 Party invite (this party has ended)" : "🎉 组局邀请（这个局已经结束了）"}</span>) : <span className="whitespace-pre-wrap break-words">{m.body}</span>}
+</div> ); })}
+</div>
+<form className="flex gap-2 border-t border-[var(--line)] p-2" onSubmit={(e) => { e.preventDefault(); sendDmNow(dmPeer, dmInput); }}>
+<input value={dmInput} onChange={(e) => setDmInput(e.target.value.slice(0, 300))} placeholder={en ? "Say something…" : "说点什么……"} aria-label={en ? "Message" : "消息"} className="min-w-0 flex-1 rounded-full border-2 border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm" />
+<button type="submit" disabled={!dmInput.trim()} className="shrink-0 rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-black text-white disabled:opacity-40">{en ? "Send" : "发送"}</button>
+</form>
+</div>
+)}
+</div>
+</div> ); })()}
+
 {/* ===== 小游戏 ===== */}
 {play && <MiniGame spec={play.spec} title={`${play.act.emoji} ${L2t(play.act.name)}${play.mate ? (en ? ` with ${trText(play.mate)}` : ` · 和${play.mate}`) : ""}`} en={en} onDone={finishActivity} onQuit={() => setPlay(null)} />}
 
@@ -4574,7 +4813,7 @@ return (
 <div className="rise max-h-[92vh] w-full max-w-md overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] shadow-xl">
 <div className="flex items-start justify-between bg-[var(--text)] p-4 text-[var(--bg)]">
 <div>
-<p className="text-xs font-black opacity-80">📋 每日任务 · 第 {Math.min(s.day, 30)} 天 · {weekday(s.day)}</p>
+<p className="text-xs font-black opacity-80">📋 每日任务 · 第 {Math.min(s.day, seasonLen)} 天 · {weekday(s.day)}</p>
 <p className="font-display mt-0.5 text-2xl font-black">{city.name}的一天，从签到开始</p>
 <p className="mt-0.5 text-xs opacity-85">{nowWeatherText} · {phaseApec.label}</p>
 </div>

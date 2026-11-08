@@ -163,8 +163,8 @@ export const STORY_EN: Record<string, string> = {
   "衣柜传家": "Hand-me-down wardrobe", "开局就有正装和雨衣": "Start with formal wear and a raincoat",
   "夜校结业": "Night-school graduate", "开局技能 +2": "Start with Skill +2",
   "职场老手": "Office veteran", "开局经验 +6，大厂面试更容易": "Start with XP +6 — big-company interviews are easier",
-  "熟门熟路": "Knows the way", "所有出行省 20% 时间": "All trips take 20% less time",
-  "早起的鸟": "Early bird", "每天 7:00 起床，多出 1 小时": "Up at 7:00 every day — one extra hour",
+  "手脚麻利": "Quick hands", "所有行动的冷却时间 -20%": "All action cooldowns −20%",
+  "精力旺盛": "Boundless energy", "能量自然恢复快 50%": "Energy regenerates 50% faster",
   "熟人房东": "Friendly landlord", "房租 -10%": "Rent −10%",
   "街坊记得你": "The neighbours remember you", "所有街坊开局就是「熟人」，剧情解锁更快": "Every neighbour starts as an acquaintance — stories unlock faster",
 };
