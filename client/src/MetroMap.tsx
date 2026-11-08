@@ -7,6 +7,7 @@
 import { useMemo, useState } from "react";
 import {
 CITIES,
+curSym,
 findMetroRoute,
 getLocations,
 metroLinesForCity,
@@ -112,10 +113,10 @@ export function MetroMapModal({ cityKey, fromLocId, initialDest, onClose, onRide
   const minZ = Math.min(...zs) - 3.5, maxZ = Math.max(...zs) + 3.5;
 
   return (
-    <div className="fixed inset-0 z-[65] flex items-end justify-center bg-black/60 backdrop-blur-[2px] p-3 sm:items-center" role="dialog" aria-label={cityKey === "hz" ? "惠州城际高铁线网图" : "地铁线网图"}>
+    <div className="fixed inset-0 z-[65] flex items-end justify-center bg-black/60 backdrop-blur-[2px] p-3 sm:items-center" role="dialog" aria-label={cityKey === "hz" ? "惠州城际高铁线网图" : cityKey === "hk" ? "香港港铁线网图" : "地铁线网图"}>
       <div className="rise flex max-h-[94vh] w-full max-w-4xl flex-col overflow-hidden rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] shadow-xl">
         <div className="flex items-center gap-2 px-4 pt-3.5">
-          <p className="min-w-0 flex-1 text-base font-black">{cityKey === "hz" ? <>🚆 {CITIES[cityKey].name}城际 / 高铁线网图 <span className="text-xs font-bold text-[var(--dim)]">惠州没有地铁 · 莞惠城际 + 赣深/厦深/广汕高铁 · 点站点选起点和终点</span></> : <>🚇 {CITIES[cityKey].name}地铁 / 城轨线网图 <span className="text-xs font-bold text-[var(--dim)]">全部运营线路 · 点站点选起点和终点</span></>}</p>
+          <p className="min-w-0 flex-1 text-base font-black">{cityKey === "hz" ? <>🚆 {CITIES[cityKey].name}城际 / 高铁线网图 <span className="text-xs font-bold text-[var(--dim)]">惠州没有地铁 · 莞惠城际 + 赣深/厦深/广汕高铁 · 点站点选起点和终点</span></> : cityKey === "hk" ? <>🚇 {CITIES[cityKey].name}港铁线网图 MTR <span className="text-xs font-bold text-[var(--dim)]">香港只有港铁，没有地铁 · 荃湾线/港岛线/观塘线/将军澳线/东铁线/南港岛线/屯马线/东涌线/机场快线 + 高铁 · 点站点选起点和终点</span></> : <>🚇 {CITIES[cityKey].name}地铁 / 城轨线网图 <span className="text-xs font-bold text-[var(--dim)]">全部运营线路 · 点站点选起点和终点</span></>}</p>
           <button type="button" aria-label="关闭线网图" onClick={onClose} className="shrink-0 rounded-full border border-[var(--line)] px-3 py-1.5 text-xs font-black">✕ 关闭</button>
         </div>
         <div className="flex flex-wrap gap-1 px-4 pt-2">
@@ -126,7 +127,7 @@ export function MetroMapModal({ cityKey, fromLocId, initialDest, onClose, onRide
           ))}
         </div>
         <div className="min-h-0 flex-1 overflow-auto px-2 pt-1">
-          <svg viewBox={`${minX} ${minZ} ${maxX - minX} ${maxZ - minZ}`} className="w-full" role="img" aria-label={`${CITIES[cityKey].name}${cityKey === "hz" ? "城际高铁" : "地铁"}线网示意图`}>
+          <svg viewBox={`${minX} ${minZ} ${maxX - minX} ${maxZ - minZ}`} className="w-full" role="img" aria-label={`${CITIES[cityKey].name}${cityKey === "hz" ? "城际高铁" : cityKey === "hk" ? "港铁" : "地铁"}线网示意图`}>
             {lines.map((line) => (
               <polyline
                 key={line.id}
@@ -180,12 +181,12 @@ export function MetroMapModal({ cityKey, fromLocId, initialDest, onClose, onRide
               <div className="mt-2">
                 <p className="text-sm font-black">{originName} → {destName}：{route.summary}</p>
                 <p className="mt-0.5 text-xs text-[var(--dim)]">
-                  共 {route.stops} 站 · 票价 ¥{route.fare}{route.isTransfer ? ` · 换乘 ${route.transferStations.length} 次（${route.transferStations.join("、")}）` : " · 不用换乘"}
+                  共 {route.stops} 站 · 票价 {curSym(cityKey)}{route.fare}{route.isTransfer ? ` · 换乘 ${route.transferStations.length} 次（${route.transferStations.join("、")}）` : " · 不用换乘"}
                   {route.shuttleFrom.length > 0 ? ` · 含站外接驳巴士（${route.shuttleFrom.join("、")}）` : ""}
                   {route.legs.map((leg) => ` · ${leg.line.short} 坐 ${leg.stops} 站`).join("")}
                 </p>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <button type="button" aria-label={`乘${cityKey === "hz" ? "城际/高铁" : "地铁"}出发去${destName}`} onClick={() => destAnchor && onRide(destAnchor)} className="rounded-full bg-[var(--accent)] px-4 py-2.5 text-xs font-black text-white">{cityKey === "hz" ? "🚆" : "🚇"} 从我这出发 → {destAnchor ? (locs.find((l) => l.id === destAnchor)?.name ?? destName) : destName}</button>
+                  <button type="button" aria-label={`乘${cityKey === "hz" ? "城际/高铁" : cityKey === "hk" ? "港铁" : "地铁"}出发去${destName}`} onClick={() => destAnchor && onRide(destAnchor)} className="rounded-full bg-[var(--accent)] px-4 py-2.5 text-xs font-black text-white">{cityKey === "hz" ? "🚆" : "🚇"} 从我这出发 → {destAnchor ? (locs.find((l) => l.id === destAnchor)?.name ?? destName) : destName}</button>
                   {!directFromHere ? <span className="text-[11px] text-[var(--dim)]">你现在（{fromLoc.name}）不在车站旁：点出发会先带你去最近的车站，再从那儿上车。</span> : originAnchor !== fromLocId ? <span className="text-[11px] text-[var(--dim)]">出发按你现在的位置（{fromLoc.name}）上车，上面的路线供参考比对。</span> : null}
                 </div>
               </div>
