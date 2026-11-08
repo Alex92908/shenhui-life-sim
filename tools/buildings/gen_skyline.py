@@ -16,6 +16,7 @@ import gen_hk_places as hk  # noqa: E402
 # --- Shenzhen: real km -> map (same fit as tools/hz/gen_areas.py) ---
 src = (ROOT / "client/src/places-sz.ts").read_text()
 rows = re.findall(r'P\("([^"]+)","[^"]+","\w+",(-?[\d.]+),(-?[\d.]+),(-?[\d.]+),(-?[\d.]+)', src)
+rows = [r for r in rows if not r[0].startswith("x")]  # rows added by add_sz_places.py are not fit anchors
 osm = {p["id"]: p for p in json.loads((ROOT / "tools/metro/sz-osm-places.json").read_text())["places"]}
 anc = [(float(x), float(z), float(kx), float(ky)) for pid, x, z, kx, ky in rows]
 lat0 = np.mean([osm[pid]["lat"] + float(ky) / 110.57 for pid, x, z, kx, ky in rows if pid in osm])

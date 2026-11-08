@@ -9,3 +9,6 @@ __pycache__/
 # OSM coastline caches (re-download: python3 tools/terrain/gen_terrain.py <city> --fetch)
 tools/terrain/*-osm-terrain.json
 tools/hk/hk-osm-terrain.json
+
+# server keys (copy standalone/.env.example)
+standalone/.env

@@ -147,13 +147,16 @@ def main() -> None:
             score = -min(math.dist((X, Y), (a[2], a[3])) for a in A)
         else:
             min_area = KINDS[k][0] or 0
-            if not notable and p["area"] < min_area * 0.5 and not (k == "hospital" and t.get("emergency") == "yes") and k not in ("museum", "library", "beach", "historic", "theatre", "university"):
+            if not notable and p["area"] < (0.02 if k == "park" else min_area * 0.5) and not (k == "hospital" and t.get("emergency") == "yes") and k not in ("museum", "library", "beach", "historic", "theatre", "university"):
                 continue
             score = (10 if notable else 0) + math.log10(p["area"] + 1e-4) + (3 if t.get("emergency") == "yes" else 0)
         key = name if k not in NEAR_KINDS else f"{name}@{round(X)},{round(Y)}"
         if key in seen and seen[key]["score"] >= score: continue
         seen[key] = {**p, "kind": k, "name": name, "score": score, "X": X, "Y": Y}
     caps = {k: max(8, c * 2 // 3) for k, (_m, c) in KINDS.items()}
+    SIGHTS = {"park", "nature", "beach", "themepark", "attraction", "museum", "historic", "peak"}
+    caps.update({k: 600 for k in SIGHTS})  # keep parks and sights generously; only services are tightly capped
+    caps.update({"park": 250, "historic": 120, "peak": 60})  # Hong Kong maps hundreds of tiny sitting-out areas, relics and hillocks: keep the biggest / best-known
     by: dict[str, list] = {}
     for r in seen.values(): by.setdefault(r["kind"], []).append(r)
     chosen = []

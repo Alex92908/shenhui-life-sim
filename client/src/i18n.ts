@@ -80,9 +80,19 @@ const EN: Record<string, string> = {
   "惠州躺平青年": "Huizhou slacker", "拒绝内卷，海边租房。工资不高，但每天睡到自然醒。": "Opted out of the rat race and rents by the sea. Low pay, but sleeps in every day.",
   "996 程序员": "996 programmer", "发量换工资。日薪最高，但能量和心情掉得比头发还快。": "Trades hair for salary. Highest pay, but energy and mood drop faster than hair.",
   "外卖骑手": "Delivery rider", "城市最熟悉的陌生人。多跑多得，风里来雨里去。": "The city's most familiar stranger. More runs, more money, rain or shine.",
+  "的士司机": "Taxi driver", "一天十二个小时握着方向盘，城市每条路都在脑子里。打表收钱，份子钱也得交。": "Twelve hours a day at the wheel; every street is in your head. Meter fares in, the car rental out.",
+  "工厂普工": "Factory worker", "流水线上打螺丝，包吃住，加班多，攒钱快。": "Screws on the assembly line; food and a dorm included, lots of overtime, saves fast.",
+  "餐厅服务员": "Waiter", "午市晚市两个高峰，脚不沾地，员工餐管饱。": "Two rushes a day, never sitting down; staff meals included.",
+  "商场导购": "Shop assistant", "站一天柜台，成交有提成，嘴甜的月薪翻倍。": "On your feet all day; commission on every sale — a good talker doubles the pay.",
+  "理发师": "Barber", "一把剪刀走天下，烫染一单顶三单，熟客最值钱。": "Scissors are your passport; a perm pays like three cuts; regulars are gold.",
+  "按摩师": "Masseur", "足疗推拿，手艺吃饭，老客点钟有小费。": "Foot and body massage — skill pays, and regulars tip.",
+  "KTV 包厢服务员": "KTV room attendant", "夜班到凌晨，送果盘调音响，嗓子好还能陪唱暖场。": "Night shifts till late: fruit plates, sound checks, and a warm-up song if you can sing.",
+  "老师": "Teacher", "带早读、上课、批作业，寒暑假是最大的福利。": "Morning reading, lessons, marking — the holidays are the perk.",
+  "大学生": "University student", "上课、自习、社团、兼职——钱少，但时间和可能性都多。": "Classes, study, clubs, part-time jobs — little money, lots of time and possibility.",
+  "小老板": "Business owner", "开了家小公司，谈下一单就是大钱，谈黄了也得发工资。": "Runs a small company: land a deal and it's big money; lose one and payroll still comes.",
   "规则：跟着北京时间过日子，每个自然月是一个赛季，第 N 天就是本月 N 号；做事有真实冷却，地铁、商场、景区按真实营业时间；没上线的日子会自动模拟上班吃饭；每周六睡前交租，存款跌破 -¥500 会被房东请出门；第 30 天结束结算并登上全城排行榜。": "Rules: life runs on Beijing time — each calendar month is a season and day N is the Nth of the month. Actions have real cooldowns, and the metro, malls and attractions keep real hours; days you miss are lived for you (simulated work and meals). Rent is due before bed every Saturday, and dropping below -¥500 gets you evicted. Day 30 ends the run and puts you on the city leaderboard.",
   "选择深圳": "Choose Shenzhen", "选择惠州": "Choose Huizhou", "切换到中文": "Switch to Chinese",
-  "选择身份深漂打工人": "Choose Shenzhen hustler", "选择身份深圳富二代": "Choose rich kid", "选择身份惠州躺平青年": "Choose Huizhou slacker", "选择身份996 程序员": "Choose 996 programmer", "选择身份外卖骑手": "Choose delivery rider",
+  "选择身份深漂打工人": "Choose Shenzhen hustler", "选择身份的士司机": "Choose taxi driver", "选择身份工厂普工": "Choose factory worker", "选择身份餐厅服务员": "Choose waiter", "选择身份商场导购": "Choose shop assistant", "选择身份理发师": "Choose barber", "选择身份按摩师": "Choose masseur", "选择身份KTV 包厢服务员": "Choose KTV room attendant", "选择身份老师": "Choose teacher", "选择身份大学生": "Choose university student", "选择身份小老板": "Choose business owner", "选择身份深圳富二代": "Choose rich kid", "选择身份惠州躺平青年": "Choose Huizhou slacker", "选择身份996 程序员": "Choose 996 programmer", "选择身份外卖骑手": "Choose delivery rider",
   "页面没能加载出来": "The page didn't load", "重新打开": "Reload", "清除本地存档并重新开始": "Clear local save and restart",
   // daily modal
   "开始今天的生活 →": "Start today →", "🧧 每日签到 · 领 ¥30 + 能量 10": "🧧 Daily check-in · ¥30 + 10 energy", "✅ 今日已签到（明天再来）": "✅ Checked in today (come back tomorrow)",
@@ -225,8 +235,8 @@ const EN: Record<string, string> = {
 const COMPANY_EN: Record<string, string> = {
   startup: "Tech Park Startup", tencent: "Tencent", bytedance: "ByteDance", huawei: "Huawei", dji: "DJI", baidu: "Baidu",
   zte: "ZTE", cmb: "China Merchants Bank", pingan: "Ping An", vanke: "Vanke", byd: "BYD",
-  tcl: "CL Group", desay: "Desay SV", eve: "EVE Energy", petro: "CNOOC Daya Bay Petrochem",
-  "hk-bank": "HSBC", "hk-exchange": "HK Exchange (fictional)", "hk-airline": "Tai Airways", "hk-property": "Gu Properties", "hk-sciencepark": "Science Park Startup", "hk-rail": "Tie Rail Corp",
+  tcl: "TCL", desay: "Desay SV", eve: "EVE Energy", petro: "CNOOC Daya Bay Petrochem",
+  "hk-bank": "HSBC", "hk-exchange": "HKEX", "hk-airline": "Cathay Pacific", "hk-property": "Swire Properties", "hk-sciencepark": "Science Park Startup", "hk-rail": "MTR Corporation",
 };
 const ACH_EN: Record<string, [string, string]> = {
   stamp1: ["Metro Rookie", "Collect your first station stamp"], stamp50: ["Commuter Pro", "Collect 50 station stamps"], stamp150: ["Walking Metro Map", "Collect 150 station stamps"],
@@ -282,6 +292,7 @@ function buildDataNames(): void {
   for (const p of placesForCity("sz")) { const en = p.en ?? SZ_PLACE_EN_AUTO[p.name]; if (en) EN[p.name] ??= en; }
   for (const p of placesForCity("hz")) { const en = p.en ?? HZ_PLACE_EN_AUTO[p.name]; if (en) EN[p.name] ??= en; }
   for (const p of placesForCity("hk")) { if (p.en) EN[p.name] ??= p.en; }
+  for (const [zh, en] of [["港铁", "MTR"], ["巴士", "Bus"], ["的士", "Taxi"], ["渡轮", "Ferry"], ["跑步", "Run"], ["自驾", "Drive"], ["打车", "Taxi"], ["公交", "Bus"]] as const) EN[zh] ??= en;
   for (const c of COMPANIES) { const en = COMPANY_EN[c.id]; if (en) { EN[c.name] ??= en; EN[c.short] ??= en; } }
   for (const a of ACHIEVEMENTS) { const t = ACH_EN[a.id]; if (t) { EN[a.title] ??= t[0]; EN[a.desc] ??= t[1]; } }
   for (const g of WEEKLY_GOALS) { const en = GOAL_EN[g.id]; if (en) EN[g.name] ??= en; }
