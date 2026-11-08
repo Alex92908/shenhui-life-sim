@@ -21,6 +21,8 @@ import * as schema from "../server/src/schema";
 import { openMeteoWeather } from "./weather";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+/* keys and settings live in standalone/.env (git-ignored; see .env.example and docs/LAUNCH-SETUP.md) */
+if (existsSync(join(HERE, ".env"))) { try { process.loadEnvFile(join(HERE, ".env")); } catch (e) { console.error("[env] could not read .env:", e); } }
 const PORT = Number(process.env.PORT ?? 8787);
 const HOST = process.env.HOST ?? "127.0.0.1";
 const DB_PATH = resolve(process.env.DB_PATH ?? join(HERE, "data", "app.db"));
@@ -108,6 +110,14 @@ const sendCode = async (provider: "email" | "phone", to: string, code: string) =
     if (!r.ok) throw new Error(`webhook ${r.status}`);
     return;
   }
+  if (provider === "phone" && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && (process.env.TWILIO_FROM || process.env.TWILIO_MESSAGING_SERVICE_SID)) {
+    // overseas SMS through Twilio (Chinese mainland numbers need a local provider through LOGIN_CODE_WEBHOOK)
+    const sid = process.env.TWILIO_ACCOUNT_SID;
+    const body = new URLSearchParams({ To: to, Body: `【深惠人生】验证码 ${code}，10 分钟内有效。Your Shenhui Life code is ${code}.`, ...(process.env.TWILIO_MESSAGING_SERVICE_SID ? { MessagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID } : { From: process.env.TWILIO_FROM! }) });
+    const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, { method: "POST", headers: { authorization: `Basic ${Buffer.from(`${sid}:${process.env.TWILIO_AUTH_TOKEN}`).toString("base64")}`, "content-type": "application/x-www-form-urlencoded" }, body });
+    if (!r.ok) throw new Error(`twilio ${r.status}`);
+    return;
+  }
   if (provider === "email" && process.env.RESEND_API_KEY) {
     const r = await fetch("https://api.resend.com/emails", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${process.env.RESEND_API_KEY}` }, body: JSON.stringify({ from: process.env.LOGIN_FROM ?? "深惠人生 <login@example.com>", to: [to], subject: `深惠人生登录验证码 ${code}`, text: `你的验证码是 ${code}，10 分钟内有效。不是你本人操作请忽略。\nYour login code is ${code} (valid for 10 minutes).` }) });
     if (!r.ok) throw new Error(`resend ${r.status}`);
@@ -115,7 +125,7 @@ const sendCode = async (provider: "email" | "phone", to: string, code: string) =
   }
   throw new Error("no sender for " + provider);
 };
-if (process.env.LOGIN_CODE_WEBHOOK || process.env.RESEND_API_KEY) (globalThis as { __shhrSendCode?: typeof sendCode }).__shhrSendCode = sendCode;
+if (process.env.LOGIN_CODE_WEBHOOK || process.env.RESEND_API_KEY || process.env.TWILIO_ACCOUNT_SID) (globalThis as { __shhrSendCode?: typeof sendCode }).__shhrSendCode = sendCode;
 
 /* Payments. Stripe calls POST /stripe/webhook; the event is trusted only if
  * its Stripe-Signature (HMAC-SHA256 with STRIPE_WEBHOOK_SECRET) checks out

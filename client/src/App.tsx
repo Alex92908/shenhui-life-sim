@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { SafeAreaTopScrim } from "@hatch/space-sdk/client";
 import { loadMeta, saveMeta, touchStreak, streakReward, bump, rollWeek, checkAchievements, dailyEvent, dateKey, ACHIEVEMENTS, WEEKLY_GOALS, type Meta, type CityEvent } from "./meta";
 import { api, type ApiResponse } from "./api";
+import { AREA_LABELS } from "./areas";
 import { AccountModal, accountToken } from "./Account";
 import { StoreModal, LOOK_COLOR, LOOK_TITLE } from "./Store";
 const lookOf = (b: object): string | null => (b as { look?: string | null }).look ?? null;
@@ -19,7 +20,7 @@ findMetroRoute, findStationRoute, exitLocForStation, resolveLoc, partialFare, ne
 RESTAURANTS, DELIVERY_PLATFORMS, SHOP_VENUES, LODGINGS, rentFlatWeekly, OUTFITS, outfitOf, isRainy, HOME_ROOMS,
 LOC_EN, LOC_GRADE, CITY_INTRO,
 type AppId, type CityKey, type Loc, type TransportModeId, type MetroRoute,
-crossRoutes, isCrossOpen, crossHoursStr, crossFareStr, crossName, crossNote, CROSS_ROUTES, type CrossRoute
+crossRoutes, isCrossOpen, crossHoursStr, crossFareStr, crossName, crossNote, CROSS_ROUTES, type CrossRoute, areaLocId
 } from "./data";
 import { pickEvent, type GameEvent } from "./events";
 import {
@@ -30,6 +31,7 @@ import { MapView } from "./MapView";
 import { MetroMapModal } from "./MetroMap";
 import { PlacesMapModal } from "./PlacesMap";
 import { LifeStage3D, type LifeSet, type LifePose } from "./LifeStage";
+import { routineRole, routineSteps, CORE_FOR_FULL_DAY, ROLE_META, isOrderRole, type RoutineDay, type RiderOrder, type RoutineStep, type RoutineRole } from "./routines";
 import { GUIDE, SCENE_PHOTOS, guideForLocName, tourForCity, type DayTour, type GuidePlace } from "./experience";
 import { creditFor } from "./photo-credits";
 import { SEASON_START, actionMinutes, clockStr, timeBlock, nowMin, countdown, cooldownMs, realMinLabel, venueClosed, inWindow, windowStr, RAIL_HOURS, MODE_HOURS, realGameDay, seasonStartFor, seasonLength, seasonMonth } from "./clock";
@@ -152,6 +154,8 @@ busyUntil?: number; busyWhat?: string; startKey?: string; sleptDay?: number; las
 license?: number; licDay?: number; carDay?: number; carOwned?: boolean;
 hangover?: boolean; record?: number;
 romance?: Record<string, number>; cohabit?: boolean;
+/* 工作日常：今天做了哪些步骤、迟到 / 绩效扣分、骑手手上的单 */
+routine?: RoutineDay;
 actCount?: number; partyPlays?: number;
 }
 
@@ -256,10 +260,13 @@ return { title, quote, badges};
    in with eased motion, props act (typing, steam, chewing, lifting), and
    captions tell the beat. Triggered by the real actions (finishing a rail
    ride, working, eating, cooking, sleeping…) and by the 今日生活 replay. */
-type LifeKind = "day" | "alightRail" | "crossing" | "metro" | "code" | "overtime" | "eat" | "cook" | "sleep" | "wash" | "groceries" | "shopping" | "gym" | "stroll" | "gathering" | "cruise" | "wheel" | "aquarium" | "turtle" | "coaster" | "safari" | "hike" | "beach" | "cablecar";
+type LifeKind = "routine" | "day" | "alightRail" | "crossing" | "metro" | "code" | "overtime" | "eat" | "cook" | "sleep" | "wash" | "groceries" | "shopping" | "gym" | "stroll" | "gathering" | "cruise" | "wheel" | "aquarium" | "turtle" | "coaster" | "safari" | "hike" | "beach" | "cablecar";
 interface LifeStep { bg: string; prop: string; caption: string; sub: string; move?: "walk" | "stay"; fx?: "type" | "steam" | "zzz" | "rain" | "chew" | "lift" | "shine"; dawn?: boolean; }
 interface LifeScene { title: string; tone?: "night" | "indoor"; steps: LifeStep[]; }
+/* the routine scene is filled in just before it plays (one beat per step) */
+let routineStage: { set: LifeSet; pose: LifePose } = { set: "office", pose: "type" };
 const LIFE_SCENES: Record<LifeKind, LifeScene> = {
+routine: { title: "工作日常", tone: "indoor", steps: [{ bg: "🏢", prop: "⌨️", caption: "", sub: "", move: "stay" }] },
 day: { title: "今日生活 · 从清晨到夜里", steps: [
   { bg: "🏠 🪟 🌅", prop: "🪥", caption: "清晨，闹钟响了", sub: "起床、刷牙、洗脸，镜子里的自己慢慢精神起来", move: "stay", fx: "shine" },
   { bg: "🏠 👕 🪞", prop: "👔", caption: "换上正装出门", sub: "上班穿正装，临出门照了照镜子——今天也要体面", move: "stay" },
@@ -391,6 +398,7 @@ gathering: { title: "朋友聚餐", tone: "indoor", steps: [
 
 function lifeStageFor(kind: LifeKind, idx: number): { set: LifeSet; pose: LifePose } {
 switch (kind) {
+case "routine": return routineStage;
 case "day": return ([{ set: "bathroom", pose: "wash" }, { set: "home", pose: "idle" }, { set: "station", pose: "walk" }, { set: "metro", pose: "walk" }, { set: "office", pose: "type" }, { set: "restaurant", pose: "eat" }, { set: "market", pose: "walk" }, { set: "kitchen", pose: "cook" }, { set: "bedroom", pose: "sleep" }] as { set: LifeSet; pose: LifePose }[])[idx] ?? { set: "home", pose: "idle" };
 case "alightRail": return { set: "station", pose: idx === 0 ? "idle" : "walk" };
 case "crossing": return idx === 0 ? { set: "concourse", pose: "idle" } : idx === 1 ? { set: "concourse", pose: "walk" } : { set: "station", pose: "walk" };
@@ -532,6 +540,15 @@ const ENTRY_STEPS: { set: LifeSet; pose: LifePose; caption: string; sub: string 
 { set: "platform", pose: "walk", caption: "车门打开，上车", sub: "屏蔽门和车门一起打开——先下后上，你侧身进了车厢" },
 ];
 const [carriage, setCarriage] = useState<CarriageRide | null>(null);
+/* rides play ON the map (the train runs the line, the car drives the city);
+   the full carriage / cab scene is one tap away */
+const [rideBig, setRideBig] = useState(false);
+/* the mode this trip really uses (driving without a car falls back to a taxi…) */
+const [tripMode, setTripMode] = useState<TransportModeId | null>(null);
+/* when the current trip arrives (epoch ms): the figure on the map paces itself to it */
+const [tripEta, setTripEta] = useState<number | null>(null);
+/* after changing city: which way you travelled, so the map shows you arriving from the right side */
+const [arrival, setArrival] = useState<{ dx: number; dz: number; nonce: number } | undefined>(undefined);
 const [carriageLog, setCarriageLog] = useState<string>("");
 /* 车厢顶部的站点条：列车每到一站就把当前站滚到中间 */
 const routeStripRef = useRef<HTMLDivElement | null>(null);
@@ -1070,7 +1087,7 @@ useEffect(() => {
 if (rideEntry === null) return;
 const tm = window.setTimeout(() => {
 setRideEntry((e) => (e === null || e >= ENTRY_STEPS.length - 1 ? null : e + 1));
-}, 2000);
+}, 900);
 return () => window.clearTimeout(tm);
 }, [rideEntry]);
 
@@ -1098,9 +1115,8 @@ return { ...c, stopIdx: nextIdx, awaitingTransfer: true };
 setCarriageLog(nextIdx >= c.route.stations.length - 1 ? `🔔 ${st?.name ?? ""}站到了，这就是你的目的地，点「下车出站」下车。先下后上，别挡门。` : `📢 列车运行前方是 ${st?.name ?? ""} 站。${c.crowdLevel >= 2 && nextIdx % 2 === 0 ? "这一站上来不少人，车厢更挤了，你往里挪了挪。" : "有乘客上下车，车厢轻轻晃了一下。"}`);
 return { ...c, stopIdx: nextIdx };
 });
-/* The full network makes 20–30-stop rides common: keep a whole ride
-   under ~35 s by shortening each stop on long trips (2.3 s → 0.9 s). */
-}, Math.max(900, Math.min(2300, 35000 / Math.max(1, carriage.route.stations.length - 1))));
+/* each hop lasts as long as the real distance to the next station needs */
+}, hopMs(carriage.route, carriage.stopIdx));
 return () => window.clearTimeout(tm);
 }, [carriage, rideEntry]);
 const doTransfer = () => {
@@ -1197,7 +1213,7 @@ perks: strArr(g.perks).filter((id) => perkById(id)),
 license: num(g.license, 0), licDay: num(g.licDay, 0), carDay: num(g.carDay, 0), carOwned: g.carOwned === true,
 hangover: g.hangover === true, record: num(g.record, 0),
 romance: g.romance && typeof g.romance === "object" && !Array.isArray(g.romance) ? Object.fromEntries(Object.entries(g.romance as Record<string, unknown>).filter(([k, v]) => NPCS.some((n) => n.name === k) && typeof v === "number")) as Record<string, number> : {},
-cohabit: g.cohabit === true, actCount: num(g.actCount, 0), partyPlays: num(g.partyPlays, 0),
+cohabit: g.cohabit === true, routine: g.routine && typeof g.routine === "object" && !Array.isArray(g.routine) ? (g.routine as RoutineDay) : undefined, actCount: num(g.actCount, 0), partyPlays: num(g.partyPlays, 0),
 };
 return { profile: { playerId: prof.playerId, name: prof.name }, gs };
 };
@@ -1244,6 +1260,15 @@ return resolveLoc(ck, id) ?? getLocations(ck)[0]!;
 };
 
 /* ---------- movement ---------- */
+/* one hop of a metro / rail ride takes as long as its real spacing needs at the line's speed
+   (metro 7 map units/s, high-speed and intercity 12) — faster than any road vehicle */
+const RAIL_LINE_IDS = ["szhz-rail", "guangshen", "hz-intercity", "ganshen-rail", "guangshan-rail", "hsr-hk"];
+const hopMs = (route: MetroRoute, idx: number): number => {
+  const a = route.stations[idx], b = route.stations[idx + 1];
+  if (!a || !b) return 900;
+  const rail = route.legs.some((l) => RAIL_LINE_IDS.includes(l.line.id));
+  return clamp((Math.hypot(b.x - a.x, b.z - a.z) / (rail ? 12 : 7)) * 1000, 450, 3000);
+};
 const startMetroRide = (fromLocId: string, toLocId: string, routeOverride?: MetroRoute) => {
 const s0 = gsRef.current; if (!s0) return;
 if (!inWindow(nowMin(), RAIL_HOURS[s0.cityKey])) { showToast(`🚇 ${railWord(s0.cityKey)}已经停运了（运营 ${windowStr(RAIL_HOURS[s0.cityKey])}，北京时间）。打车或者明早再坐。`); return; }
@@ -1251,6 +1276,7 @@ const route = routeOverride ?? findMetroRoute(s0.cityKey, fromLocId, toLocId);
 if (!route) { showToast("这趟车暂时没规划出来，换个目的地试试。"); return; }
 if (s0.money < route.fare) { showToast(`车票 ${Y}${route.fare}，钱包不够，先打工攒点钱。`); return; }
 const crowd = crowdForRide(route.line.id, s0.day, s0.metroRides ?? 0);
+setRideBig(true);
 setCarriage({ route, fromLoc: fromLocId, toLoc: toLocId, stopIdx: 0, legIdx: 0, awaitingTransfer: false, crowdLabel: crowd.label, crowdDesc: crowd.desc, crowdLevel: crowd.level, seated: crowd.level === 0, gaveSeat: false, phoneUsed: false, heldRail: false });
 setRideEntry(0);
 setCarriageLog(`🚪 在${route.stations[0]?.name ?? ""}站刷卡进闸，上了 ${route.line.name}。${route.isTransfer ? `这趟要换乘：${route.summary}，在 ${route.transferStations.join("、")} 站下车换乘，跟着车厢走就行，一次坐到底。` : ""}${route.shuttleFrom.length > 0 ? `其中 ${route.shuttleFrom.join("、")} 是站外接驳：两个站不在一处，下车后坐接驳巴士到另一个站再上车。` : ""}${crowd.desc}`);
@@ -1347,8 +1373,8 @@ if (mode === "metro" || mode === "rail") {
 }
 let cost = 0; let energyCost = 0; let effMode: TransportModeId = "walk"; let modeLabel = "步行";
 if (mode === "run") { cost = 0; energyCost = Math.round(dist * 0.85); effMode = "run"; modeLabel = "跑步"; }
-else if (mode === "taxi") { cost = Math.round(taxiFare(dist) * (evRef.current.taxiMul ?? 1)); energyCost = 1; effMode = "taxi"; modeLabel = "打车"; if (s0.money < cost) { showToast(`打车要 ${Y}${cost}，钱不够，改步行了。`); cost = 0; energyCost = Math.round(dist * 0.5); effMode = "walk"; modeLabel = "步行"; } }
-else if (mode === "moto") { cost = motoFare(dist); energyCost = Math.max(1, Math.round(dist * 0.18)); effMode = "moto"; modeLabel = "电动车"; if (s0.money < cost) { showToast(`电动车要 ${Y}${cost}，钱不够，改步行了。`); cost = 0; energyCost = Math.round(dist * 0.5); effMode = "walk"; modeLabel = "步行"; } else if (dist > 22) { showToast(`路太远，电动车电量告急，骑到一半推了一段——远途还是坐${railWord(s0.cityKey)}/打车吧。`); energyCost += 4; } }
+else if (mode === "taxi") { cost = s0.idenId === "driver" ? 0 : Math.round(taxiFare(dist) * (evRef.current.taxiMul ?? 1)); /* a cabbie drives their own taxi */ energyCost = 1; effMode = "taxi"; modeLabel = "打车"; if (s0.money < cost) { showToast(`打车要 ${Y}${cost}，钱不够，改步行了。`); cost = 0; energyCost = Math.round(dist * 0.5); effMode = "walk"; modeLabel = "步行"; } }
+else if (mode === "moto") { cost = s0.idenId === "rider" ? 0 : motoFare(dist); /* riders ride their own e-bike: battery swaps are the cost */ energyCost = Math.max(1, Math.round(dist * 0.18)); effMode = "moto"; modeLabel = "电动车"; if (s0.money < cost) { showToast(`电动车要 ${Y}${cost}，钱不够，改步行了。`); cost = 0; energyCost = Math.round(dist * 0.5); effMode = "walk"; modeLabel = "步行"; } else if (dist > 22) { showToast(`路太远，电动车电量告急，骑到一半推了一段——远途还是坐${railWord(s0.cityKey)}/打车吧。`); energyCost += 4; } }
 else if (mode === "bike") { cost = bikeFare(dist); energyCost = Math.round(dist * 0.3); effMode = "bike"; modeLabel = "骑行"; if (s0.money < cost) { cost = 0; showToast(`骑行去${to.short}要 ${Y}${bikeFare(dist)}，钱包不够——共享单车免押金，这趟先免费骑。任何地点都能骑到，别让钱拦路。`); } }
 else if (mode === "bus") { cost = busFare(dist); energyCost = Math.max(1, Math.round(dist * 0.12)); effMode = "bus"; modeLabel = "公交"; if (s0.money < cost) cost = 0; }
 else if (mode === "ferry") { cost = 60; energyCost = 4; effMode = "ferry"; modeLabel = "轮渡"; if (s0.money < cost) { showToast(`轮渡船票要 ${Y}${cost}，钱不够，改步行了。`); cost = 0; energyCost = Math.round(dist * 0.5); effMode = "walk"; modeLabel = "步行"; } }
@@ -1372,12 +1398,20 @@ setWalking(true);
 /* Trip duration derives from the mode's real map speed — the same
    number that drives the figure's movement speed on the 3D map, so a
    taxi visibly crosses the city ~3× faster than walking. */
-const ms = clamp((dist / modeById(effMode).mapSpeed) * 1000 * (jam ? 1.5 : 1), 450, 12000);
+/* vehicles take long enough to watch on the map (the car / bike / bus
+   really drives there, camera following); walks keep their pace */
+/* each mode keeps its own pace (bike < e-bike/bus < taxi < own car) — a loose limit only, so speeds stay visibly different */
+/* on-screen pace per mode (map units / s): slow enough to watch, always walk < run < bike < e-bike < bus < taxi < car */
+const WATCH: Partial<Record<TransportModeId, number>> = { walk: 1.6, run: 2.4, bike: 3, moto: 3.8, bus: 4.2, taxi: 5, drive: 5.5 };
+const ms = clamp((dist / (WATCH[effMode] ?? modeById(effMode).mapSpeed)) * 1000 * (jam ? 1.5 : 1), 1500, 45000);
+setTripEta(Date.now() + ms);
 /* 公交/打车不是地图上挪个小人就算搭乘：和地铁一样弹出车厢电影动画
    （站台等车→上车→坐进车厢看窗外→到站下车）。所有行程都触发，
    不分远近；四步动画按这趟的实际时长 ms 等分缩放，行程到点时
    最后一步没演完就等它演完再收（见 roadRideArrived 的处理）。 */
+setTripMode(effMode);
 if (effMode === "bus" || effMode === "taxi" || effMode === "drive") {
+setRideBig(true);
 setRoadRide({ mode: effMode, fromName: from.name, toName: to.name, fare: cost, durMs: ms, startedAt: Date.now() });
 setRoadRideStep(0);
 setRoadRideArrived(false);
@@ -1387,6 +1421,8 @@ walkTimer.current = window.setTimeout(() => {
 setCurrentLoc(locId);
 currentLocRef.current = locId;
 setWalking(false);
+setTripMode(null);
+setTripEta(null);
 /* 到站不直接掐断搭乘动画：只标记已到达，弹窗等四步演完再收起。 */
 setRoadRideArrived(true);
 if (pendingStationRide.current) {
@@ -1582,6 +1618,10 @@ const fromStation = getLocations(from).find((l) => l.id === (route && route.from
 const toStationLoc = getLocations(to).find((l) => l.id === arrLoc);
 const toStation = toStationLoc?.name ?? CITIES[to].name;
 const arrive = () => {
+/* real bearings between the cities (x east, z south): Hong Kong is south of Shenzhen, Huizhou east-north-east, Hong Kong→Huizhou north-east */
+const DIR: Record<string, [number, number]> = { "sz>hk": [0, 1], "hk>sz": [0, -1], "sz>hz": [0.9, -0.35], "hz>sz": [-0.9, 0.35], "hk>hz": [0.6, -0.8], "hz>hk": [-0.6, 0.8] };
+const d = DIR[`${from}>${to}`] ?? [0, 0];
+setArrival({ dx: d[0], dz: d[1], nonce: Date.now() });
 const wall = generateDailyPosts({ day: s0.day, cityKey: to, playerName: profileRef.current?.name ?? "我" }, [], gsRef.current?.npcMem ?? {});
 mutate((s) => {
 s.cityKey = to;
@@ -1611,6 +1651,156 @@ postFeed("life", crossing ? `过关去了${CITIES[to].name}，换座城市过日
    sequence for Hong Kong, the 下高铁 platform scene for Huizhou — then
    the arrival callback flips the city. */
 playLifeAnim(crossing ? "crossing" : "alightRail", arrive);
+};
+/* ---------- 工作日常：每种职业一天里的真实步骤 ---------- */
+const routineToday = (g: GameState): RoutineDay => (g.routine && g.routine.day === g.day ? g.routine : { day: g.day, done: {} });
+const isWorkplace = (l: Loc, g: GameState) => l.type === "work" || !!companyAt(g.cityKey, l.id);
+const atJob = (role: RoutineRole, l: Loc, g: GameState) => { const w = ROLE_META[role].where; return w === "any" ? true : w === "work" ? isWorkplace(l, g) : w.includes(l.type); };
+/** shops a rider picks up from, and places they deliver to (any game place or town / village) */
+const riderPick = (g: GameState, role: RoutineRole = "rider"): { shop: string; dest: string; d: number } | null => {
+  const locs = getLocations(g.cityKey);
+  const shops = role === "driver"
+    ? [...locs.filter((l) => l.id !== currentLocRef.current)] // a fare can wave from anywhere
+    : locs.filter((l) => ["food", "mall", "market", "social"].includes(l.type) && !venueClosed(l)); // only places open right now take orders
+  const shop = shops[Math.floor(Math.random() * shops.length)];
+  if (!shop) return null;
+  const pool = [...locs.filter((l) => l.id !== shop.id && ["home", "work", "learn", "health", "hotel", "fun", "scenic", "transit"].includes(l.type)).map((l) => ({ id: l.id, x: l.x, z: l.z })),
+    ...AREA_LABELS.filter((a) => a.c === g.cityKey).map((a) => ({ id: areaLocId(a.c, a.n), x: a.x, z: a.z }))];
+  const near = pool.filter((p) => { const d = Math.hypot(p.x - shop.x, p.z - shop.z); return d > 2.5 && d < 16; });
+  const dest = (near.length ? near : pool)[Math.floor(Math.random() * (near.length || pool.length))];
+  return dest ? { shop: shop.id, dest: dest.id, d: Math.hypot(dest.x - shop.x, dest.z - shop.z) } : null;
+};
+const doRoutine = (id: string) => {
+  const s0 = gsRef.current; if (!s0 || walking || carriage) return;
+  if (s0.busyUntil && Date.now() < s0.busyUntil) { showToast(en ? `Still busy with “${s0.busyWhat ?? "something"}”.` : `还在忙「${s0.busyWhat ?? "上一件事"}」，忙完再说。`); return; }
+  const role = routineRole(s0.idenId);
+  const step = routineSteps(role).find((x) => x.id === id); if (!step) return;
+  const rd = routineToday(s0); const n = rd.done[id] ?? 0; const tn = nowMin();
+  const name = en ? step.en : step.zh;
+  if (step.max && n >= step.max) { showToast(en ? `That's enough “${name}” for today.` : `「${name}」今天已经够了。`); return; }
+  if (step.hours && !inWindow(tn, step.hours)) { showToast(en ? `“${name}” happens between ${windowStr(step.hours)} (Beijing time).` : `「${name}」要在 ${windowStr(step.hours)} 之间做（北京时间）。`); return; }
+  if (s0.energy + step.energy < 0) { showToast(en ? "Out of energy — eat or rest first." : "没力气了，先吃点东西或者歇会儿。"); return; }
+  if (step.cash && s0.money + step.cash < 0) { showToast(en ? "Not enough money." : "钱不够。"); return; }
+  const base = basePay(s0);
+  let pay = step.pay ? Math.round(base * step.pay) : 0;
+  let mood = step.mood; let note = ""; const xp = step.xp ?? 0;
+  let late = rd.late; let payCut = rd.payCut ?? 0;
+  let order: RiderOrder | null | undefined = rd.order; let orders = rd.orders ?? 0;
+  const hasClock = routineSteps(role).some((x) => x.id === "clockin");
+  if (!isOrderRole(role)) {
+    if (!atJob(role, locById(currentLocRef.current), s0)) { const w = ROLE_META[role].where; showToast(en ? "Do this at your workplace." : w === "work" ? "这些要到公司 / 厂里做。" : `这些要到${(w as string[]).map((t) => ({ food: "餐厅", market: "市场", mall: "商场", social: "娱乐场所", learn: "学校 / 图书馆", lodging: "酒店", health: "医院" } as Record<string, string>)[t] ?? t).join("、")}做。`); return; }
+    if (hasClock && id !== "clockin" && !rd.done.clockin) { showToast(en ? "Clock in first." : "先打卡上班。"); return; }
+    const lateAfter = (step.hours?.[0] ?? 9 * 60) + 90; // over 1.5 h after the start window opens counts as late
+    if (id === "clockin" && tn > lateAfter) { late = true; mood -= 4; note = en ? "Late — attendance bonus gone." : "迟到了，全勤奖没了。"; }
+    if (id === "clockout") {
+      const core = routineSteps(role).filter((x) => x.core && x.id !== "clockin").reduce((t, x) => t + Math.min(x.max ?? 1, rd.done[x.id] ?? 0), 0);
+      const share = Math.min(1.15, 0.35 + 0.16 * core) * (late ? 0.95 : 1) * (1 - payCut);
+      pay = Math.round(base * share);
+      note = en ? `Today's pay settled: ${core}/${CORE_FOR_FULL_DAY + 1} work blocks done.` : `今天的工资结算：完成了 ${core} 项正事${core >= CORE_FOR_FULL_DAY ? "，满勤" : "，还能更多"}${payCut ? `，绩效扣了 ${Math.round(payCut * 100)}%` : ""}。`;
+    }
+  } else {
+    if (id !== "online" && !rd.online && ["grab", "wait", "climb", "handover"].includes(id)) { showToast(en ? "Start your shift first." : role === "driver" ? "先出车。" : "先上线开工。"); return; }
+    if (id === "grab") {
+      if (order) { showToast(en ? "Finish the order you have first." : "手上还有一单，先送完。"); return; }
+      if (Math.random() < 0.42) { note = en ? "Too slow — someone else got it." : "手慢了，被别人抢走了。"; }
+      else {
+        const pk = riderPick(s0, role);
+        if (!pk) note = en ? "No restaurants are open right now — no orders." : "这个点附近没有开门的商家，没单可抢。";
+        if (pk) {
+          const bonus = nowRainy ? 4 : 0;
+          const fare = role === "driver" ? Math.round(12 + pk.d * 2.2) : Math.round(6 + pk.d * 0.9 + base * 0.02 + bonus);
+          order = { shop: pk.shop, dest: pk.dest, pay: fare, at: Date.now(), stage: currentLocRef.current === pk.shop ? "waiting" : "toShop", stairs: role === "rider" && (Math.random() < 0.45 || pk.dest.startsWith("ar:")), climbed: false };
+          note = role === "driver"
+            ? (en ? `Fare: pick up at ${trText(locById(pk.shop).name)}, to ${trText(locById(pk.dest).name)} · about ${Y}${fare}.` : `来单了！去「${locById(pk.shop).name}」接乘客，送到「${locById(pk.dest).name}」，打表约 ${Y}${fare}。`)
+            : (en ? `Got it: pick up at ${trText(locById(pk.shop).name)}, deliver to ${trText(locById(pk.dest).name)} · ${Y}${order.pay}${bonus ? " (rain bonus)" : ""}.` : `抢到了！去「${locById(pk.shop).name}」取餐，送到「${locById(pk.dest).name}」，这单 ${Y}${order.pay}${bonus ? "（下雨加价）" : ""}。`);
+        }
+      }
+    }
+    if (id === "wait") {
+      if (!order || order.stage !== "waiting" || currentLocRef.current !== order.shop) { showToast(en ? "Get there first." : role === "driver" ? "先开到乘客那儿。" : "到了商家再等餐。"); return; }
+      const slow = Math.random() < 0.3; if (slow) { mood -= 3; note = role === "driver" ? (en ? "The passenger kept you waiting." : "乘客磨磨蹭蹭让你等了好久。") : (en ? "The kitchen took forever." : "出餐巨慢，站在门口干着急。"); }
+      order = { ...order, stage: "toDest" };
+    }
+    if (id === "climb") {
+      if (!order || order.stage !== "atDoor" || !order.stairs || order.climbed) { showToast(en ? "No stairs to climb right now." : "现在没楼可爬。"); return; }
+      order = { ...order, climbed: true };
+    }
+    if (id === "handover") {
+      if (!order || order.stage !== "atDoor") { showToast(en ? "Get to the customer first." : "先把餐送到顾客那儿。"); return; }
+      if (order.stairs && !order.climbed) { showToast(en ? "It's on the 7th floor — climb up first." : "顾客住七楼，先爬上去。"); return; }
+      const lateBy = Date.now() - order.at > 10 * 60_000;
+      pay = Math.round(order.pay * (lateBy ? 0.7 : 1));
+      const tip = !lateBy && Math.random() < 0.22 ? 3 + Math.floor(Math.random() * 6) : 0;
+      pay += tip; if (lateBy) mood -= 4;
+      note = role === "driver"
+        ? (en ? `Fare collected: ${Y}${pay}${tip ? ` incl. ${Y}${tip} tip` : ""}${lateBy ? " (took too long — the passenger complained)" : ""}.` : `到了，收款 ${Y}${pay}${tip ? `（含小费 ${Y}${tip}）` : ""}${lateBy ? "（绕得太久被投诉，少收了）" : ""}。`)
+        : (en ? `Delivered! ${Y}${pay}${tip ? ` incl. a ${Y}${tip} tip` : ""}${lateBy ? " (late — 30% deducted)" : ""}.` : `送达！这单 ${Y}${pay}${tip ? `（含小费 ${Y}${tip}）` : ""}${lateBy ? "（超时扣了三成）" : ""}。`);
+      order = null; orders += 1;
+    }
+  }
+  const risky = step.risk && Math.random() < step.risk.p;
+  if (risky && step.risk) { mood += step.risk.mood; if (step.risk.payCut) { payCut = Math.min(0.6, payCut + step.risk.payCut); if (step.pay) pay = Math.round(pay * 0.3); } note = en ? step.risk.en : step.risk.zh; }
+  mutate((x) => {
+    x.routine = { ...rd, done: { ...rd.done, [id]: n + 1 }, late, payCut, order, orders, online: rd.online || id === "online" };
+    x.energy = clamp(x.energy + step.energy, 0, 100); x.mood = clamp(x.mood + mood, 0, 100);
+    x.money += pay + (step.cash ?? 0); x.earned += pay; x.xp += risky ? 0 : xp;
+    if (step.skill && !risky) x.skill += step.skill;
+    if (step.network) x.network += step.network;
+    x.busyUntil = Date.now() + cooldownMs(step.min); x.busyWhat = step.zh;
+    if (id === "clockout" || id === "handover") { x.workDay = x.day; if (id === "clockout") x.workCount += 1; }
+  });
+  if (pay > 0) floatReward(`+${fmt(pay)}`, "gold");
+  showToast(`${step.emoji} ${name}${note ? ` — ${note}` : en ? ` — ${step.subEn}` : ` —— ${step.sub}`}`);
+  track("routine", { role, step: id });
+  if (step.scene) {
+    routineStage = { set: step.scene.set, pose: step.scene.pose };
+    LIFE_SCENES.routine = { title: en ? step.en : step.zh, tone: "indoor", steps: [{ bg: step.scene.bg, prop: step.scene.prop, caption: name, sub: note || (en ? step.subEn : step.sub), move: "stay", fx: step.scene.pose === "type" ? "type" : step.scene.pose === "eat" ? "chew" : step.scene.pose === "sleep" ? "zzz" : undefined }] };
+    playLifeAnim("routine");
+  }
+};
+/* the rider rides the order: to the shop, then to the customer — real trips on the map by e-bike */
+const riderGo = () => {
+  const s0 = gsRef.current; const o = s0 ? routineToday(s0).order : null; if (!s0 || !o) return;
+  const target = o.stage === "toShop" || o.stage === "waiting" ? o.shop : o.dest;
+  if (!target) return;
+  if (target === currentLocRef.current) return;
+  walkTo(target, routineRole(s0.idenId) === "driver" ? "taxi" : "moto");
+};
+/* arriving moves the order on: at the shop you wait for the food, at the door you hand it over */
+useEffect(() => {
+  const s0 = gsRef.current; if (!s0) return;
+  const rd = routineToday(s0); const o = rd.order; if (!o) return;
+  if (o.stage === "toShop" && currentLoc === o.shop) mutate((x) => { x.routine = { ...rd, order: { ...o, stage: "waiting" } }; });
+  else if (o.stage === "toDest" && currentLoc === o.dest) mutate((x) => { x.routine = { ...rd, order: { ...o, stage: "atDoor" } }; });
+// eslint-disable-next-line react-hooks/exhaustive-deps
+}, [currentLoc]);
+const routineActs = (loc: Loc, g: GameState): ActDef[] => {
+  const role = routineRole(g.idenId);
+  if (!isOrderRole(role) && !atJob(role, loc, g)) return [];
+  const rd = routineToday(g); const tn = nowMin(); const o = rd.order;
+  const out: ActDef[] = [];
+  const fmtCost = (st: RoutineStep) => [st.pay ? `+${fmt(Math.round(basePay(g) * st.pay))}` : "", st.cash ? `${st.cash > 0 ? "+" : "-"}${Y}${Math.abs(st.cash)}` : "", st.energy ? `${en ? "energy" : "能量"} ${st.energy > 0 ? "+" : ""}${st.energy}` : "", st.mood ? `${en ? "mood" : "心情"} ${st.mood > 0 ? "+" : ""}${st.mood}` : "", `⏳ ${st.min}${en ? " min" : " 分钟"}`, st.risk ? (en ? "⚠️ risky" : "⚠️ 有风险") : ""].filter(Boolean).join(" · ");
+  if (isOrderRole(role) && o) {
+    const toShop = o.stage === "toShop" || o.stage === "waiting";
+    const tgt = toShop ? o.shop : o.dest;
+    const dest = locById(tgt);
+    if (toShop) out.push({ kind: "__rider-cancel", emoji: "✖️", title: en ? "Cancel this order" : "取消这单", desc: en ? "The shop is closed or too far — the platform deducts a little." : "商家关门了或者太远：平台扣一点钱、心情也差点。", cost: `-${Y}2 · ${en ? "mood" : "心情"} -3` });
+    if (currentLoc !== tgt) out.push({ kind: "__rider-go", emoji: "🛵", title: role === "driver" ? (en ? (toShop ? `Drive to the passenger · ${trText(dest.name)}` : `Drive to ${trText(dest.name)}`) : (toShop ? `开去接乘客 · ${dest.name}` : `送乘客去 · ${dest.name}`)) : en ? (toShop ? `Ride to pick up · ${trText(dest.name)}` : `Ride to the customer · ${trText(dest.name)}`) : (toShop ? `骑去取餐 · ${dest.name}` : `骑去送餐 · ${dest.name}`), desc: en ? `Order worth ${Y}${o.pay}; over 10 minutes late loses 30%.` : `这单 ${Y}${o.pay}，超过 10 分钟算超时扣三成。地图上看你骑过去。`, cost: role === "driver" ? (en ? "your taxi" : "自己的的士") : en ? "e-bike" : "电动车" });
+  }
+  for (const st of routineSteps(role)) {
+    if (isOrderRole(role)) {
+      if (st.id === "wait" && !(o?.stage === "waiting" && currentLoc === o.shop)) continue;
+      if ((st.id === "climb" || st.id === "handover") && !(o?.stage === "atDoor" && currentLoc === o.dest)) continue;
+      if (st.id === "climb" && (!o?.stairs || o.climbed)) continue;
+      if (st.id === "grab" && o) continue;
+      if (st.id === "online" && rd.online) continue;
+    }
+    const used = rd.done[st.id] ?? 0;
+    const closed = st.hours && !inWindow(tn, st.hours);
+    const full = st.max !== undefined && used >= st.max;
+    out.push({ kind: `__routine-${st.id}`, emoji: st.emoji, title: `${en ? st.en : st.zh}${st.max && st.max > 1 ? ` (${used}/${st.max})` : full ? " ✓" : ""}`, desc: closed ? (en ? `Between ${windowStr(st.hours!)}` : `${windowStr(st.hours!)} 之间`) : en ? st.subEn : st.sub, cost: fmtCost(st), disabled: !!closed || full });
+  }
+  return out;
 };
 /** Take one real route: it runs only in its real hours, a car route needs a
     licence and a car, and you board where the route starts. */
@@ -2892,6 +3082,7 @@ playLifeAnim("shopping");
     const co = companyAt(s.cityKey, loc.id);
     const acts = co ? [...companyActions(co, s), ...(loc.type === "work" ? [] : baseActionsFor(loc, s))] : baseActionsFor(loc, s);
     const ev = todayEvent;
+    acts.unshift(...routineActs(loc, s));
     const tn = nowMin();
     for (const r of CROSS_ROUTES) {
       if (r.from !== s.cityKey || r.fromLoc !== loc.id) continue;
@@ -3831,6 +4022,7 @@ const crossIds = new Set(CROSS_ROUTES.filter((r) => r.from === s.cityKey && r.fr
 const locResults = [
 ...getLocations(s.cityKey).filter((l) => l.name.includes(q) || l.short.includes(q) || (LOC_EN[l.name] ?? "").toLowerCase().includes(q.toLowerCase()) || (crossQ && (l.type === "port" || crossIds.has(l.id)))).slice(0, crossQ ? 16 : 6),
 ...placesForCity(s.cityKey).filter((p) => p.name.includes(q) || (p.en ?? "").toLowerCase().includes(q.toLowerCase())).slice(0, 8).map((p) => locById(`pl:${p.id}`)),
+...AREA_LABELS.filter((a) => a.c === s.cityKey && (a.n.includes(q) || (a.e ?? "").toLowerCase().includes(q.toLowerCase()))).slice(0, 6).map((a) => locById(areaLocId(a.c, a.n))),
 ];
 const stationResults = stationIndexOf(s.cityKey).filter((st) => st.name.includes(q)).slice(0, 6);
 return (
@@ -3857,7 +4049,7 @@ return (
 );
 })()}
 </div>
-<MapView lite={lite} fill paused={!!(roadRide || carriage || lifeAnim)} cityKey={s.cityKey} selfLocId={selectedLoc} selfEmoji={iden.emoji} selfColor={iden.color} selfName={profile?.name ?? "我"} remotePlayers={remotePlayers} selfOutfitId={s.outfit} travelModeId={travelMode} weatherKind={rwOk ? realWeather!.kind : "unknown"} npcMoodEmoji={Object.fromEntries(npcsForCity(s.cityKey).map((n) => [n.name, moodEmoji(memOf(s.npcMem ?? {}, n.name).mood)]))} apecDay={isApecWeek(s.day)} focusLocId={mapFocus?.locId} focusX={mapFocus?.x} focusZ={mapFocus?.z} focusNonce={mapFocus?.nonce} destLocId={selectedLoc} onSelect={walkTo} onPickActor={pickActor} navOverlay={(
+<MapView lite={lite} fill paused={!!lifeAnim} train={carriage ? { pts: carriage.route.stations.map((st) => [st.x, st.z] as [number, number]), idx: carriage.stopIdx, stepMs: hopMs(carriage.route, carriage.stopIdx), color: (carriage.route.legs[carriage.legIdx]?.line ?? carriage.route.line).color, rail: carriage.route.legs.some((l) => ["szhz-rail", "guangshen", "hz-intercity", "ganshen-rail", "guangshan-rail", "hsr-hk"].includes(l.line.id)), hold: rideEntry !== null || carriage.awaitingTransfer || carriage.stopIdx >= carriage.route.stations.length - 1 } : null} cityKey={s.cityKey} selfLocId={selectedLoc} selfEmoji={iden.emoji} selfColor={iden.color} selfName={profile?.name ?? "我"} remotePlayers={remotePlayers} selfOutfitId={s.outfit} travelModeId={tripMode ?? travelMode} selfEtaAt={tripEta ?? undefined} arrival={arrival} weatherKind={rwOk ? realWeather!.kind : "unknown"} npcMoodEmoji={Object.fromEntries(npcsForCity(s.cityKey).map((n) => [n.name, moodEmoji(memOf(s.npcMem ?? {}, n.name).mood)]))} apecDay={isApecWeek(s.day)} focusLocId={mapFocus?.locId} focusX={mapFocus?.x} focusZ={mapFocus?.z} focusNonce={mapFocus?.nonce} destLocId={selectedLoc} onSelect={walkTo} onPickActor={pickActor} navOverlay={(
 <>
 {/* 弹幕层：联机动态 / 聊天 / 街坊发言飘过地图上半区 */}
 {danmakuOn && (
@@ -4003,8 +4195,8 @@ return (
 {(() => { const g = guideForLocName(selLoc.name); if (!g) return null; return <ExperienceCard g={g} here={arrived} unlocked={(s.album ?? []).includes(g.key)} onCheckin={() => checkinGuide(g)} />; })()}
 <p className="mt-3.5 flex items-baseline justify-between gap-2"><span className="text-xs font-black tracking-wide">📍 在这里能做 · 常用操作</span><span className="text-[11px] font-bold text-[var(--dim)]">{arrived ? "点一下就行动" : "到了才能做"}</span></p>
 <div className="mt-2 grid gap-2">
-{actionsFor(selLoc, s).map((a) => { const tb = timeBlock(a.kind, s) ?? (a.kind === "__sleep" || a.kind === "rest" ? null : venueClosed(selLoc)); return (
-<button key={a.kind + (a.arg ?? 0)} type="button" disabled={!arrived || a.disabled || !!tb} onClick={() => { if (a.kind === "__sleep") playLifeAnim("sleep", () => doSleep()); else if (a.kind.startsWith("__gocity-")) setCrossTo(a.kind.slice("__gocity-".length) as CityKey); else if (a.kind.startsWith("__cross-")) { const r = CROSS_ROUTES.find((x) => x.id === a.kind.slice("__cross-".length)); if (r) takeRoute(r); } else doAction(a.kind, a.arg ?? 0); }} className="act-btn">
+{actionsFor(selLoc, s).map((a) => { const own = a.kind.startsWith("__routine-") && !["__routine-wait"].includes(a.kind) || a.kind.startsWith("__rider-"); /* the rider's own steps don't depend on the shop's hours */ const tb = timeBlock(a.kind, s) ?? (a.kind === "__sleep" || a.kind === "rest" || own ? null : venueClosed(selLoc)); return (
+<button key={a.kind + (a.arg ?? 0)} type="button" disabled={!arrived || a.disabled || !!tb} onClick={() => { if (a.kind === "__sleep") playLifeAnim("sleep", () => doSleep()); else if (a.kind.startsWith("__gocity-")) setCrossTo(a.kind.slice("__gocity-".length) as CityKey); else if (a.kind.startsWith("__routine-")) doRoutine(a.kind.slice("__routine-".length)); else if (a.kind === "__rider-go") riderGo(); else if (a.kind === "__rider-cancel") { const g0 = gsRef.current; if (g0) { const rd0 = routineToday(g0); mutate((x) => { x.routine = { ...rd0, order: null }; x.money -= 2; x.mood = clamp(x.mood - 3, 0, 100); }); showToast(en ? "Order cancelled (−¥2)." : "这单取消了，平台扣了 ¥2。"); } } else if (a.kind.startsWith("__cross-")) { const r = CROSS_ROUTES.find((x) => x.id === a.kind.slice("__cross-".length)); if (r) takeRoute(r); } else doAction(a.kind, a.arg ?? 0); }} className="act-btn">
 <span className="flex items-center justify-between text-sm font-black"><span>{a.title}</span><span>{a.emoji}</span></span>
 <span className="mt-0.5 block text-xs leading-relaxed text-[var(--dim)]">{a.desc}</span>
 <span className="mt-1 block text-xs font-bold text-[var(--accent2)]">{a.cost}{a.kind !== "__sleep" && ` · ⏳ ${realMinLabel(actionMinutes(a.kind))}`}</span>
@@ -4517,8 +4709,18 @@ const steps: { pose: LifePose; caption: string; sub: string }[] = isDrive ? [
 ];
 const step = steps[Math.min(roadRideStep, steps.length - 1)]!;
 const outfitR = outfitOf(s.outfit);
+if (!rideBig) return (
+<div className="fixed inset-x-0 bottom-3 z-[60] flex justify-center px-3" role="status" aria-label={en ? "Ride in progress" : "正在乘车"}>
+<div className="flex w-full max-w-md items-center gap-3 rounded-[16px] border-2 border-[var(--border)] bg-[var(--surface)] px-3 py-2 shadow-xl">
+<span className="text-2xl">{isBus ? "🚌" : isDrive ? "🚗" : "🚕"}</span>
+<span className="min-w-0 flex-1"><span className="block truncate text-sm font-black">{en ? `${isBus ? "Bus" : isDrive ? "Driving" : "Taxi"} to ${trText(rr.toName)}` : `${isBus ? "坐公交" : isDrive ? "开车" : "打车"}去${rr.toName}`}</span><span className="block truncate text-[11px] text-[var(--dim)]">{en ? "Watch it on the map" : `${step.caption} · 地图上看你在路上`}</span>
+<span className="mt-1 block h-1 overflow-hidden rounded-full bg-[var(--surface2)]"><span className="block h-full bg-[var(--accent)] transition-all" style={{ width: `${Math.min(100, ((Date.now() - rr.startedAt) / rr.durMs) * 100)}%` }} /></span></span>
+<button type="button" onClick={() => setRideBig(true)} className="shrink-0 rounded-full border border-[var(--line)] px-3 py-1.5 text-xs font-black">{en ? "Inside view" : "车里看看"}</button>
+</div>
+</div>
+);
 return (
-<div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-[2px] p-3 sm:items-center" role="dialog" aria-label={isBus ? "公交车厢" : isDrive ? "自驾开车" : "出租车车厢"}>
+<div className="fixed bottom-3 right-3 z-[60] flex w-[min(400px,calc(100vw-24px))] justify-end" role="dialog" aria-label={isBus ? "公交车厢" : isDrive ? "自驾开车" : "出租车车厢"}>
 <div className="rise w-full max-w-lg overflow-hidden rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] shadow-xl">
 <div className="p-4 pb-3 text-white" style={{ background: isBus ? "#2563eb" : isDrive ? "#166534" : "#b45309" }}>
 <p className="flex items-center justify-between text-xs font-black"><span>{isBus ? "🚌 公交车厢" : isDrive ? "🚗 自驾 · 驾驶座" : "🚕 出租车里"}</span><span>{rr.fare > 0 ? `${isDrive ? "油费+停车" : "车费"} ${Y}${rr.fare}` : "免费乘车"}</span></p>
@@ -4577,9 +4779,23 @@ const stagePose: LifePose = rideEntry !== null ? ENTRY_STEPS[rideEntry]!.pose : 
 const stageKey = rideEntry !== null ? `entry-${rideEntry}` : c.awaitingTransfer ? "transfer" : arrivedC ? "arrived" : c.seated ? "sit" : "stand";
 const curStation = c.route.stations[c.stopIdx];
 const nextStation = c.route.stations[c.stopIdx + 1];
+if (!rideBig) return (
+<div className="fixed inset-x-0 bottom-3 z-[60] flex justify-center px-3" role="status" aria-label={`${curLine.name}`}>
+<div className="w-full max-w-md overflow-hidden rounded-[16px] border-2 border-[var(--border)] bg-[var(--surface)] shadow-xl">
+<p className="flex items-center justify-between px-3 py-1.5 text-xs font-black text-white" style={{ background: curLine.colorCss }}><span>{isRailRide ? "🚄" : "🚇"} {curLine.short}</span><span>{Math.min(c.stopIdx + 1, total)}/{total}</span></p>
+<div className="flex items-center gap-2 px-3 py-2">
+<span className="min-w-0 flex-1 text-sm font-bold">{rideEntry !== null ? (en ? "Entering the station…" : `进站中：${ENTRY_STEPS[rideEntry]!.caption}`) : c.awaitingTransfer ? (en ? `Change at ${curStation?.name ?? ""}` : `${curStation?.name ?? ""}站换乘`) : arrivedC ? (en ? `Arrived: ${curStation?.name ?? ""}` : `到站：${curStation?.name ?? ""}`) : (en ? `${curStation?.name ?? ""} → ${nextStation?.name ?? ""}` : `${curStation?.name ?? ""} → 下一站 ${nextStation?.name ?? ""}`)}
+<span className="block text-[11px] font-normal text-[var(--dim)]">{en ? "The train is running on the map" : "列车正在地图上沿线路开"}</span></span>
+{c.awaitingTransfer ? <button type="button" onClick={doTransfer} className="shrink-0 rounded-full bg-[var(--accent)] px-3 py-1.5 text-xs font-black text-white">{en ? "Change" : "换乘上车"}</button>
+ : arrivedC ? <button type="button" onClick={() => finishMetroRide()} className="shrink-0 rounded-full bg-[var(--accent)] px-3 py-1.5 text-xs font-black text-white">{en ? "Get off" : "下车出站"}</button> : null}
+<button type="button" onClick={() => setRideBig(true)} className="shrink-0 rounded-full border border-[var(--line)] px-3 py-1.5 text-xs font-black">{en ? "Carriage" : "车厢里看看"}</button>
+</div>
+</div>
+</div>
+);
 return (
-<div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={`${curLine.name}车厢`}>
-<div className="rise max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] p-0 shadow-xl">
+<div className="fixed bottom-3 right-3 z-[60] flex w-[min(400px,calc(100vw-24px))] justify-end" role="dialog" aria-label={`${curLine.name}车厢`}>
+<div className="rise max-h-[70vh] w-full max-w-lg overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] p-0 shadow-xl">
 {/* carriage header: line strip */}
 <div className="p-4 pb-3 text-white" style={{ background: curLine.colorCss }}>
 <p className="flex items-center justify-between text-xs font-black"><span>{isRailRide ? "🚄" : "🚇"} {curLine.name}{c.route.isTransfer ? ` · 全程 ${c.route.summary}` : ""}</span><span>{c.crowdLabel}</span></p>
@@ -4773,6 +4989,7 @@ return (
 </div>
 </div>
 </div>); })()}
+{rideBig && (roadRide || carriage) && <button type="button" onClick={() => setRideBig(false)} className="fixed bottom-3 right-[min(412px,calc(100vw-12px))] z-[61] rounded-full border-2 border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-black shadow-xl">▾ {en ? "Fold" : "收起"}</button>}
 {storeOpen && phase === "game" && <StoreModal en={en} onClose={() => setStoreOpen(false)} toast={showToast} openAccount={() => setAccountOpen(true)} />}
 {accountOpen && phase === "game" && <AccountModal en={en} playerId={profile?.playerId ?? null} saveKey={LS_KEY} onClose={() => setAccountOpen(false)} toast={showToast} onChange={(v) => { setLoggedIn(v); track(v ? "account_login" : "account_logout"); }} />}
 {dmOpen && (() => { const th = threads.find((t) => t.peerId === dmPeer); const peerName = th?.peerName ?? (world?.online ?? []).find((x) => x.id === dmPeer)?.name ?? ""; return (

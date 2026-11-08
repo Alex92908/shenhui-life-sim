@@ -9,6 +9,8 @@
 // the player. Clicking a building (or its label chip) walks there.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { createLandmarks, mergeStatic } from "./landmarks";
 import { AREA_LABELS } from "./areas";
 import { activitiesAt } from "./activities";
@@ -19,7 +21,7 @@ import * as THK from "./terrain-hk";
 import { ROADS as REAL_ROADS } from "./roads";
 /* Real land / inland water / bridges / rivers per city (tools/terrain/gen_terrain.py). */
 const TERRAIN: Record<CityKey, typeof THK> = { sz: TSZ, hz: THZ, hk: THK };
-import { CITIES, LOC_EN, getLocations, resolveLoc, placesForCity, PLACE_KINDS, stationLocId, metroLinesForCity, modeById, npcsForCity, outfitOf, type CityKey, type Loc, type LocType, type Npc, type TransportModeId } from "./data";
+import { CITIES, LOC_EN, getLocations, resolveLoc, areaLocId, placesForCity, PLACE_KINDS, stationLocId, metroLinesForCity, modeById, npcsForCity, outfitOf, type CityKey, type Loc, type LocType, type Npc, type TransportModeId } from "./data";
 import { makePostFx, type PostFx } from "./postfx";
 
 export interface RemotePlayer {
@@ -72,6 +74,46 @@ interface Props {
       their own WebGL scene) covers the map: the frame loop keeps ticking
       but skips simulation + rendering so two 3D scenes never render at once. */
   paused?: boolean;
+  /** A metro / rail ride in progress: the train runs along the real line
+      between the stations the ride passes (pts), in step with the stop
+      timer (idx = last station reached, stepMs per hop), carrying the
+      player; hold = waiting at a station (boarding, transfer, arrival). */
+  /** after changing city: the direction travelled (map units, x east / z south), so the figure walks in from the side the other city really lies on */
+  arrival?: { dx: number; dz: number; nonce: number };
+  /** epoch ms the player's current trip arrives: the figure paces itself to land exactly then */
+  selfEtaAt?: number;
+  train?: { pts: [number, number][]; idx: number; stepMs: number; color: number; rail: boolean; hold: boolean } | null;
+}
+
+/* ---- real 3D vehicles (Kenney Car Kit / Train Kit, CC0) ----
+   Loaded once in the background from public/models; until they arrive (or
+   if they fail) the hand-built box vehicles stand in. Each model is scaled to
+   a target length, turned so it runs along +Z, centred and set on the ground. */
+const MODEL_BASE = "./models/";
+const gltfLoader = new GLTFLoader();
+const modelCache = new Map<string, Promise<THREE.Object3D | null>>();
+function loadModel(path: string): Promise<THREE.Object3D | null> {
+  let p = modelCache.get(path);
+  if (!p) {
+    p = new Promise((res) => gltfLoader.load(MODEL_BASE + path, (g) => {
+      g.scene.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; } });
+      res(g.scene);
+    }, undefined, () => res(null)));
+    modelCache.set(path, p);
+  }
+  return p;
+}
+/** a fitted copy: length along +Z = len, centred on x/z, wheels on y = 0 (turnX: the model's length runs along X) */
+function fittedClone(src: THREE.Object3D, len: number, flip = false): THREE.Group {
+  const obj = src.clone(true);
+  const g = new THREE.Group(); const inner = new THREE.Group(); inner.add(obj); g.add(inner);
+  let b = new THREE.Box3().setFromObject(inner); let sz = b.getSize(new THREE.Vector3());
+  if (sz.x > sz.z) { inner.rotation.y = Math.PI / 2; b = new THREE.Box3().setFromObject(inner); sz = b.getSize(new THREE.Vector3()); }
+  if (flip) inner.rotation.y += Math.PI;
+  const k = len / Math.max(1e-3, sz.z); inner.scale.multiplyScalar(k);
+  b = new THREE.Box3().setFromObject(inner); const c = b.getCenter(new THREE.Vector3());
+  inner.position.set(-c.x, -b.min.y, -c.z);
+  return g;
 }
 
 interface Actor {
@@ -173,13 +215,32 @@ const WORLD = { x: 38, zn: -22, zs: 24 };
 const CAM_POL = 0.68;
 const LAND_CX = 0;
 const LAND_CZ = -2.5;
-function fitDistForAspect(aspect: number): number {
+/* each city is framed on where its places are (not the whole 76×46 board):
+   Shenzhen's strip without the Hong Kong / sea margin, Huizhou's centre and
+   coast without the neighbouring cities */
+const frameCache = new Map<CityKey, { cx: number; cz: number; w: number; h: number }>();
+function frameOf(ck: CityKey) {
+  let f = frameCache.get(ck);
+  if (!f) {
+    // outlying mountains still on the map but outside the everyday city frame
+    const FAR: Record<string, string[]> = { hz: ["nankunshan", "luofu"] };
+    const ls = getLocations(ck).filter((l) => !(FAR[ck] ?? []).includes(l.id));
+    const xs = ls.map((l) => l.x), zs = ls.map((l) => l.z);
+    const x0 = Math.max(-38, Math.min(...xs) - 2.5), x1 = Math.min(38, Math.max(...xs) + 2.5);
+    const z0 = Math.max(-22, Math.min(...zs) - 2.5), z1 = Math.min(24, Math.max(...zs) + 2.5);
+    f = { cx: (x0 + x1) / 2, cz: (z0 + z1) / 2, w: Math.max(24, x1 - x0), h: Math.max(16, z1 - z0) };
+    frameCache.set(ck, f);
+  }
+  return f;
+}
+function fitDistForAspect(aspect: number, ck: CityKey = "sz"): number {
+  const f = frameOf(ck);
   const tanV = Math.tan(THREE.MathUtils.degToRad(42) / 2);
-  const projH = 47 * Math.sin(CAM_POL) + 7; // land depth projected + headroom for towers/labels
-  const projW = 79 * 0.94; // land width projected at the default azimuth
+  const projH = f.h * Math.sin(CAM_POL) + 6; // places' depth projected + headroom for towers/labels
+  const projW = f.w; // places' width (north-up: the city runs side to side)
   const distH = (projH / 2) / tanV;
   const distW = (projW / 2) / (tanV * Math.max(0.45, aspect));
-  return THREE.MathUtils.clamp(Math.max(distH * 1.03, distW * 0.84), 30, 110);
+  return THREE.MathUtils.clamp(Math.max(distH * 1.03, distW * 1.2), 20, 110); // the tilted view narrows the ground: allow for it
 }
 
 function coastZ(cityKey: CityKey, x: number): number {
@@ -292,18 +353,19 @@ function glowTexture(): THREE.Texture {
   return tex;
 }
 
-function emojiSprite(emoji: string, ring: number): THREE.Sprite {
+function emojiSprite(emoji: string, ring: number, self = false): THREE.Sprite {
   const c = document.createElement("canvas");
   c.width = 96;
   c.height = 96;
   const g = c.getContext("2d")!;
   g.beginPath();
-  g.arc(48, 48, 42, 0, Math.PI * 2);
-  g.fillStyle = `#${ring.toString(16).padStart(6, "0")}`;
+  g.arc(48, 48, self ? 36 : 42, 0, Math.PI * 2);
+  g.fillStyle = self ? "#ff4d2e" : `#${ring.toString(16).padStart(6, "0")}`;
   g.fill();
-  g.lineWidth = 6;
-  g.strokeStyle = "rgba(255,255,255,0.95)";
+  g.lineWidth = self ? 7 : 6;
+  g.strokeStyle = "rgba(255,255,255,0.98)";
   g.stroke();
+  if (self) { g.beginPath(); g.arc(48, 48, 44, 0, Math.PI * 2); g.lineWidth = 4; g.strokeStyle = "#ffd23f"; g.stroke(); } // gold halo: this one is you
   g.font = "52px sans-serif";
   g.textAlign = "center";
   g.textBaseline = "middle";
@@ -312,7 +374,7 @@ function emojiSprite(emoji: string, ring: number): THREE.Sprite {
   tex.colorSpace = THREE.SRGBColorSpace;
   const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
   const sp = new THREE.Sprite(mat);
-  sp.scale.set(2.6, 2.6, 1);
+  sp.scale.set(1.3, 1.3, 1); // a small badge, not bigger than the person under it
   sp.renderOrder = 20;
   return sp;
 }
@@ -355,7 +417,7 @@ export function MapView(p: Props) {
   const npcAnchorRef = useRef<Map<string, string>>(new Map());
   const propsRef = useRef(p);
   propsRef.current = p;
-  const camRef = useRef({ az: -0.55, pol: CAM_POL, dist: 46, distCur: 46, tx: LAND_CX, tz: LAND_CZ, lastUser: 0, cut: 0 });
+  const camRef = useRef({ az: 0, pol: CAM_POL, dist: 46, distCur: 46, tx: LAND_CX, tz: LAND_CZ, lastUser: 0, cut: 0 });
   /* Distance that fills the current canvas, recomputed on every resize;
      while autoFit is on (initially, after ⌂ reset, and whenever the
      fullscreen/fill mode changes) the camera distance tracks it, so the
@@ -390,6 +452,10 @@ export function MapView(p: Props) {
   const streetRef = useRef(false);
   const focusRef = useRef(0);
   const lookRef = useRef<{ x: number; z: number; until: number } | null>(null);
+  /* a spot picked on the minimap stays the camera's centre (no drifting back to
+     the player) until the player sets off on a new trip */
+  const anchorRef = useRef<{ x: number; z: number } | null>(null);
+  useEffect(() => { anchorRef.current = null; }, [p.selfLocId]);
   /* LOL-style minimap: a live 2D thumbnail of the whole miniature, drawn
      on a small canvas from the SAME actor refs the 3D scene animates, so
      the player dot, NPC dots, remote players and the destination marker
@@ -490,10 +556,13 @@ export function MapView(p: Props) {
   // depend on their content instead.
   const remoteKey = p.remotePlayers.map((rp) => `${rp.id}|${rp.name}|${rp.emoji}|${rp.color}|${rp.locId}`).join(";");
   const moodKey = p.npcMoodEmoji ? Object.entries(p.npcMoodEmoji).map(([k, v]) => `${k}=${v}`).join(";") : "";
+  const cityRef = useRef(p.cityKey);
   useEffect(() => {
     const locs = getLocations(p.cityKey);
     const byId = new Map(locs.map((l) => [l.id, l]));
     const actors = actorsRef.current;
+    const switched = cityRef.current !== p.cityKey;
+    cityRef.current = p.cityKey;
     const want = new Set<string>();
     const upsert = (a: Omit<Actor, "x" | "z" | "tx" | "tz"> & { startLoc: string }) => {
       want.add(a.key);
@@ -522,6 +591,15 @@ export function MapView(p: Props) {
           cur.tx = loc?.x ?? cur.tx;
           cur.tz = loc?.z ?? cur.tz;
         }
+        if (switched && a.isSelf && loc) {
+          // new city: come in from the real direction of the city you left (Hong Kong → Shenzhen walks north over the border)
+          const arr = p.arrival;
+          const len = arr ? Math.hypot(arr.dx, arr.dz) || 1 : 1;
+          cur.x = loc.x - (arr ? (arr.dx / len) * 5 : 0);
+          cur.z = loc.z - (arr ? (arr.dz / len) * 5 : 0);
+        } else if (switched && loc) {
+          cur.x = cur.tx; cur.z = cur.tz;
+        }
       }
     };
     const selfOutfit = outfitOf(p.selfOutfitId ?? "casual");
@@ -531,7 +609,7 @@ export function MapView(p: Props) {
     const selfSpeed = modeById((p.travelModeId ?? "walk") as TransportModeId).mapSpeed;
     upsert({ key: "self", name: p.selfName, emoji: p.selfEmoji, color: p.selfColor, isSelf: true, seed: 7, heading: 0, phase: 0, blend: 0, startLoc: p.selfLocId, shirt: selfOutfit.shirt, pants: selfOutfit.pants, accessory: selfOutfit.id === "formal" ? "tie" : "none", behavior: "self", speed: selfSpeed });
     for (const rp of p.remotePlayers) {
-      upsert({ key: `p-${rp.id}`, name: rp.name, emoji: rp.emoji, color: rp.color, seed: hash(rp.id), heading: 0, phase: hash(rp.id) % 6, blend: 0, startLoc: rp.locId, shirt: rp.color, pants: 0x2e3440, accessory: "none", behavior: "wander", speed: 4.2 });
+      upsert({ key: `p-${rp.id}`, name: rp.name, emoji: rp.emoji, color: rp.color, seed: hash(rp.id), heading: 0, phase: hash(rp.id) % 6, blend: 0, startLoc: rp.locId, shirt: rp.color, pants: 0x2e3440, accessory: "none", behavior: "wander", speed: 2.4 });
     }
     npcsForCity(p.cityKey).forEach((n, i) => {
       const preferred = locs.filter((l) => n.preferTypes.includes(l.type));
@@ -634,6 +712,42 @@ export function MapView(p: Props) {
     const playerLight = new THREE.PointLight(0xffc98a, 0, 14, 1.8);
     playerLight.position.set(0, 3.4, 0);
     scene.add(playerLight);
+
+    /* the train the player rides on metro / rail trips: a short metro set
+       in the line colour, or a longer white high-speed set with a coloured
+       stripe; cars follow the head along the line */
+    const trainGroup = new THREE.Group();
+    trainGroup.visible = false;
+    const trainBodyMat = new THREE.MeshStandardMaterial({ color: 0x0096d6, roughness: 0.45, metalness: 0.25 });
+    const trainWinMat = new THREE.MeshStandardMaterial({ color: 0x1b2633, roughness: 0.2, metalness: 0.4, emissive: 0xffe6a8, emissiveIntensity: 0.35 });
+    const trainRoofMat = new THREE.MeshStandardMaterial({ color: 0xe8edf2, roughness: 0.6 });
+    const trainCars: THREE.Group[] = [];
+    for (let i = 0; i < 6; i++) {
+      const car = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.5, 1.45), trainBodyMat); body.position.y = 0.32; body.castShadow = true; car.add(body);
+      const win = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.16, 1.2), trainWinMat); win.position.y = 0.42; car.add(win);
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.06, 1.38), trainRoofMat); roof.position.y = 0.6; car.add(roof);
+      if (i === 0) { const nose = new THREE.Mesh(new THREE.ConeGeometry(0.31, 0.5, 4), trainBodyMat); nose.rotation.x = Math.PI / 2; nose.rotation.z = Math.PI / 4; nose.position.set(0, 0.32, 0.95); car.add(nose); }
+      trainGroup.add(car); trainCars.push(car);
+    }
+    scene.add(trainGroup);
+    // swap in the Kenney trains once they load: subway set for metro, bullet set for high-speed / intercity
+    const trainModels: { metro: THREE.Group[]; rail: THREE.Group[] }[] = trainCars.map(() => ({ metro: [], rail: [] }));
+    let trainModelsReady = false;
+    void Promise.all(["subway-a", "subway-b", "subway-c", "bullet-a", "bullet-b", "bullet-c"].map((n) => loadModel(`train/train-electric-${n}.glb`))).then((ms) => {
+      if (ms.some((m) => !m)) return;
+      trainCars.forEach((car, ci) => {
+        for (const [kind, off] of [["metro", 0], ["rail", 3]] as const) {
+          for (let v = 0; v < 3; v++) {
+            const g = fittedClone(ms[off + v]!, 1.5);
+            g.visible = false; g.userData.v = v; car.add(g); trainModels[ci]![kind].push(g);
+          }
+        }
+      });
+      trainModelsReady = true;
+    });
+    let trainKey = ""; let trainIdx = -1; let trainSince = 0; let selfOnTrain = false;
+    const trainPos = { x: 0, z: 0, active: false };
 
     /* registries for materials the frame loop animates with the day cycle */
     const buildingMats: THREE.MeshStandardMaterial[] = [];
@@ -1264,7 +1378,7 @@ export function MapView(p: Props) {
       const tip = new THREE.Mesh(new THREE.ConeGeometry(0.22, 1.4, 6), new THREE.MeshStandardMaterial({ color: 0xf5b942, roughness: 0.4, metalness: 0.6 }));
       tip.position.y = 7.1;
       pagoda.add(tip);
-      pagoda.position.set(0.6, LAND, -1.2); // 泗洲塔, on 西湖's shore south-east of the lake location
+      { const xh = getLocations("hz").find((l) => l.id === "xihu")!; pagoda.position.set(xh.x + 2.2, LAND, xh.z + 1.6); } // 泗洲塔, on 西湖's shore beside the lake location
       scene.add(pagoda);
     }
 
@@ -1513,6 +1627,37 @@ export function MapView(p: Props) {
     }
     carMesh.castShadow = true;
     scene.add(carMesh);
+    /* real traffic: once the Kenney cars load, each car type becomes one merged
+       instanced mesh (taxis, sedans, SUVs, vans, police, delivery trucks) and the
+       box stand-ins hide; the same per-frame matrices drive them */
+    const carTypes: THREE.InstancedMesh[] = [];
+    const carSlot: { m: number; k: number }[] = [];
+    void Promise.all(["taxi", "sedan", "suv", "van", "police", "delivery"].map((n) => loadModel(`car/${n}.glb`))).then((ms) => {
+      if (ms.some((m) => !m)) return;
+      const counts = ms.map(() => 0);
+      cars.forEach((_c, i) => { const t = i % ms.length; carSlot[i] = { m: t, k: counts[t]! }; counts[t]! += 1; });
+      ms.forEach((m, t) => {
+        const g = fittedClone(m!, 1.3);
+        g.rotation.y = Math.PI / 2; // length along +X, like the road-aligned box it replaces
+        g.updateMatrixWorld(true);
+        const geos: THREE.BufferGeometry[] = []; let mat: THREE.Material | null = null;
+        g.traverse((o) => {
+          const me = o as THREE.Mesh;
+          if (!me.isMesh) return;
+          let gg = me.geometry.clone(); gg.applyMatrix4(me.matrixWorld);
+          if (gg.index) gg = gg.toNonIndexed();
+          for (const k of Object.keys(gg.attributes)) if (!["position", "normal", "uv"].includes(k)) gg.deleteAttribute(k);
+          geos.push(gg);
+          mat ??= (Array.isArray(me.material) ? me.material[0] : me.material) as THREE.Material;
+        });
+        const merged = geos.length ? mergeGeometries(geos, false) : null;
+        if (!merged || !mat) return;
+        const im = new THREE.InstancedMesh(merged, mat, Math.max(1, counts[t]!));
+        im.castShadow = true;
+        scene.add(im); carTypes[t] = im;
+      });
+      if (carTypes.filter(Boolean).length === ms.length) carMesh.visible = false;
+    });
     /* one traffic step for anything with wheels: returns the speed to
        ease toward this frame (lights + car-following), the caller eases
        cur toward it and advances t */
@@ -1755,6 +1900,11 @@ export function MapView(p: Props) {
         ? "font:800 11px 'Noto Sans SC',sans-serif;letter-spacing:.12em;color:#2f2a1f;text-shadow:0 0 3px #fffaf0,0 0 6px #fffaf0;"
         : "font:600 10px 'Noto Sans SC',sans-serif;letter-spacing:.06em;color:rgba(47,42,31,.88);text-shadow:0 0 3px #fffaf0,0 0 5px #fffaf0;";
       const ax = a.x, az = a.z;
+      // towns and villages are destinations: click to go there (taxi, car, bike, e-bike, bus, walk)
+      d.style.cssText += "pointer-events:auto;cursor:pointer;";
+      d.title += " · 点一下去这里";
+      const aid = areaLocId(a.c, a.n);
+      d.addEventListener("click", () => propsRef.current.onSelect(aid));
       chips.push({ el: d, kind: "road", area: a.k, w: 0, h: 0, lastText: "", visible: true, clampDx: 0, clampDy: 0, getPos: () => ({ x: ax, y: LAND + 0.3, z: az }) });
     }
 
@@ -1851,8 +2001,9 @@ export function MapView(p: Props) {
         mkAcc("bag", (g) => { const m = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.44, 0.16), new THREE.MeshStandardMaterial({ color: 0x54432e, roughness: 0.85 })); m.position.set(0.42, 1.18, -0.16); m.castShadow = true; g.add(m); });
         body.add(accGroup);
         (v.userData as { acc?: THREE.Group }).acc = accGroup;
-        const sp = emojiSprite(a.emoji, a.color);
-        sp.position.y = 2.85;
+        const sp = emojiSprite(a.emoji, a.color, !!a.isSelf);
+        sp.position.y = 2.45;
+        if (a.isSelf) { sp.scale.set(2.1, 2.1, 1); sp.position.y = 2.7; sp.renderOrder = 25; (v.userData as { badge?: THREE.Sprite }).badge = sp; }
         body.add(sp);
         if (a.isSelf) {
           const ring = new THREE.Mesh(
@@ -1895,23 +2046,33 @@ export function MapView(p: Props) {
           bSeat.position.set(0, 0.68, -0.3);
           bike.add(bSeat);
           veh.add(bike);
+          // e-bike: a delivery scooter — low deck, steering column, bars, headlamp, mudguards, seat and a delivery box
           const moto = new THREE.Group();
           moto.name = "veh-moto";
-          const mBody = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.34, 1.2), new THREE.MeshStandardMaterial({ color: 0xff8a00, roughness: 0.45, metalness: 0.25 }));
-          mBody.position.set(0, 0.48, 0);
-          mBody.castShadow = true;
-          moto.add(mBody);
-          const mShield = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.42, 0.08), new THREE.MeshStandardMaterial({ color: 0xdfe9f2, roughness: 0.3, metalness: 0.3 }));
-          mShield.position.set(0, 0.82, 0.52);
-          mShield.rotation.x = -0.25;
-          moto.add(mShield);
-          const mSeat = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.09, 0.62), tyreMat);
-          mSeat.position.set(0, 0.68, -0.12);
-          moto.add(mSeat);
-          for (const wz of [-0.52, 0.52]) {
-            const wm = mkWheelZ(0.27, 0.12);
-            wm.position.set(0, 0.27, wz);
+          const mPaint = new THREE.MeshStandardMaterial({ color: 0x2563eb, roughness: 0.35, metalness: 0.3 });
+          const mDark = new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.6, metalness: 0.3 });
+          const mChrome = new THREE.MeshStandardMaterial({ color: 0xd9dee5, roughness: 0.25, metalness: 0.8 });
+          const mk = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number, rx = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.x = rx; m.castShadow = true; moto.add(m); return m; };
+          mk(new THREE.BoxGeometry(0.34, 0.1, 0.62), mDark, 0, 0.36, 0.02); // footboard
+          mk(new THREE.BoxGeometry(0.36, 0.32, 0.5), mPaint, 0, 0.52, -0.32); // rear body over the motor
+          mk(new THREE.BoxGeometry(0.3, 0.1, 0.42), mDark, 0, 0.72, -0.28); // seat
+          mk(new THREE.BoxGeometry(0.32, 0.5, 0.12), mPaint, 0, 0.62, 0.38, -0.25); // leg shield
+          mk(new THREE.CylinderGeometry(0.035, 0.035, 0.62, 8), mChrome, 0, 0.82, 0.44, -0.28); // steering column
+          mk(new THREE.BoxGeometry(0.62, 0.05, 0.05), mDark, 0, 1.1, 0.36); // handlebar
+          for (const gx of [-0.3, 0.3]) mk(new THREE.CylinderGeometry(0.035, 0.035, 0.1, 8), mDark, gx, 1.1, 0.36).rotation.z = Math.PI / 2; // grips
+          mk(new THREE.SphereGeometry(0.07, 10, 8), new THREE.MeshStandardMaterial({ color: 0xfff6d5, emissive: 0xffe9a8, emissiveIntensity: 0.9 }), 0, 0.98, 0.5); // headlamp
+          mk(new THREE.BoxGeometry(0.16, 0.06, 0.34), mPaint, 0, 0.4, 0.55); // front mudguard
+          mk(new THREE.BoxGeometry(0.16, 0.06, 0.32), mPaint, 0, 0.42, -0.58); // rear mudguard
+          const box = mk(new THREE.BoxGeometry(0.46, 0.4, 0.42), new THREE.MeshStandardMaterial({ color: 0xff8a00, roughness: 0.5 }), 0, 1.0, -0.56); // delivery box
+          box.name = "deliveryBox";
+          mk(new THREE.BoxGeometry(0.47, 0.06, 0.43), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 }), 0, 1.0, -0.56); // reflective stripe
+          mk(new THREE.BoxGeometry(0.08, 0.05, 0.03), new THREE.MeshStandardMaterial({ color: 0xff2d2d, emissive: 0xff2020, emissiveIntensity: 0.8 }), 0, 0.56, -0.58); // tail light
+          for (const wz of [-0.48, 0.48]) {
+            const wm = mkWheelZ(0.22, 0.1);
+            wm.position.set(0, 0.22, wz);
             moto.add(wm);
+            const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.11, 10), mChrome);
+            hub.rotation.z = Math.PI / 2; hub.position.set(0, 0.22, wz); moto.add(hub);
           }
           veh.add(moto);
           const car = new THREE.Group();
@@ -1943,29 +2104,35 @@ export function MapView(p: Props) {
             car.add(wm);
           }
           veh.add(car);
+          // bus: a Shenzhen-style green electric bus — window band with pillars, white roof with the air-con pod,
+          // glowing destination sign, two doors, head and tail lights, six wheels
           const bus = new THREE.Group();
           bus.name = "veh-bus";
-          const uBody = new THREE.Mesh(new THREE.BoxGeometry(1.16, 0.95, 2.6), new THREE.MeshStandardMaterial({ color: 0x3b82f6, roughness: 0.4, metalness: 0.3 }));
-          uBody.position.set(0, 0.62, 0);
-          uBody.castShadow = true;
-          bus.add(uBody);
-          // glass band tall enough for a seated passenger to be seen inside
-          const uWin = new THREE.Mesh(new THREE.BoxGeometry(1.17, 1.05, 2.5), new THREE.MeshStandardMaterial({ color: 0xbfe3f2, roughness: 0.15, metalness: 0.3, transparent: true, opacity: 0.45 }));
-          uWin.position.set(0, 1.66, 0);
-          bus.add(uWin);
-          const uRoof = new THREE.Mesh(new THREE.BoxGeometry(1.18, 0.07, 2.6), new THREE.MeshStandardMaterial({ color: 0x2f6fd0, roughness: 0.4, metalness: 0.3 }));
-          uRoof.position.set(0, 2.22, 0);
-          bus.add(uRoof);
-          const uSeat = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.4, 0.5), new THREE.MeshStandardMaterial({ color: 0x374151, roughness: 0.9 }));
-          uSeat.position.set(0, 0.72, 0.1);
-          bus.add(uSeat);
-          const uSeatBack = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.55, 0.12), uSeat.material);
-          uSeatBack.position.set(0, 1.05, -0.19);
-          bus.add(uSeatBack);
-          for (const wx of [-0.58, 0.58]) for (const wz of [-0.95, 0.95]) {
-            const wm = mkWheelZ(0.32, 0.12);
-            wm.position.set(wx, 0.32, wz);
+          const bGreen = new THREE.MeshStandardMaterial({ color: 0x16a34a, roughness: 0.4, metalness: 0.25 });
+          const bWhite = new THREE.MeshStandardMaterial({ color: 0xf3f4f6, roughness: 0.45, metalness: 0.2 });
+          const bGlass = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.1, metalness: 0.6, emissive: 0x334155, emissiveIntensity: 0.25 });
+          const bDark = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.7 });
+          const bk = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; bus.add(m); return m; };
+          const L = 3.4, W = 1.18;
+          bk(new THREE.BoxGeometry(W, 0.62, L), bGreen, 0, 0.6, 0); // lower body
+          bk(new THREE.BoxGeometry(W + 0.01, 0.62, L - 0.25), bGlass, 0, 1.22, -0.06); // side window band
+          for (let k = -4; k <= 4; k++) for (const sx of [-1, 1]) bk(new THREE.BoxGeometry(0.03, 0.62, 0.06), bWhite, sx * (W / 2 + 0.01), 1.22, k * 0.36); // window pillars
+          bk(new THREE.BoxGeometry(W, 0.12, L), bWhite, 0, 1.59, 0); // roof
+          bk(new THREE.BoxGeometry(0.8, 0.18, 0.9), bWhite, 0, 1.74, -0.6); // air-con / battery pod
+          bk(new THREE.BoxGeometry(W - 0.06, 0.72, 0.04), bGlass, 0, 1.18, L / 2 + 0.01); // windscreen
+          bk(new THREE.BoxGeometry(0.8, 0.14, 0.05), new THREE.MeshStandardMaterial({ color: 0x1a1a1a, emissive: 0xff8a00, emissiveIntensity: 1 }), 0, 1.47, L / 2 + 0.03); // destination sign
+          for (const dz of [1.15, -0.1]) bk(new THREE.BoxGeometry(0.03, 0.95, 0.5), bDark, W / 2 + 0.015, 0.98, dz); // doors (kerb side)
+          for (const hx of [-0.42, 0.42]) {
+            bk(new THREE.BoxGeometry(0.16, 0.08, 0.03), new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff3c4, emissiveIntensity: 0.9 }), hx, 0.5, L / 2 + 0.01); // headlights
+            bk(new THREE.BoxGeometry(0.14, 0.12, 0.03), new THREE.MeshStandardMaterial({ color: 0xb91c1c, emissive: 0xff2020, emissiveIntensity: 0.7 }), hx, 0.58, -L / 2 - 0.01); // tail lights
+          }
+          bk(new THREE.BoxGeometry(W + 0.02, 0.08, L + 0.02), bDark, 0, 0.3, 0); // skirt
+          for (const wx of [-0.56, 0.56]) for (const wz of [1.05, -0.85, -1.25]) {
+            const wm = mkWheelZ(0.3, 0.16);
+            wm.position.set(wx, 0.3, wz);
             bus.add(wm);
+            const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.17, 10), new THREE.MeshStandardMaterial({ color: 0xc7ccd3, roughness: 0.3, metalness: 0.7 }));
+            hub.rotation.z = Math.PI / 2; hub.position.set(wx, 0.3, wz); bus.add(hub);
           }
           veh.add(bus);
           // your own car for 自驾： same honest glass cabin as the taxi (you
@@ -1997,13 +2164,24 @@ export function MapView(p: Props) {
           }
           veh.add(drive);
           (v.userData as { driveMat?: THREE.MeshStandardMaterial }).driveMat = dBodyMat;
+          // real car models (Kenney Car Kit): a taxi for 打车, a sedan for your own car; the box versions stay as fallback
+          void Promise.all([loadModel("car/taxi.glb"), loadModel("car/sedan.glb")]).then(([tm, sm]) => {
+            for (const [grp, m] of [[car, tm], [drive, sm]] as const) {
+              if (!m) continue;
+              for (const ch of grp.children) ch.visible = false;
+              const g = fittedClone(m, 2.3); g.userData.real = true; grp.add(g);
+            }
+            if (v) (v.userData as { realCars?: boolean }).realCars = !!(tm && sm);
+          });
           v.add(veh);
           (v.userData as { veh?: THREE.Group }).veh = veh;
         }
         scene.add(v);
         actorViews.set(a.key, v);
         const chipEl = mkChip("", "");
-        chipEl.style.cssText += `font:700 10.5px 'Noto Sans SC',sans-serif;padding:2px 7px;border-radius:999px;${a.isSelf ? "background:#14202b;color:#fff;" : "background:rgba(255,253,248,.92);color:#14202b;border:1px solid rgba(20,26,32,.4);"}`;
+        chipEl.style.cssText += a.isSelf
+          ? "font:900 12.5px 'Noto Sans SC',sans-serif;padding:3px 10px;border-radius:999px;background:#ff4d2e;color:#fff;border:2px solid #fff;box-shadow:0 0 0 2px #ff4d2e,0 3px 10px rgba(255,77,46,.55);z-index:5;"
+          : "font:700 10.5px 'Noto Sans SC',sans-serif;padding:2px 7px;border-radius:999px;background:rgba(255,253,248,.92);color:#14202b;border:1px solid rgba(20,26,32,.4);";
         /* 点玩家 / NPC 的名字：NPC 直接聊天，玩家弹出名片（私聊、组局、送礼） */
         if (!a.isSelf) {
           chipEl.style.cssText += "pointer-events:auto;cursor:pointer;";
@@ -2025,7 +2203,7 @@ export function MapView(p: Props) {
     let px = 0;
     let py = 0;
     let hover: { x: number; y: number } | null = null;
-    const HOVER_R = 140; // px around the cursor where every label shows
+    const HOVER_R = 60; // px around the cursor where every label shows (small: only what you point at)
     const onDown = (e: PointerEvent) => {
       dragging = true;
       camRef.current.lastUser = performance.now();
@@ -2102,7 +2280,7 @@ export function MapView(p: Props) {
       // Re-frame for the new size: the fill distance depends on the
       // canvas aspect, so fullscreen, window resizes and panel collapses
       // all re-fit the city to the frame while auto-fit is armed.
-      fitDistRef.current = fitDistForAspect(w / h);
+      fitDistRef.current = fitDistForAspect(w / h, propsRef.current.cityKey);
       if (autoFitRef.current) {
         camRef.current.dist = fitDistRef.current;
         setZoomPct(100);
@@ -2249,10 +2427,18 @@ export function MapView(p: Props) {
           const pxv = r.x1 + (r.x2 - r.x1) * car.t + Math.sin(ang) * car.lane;
           const pzv = r.z1 + (r.z2 - r.z1) * car.t - Math.cos(ang) * car.lane;
           carQuat.setFromEuler(carEuler.set(0, -ang + (car.dir < 0 ? Math.PI : 0), 0));
-          carMat4.compose(v3.set(pxv, LAND + 0.38, pzv), carQuat, carScl);
-          carMesh.setMatrixAt(i, carMat4);
+          const slot = carSlot[i];
+          const typed = slot && !carMesh.visible ? carTypes[slot.m] : undefined;
+          if (typed && slot) {
+            carMat4.compose(v3.set(pxv, LAND, pzv), carQuat, carScl);
+            typed.setMatrixAt(slot.k, carMat4);
+          } else {
+            carMat4.compose(v3.set(pxv, LAND + 0.38, pzv), carQuat, carScl);
+            carMesh.setMatrixAt(i, carMat4);
+          }
         });
         carMesh.instanceMatrix.needsUpdate = true;
+        for (const im of carTypes) if (im) im.instanceMatrix.needsUpdate = true;
         // 阿强's scooter rides the same rules (it just isn't in the queue
         // check — one scooter slipping past a queue is true to life)
         trafficAdvance(riderCar, dt, tSec);
@@ -2393,15 +2579,61 @@ export function MapView(p: Props) {
         }
       }
 
+      // the train: head eases from station idx to idx+1 over stepMs (held at a station while boarding / transferring / arriving)
+      const tr = propsRef.current.train;
+      trainPos.active = !!tr && tr.pts.length >= 2;
+      if (tr && trainPos.active) {
+        const key = tr.pts.map((q) => q.join(",")).join(";");
+        if (key !== trainKey) { trainKey = key; trainIdx = -1; }
+        if (tr.idx !== trainIdx) { trainIdx = tr.idx; trainSince = now; }
+        const i = Math.min(tr.idx, tr.pts.length - 1);
+        const a0 = tr.pts[i]!, a1 = tr.pts[Math.min(i + 1, tr.pts.length - 1)]!;
+        const raw = tr.hold || i >= tr.pts.length - 1 ? 0 : Math.min(1, (now - trainSince) / tr.stepMs);
+        const k = raw * raw * (3 - 2 * raw); // pull out of the station, glide, brake into the next
+        trainPos.x = a0[0] + (a1[0] - a0[0]) * k; trainPos.z = a0[1] + (a1[1] - a0[1]) * k;
+        let hx = a1[0] - a0[0], hz = a1[1] - a0[1];
+        if (Math.hypot(hx, hz) < 1e-3 && i > 0) { const b = tr.pts[i - 1]!; hx = a0[0] - b[0]; hz = a0[1] - b[1]; }
+        const len = Math.hypot(hx, hz) || 1; const ux = hx / len, uz = hz / len;
+        const nCars = tr.rail ? 6 : 4;
+        trainBodyMat.color.setHex(tr.rail ? 0xf3f5f7 : tr.color);
+        trainRoofMat.color.setHex(tr.rail ? tr.color : 0xe8edf2);
+        trainCars.forEach((car, ci) => {
+          car.visible = ci < nCars;
+          if (trainModelsReady) {
+            // head car, middle cars, tail car from the model set; the box parts hide
+            const v = ci === 0 ? 0 : ci === nCars - 1 ? 2 : 1;
+            for (const child of car.children) if (!(child as THREE.Group).userData || (child as THREE.Group).userData.v === undefined) child.visible = false;
+            for (const kind of ["metro", "rail"] as const) for (const g of trainModels[ci]![kind]) g.visible = (kind === "rail") === tr.rail && g.userData.v === v;
+          }
+          car.position.set(trainPos.x - ux * ci * 1.55, LAND + 0.05, trainPos.z - uz * ci * 1.55);
+          car.rotation.y = Math.atan2(ux, uz);
+        });
+        trainGroup.visible = true;
+      } else {
+        trainGroup.visible = false; trainKey = "";
+      }
+
       // actors
       const locsNow = getLocations(propsRef.current.cityKey);
       for (const a of actorsRef.current.values()) {
         const view = ensureActorView(a);
+        if (a.isSelf) {
+          view.visible = !trainPos.active;
+          if (trainPos.active) { a.x = a.tx = trainPos.x; a.z = a.tz = trainPos.z; selfOnTrain = true; }
+          else if (selfOnTrain) {
+            // off the train: walk on from the last station to where the trip ends
+            selfOnTrain = false;
+            const dest = resolveLoc(propsRef.current.cityKey, propsRef.current.selfLocId);
+            if (dest) { a.tx = dest.x; a.tz = dest.z; }
+          }
+        }
         const dx = a.tx - a.x;
         const dz = a.tz - a.z;
         const dist = Math.hypot(dx, dz);
         if (dist > 0.06) {
-          const sp = (a.speed || 4.2) * dt;
+          const eta = a.isSelf ? propsRef.current.selfEtaAt : undefined;
+          const left = eta ? (eta - Date.now()) / 1000 : 0;
+          const sp = (eta && left > 0.05 ? dist / left : (a.speed || 2.4)) * dt;
           const step = Math.min(dist, sp);
           a.x += (dx / dist) * step;
           a.z += (dz / dist) * step;
@@ -2435,7 +2667,7 @@ export function MapView(p: Props) {
         if (moving) {
           // stride cadence follows the actual travel speed: a walker
           // strolls, a runner's legs blur, a commuter hurries
-          a.phase += dt * 1.62 * (a.speed || 4.2);
+          a.phase += dt * 1.62 * Math.min(6, a.speed || 2.4) * (a.isSelf && propsRef.current.selfEtaAt ? 1.4 : 1);
           const targetHeading = Math.atan2(dx, dz);
           let dh = targetHeading - a.heading;
           while (dh > Math.PI) dh -= Math.PI * 2;
@@ -2500,11 +2732,14 @@ export function MapView(p: Props) {
                 limbs0.armL.rotation.x = mix(limbs0.armL.rotation.x, -0.25);
                 limbs0.armR.rotation.x = mix(limbs0.armR.rotation.x, -0.68);
               }
+              // inside a real (closed) car model the figure is hidden by the body: don't let the head poke through the roof
+              bodyG.visible = !(rb > 0.5 && (rm === "bus" || ((rm === "taxi" || rm === "drive") && (view.userData as { realCars?: boolean }).realCars)));
               // seated: the walk bob dies away, a whisper of engine buzz stays
               view.position.y = LAND + bob * (1 - rb) + Math.sin(tSec * 31) * 0.008 * rb;
             } else {
               bodyG.position.y = 0;
               bodyG.scale.set(1, 1, 1);
+              bodyG.visible = true;
             }
           }
           // trail: new destination → fresh trail; moving → sample points
@@ -2516,6 +2751,8 @@ export function MapView(p: Props) {
           }
           if (moving && Math.hypot(a.x - trailLast.x, a.z - trailLast.z) > 0.7) pushTrail(a.x, a.z);
         }
+        const badge = (view.userData as { badge?: THREE.Sprite }).badge;
+        if (badge) { const k = 2.1 * (1 + Math.sin(tSec * 3) * 0.06); badge.scale.set(k, k, 1); }
         const ring = (view.userData as { ring?: THREE.Mesh }).ring;
         if (ring) {
           const s = 1 + Math.sin(tSec * 3) * 0.12;
@@ -2535,7 +2772,7 @@ export function MapView(p: Props) {
         const chip = actorChips.get(a.key);
         if (chip) {
           const greeting = a.greet && a.greetUntil && performance.now() < a.greetUntil ? ` ${a.greet}` : "";
-          const t = a.isSelf ? `${a.name}（你）` : `${a.name}${greeting}`;
+          const t = a.isSelf ? `📍 ${a.name} · ${document.documentElement.lang === "en" ? "me" : "我"}` : `${a.name}${greeting}`;
           if (chip.src !== t) { chip.src = t; chip.el.textContent = t; }
         }
       }
@@ -2561,7 +2798,12 @@ export function MapView(p: Props) {
       const cam = camRef.current;
       if (self) {
         const look = lookRef.current;
-        if (look && performance.now() < look.until) {
+        const anchor = anchorRef.current;
+        if (anchor && !(look && performance.now() < look.until)) {
+          // the minimap's pick holds until the next trip
+          cam.tx += (THREE.MathUtils.clamp(anchor.x, -37, 37) - cam.tx) * Math.min(1, dt * 2.6);
+          cam.tz += (THREE.MathUtils.clamp(anchor.z, -23, 23) - cam.tz) * Math.min(1, dt * 2.6);
+        } else if (look && performance.now() < look.until) {
           // search focus wins for a few seconds: pan to the searched place
           cam.tx += (THREE.MathUtils.clamp(look.x, -37, 37) - cam.tx) * Math.min(1, dt * 2.6);
           cam.tz += (THREE.MathUtils.clamp(look.z, -23, 23) - cam.tz) * Math.min(1, dt * 2.6);
@@ -2581,9 +2823,11 @@ export function MapView(p: Props) {
           // Target clamps span nearly the whole miniature (±37 / ±23),
           // so following never stalls at the map's edge districts.
           const movingNow = self.blend > 0.25;
-          const centerW = movingNow ? 0 : 0.62 * THREE.MathUtils.clamp((cam.distCur - 36) / 26, 0, 1);
-          const fx = (self.x + leadX) * (1 - centerW) + LAND_CX * centerW;
-          const fz = (self.z + leadZ) * (1 - centerW) + LAND_CZ * centerW;
+          const fitD = fitDistRef.current || 46;
+          const centerW = movingNow ? 0 : THREE.MathUtils.clamp((cam.distCur - fitD * 0.7) / (fitD * 0.3), 0, 1); // at the overview distance the city frame is the picture
+          const fr = frameOf(propsRef.current.cityKey);
+          const fx = (self.x + leadX) * (1 - centerW) + fr.cx * centerW;
+          const fz = (self.z + leadZ) * (1 - centerW) + (fr.cz - fr.h * 0.08) * centerW; // a touch north: the tilted view shows more foreground
           const ease = movingNow ? Math.min(1, dt * 4.2) : Math.min(1, dt * 2.2);
           cam.tx += (THREE.MathUtils.clamp(fx, -37, 37) - cam.tx) * ease;
           cam.tz += (THREE.MathUtils.clamp(fz, -23, 23) - cam.tz) * ease;
@@ -2595,7 +2839,11 @@ export function MapView(p: Props) {
       const pulse = cineRef.current ? Math.sin(Math.min(1, focusRef.current) * Math.PI) : 0;
       if (cam.cut > 0) cam.cut = Math.max(0, cam.cut - dt * 1.3);
       const cutEase = cam.cut * cam.cut;
-      const wantDist = cam.dist * (1 - pulse * 0.16) * (1 - cutEase * 0.1);
+      // on a trip the camera closes in on you so the vehicle / train is easy to follow (unless you zoomed yourself just now)
+      const tripping = !!propsRef.current.selfEtaAt || trainPos.active;
+      const userZoomedRecently = performance.now() - cam.lastUser < 4000;
+      const tripDist = tripping && !userZoomedRecently ? Math.min(cam.dist, (fitDistRef.current || 46) * 0.42) : cam.dist;
+      const wantDist = tripDist * (1 - pulse * 0.16) * (1 - cutEase * 0.1);
       cam.distCur += (wantDist - cam.distCur) * Math.min(1, dt * 3.2);
       if (streetRef.current) {
         // street level: near-horizontal lens, close behind the player —
@@ -2637,9 +2885,19 @@ export function MapView(p: Props) {
       // how many place labels may show at once (zoomed out it is the city view)
       const locCap = density === "all" ? 999 : overview ? (density === "few" ? 8 : 22) : density === "few" ? 14 : 60;
       let locShown = 0;
+      /* separate budgets so place pins, neighbourhood names and stations never
+         swamp the view (zoomed in they used to fill every gap) */
+      const kindCap = density === "all" ? { place: 999, area: 999, station: 999 } : density === "few" ? { place: 4, area: 4, station: 3 } : { place: 10, area: 8, station: 6 };
+      const kindShown = { place: 0, area: 0, station: 0 };
       const cands: { chip: Chip; sx: number; sy: number; prio: number; near: boolean }[] = [];
+      let measured = 0;
       for (const chip of chips) {
         const pos = chip.getPos();
+        // far-off place / area / station labels: skip before any projection or DOM work
+        if ((chip.place || chip.area || chip.station) && !hover && (((chip.place || chip.station) && overview) || Math.hypot(pos.x - cam.tx, pos.z - cam.tz) > 32)) {
+          if (chip.visible || chip.el.style.display !== "none") { chip.visible = false; chip.el.style.display = "none"; }
+          continue;
+        }
         v3.set(pos.x, pos.y, pos.z).project(camera);
         if (v3.z > 1 || v3.z < -1) {
           chip.visible = false;
@@ -2681,7 +2939,7 @@ export function MapView(p: Props) {
           }
           prio = (chip.area === "big" ? 9.1 : 9.6) + dCam / 40;
         } else if (chip.station || chip.place) {
-          if (!near && (overview || dCam > (chip.place ? 18 : 14))) {
+          if (!near && (overview || dCam > (chip.place ? 11 : 12))) {
             chip.visible = false;
             chip.el.style.display = "none";
             continue;
@@ -2712,6 +2970,9 @@ export function MapView(p: Props) {
         }
         const txt = chip.el.textContent ?? "";
         if (chip.w === 0 || (chip.kind === "actor" && txt !== chip.lastText)) {
+          // measuring a label forces a layout: only a few per pass, so moving across the map doesn't stutter
+          if (measured >= 8 && !chip.self && chip.kind !== "loc") continue;
+          measured++;
           chip.el.style.display = "";
           chip.w = chip.el.offsetWidth;
           chip.h = chip.el.offsetHeight;
@@ -2728,7 +2989,13 @@ export function MapView(p: Props) {
             c.chip.el.style.display = "none";
             continue;
           }
-          const hw = c.chip.w / 2 + (density === "all" || c.near ? 3 : 9);
+          const kk = c.chip.place ? "place" : c.chip.area ? "area" : c.chip.station ? "station" : null;
+          if (kk && !c.near && kindShown[kk] >= kindCap[kk]) {
+            c.chip.visible = false;
+            c.chip.el.style.display = "none";
+            continue;
+          }
+          const hw = c.chip.w / 2 + (density === "all" || c.near ? 3 : 14);
           /* Edge clamp: pull the anchor inward so the WHOLE chip stays on
              screen — a place at the map's edge used to get its label sliced
              in half by the overlay edge. The delta is remembered on the
@@ -2745,7 +3012,7 @@ export function MapView(p: Props) {
           if (ay + 2 > h - EDGE) ay = h - EDGE - 2;
           c.chip.clampDx = ax - c.sx;
           c.chip.clampDy = ay - c.sy;
-          const box = { x1: ax - hw, y1: ay - c.chip.h - 5, x2: ax + hw, y2: ay + 2 };
+          const box = { x1: ax - hw, y1: ay - c.chip.h - (density === "all" ? 5 : 10), x2: ax + hw, y2: ay + (density === "all" ? 2 : 6) };
           const hit = placed.some((b) => box.x1 < b.x2 && box.x2 > b.x1 && box.y1 < b.y2 && box.y2 > b.y1);
           if (hit) {
             c.chip.visible = false;
@@ -2754,6 +3021,7 @@ export function MapView(p: Props) {
           }
           placed.push(box);
           if (c.chip.kind === "loc") locShown++;
+          if (kk) kindShown[kk]++;
           c.chip.visible = true;
           c.chip.el.style.display = "";
           c.chip.el.style.transform = `translate(-50%,-100%) translate(${ax.toFixed(1)}px,${ay.toFixed(1)}px)`;
@@ -2802,7 +3070,8 @@ export function MapView(p: Props) {
     setZoomPct(Math.round((fitDistRef.current / camRef.current.dist) * 100));
   };
   const resetCam = () => {
-    camRef.current.az = -0.55;
+    anchorRef.current = null;
+    camRef.current.az = 0; // north up: the long cities (Shenzhen strip, Hong Kong, Huizhou) fill the screen side to side
     camRef.current.pol = CAM_POL;
     autoFitRef.current = true;
     camRef.current.dist = fitDistRef.current;
@@ -2928,6 +3197,7 @@ export function MapView(p: Props) {
     // lookRef channel wins over follow for a few seconds) — it locates,
     // it does not start walking the player there.
     lookRef.current = { x: wx, z: wz, until: performance.now() + 5000 };
+    anchorRef.current = { x: wx, z: wz };
   };
 
   if (glFailed) {

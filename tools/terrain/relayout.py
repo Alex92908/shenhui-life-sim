@@ -112,6 +112,7 @@ for k in ids:
 src = src[:b0] + blk + src[b1:]
 if CK == "sz":
     mp = ROOT / "client/src/metro-sz.ts"; mp.write_text(re.sub(r'\{ id: "[^"]+", name: .*?city: "sz", stations: \[.*?\] \}', fix_line, mp.read_text()))
+    src = re.sub(r'\{ id: "[^"]+", name: [^\n]*?city: "sz", stations: \[.*?\] \}', fix_line, src)
 else:
     src = re.sub(rf'\{{ id: "[^"]+", name: [^\n]*?city: "{CK}", stations: \[.*?\] \}}', fix_line, src)
 (ROOT / "client/src/data.ts").write_text(src)

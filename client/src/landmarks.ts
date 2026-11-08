@@ -10,6 +10,8 @@
    per material (BufferGeometryUtils.mergeGeometries), and materials are
    shared across all models, so a landmark costs a handful of draw calls. */
 import { BRIDGES as THK_BRIDGES } from "./terrain-hk";
+import { getLocations } from "./data";
+const HK_WK = () => getLocations("hk").find((l) => l.id === "westkowloon") ?? { x: 0, z: 0 };
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { CityKey, Loc } from "./data";
@@ -1205,7 +1207,7 @@ export function createLandmarks(winTex: THREE.Texture) {
       k.into(g);
       out.push({ name, x, z, r, group: g, top, spin: [], ry });
     };
-    add("环球贸易广场", 5.4, 5.0, 0.9,  // just north of 西九龙站 (its real spot is on top of the station)
+    const wk = HK_WK(); add("环球贸易广场", wk.x + 1.2, wk.z - 2.2, 0.9,  // just north of 西九龙站 (its real spot is on top of the station)
       (k) => {
       k.add(new THREE.BoxGeometry(1.0, 17, 1.0), M(0x8fb3cc, { glass: true, rough: 0.2, metal: 0.55 }), 0, 8.5, 0, 0, Math.PI / 4, 0, 1, 1, 0.8);
       k.add(new THREE.BoxGeometry(0.7, 0.8, 0.7), M(0xdbe7ef, { rough: 0.3, metal: 0.4 }), 0, 17.3, 0, 0, Math.PI / 4);
