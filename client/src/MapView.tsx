@@ -13,6 +13,12 @@ import { createLandmarks, mergeStatic } from "./landmarks";
 import { AREA_LABELS } from "./areas";
 import { activitiesAt } from "./activities";
 import { SKYLINE } from "./skyline";
+import * as TSZ from "./terrain-sz";
+import * as THZ from "./terrain-hz";
+import * as THK from "./terrain-hk";
+import { ROADS as REAL_ROADS } from "./roads";
+/* Real land / inland water / bridges / rivers per city (tools/terrain/gen_terrain.py). */
+const TERRAIN: Record<CityKey, typeof THK> = { sz: TSZ, hz: THZ, hk: THK };
 import { CITIES, LOC_EN, getLocations, resolveLoc, placesForCity, PLACE_KINDS, stationLocId, metroLinesForCity, modeById, npcsForCity, outfitOf, type CityKey, type Loc, type LocType, type Npc, type TransportModeId } from "./data";
 import { makePostFx, type PostFx } from "./postfx";
 
@@ -113,47 +119,8 @@ interface Road {
   lz?: number;
 }
 
-const ROADS: Record<CityKey, Road[]> = {
-  sz: [
-    { x1: -37, z1: 9, x2: 37, z2: 9, w: 2.8, name: "滨海大道", lx: -25, lz: 9 },
-    { x1: -37, z1: -1, x2: 31, z2: -1, w: 2.8, name: "深南大道", lx: 13, lz: -1 },
-    { x1: -37, z1: -10, x2: 25, z2: -10, w: 2.3, name: "北环大道", lx: -15, lz: -10 },
-    { x1: -17, z1: -17, x2: -17, z2: 12, w: 2.1, name: "南海大道", lx: -17, lz: -13 },
-    { x1: 1, z1: -20, x2: 1, z2: 7, w: 2.1, name: "南坪快速", lx: 1, lz: -18.4 },
-    { x1: -11, z1: -17, x2: -11, z2: 10, w: 1.8 },
-    { x1: 8, z1: -14, x2: 8, z2: 9, w: 1.8 },
-    { x1: -37, z1: -8, x2: -22, z2: -3, w: 2, name: "机场高速", lx: -31, lz: -6.4 },
-    { x1: 15, z1: -2, x2: 37, z2: 7, w: 2.3, name: "深盐路 · 沿海高速", lx: 27, lz: 3.4 },
-    { x1: -4, z1: -20, x2: -4, z2: 9, w: 1.6 },
-    { x1: -37, z1: 3.5, x2: 37, z2: 3.5, w: 1.5 },
-  ],
-  hz: [
-    { x1: -31, z1: -7, x2: 17, z2: -7, w: 2.5, name: "惠州大道", lx: -21, lz: -7 },
-    { x1: -8, z1: -20, x2: -8, z2: 11, w: 2.1, name: "演达大道", lx: -8, lz: -17.6 },
-    { x1: -31, z1: -3, x2: -8, z2: -3, w: 2, name: "仲恺大道", lx: -24, lz: -3 },
-    { x1: -4, z1: 12.5, x2: 37, z2: 12.5, w: 2.3, name: "沿海旅游公路", lx: 19, lz: 12.5 },
-    { x1: -2, z1: 17, x2: 25, z2: 4, w: 2.3, name: "惠深沿海高速", lx: 9, lz: 12.8 },
-    { x1: -14, z1: -20, x2: 12, z2: -11, w: 1.7, name: "金山大道", lx: -2, lz: -16.8 },
-    { x1: -20, z1: -14, x2: -8, z2: -7, w: 1.6 },
-    { x1: 2, z1: -11, x2: 2, z2: 12, w: 1.7 },
-    { x1: -31, z1: 2, x2: 22, z2: 2, w: 1.5 },
-  ],
-  hk: [
-    { x1: -6, z1: -6, x2: -2, z2: 5, w: 2.6, name: "弥敦道", lx: -5.4, lz: -0.5 },
-    { x1: -18, z1: 10, x2: 20, z2: 10, w: 2.6, name: "轩尼诗道 · 德辅道", lx: 12, lz: 10 },
-    { x1: -2, z1: 5, x2: -2, z2: 10, w: 2, name: "红磡海底隧道", lx: -2, lz: 7.6 },
-    { x1: -34, z1: 1, x2: -17, z2: -2, w: 2.4, name: "青屿干线", lx: -26, lz: -1.4 },
-    { x1: -24, z1: 4, x2: -28, z2: 8, w: 1.8 },
-    { x1: -31, z1: -16, x2: 12, z2: -14, w: 2.4, name: "新田公路 · 吐露港公路", lx: -8, lz: -15 },
-    { x1: 12, z1: -13, x2: 30, z2: -8, w: 1.9, name: "西贡公路", lx: 22, lz: -10.6 },
-    { x1: -9, z1: -16, x2: -6, z2: 3, w: 2, name: "狮子山隧道 · 龙翔道", lx: -8.4, lz: -9 },
-    { x1: -20, z1: -16, x2: -31, z2: -7, w: 2.2, name: "屯门公路", lx: -26, lz: -12 },
-    { x1: 0, z1: 14, x2: 9, z2: 19, w: 1.7, name: "赤柱峡道", lx: 5, lz: 17 },
-    { x1: -24, z1: 3, x2: -36, z2: 11, w: 1.8, name: "屿南道", lx: -31, lz: 8.4 },
-    { x1: -13, z1: 12, x2: -6, z2: 10, w: 1.6, name: "山顶道", lx: -10, lz: 12.4 },
-    { x1: 2, z1: -6, x2: 18, z2: 2, w: 1.8, name: "观塘道", lx: 11, lz: -1.4 },
-  ],
-};
+/* main roads follow their real alignments (tools/terrain/gen_roads.py) */
+const ROADS: Record<CityKey, Road[]> = REAL_ROADS;
 
 /* ---- terrain: the real ranges, as low-poly cone clusters ----
    Shenzhen is not a flat board: 梧桐山 (943.7m, the city's highest peak)
@@ -164,53 +131,29 @@ const ROADS: Record<CityKey, Road[]> = {
    filler/trees placement below keeps their slopes empty. */
 interface Peak { x: number; z: number; h: number; r: number; rock?: boolean }
 interface MountainRange { peaks: Peak[]; label?: string; lx?: number; lz?: number; ly?: number }
-const MOUNTAINS: Record<CityKey, MountainRange[]> = {
-  sz: [
-    { peaks: [{ x: 23, z: -18.5, h: 8.2, r: 4.6 }, { x: 26.5, z: -16, h: 5.4, r: 3.1 }, { x: 19.5, z: -16.5, h: 4.2, r: 2.6, rock: true }], label: "⛰️ 梧桐山 943.7m · 深圳第一峰", lx: 23, lz: -18.5, ly: 9.6 },
-    { peaks: [{ x: -4.5, z: -17.5, h: 2.6, r: 2.6 }] },
-    { peaks: [{ x: -9.5, z: -16, h: 3.6, r: 2.8 }] },
-    { peaks: [{ x: 7, z: -21, h: 4.4, r: 3.4 }] },
-    { peaks: [{ x: -26, z: -17, h: 3.8, r: 3.2 }] },
-    { peaks: [{ x: -27, z: 17, h: 3.4, r: 3 }] },
-    { peaks: [{ x: 30, z: -9, h: 3.6, r: 3 }, { x: 36, z: 2, h: 4, r: 3, rock: true }, { x: 28, z: 14, h: 2.2, r: 2.4 }] },
-    { peaks: [{ x: 30.5, z: 18, h: 5, r: 3 }, { x: 27, z: 19.5, h: 3.2, r: 2.2 }], label: "⛰️ 七娘山 869m · 深圳第二峰", lx: 30.5, lz: 18, ly: 6.2 },
-    { peaks: [{ x: -33, z: -19, h: 3.4, r: 2.8 }, { x: 16, z: -21.5, h: 3, r: 2.6 }] },
-  ],
-  hz: [
-    { peaks: [{ x: -28.5, z: -17.5, h: 7.6, r: 3.9 }, { x: -24, z: -19, h: 5, r: 2.8 }, { x: -32, z: -14.5, h: 4.2, r: 2.6, rock: true }], label: "⛰️ 罗浮山 1296m · 道教名山", lx: -28.5, lz: -17.5, ly: 9 },
-    { peaks: [{ x: -33, z: -20, h: 6, r: 3.2 }], label: "⛰️ 南昆山 · 北回归线绿洲", lx: -33, lz: -20, ly: 7.4 },
-    { peaks: [{ x: -17, z: -18, h: 4.6, r: 3 }] },
-    { peaks: [{ x: 28, z: 17, h: 3.2, r: 2.6 }, { x: 35, z: 17.5, h: 2.6, r: 2.2 }] },
-    { peaks: [{ x: -24, z: 12, h: 2.4, r: 2.4 }, { x: 6, z: -19, h: 3, r: 2.6 }] },
-  ],
-  hk: [
-    { peaks: [{ x: -8, z: -19.5, h: 7.8, r: 3.6 }, { x: -4, z: -20.5, h: 5.2, r: 2.6 }], label: "⛰️ 大帽山 957m · 香港最高峰", lx: -8, lz: -19.5, ly: 9.2 },
-    { peaks: [{ x: -15.5, z: 16.5, h: 4.6, r: 2.8 }, { x: -11, z: 17.5, h: 3.2, r: 2.2 }], label: "⛰️ 太平山 552m · The Peak", lx: -15.5, lz: 16.5, ly: 6 },
-    { peaks: [{ x: -29, z: 17.5, h: 6.8, r: 3.2 }, { x: -25, z: 18.5, h: 5.4, r: 2.6, rock: true }], label: "⛰️ 凤凰山 934m · 大屿山", lx: -29, lz: 17.5, ly: 8.2 },
-    { peaks: [{ x: 4, z: -9.5, h: 3.8, r: 2.6 }], label: "⛰️ 狮子山 495m", lx: 4, lz: -9.5, ly: 5.2 },
-    { peaks: [{ x: 21, z: -14, h: 4.6, r: 2.8 }, { x: 33, z: -13, h: 3.4, r: 2.4 }] },
-    { peaks: [{ x: -33, z: -13, h: 3.6, r: 2.6 }, { x: 24, z: 16, h: 2.8, r: 2.4 }] },
-  ],
+/* real peaks at their real spots, height by real elevation; a peak that
+   shares its spot with a game location (梧桐山, 罗浮山…) steps back so the
+   location's own model stays clear */
+const realRanges = (ck: CityKey): MountainRange[] => {
+  const locs = getLocations(ck);
+  const top = Math.max(...TERRAIN[ck].PEAKS.map((p) => p.ele), 900);
+  return TERRAIN[ck].PEAKS.map((p) => {
+    let { x, z } = p;
+    for (const l of locs) {
+      const d = Math.hypot(x - l.x, z - l.z);
+      if (d < 2.6) { const k = (2.6 - d) / Math.max(d, 0.01); x += (x - l.x) * k || 2.6; z += (z - l.z) * k; }
+    }
+    const h = 2 + (p.ele / top) * 6.5;
+    return { peaks: [{ x, z, h, r: 1.4 + h * 0.32 }], label: p.ele >= 500 ? `⛰️ ${p.name} ${p.ele}m` : undefined, lx: x, lz: z, ly: h + 1.2 };
+  });
 };
+const MOUNTAINS: Record<CityKey, MountainRange[]> = { sz: realRanges("sz"), hz: realRanges("hz"), hk: realRanges("hk") };
 
 /* Reservoirs and lakes drawn as real water patches in the miniature:
    Shenzhen's 梅林/西丽/铁岗 reservoirs, Huizhou's 红花湖 and 西湖补水面. */
 const LAKES: Record<CityKey, { x: number; z: number; r: number }[]> = {
-  sz: [
-    { x: -2, z: -16.8, r: 2.6 },
-    { x: -13.5, z: -12.5, r: 2.2 },
-    { x: -24, z: -9.5, r: 2.4 },
-    { x: 18, z: 12, r: 1.8 },
-  ],
-  hz: [
-    { x: -18.5, z: 4.8, r: 2.8 },
-    { x: -15.5, z: 3.2, r: 1.9 },
-    { x: 14, z: -14, r: 2.2 },
-  ],
-  hk: [
-    { x: 33.5, z: -3.5, r: 2 },
-    { x: 15, z: -19.5, r: 2.2 },
-  ],
+  // reservoirs and lakes are real polygons now (TERRAIN[city].WATER)
+  sz: [], hz: [], hk: [],
 };
 
 const LAND = 0.6; // land deck height; buildings sit on it
@@ -243,6 +186,32 @@ function coastZ(cityKey: CityKey, x: number): number {
   if (cityKey === "sz") return 16.6 + Math.sin(x * 0.1) * 1.1 + Math.sin(x * 0.23 + 1.7) * 0.7;
   if (cityKey === "hk") return 21.6 + Math.sin(x * 0.08 + 1) * 1 + Math.sin(x * 0.19 + 0.4) * 0.6;
   return 14.6 + Math.sin(x * 0.09 + 2) * 1.2 + Math.sin(x * 0.21 + 0.6) * 0.7;
+}
+
+/* ---- Hong Kong's real land (OSM coastline, see terrain-hk.ts) ---- */
+function inRing(x: number, z: number, r: [number, number][]): boolean {
+  let c = false;
+  for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+    const [xi, zi] = r[i]!, [xj, zj] = r[j]!;
+    if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) c = !c;
+  }
+  return c;
+}
+const LAND_BOX: Record<CityKey, (readonly [number, number, number, number])[]> = Object.fromEntries((Object.keys(TERRAIN) as CityKey[]).map((ck) => [ck, TERRAIN[ck].LAND.map((p) => { const xs = p[0]!.map((q) => q[0]); const zs = p[0]!.map((q) => q[1]); return [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)] as const; })])) as Record<CityKey, (readonly [number, number, number, number])[]>;
+function landAt(ck: CityKey, x: number, z: number): boolean {
+  const T = TERRAIN[ck];
+  for (let k = 0; k < T.LAND.length; k++) {
+    const b = LAND_BOX[ck][k]!;
+    if (x < b[0] || x > b[1] || z < b[2] || z > b[3]) continue;
+    const p = T.LAND[k]!;
+    if (inRing(x, z, p[0]!) && !p.slice(1).some((h) => inRing(x, z, h))) return !T.WATER.some((w) => inRing(x, z, w[0]!));
+  }
+  return false;
+}
+/** Dry land at (x, z), at least `margin` from the shore (real terrain, every city). */
+export function isLand(cityKey: CityKey, x: number, z: number, margin = 0): boolean {
+  if (!landAt(cityKey, x, z)) return false;
+  return margin <= 0 || [[margin, 0], [-margin, 0], [0, margin], [0, -margin]].every(([dx, dz]) => landAt(cityKey, x + dx!, z + dz!));
 }
 
 function hash(s: string): number {
@@ -685,24 +654,12 @@ export function MapView(p: Props) {
     water.rotation.x = -Math.PI / 2;
     water.position.set(0, 0, 4);
     scene.add(water);
-    // Huizhou's Dongjiang river band in the north
-    if (cityKey === "hz") {
-      const river = new THREE.Mesh(new THREE.PlaneGeometry(90, 3.4), waterMat);
-      river.rotation.x = -Math.PI / 2;
-      river.rotation.z = 0.06;
-      river.position.set(-4, 0.18, -18.6);
-      scene.add(river);
-    }
+    // (rivers are real centrelines now — see TERRAIN[city].RIVERS below)
     // Hong Kong's Victoria Harbour: a real water channel cut between
     // Kowloon (north shore, Tsim Sha Tsui) and Hong Kong Island (south
     // shore, Central/Wan Chai) — the harbour IS the city's centre.
-    if (cityKey === "hk") {
-      const harbour = new THREE.Mesh(new THREE.PlaneGeometry(34, 2.6), waterMat);
-      harbour.rotation.x = -Math.PI / 2;
-      harbour.position.set(0, LAND + 0.04, 7.4);
-      harbour.receiveShadow = true;
-      scene.add(harbour);
-    }
+    // (Hong Kong's harbour is now the real gap between Kowloon and the
+    // island: the land below is built from the OSM coastline.)
     // reservoirs & lakes as flat water patches in the land
     for (const lk of LAKES[cityKey]) {
       const disc = new THREE.Mesh(new THREE.CylinderGeometry(lk.r, lk.r * 1.04, 0.12, 22), waterMat);
@@ -710,12 +667,24 @@ export function MapView(p: Props) {
       disc.receiveShadow = true;
       scene.add(disc);
     }
-    const landShape = new THREE.Shape();
-    landShape.moveTo(-WORLD.x, -WORLD.zn);
-    landShape.lineTo(WORLD.x, -WORLD.zn);
-    for (let x = WORLD.x; x >= -WORLD.x; x -= 2) landShape.lineTo(x, -coastZ(cityKey, x));
-    landShape.lineTo(-WORLD.x, -WORLD.zn);
-    const landGeo = new THREE.ExtrudeGeometry(landShape, { depth: LAND, bevelEnabled: false });
+    const landShapes: THREE.Shape[] = [];
+    if (TERRAIN[cityKey].LAND.length) {
+      // real islands, peninsulas and bays (OSM coastline)
+      const toShape = (ring: [number, number][]) => { const sh = new THREE.Shape(); ring.forEach(([x, z], i) => (i ? sh.lineTo(x, -z) : sh.moveTo(x, -z))); return sh; };
+      for (const poly of TERRAIN[cityKey].LAND) {
+        const sh = toShape(poly[0]!);
+        for (const hole of poly.slice(1)) sh.holes.push(toShape(hole));
+        landShapes.push(sh);
+      }
+    } else {
+      const landShape = new THREE.Shape();
+      landShape.moveTo(-WORLD.x, -WORLD.zn);
+      landShape.lineTo(WORLD.x, -WORLD.zn);
+      for (let x = WORLD.x; x >= -WORLD.x; x -= 2) landShape.lineTo(x, -coastZ(cityKey, x));
+      landShape.lineTo(-WORLD.x, -WORLD.zn);
+      landShapes.push(landShape);
+    }
+    const landGeo = new THREE.ExtrudeGeometry(landShapes, { depth: LAND, bevelEnabled: false });
     landGeo.rotateX(-Math.PI / 2);
     const land = new THREE.Mesh(
       landGeo,
@@ -723,9 +692,19 @@ export function MapView(p: Props) {
     );
     land.receiveShadow = true;
     scene.add(land);
+    // the neighbour across the border (Hong Kong from Shenzhen and vice versa): seen, not walked
+    if (TERRAIN[cityKey].ACROSS.length) {
+      const toShape2 = (ring: [number, number][]) => { const sh = new THREE.Shape(); ring.forEach(([x, z], i) => (i ? sh.lineTo(x, -z) : sh.moveTo(x, -z))); return sh; };
+      const shapes = TERRAIN[cityKey].ACROSS.map((poly) => { const sh = toShape2(poly[0]!); for (const hole of poly.slice(1)) sh.holes.push(toShape2(hole)); return sh; });
+      const g2 = new THREE.ExtrudeGeometry(shapes, { depth: LAND * 0.8, bevelEnabled: false });
+      g2.rotateX(-Math.PI / 2);
+      const across = new THREE.Mesh(g2, new THREE.MeshStandardMaterial({ color: 0x8b8f87, roughness: 1 }));
+      across.receiveShadow = true;
+      scene.add(across);
+    }
     // beach strip along the coast
     const beachMat = new THREE.MeshStandardMaterial({ color: 0xead9a0, roughness: 1 });
-    for (let x = -WORLD.x; x < WORLD.x; x += 2) {
+    for (let x = -WORLD.x; x < WORLD.x && !TERRAIN[cityKey].LAND.length; x += 2) {
       const seg = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.1, 1.6), beachMat);
       seg.position.set(x + 1, LAND - 0.18, coastZ(cityKey, x + 1) + 0.7);
       seg.receiveShadow = true;
@@ -733,7 +712,47 @@ export function MapView(p: Props) {
     }
     // foam line where the water meets the sand, breathing with the waves
     foamMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35 });
-    for (let x = -WORLD.x; x < WORLD.x; x += 2) {
+    {
+      // reservoirs and lakes as water set into the land
+      for (const poly of TERRAIN[cityKey].WATER) {
+        const sh = new THREE.Shape(); poly[0]!.forEach(([x, z], i) => (i ? sh.lineTo(x, -z) : sh.moveTo(x, -z)));
+        const g = new THREE.ShapeGeometry(sh); g.rotateX(-Math.PI / 2);
+        const m = new THREE.Mesh(g, waterMat); m.position.y = LAND + 0.03; m.receiveShadow = true; scene.add(m);
+      }
+      // real bridges: deck, two towers, main cables (青马、汲水门、汀九、昂船洲、深圳湾…)
+      const deckMat = new THREE.MeshStandardMaterial({ color: 0xe8e4da, roughness: 0.6 });
+      const towerMat = new THREE.MeshStandardMaterial({ color: 0xd9d2c3, roughness: 0.8 });
+      const cableMat = new THREE.MeshStandardMaterial({ color: 0xcfd5db, roughness: 0.4, metalness: 0.3 });
+      // rivers: ribbons along their real centrelines
+      for (const rv of TERRAIN[cityKey].RIVERS) {
+        for (let i = 1; i < rv.pts.length; i++) {
+          const [ax, az] = rv.pts[i - 1]!, [bx, bz] = rv.pts[i]!;
+          const mx = (ax + bx) / 2, mz = (az + bz) / 2;
+          if (!landAt(cityKey, mx, mz)) continue;
+          const len = Math.hypot(bx - ax, bz - az);
+          const seg = new THREE.Mesh(new THREE.BoxGeometry(len + 0.25, 0.04, 0.55), waterMat);
+          seg.position.set(mx, LAND + 0.02, mz); seg.rotation.y = -Math.atan2(bz - az, bx - ax); scene.add(seg);
+        }
+      }
+      for (const b of TERRAIN[cityKey].BRIDGES) {
+        const [ax, az] = b.a, [bx, bz] = b.b;
+        const len = Math.hypot(bx - ax, bz - az); if (len < 0.5) continue;
+        const ang = Math.atan2(bz - az, bx - ax);
+        const g = new THREE.Group(); g.position.set((ax + bx) / 2, 0, (az + bz) / 2); g.rotation.y = -ang;
+        const deck = new THREE.Mesh(new THREE.BoxGeometry(len + 0.6, 0.2, 0.9), deckMat); deck.position.y = LAND + 0.25; deck.castShadow = true; g.add(deck);
+        const tH = 1.4 + Math.min(2.6, len * 0.35);
+        for (const t of [-0.28, 0.28]) for (const s2 of [-0.4, 0.4]) {
+          const tw = new THREE.Mesh(new THREE.BoxGeometry(0.16, tH, 0.16), towerMat); tw.position.set(t * len, LAND + tH / 2, s2); tw.castShadow = true; g.add(tw);
+        }
+        for (const s2 of [-0.4, 0.4]) {
+          const pts: THREE.Vector3[] = [];
+          for (let i = 0; i <= 20; i++) { const u = -0.5 + i / 20; const xx = u * len; const top = LAND + tH; const y = Math.abs(u) > 0.28 ? LAND + 0.35 + (top - LAND - 0.35) * (0.5 - Math.abs(u)) / 0.22 : top - (top - LAND - 0.6) * (1 - Math.pow(u / 0.28, 2)); pts.push(new THREE.Vector3(xx, y, s2)); }
+          g.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 30, 0.035, 4), cableMat));
+        }
+        scene.add(g);
+      }
+    }
+    for (let x = -WORLD.x; x < WORLD.x && !TERRAIN[cityKey].LAND.length; x += 2) {
       const foam = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.04, 0.5), foamMat);
       foam.position.set(x + 1, 0.16, coastZ(cityKey, x + 1) + 1.75);
       scene.add(foam);
@@ -743,22 +762,45 @@ export function MapView(p: Props) {
     const roadMat = new THREE.MeshStandardMaterial({ color: 0x3c4148, roughness: 0.95 });
     const lineMat = new THREE.MeshBasicMaterial({ color: 0xf5e9b8 });
     const roadMeshes: THREE.Mesh[] = [];
+    const viaductMat = new THREE.MeshStandardMaterial({ color: 0xbfc3c7, roughness: 0.8 });
     for (const r of roads) {
       const len = Math.hypot(r.x2 - r.x1, r.z2 - r.z1);
       const ang = Math.atan2(r.z2 - r.z1, r.x2 - r.x1);
+      if (TERRAIN[cityKey].LAND.length) {
+        // over water a road is a viaduct on piers — or, for the
+        // cross-harbour tunnels, runs under the sea and is not drawn there.
+        const tunnel = /隧道/.test(r.name ?? "");
+        const n = Math.max(2, Math.ceil(len / 1.5));
+        for (let i = 0; i < n; i++) {
+          const t0 = i / n, t1 = (i + 1) / n, tm = (t0 + t1) / 2;
+          const mx = r.x1 + (r.x2 - r.x1) * tm, mz = r.z1 + (r.z2 - r.z1) * tm;
+          const dry = isLand(cityKey, mx, mz);
+          if (!dry && tunnel) continue;
+          const piece = new THREE.Mesh(new THREE.BoxGeometry(len / n + 0.02, dry ? 0.1 : 0.18, r.w), dry ? roadMat : viaductMat);
+          piece.position.set(mx, LAND + 0.05, mz);
+          piece.rotation.y = -ang;
+          piece.receiveShadow = true;
+          scene.add(piece);
+          roadMeshes.push(piece);
+          if (!dry && i % 2 === 0) { const pier = new THREE.Mesh(new THREE.BoxGeometry(0.3, LAND + 0.4, 0.3), viaductMat); pier.position.set(mx, (LAND - 0.4) / 2, mz); scene.add(pier); }
+        }
+      } else {
       const m = new THREE.Mesh(new THREE.BoxGeometry(len, 0.1, r.w), roadMat);
       m.position.set((r.x1 + r.x2) / 2, LAND + 0.05, (r.z1 + r.z2) / 2);
       m.rotation.y = -ang;
       m.receiveShadow = true;
       scene.add(m);
       roadMeshes.push(m);
+      }
       const dashes = Math.floor(len / 2.4);
       const dashGeo = new THREE.BoxGeometry(1.1, 0.04, 0.16);
       const dash = new THREE.InstancedMesh(dashGeo, lineMat, Math.max(1, dashes));
       const mat4 = new THREE.Matrix4();
       const quat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -ang, 0));
+      const tunnelHk = /隧道/.test(r.name ?? "");
       for (let i = 0; i < dashes; i++) {
         const t = (i + 0.5) / dashes;
+        if (tunnelHk && !isLand(cityKey, r.x1 + (r.x2 - r.x1) * t, r.z1 + (r.z2 - r.z1) * t)) { mat4.makeScale(0, 0, 0); dash.setMatrixAt(i, mat4); continue; }
         mat4.compose(
           new THREE.Vector3(r.x1 + (r.x2 - r.x1) * t, LAND + 0.11, r.z1 + (r.z2 - r.z1) * t),
           quat,
@@ -834,6 +876,18 @@ export function MapView(p: Props) {
         const ang = Math.atan2(r.z2 - r.z1, r.x2 - r.x1);
         for (const side of [1, -1]) {
           const off = (r.w / 2 + 0.5) * side;
+          if (TERRAIN[cityKey].LAND.length) {
+            // pavements only where the road is on land (not along viaducts / tunnels)
+            const n = Math.max(2, Math.ceil(len / 1.5));
+            for (let i = 0; i < n; i++) {
+              const tm = (i + 0.5) / n;
+              const mx = r.x1 + (r.x2 - r.x1) * tm + Math.sin(ang) * off, mz = r.z1 + (r.z2 - r.z1) * tm - Math.cos(ang) * off;
+              if (!isLand(cityKey, mx, mz)) continue;
+              const pm = new THREE.Mesh(new THREE.BoxGeometry(len / n + 0.02, 0.07, 0.95), paveMat);
+              pm.position.set(mx, LAND + 0.045, mz); pm.rotation.y = -ang; pm.receiveShadow = true; scene.add(pm);
+            }
+            continue;
+          }
           const m = new THREE.Mesh(new THREE.BoxGeometry(len, 0.07, 0.95), paveMat);
           m.position.set((r.x1 + r.x2) / 2 + Math.sin(ang) * off, LAND + 0.045, (r.z1 + r.z2) / 2 - Math.cos(ang) * off);
           m.rotation.y = -ang;
@@ -1174,16 +1228,17 @@ export function MapView(p: Props) {
     buildingMats.push(...landmarks.litMats);
     neonMats.push(...landmarks.neonMats);
     if (cityKey === "sz") {
-      // (某安金融中心 is now the 某安金融中心 location's own model)
+      // (平安金融中心 is now the 平安金融中心 location's own model)
       // (深圳湾大桥 and 深中通道 are decor landmarks in landmarks.ts)
       // 华侨城 ferris wheel by 欢乐谷: rim, spokes and cabins, on two legs
       const wheel = landmarks.wheel(2.6, 0xf472b6, 0xfacc15);
-      wheel.position.set(-21.5, LAND + 3.4, -9.5);
+      const hv = getLocations("sz").find((l) => l.id === "happyvalley")!; // the wheel stands beside 欢乐谷
+      wheel.position.set(hv.x - 1.2, LAND + 3.4, hv.z - 2.2);
       scene.add(wheel);
       wheelGroups.push(wheel);
       for (const s of [-1, 1]) {
         const leg = new THREE.Mesh(new THREE.BoxGeometry(0.12, 3.6, 0.12), new THREE.MeshStandardMaterial({ color: 0xc9d3da, roughness: 0.4, metalness: 0.5 }));
-        leg.position.set(-21.5 + s * 0.5, LAND + 1.7, -9.5);
+        leg.position.set(hv.x - 1.2 + s * 0.5, LAND + 1.7, hv.z - 2.2);
         leg.rotation.z = s * 0.15;
         scene.add(leg);
       }
@@ -1209,7 +1264,7 @@ export function MapView(p: Props) {
       const tip = new THREE.Mesh(new THREE.ConeGeometry(0.22, 1.4, 6), new THREE.MeshStandardMaterial({ color: 0xf5b942, roughness: 0.4, metalness: 0.6 }));
       tip.position.y = 7.1;
       pagoda.add(tip);
-      pagoda.position.set(-16.2, LAND, 3.4);
+      pagoda.position.set(0.6, LAND, -1.2); // 泗洲塔, on 西湖's shore south-east of the lake location
       scene.add(pagoda);
     }
 
@@ -1218,6 +1273,7 @@ export function MapView(p: Props) {
     const rockMat = new THREE.MeshStandardMaterial({ color: 0x8a8578, roughness: 1, flatShading: true });
     for (const range of MOUNTAINS[cityKey]) {
       for (const pk of range.peaks) {
+        if (!isLand(cityKey, pk.x, pk.z)) continue; // hand-placed peak that now falls in real water
         const cone = new THREE.Mesh(new THREE.ConeGeometry(pk.r, pk.h, 7), pk.rock ? rockMat : mtnMat);
         cone.position.set(pk.x, LAND + pk.h / 2 - 0.15, pk.z);
         cone.rotation.y = hash(`${pk.x},${pk.z}`) % 6;
@@ -1267,7 +1323,7 @@ export function MapView(p: Props) {
         const real = sky[`${Math.round((gx + 36) / 2.8)},${Math.round((gz + 20) / 2.8)}`];
         const x = gx + (rnd() - 0.5) * 1.3;
         const z = gz + (rnd() - 0.5) * 1.3;
-        if (z > coastZ(cityKey, x) - 1.6) continue;
+        if (!isLand(cityKey, x, z, 1.6)) continue;
         if (nearLoc(x, z) || nearRoad(x, z) || nearMountain(x, z) || nearLake(x, z)) continue;
         if (real) {
           const [n, h90] = real;
@@ -1325,7 +1381,7 @@ export function MapView(p: Props) {
             const off = r.w / 2 + 1.85;
             const x = r.x1 + (r.x2 - r.x1) * t + Math.sin(ang) * off * side;
             const z = r.z1 + (r.z2 - r.z1) * t - Math.cos(ang) * off * side;
-            if (z > coastZ(cityKey, x) - 1.4) continue;
+            if (!isLand(cityKey, x, z, 1.4)) continue;
             if (nearLoc(x, z) || nearMountain(x, z) || nearLake(x, z)) continue;
             if (roads.some((o) => o !== r && (() => { const dx = o.x2 - o.x1; const dz = o.z2 - o.z1; const tt = Math.max(0, Math.min(1, ((x - o.x1) * dx + (z - o.z1) * dz) / (dx * dx + dz * dz))); return Math.hypot(x - (o.x1 + dx * tt), z - (o.z1 + dz * tt)) < o.w / 2 + 1.5; })())) continue;
             if (shopPts.some((s) => Math.hypot(s.x - x, s.z - z) < 2.3)) continue;
@@ -1367,7 +1423,7 @@ export function MapView(p: Props) {
     for (let i = 0; i < 1500 && treeSpots.length < (lite ? 160 : 430); i++) {
       const x = -37 + rnd() * 74;
       const z = -21 + rnd() * 36;
-      if (z > coastZ(cityKey, x) - 0.6) continue;
+      if (!isLand(cityKey, x, z, 0.6)) continue;
       if (nearLoc(x, z) || nearRoad(x, z) || nearMountain(x, z) || nearLake(x, z)) continue;
       treeSpots.push({ x, z, s: 0.7 + rnd() * 0.8 });
     }
@@ -1663,6 +1719,19 @@ export function MapView(p: Props) {
       const lz = range.lz;
       const ly = range.ly ?? 8;
       chips.push({ el: d, kind: "road", w: 0, h: 0, lastText: "", visible: true, clampDx: 0, clampDy: 0, getPos: () => ({ x: lx, y: LAND + ly, z: lz }) });
+    }
+    {
+      // name the land across the border, on its biggest piece
+      const big = TERRAIN[cityKey].ACROSS.map((p) => p[0]!).sort((a, b) => b.length - a.length)[0];
+      const across = { sz: "🇭🇰 香港 · 过关才能去", hk: "深圳 · 过关才能去", hz: "邻市：深圳 · 东莞 · 河源 · 汕尾" }[cityKey];
+      if (big) {
+        let ax = 0, az = 0; for (const [x, z] of big) { ax += x; az += z; } ax /= big.length; az /= big.length;
+        const near = big.reduce((m, q) => (Math.hypot(q[0] - ax, q[1] - az) < Math.hypot(m[0] - ax, m[1] - az) ? q : m), big[0]!);
+        const lx = (ax * 2 + near[0]) / 3, lz = (az * 2 + near[1]) / 3;
+        const d = mkChip("", across);
+        d.style.cssText += "font:800 11px 'Noto Sans SC',sans-serif;padding:2px 10px;border-radius:999px;background:rgba(40,46,52,.78);color:#eef2f6;";
+        chips.push({ el: d, kind: "road", w: 0, h: 0, lastText: "", visible: true, clampDx: 0, clampDy: 0, getPos: () => ({ x: lx, y: LAND + 1.5, z: lz }) });
+      }
     }
     for (const r of roads) {
       if (!r.name || r.lx === undefined || r.lz === undefined) continue;
@@ -2773,8 +2842,24 @@ export function MapView(p: Props) {
       g.fillStyle = sea; g.fillRect(0, 0, W, H);
       g.fillStyle = "#476a4d";
       g.strokeStyle = "rgba(255,255,255,0.35)"; g.lineWidth = 2;
-      const lx = px(-38), ly = py(-24), lw = px(38) - lx, lh = py(14) - ly;
-      g.beginPath(); g.rect(lx, ly, lw, lh); g.fill(); g.stroke();
+      if (TERRAIN[cityKey].LAND.length) {
+        // the real islands and peninsulas, same polygons as the 3D land
+        for (const poly of TERRAIN[cityKey].LAND) {
+          g.beginPath();
+          for (const ring of poly) ring.forEach(([x, z], i) => (i ? g.lineTo(px(x), py(z)) : g.moveTo(px(x), py(z))));
+          g.fill("evenodd"); g.stroke();
+        }
+        g.fillStyle = "#3a4a44";
+        for (const poly of TERRAIN[cityKey].ACROSS) {
+          g.beginPath();
+          for (const ring of poly) ring.forEach(([x, z], i) => (i ? g.lineTo(px(x), py(z)) : g.moveTo(px(x), py(z))));
+          g.fill("evenodd");
+        }
+        g.fillStyle = "#476a4d";
+      } else {
+        const lx = px(-38), ly = py(-24), lw = px(38) - lx, lh = py(14) - ly;
+        g.beginPath(); g.rect(lx, ly, lw, lh); g.fill(); g.stroke();
+      }
       // road corridors
       g.strokeStyle = "rgba(255,240,200,0.4)"; g.lineCap = "round";
       for (const r of ROADS[cityKey]) {

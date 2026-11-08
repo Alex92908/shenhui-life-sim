@@ -10,6 +10,8 @@ import numpy as np
 HERE = Path(__file__).resolve().parent; ROOT = HERE.parent.parent
 sys.path.insert(0, str(ROOT / "tools/hz"))
 import gen_hz_places as hz  # noqa: E402
+sys.path.insert(0, str(ROOT / "tools/hk"))
+import gen_hk_places as hk  # noqa: E402
 
 # --- Shenzhen: real km -> map (same fit as tools/hz/gen_areas.py) ---
 src = (ROOT / "client/src/places-sz.ts").read_text()
@@ -33,12 +35,16 @@ def sz_xy(lat, lon):
 
 STEP = 2.8
 data = json.loads((HERE / "buildings-osm.json").read_text())
+import proj  # noqa: E402
+from shapely.geometry import Point
+from shapely.prepared import prep
+ON_LAND = {ck: prep(proj._land(ck).buffer(0.2)) for ck in ("sz", "hz", "hk")}
 out = {}
-for ck in ("sz", "hz"):
+for ck in ("sz", "hz", "hk"):
     cells = {}
     for b in data.get(ck, []):
-        x, z = sz_xy(b["lat"], b["lon"]) if ck == "sz" else hz.to_xy(*hz.to_km(b["lat"], b["lon"]))
-        if abs(x) > 38 or z < -22 or z > 16: continue
+        x, z = sz_xy(b["lat"], b["lon"]) if ck == "sz" else hk.to_xy(*hk.to_km(b["lat"], b["lon"])) if ck == "hk" else hz.to_xy(*hz.to_km(b["lat"], b["lon"]))
+        if abs(x) > 38 or z < -22 or not ON_LAND[ck].contains(Point(x, z)): continue
         key = f"{round((x + 36) / STEP)},{round((z + 20) / STEP)}"
         cells.setdefault(key, []).append(b["h"])
     out[ck] = {k: [len(v), int(np.percentile(v, 90))] for k, v in cells.items()}
@@ -49,4 +55,4 @@ body = ",\n".join(f'  {ck}: {json.dumps(out[ck], separators=(",", ":"))}' for ck
     "   Real skyline per filler grid cell (2.8 map units, origin -36/-20):\n"
     "   [number of buildings >= 24 m, their 90th-percentile height in m].\n"
     "   Data © OpenStreetMap contributors, ODbL. */\n"
-    "export const SKYLINE: Record<\"sz\" | \"hz\", Record<string, [number, number]>> = {\n" + body + ",\n};\n")
+    "export const SKYLINE: Record<\"sz\" | \"hz\" | \"hk\", Record<string, [number, number]>> = {\n" + body + ",\n};\n")

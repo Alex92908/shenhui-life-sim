@@ -58,23 +58,46 @@ def coast_z(x: float) -> float:
     return 14.6 + math.sin(x * 0.09 + 2) * 1.2 + math.sin(x * 0.21 + 0.6) * 0.7
 
 A = [(k, x, z, *to_km(lat, lon)) for k, (x, z, lat, lon) in ANCHORS.items()]
-def to_xy(X: float, Y: float) -> tuple[float, float]:
+def to_xy_raw(X: float, Y: float) -> tuple[float, float]:
+    """Real km -> map, no clamping (coastlines, rivers)."""
     near = sorted(A, key=lambda a: math.dist((a[3], a[4]), (X, Y)))[:4]
     ws = [1 / max(0.3, math.dist((a[3], a[4]), (X, Y))) ** 3 for a in near]
     x = sum(w * (a[1] + S * (X - a[3])) for w, a in zip(ws, near)) / sum(ws)
     z = sum(w * (a[2] + S * (Y - a[4])) for w, a in zip(ws, near)) / sum(ws)
+    return x, z
+def to_xy(X: float, Y: float) -> tuple[float, float]:
+    x, z = to_xy_raw(X, Y)
     x = max(-36.5, min(36.5, x))
     z = max(-21, min(coast_z(x) - 1.0, z))
     return x, z
+
+# ---- the real projection (tools/terrain/proj.py) replaces the old anchor warp ----
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "terrain"))
+import proj  # noqa: E402
+def _ll(X: float, Y: float) -> tuple[float, float]:
+    return LAT0 - Y / 110.57, LON0 + X / KX
+def to_xy_raw(X: float, Y: float) -> tuple[float, float]:
+    return proj.xy("hz", *_ll(X, Y))
+def to_xy(X: float, Y: float) -> tuple[float, float]:
+    return proj.land_snap("hz", *to_xy_raw(X, Y))
+def coast_z(x: float) -> float:
+    return 99.0
+def _game_locs():
+    s = (ROOT / "client/src/data.ts").read_text(); b = s[s.index("const HZ_LOCS"):]; b = b[:b.index("\n];")]
+    return [(float(a), float(c)) for a, c in re.findall(r"x: (-?[\d.]+), z: (-?[\d.]+)", b)]
 
 def main() -> None:
     raw = json.loads((HERE / "hz-osm-places.json").read_text())["places"]
     loc_names = ["西湖", "罗浮山", "南昆山", "象头山", "红花湖", "惠州市图书馆", "惠州市第一人民医院", "华贸", "合江楼", "高榜山",
                  "东江公园", "惠州市植物园", "惠州植物园", "双月湾", "巽寮湾", "海龟湾", "大亚湾黄金海岸", "三角洲", "平潭机场", "惠州南站", "淡水老城"]
+    import landpoly
+    from shapely.geometry import Point
+    hzb = landpoly.land_ll("hz")[0].buffer(0.01)  # Huizhou only (the area also covers Shenzhen and Dongguan)
     seen: dict[str, dict] = {}
     for p in raw:
         t = p["tags"]
         if any(k in t for k in ("railway", "aeroway", "office", "landuse")): continue
+        if not hzb.contains(Point(p["lon"], p["lat"])): continue
         k = kind_of(t)
         name = t["name"].strip()
         if not k or SKIP_NAME.search(name) or re.search(r"检查点|终点|起点|界址|，", name) or len(name) < 2 or not re.search(r"[一-鿿]", name): continue
@@ -101,7 +124,7 @@ def main() -> None:
     chosen = []
     for k, rs in by.items():
         rs.sort(key=lambda r: -r["score"]); chosen += rs[: caps[k]]
-    rows, placed = [], [(x, z) for (x, z, _a, _b) in ANCHORS.values()]
+    rows, placed = [], _game_locs()
     st_km = {n: to_km(*ll) for n, ll in STATIONS.items()}
     for r in sorted(chosen, key=lambda r: -r["score"]):
         x, z = to_xy(r["X"], r["Y"])
@@ -111,7 +134,7 @@ def main() -> None:
             if not hit: break
             ang = (zlib.crc32(r["id"].encode()) % 360) * math.pi / 180
             x, z = x + math.cos(ang) * 0.7, z + math.sin(ang) * 0.7
-            z = min(coast_z(x) - 1.0, z)
+            x, z = proj.land_snap("hz", x, z)
         placed.append((x, z))
         st = min(st_km, key=lambda n: math.dist(st_km[n], (r["X"], r["Y"])))
         rows.append((r, x, z, st, math.dist(st_km[st], (r["X"], r["Y"]))))
