@@ -287,6 +287,28 @@ const realWeatherResponse = z.object({
 
 type StoredWeather = Omit<z.infer<typeof realWeatherResponse>, "stale">;
 
+
+/* ---- 组局 parties ---- */
+type PartyMember = { pid: string; id: string; name: string; emoji: string; score: number | null };
+const PARTY_MAX = 6;
+const PARTY_OPEN_MS = 30 * 60_000;
+const PARTY_PLAY_MS = 10 * 60_000;
+const partyShape = z.object({
+  id: z.number(), hostId: z.string(), hostName: z.string(), cityKey: z.string(), locId: z.string(), locName: z.string(),
+  activityId: z.string(), status: z.string(), createdAt: z.string(), startedAt: z.string().nullable(),
+  members: z.array(z.object({ id: z.string(), name: z.string(), emoji: z.string(), score: z.number().nullable(), buddy: z.number() })),
+});
+const parseMembers = (raw: string): PartyMember[] => { try { const v = JSON.parse(raw); return Array.isArray(v) ? v : []; } catch { return []; } };
+const pairKey = (x: string, y: string) => (x < y ? [x, y] as const : [y, x] as const);
+async function bumpBuddies(db: ReturnType<Ctx["db"]>, members: PartyMember[]) {
+  const played = members.filter((m) => m.score !== null);
+  for (let i = 0; i < played.length; i++) for (let j = i + 1; j < played.length; j++) {
+    const [a, b] = pairKey(played[i]!.pid, played[j]!.pid);
+    await (db as any).insert(schema.buddies).values({ a, b, n: 1, lastAt: new Date() })
+      .onConflictDoUpdate({ target: [schema.buddies.a, schema.buddies.b], set: { n: sql`${schema.buddies.n} + 1`, lastAt: new Date() } });
+  }
+}
+
 export const Actions = {
   joinWorld: defineAction({
     description:
@@ -492,6 +514,137 @@ export const Actions = {
       if (!g) return { ok: false, gift: null };
       await db.update(schema.gifts).set({ claimed: 1 }).where(eq(schema.gifts.id, g.id));
       return { ok: true, gift: { id: g.id, fromId: pubOf(g.fromId), fromName: g.fromName, kind: g.kind, company: g.company, createdAt: g.createdAt.toISOString() } };
+    },
+  }),
+
+  getParties: defineAction({
+    description: "Lists open / running / just-finished parties (组局) in a city, with how often the caller has played with each member.",
+    request: z.object({ cityKey: z.enum(["sz", "hz"]), playerId: z.string().min(4).max(64) }),
+    response: z.object({ parties: z.array(partyShape) }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const now = Date.now();
+      const rows = await db.select().from(schema.parties)
+        .where(and(eq(schema.parties.cityKey, args.cityKey), gte(schema.parties.createdAt, new Date(now - 2 * 3600_000))))
+        .orderBy(desc(schema.parties.id)).limit(40);
+      const out: z.infer<typeof partyShape>[] = [];
+      for (const r of rows) {
+        let status = r.status;
+        const members = parseMembers(r.members);
+        if (status === "open" && now - r.createdAt.getTime() > PARTY_OPEN_MS) { status = "expired"; await db.update(schema.parties).set({ status }).where(eq(schema.parties.id, r.id)); }
+        if (status === "playing" && r.startedAt && now - r.startedAt.getTime() > PARTY_PLAY_MS) { status = "done"; await db.update(schema.parties).set({ status }).where(eq(schema.parties.id, r.id)); await bumpBuddies(db, members); }
+        if (status === "expired" || status === "cancelled") continue;
+        if (status === "done" && now - (r.startedAt?.getTime() ?? 0) > 20 * 60_000) continue;
+        const buddyN: number[] = [];
+        for (const m of members) {
+          if (m.pid === args.playerId) { buddyN.push(0); continue; }
+          const [a, b] = pairKey(m.pid, args.playerId);
+          const [row] = await db.select().from(schema.buddies).where(and(eq(schema.buddies.a, a), eq(schema.buddies.b, b))).limit(1);
+          buddyN.push(row?.n ?? 0);
+        }
+        out.push({ id: r.id, hostId: pubOf(r.hostId), hostName: r.hostName, cityKey: r.cityKey, locId: r.locId, locName: r.locName, activityId: r.activityId, status,
+          createdAt: r.createdAt.toISOString(), startedAt: r.startedAt?.toISOString() ?? null,
+          members: members.map((m, i) => ({ id: m.id, name: m.name, emoji: m.emoji, score: m.score, buddy: buddyN[i] ?? 0 })) });
+      }
+      return { parties: out };
+    },
+  }),
+
+  createParty: defineAction({
+    description: "Opens a party (组局) for an activity at a place; other players in the city can join.",
+    request: z.object({ playerId: z.string().min(4).max(64), cityKey: z.enum(["sz", "hz"]), locId: z.string().max(80), locName: z.string().max(40), activityId: z.string().max(40), title: z.string().max(30) }),
+    response: z.object({ ok: z.boolean(), id: z.number().optional(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const [me] = await db.select().from(schema.players).where(eq(schema.players.id, args.playerId)).limit(1);
+      if (!me) return { ok: false, error: "先进城再组局" };
+      const recent = await db.select({ n: sql<number>`count(*)` }).from(schema.parties).where(and(eq(schema.parties.hostId, me.id), gte(schema.parties.createdAt, new Date(Date.now() - 3600_000))));
+      if (Number(recent[0]?.n ?? 0) >= 12) return { ok: false, error: "组局太频繁了，歇一会儿" };
+      await db.update(schema.parties).set({ status: "cancelled" }).where(and(eq(schema.parties.hostId, me.id), eq(schema.parties.status, "open")));
+      const members: PartyMember[] = [{ pid: me.id, id: pubOf(me.id), name: me.name, emoji: me.emoji, score: null }];
+      const [row] = await db.insert(schema.parties).values({ hostId: me.id, hostName: me.name, cityKey: args.cityKey, locId: args.locId, locName: cleanText(args.locName).slice(0, 40), activityId: args.activityId, members: JSON.stringify(members), status: "open", createdAt: new Date() }).returning();
+      await db.insert(schema.feedEvents).values({ playerId: me.id, playerName: me.name, kind: "life", text: `在${cleanText(args.locName)}组了个局：${cleanText(args.title)}，快来一起！`, createdAt: new Date() });
+      dropWorldCache(); ctx.invalidateQueries();
+      return { ok: true, id: row?.id };
+    },
+  }),
+
+  joinParty: defineAction({
+    description: "Joins an open party; leaves any other open party the player was in.",
+    request: z.object({ playerId: z.string().min(4).max(64), partyId: z.number().int() }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const [me] = await db.select().from(schema.players).where(eq(schema.players.id, args.playerId)).limit(1);
+      const [p] = await db.select().from(schema.parties).where(eq(schema.parties.id, args.partyId)).limit(1);
+      if (!me || !p) return { ok: false, error: "这个局不存在了" };
+      if (p.status !== "open") return { ok: false, error: "这个局已经开始或散了" };
+      const members = parseMembers(p.members);
+      if (members.some((m) => m.pid === me.id)) return { ok: true };
+      if (members.length >= PARTY_MAX) return { ok: false, error: "人满了" };
+      const others = await db.select().from(schema.parties).where(and(eq(schema.parties.cityKey, p.cityKey), eq(schema.parties.status, "open")));
+      for (const o of others) {
+        const ms = parseMembers(o.members);
+        if (o.id !== p.id && ms.some((m) => m.pid === me.id)) await db.update(schema.parties).set({ members: JSON.stringify(ms.filter((m) => m.pid !== me.id)) }).where(eq(schema.parties.id, o.id));
+      }
+      members.push({ pid: me.id, id: pubOf(me.id), name: me.name, emoji: me.emoji, score: null });
+      await db.update(schema.parties).set({ members: JSON.stringify(members) }).where(eq(schema.parties.id, p.id));
+      return { ok: true };
+    },
+  }),
+
+  leaveParty: defineAction({
+    description: "Leaves a party; if the host leaves an open party it is cancelled.",
+    request: z.object({ playerId: z.string().min(4).max(64), partyId: z.number().int() }),
+    response: z.object({ ok: z.boolean() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const [p] = await db.select().from(schema.parties).where(eq(schema.parties.id, args.partyId)).limit(1);
+      if (!p) return { ok: false };
+      if (p.hostId === args.playerId && p.status === "open") { await db.update(schema.parties).set({ status: "cancelled" }).where(eq(schema.parties.id, p.id)); return { ok: true }; }
+      const members = parseMembers(p.members).filter((m) => m.pid !== args.playerId || m.score !== null);
+      await db.update(schema.parties).set({ members: JSON.stringify(members) }).where(eq(schema.parties.id, p.id));
+      return { ok: true };
+    },
+  }),
+
+  startParty: defineAction({
+    description: "The host starts the party: every member now plays the mini-game.",
+    request: z.object({ playerId: z.string().min(4).max(64), partyId: z.number().int() }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const [p] = await db.select().from(schema.parties).where(eq(schema.parties.id, args.partyId)).limit(1);
+      if (!p || p.hostId !== args.playerId) return { ok: false, error: "只有发起人能开始" };
+      if (p.status !== "open") return { ok: false, error: "已经开始了" };
+      await db.update(schema.parties).set({ status: "playing", startedAt: new Date() }).where(eq(schema.parties.id, p.id));
+      return { ok: true };
+    },
+  }),
+
+  submitPartyScore: defineAction({
+    description: "Submits the caller's mini-game score for a running party; the party finishes once everyone has played.",
+    request: z.object({ playerId: z.string().min(4).max(64), partyId: z.number().int(), score: z.number().min(0).max(1) }),
+    response: z.object({ ok: z.boolean(), done: z.boolean() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const [p] = await db.select().from(schema.parties).where(eq(schema.parties.id, args.partyId)).limit(1);
+      if (!p || p.status !== "playing") return { ok: false, done: p?.status === "done" };
+      const members = parseMembers(p.members);
+      const m = members.find((x) => x.pid === args.playerId);
+      if (!m || m.score !== null) return { ok: false, done: false };
+      m.score = Math.round(args.score * 100) / 100;
+      const done = members.every((x) => x.score !== null);
+      await db.update(schema.parties).set({ members: JSON.stringify(members), ...(done ? { status: "done" } : {}) }).where(eq(schema.parties.id, p.id));
+      if (done) {
+        await bumpBuddies(db, members);
+        if (members.length > 1) {
+          const best = [...members].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))[0]!;
+          await db.insert(schema.feedEvents).values({ playerId: p.hostId, playerName: p.hostName, kind: "life", text: `和${members.filter((x) => x.pid !== p.hostId).map((x) => x.name).join("、")}在${p.locName}玩了一局，第一名：${best.name}`, createdAt: new Date() });
+          dropWorldCache();
+        }
+      }
+      return { ok: true, done };
     },
   }),
 

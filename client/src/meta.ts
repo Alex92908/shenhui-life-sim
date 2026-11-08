@@ -29,6 +29,8 @@ export interface Meta {
   giftsSent: number;
   eventsSeen: string[];
   /** 深漂档案：跨局积累的档案点和已解锁 / 本局带上的传承 */
+  /** 图鉴：鱼、娃娃、签文、登顶……（跨局保留，值 = 收集次数） */
+  collect: Record<string, number>;
   legacy: { pts: number; total: number; owned: string[]; equipped: string[]; history: { title: string; pts: number; day: string }[] };
 }
 
@@ -38,6 +40,7 @@ const blank = (): Meta => ({
   streak: { last: "", count: 0, best: 0, claimed: "" },
   week: { key: "", prog: {}, claimed: [] },
   runs: 0, giftsSent: 0, eventsSeen: [],
+  collect: {},
   legacy: { pts: 0, total: 0, owned: [], equipped: [], history: [] },
 });
 
@@ -58,6 +61,7 @@ export function loadMeta(): Meta {
       runs: typeof m.runs === "number" ? m.runs : 0,
       giftsSent: typeof m.giftsSent === "number" ? m.giftsSent : 0,
       eventsSeen: arr(m.eventsSeen),
+      collect: m.collect && typeof m.collect === "object" && !Array.isArray(m.collect) ? Object.fromEntries(Object.entries(m.collect).filter(([, v]) => typeof v === "number")) : {},
       legacy: m.legacy && typeof m.legacy === "object" ? {
         pts: typeof m.legacy.pts === "number" ? m.legacy.pts : 0,
         total: typeof m.legacy.total === "number" ? m.legacy.total : 0,

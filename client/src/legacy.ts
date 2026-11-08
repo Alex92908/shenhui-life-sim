@@ -21,7 +21,7 @@ export const PERKS: Perk[] = [
 export const perkById = (id: string) => PERKS.find((p) => p.id === id) ?? null;
 
 /** 档案点 a finished run earns. */
-export function runPoints(r: { reason: "done" | "debt"; money: number; goal: number; careerIdx: number; bigCo: boolean; stories: number }): { pts: number; parts: string[] } {
+export function runPoints(r: { reason: "done" | "debt"; money: number; goal: number; careerIdx: number; bigCo: boolean; stories: number; romance?: number; buddies?: number }): { pts: number; parts: string[] } {
   const parts: string[] = [];
   let pts: number;
   if (r.reason === "debt" || r.money < -500) { pts = 1; parts.push("被请出门 +1"); }
@@ -32,5 +32,7 @@ export function runPoints(r: { reason: "done" | "debt"; money: number; goal: num
   if (r.careerIdx > 0) { pts += r.careerIdx; parts.push(`职级 +${r.careerIdx}`); }
   if (r.bigCo) { pts += 1; parts.push("进过大厂 +1"); }
   if (r.stories > 0) { pts += r.stories * 2; parts.push(`街坊故事 ${r.stories} 个 +${r.stories * 2}`); }
+  if ((r.romance ?? 0) >= 2) { pts += 2; parts.push("收获爱情 +2"); }
+  if ((r.buddies ?? 0) > 0) { const b = Math.min(5, r.buddies ?? 0); pts += b; parts.push(`和真人组局 ${r.buddies} 次 +${b}`); }
   return { pts, parts };
 }

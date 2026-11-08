@@ -18,7 +18,7 @@ type AppId, type CityKey, type Loc, type TransportModeId, type MetroRoute
 } from "./data";
 import { pickEvent, type GameEvent } from "./events";
 import {
-generateDailyPosts, authorReply, chatReply, greetLine, memOf, relLabel, moodEmoji, moodWord, personaOf, scheduleOf,
+generateDailyPosts, authorReply, chatReply, greetLine, hashStr, memOf, relLabel, moodEmoji, moodWord, personaOf, scheduleOf,
 type ChatAction, type MemMap, type NpcPost, type PlayerNews,
 } from "./npc";
 import { MapView } from "./MapView";
@@ -31,6 +31,9 @@ import { DAY_START, DAY_END, actionMinutes, metroMinutes, clockStr, durLabel, ti
 import { PERKS, MAX_EQUIP, perkById, runPoints } from "./legacy";
 import { STORIES, PART, storyOf, storyStatus, type StoryFx, type StoryProg } from "./stories";
 import { storyEN } from "./stories-en";
+import { MiniGame, type GameSpec, type GameResult } from "./MiniGame";
+import { CAT_LABEL, DATE_QUESTIONS, DROP_SETS, ROMANCE_STAGES, activitiesAt, activityById, dropById, romanceStage, type Activity, type ActCat } from "./activities";
+import { resolveActivity, isRushHour } from "./playlogic";
 
 /** Unique station names of a city with the lines serving each — the index
     behind the map search box. */
@@ -137,6 +140,11 @@ workDay?: number; otDay?: number;
 /* 街坊连续剧进度 + 本局带上的深漂档案传承 */
 story?: Record<string, StoryProg>;
 perks?: string[];
+/* 独立玩法：驾照（科目 0–3）、租车日 / 自己的车、宿醉、案底、恋爱、组局次数 */
+license?: number; licDay?: number; carDay?: number; carOwned?: boolean;
+hangover?: boolean; record?: number;
+romance?: Record<string, number>; cohabit?: boolean;
+actCount?: number; partyPlays?: number;
 }
 
 interface Profile {
@@ -225,6 +233,11 @@ if (gs.furniture.length >= 3) badges.push("🛋️ 安家小能手");
 if (computeComfort(gs) >= 80) badges.push("🏠 舒适小窝");
 if ((gs.metroRides ?? 0) >= 5) badges.push(gs.cityKey === "hz" ? "🚆 城轨达人" : "🚇 地铁达人");
 if ((gs.visitedScenic ?? []).length >= 5) badges.push("📸 风景收藏家");
+if ((gs.actCount ?? 0) >= 15) badges.push("🎮 会玩的人");
+if ((gs.partyPlays ?? 0) >= 3) badges.push("🤝 组局达人");
+if (Object.values(gs.romance ?? {}).some((v) => v >= 55)) badges.push("💕 脱单成功");
+if ((gs.license ?? 0) >= 3) badges.push("🪪 有证司机");
+if ((gs.record ?? 0) > 0) badges.push("🚓 进过派出所");
 return { title, quote, badges};
 }
 
@@ -707,6 +720,11 @@ const dailyShownRef = useRef(0);
 const [chatInput, setChatInput] = useState("");
 const [result, setResult] = useState<ReturnType<typeof computeResult> | null>(null);
 const [legacyGain, setLegacyGain] = useState<{ pts: number; parts: string[] } | null>(null);
+/* 独立玩法：正在玩的小游戏、约会对象选择、组局广场、组局结果 */
+const [play, setPlay] = useState<{ act: Activity; spec: GameSpec; partyId?: number; mate?: string } | null>(null);
+const [datePick, setDatePick] = useState<Activity | null>(null);
+const [partyOpen, setPartyOpen] = useState(false);
+const [partyResult, setPartyResult] = useState<number | null>(null);
 const [lifeAnim, setLifeAnim] = useState<{ kind: LifeKind; idx: number } | null>(null);
 const lifeAfterRef = useRef<(() => void) | null>(null);
 /* NPC simulation: who you're chatting with + the running conversation */
@@ -733,6 +751,14 @@ queryFn: () => api.getWorld({ cityKey}),
 refetchInterval: phase === "game"? 20000: 15000,
 });
 const world: World | undefined = worldQuery.data?.world;
+/* 组局广场：同城的局，4 秒刷新一次（世界快照有缓存，组局要更及时） */
+const partiesQuery = useQuery({
+queryKey: ["parties", cityKey, profile?.playerId ?? ""],
+queryFn: () => api.getParties({ cityKey, playerId: profile!.playerId }),
+enabled: !!profile && phase === "game",
+refetchInterval: 4000,
+});
+const parties = partiesQuery.data?.parties ?? [];
 
 /* Real weather for the city being played: drives the HUD readout, the
    raincoat prompts, the wet-weather travel penalty and the 3D sky. */
@@ -1082,6 +1108,10 @@ restDay: num(g.restDay, 0), restN: num(g.restN, 0),
 workDay: num(g.workDay, 0), otDay: num(g.otDay, 0),
 story: g.story && typeof g.story === "object" && !Array.isArray(g.story) ? Object.fromEntries(Object.entries(g.story as Record<string, unknown>).filter(([k, v]) => storyOf(k) && v && typeof v === "object").map(([k, v]) => { const o = v as Record<string, unknown>; return [k, { ch: num(o.ch, 0), day: num(o.day, 0), flags: strArr(o.flags), ...(typeof o.done === "string" ? { done: o.done } : {}) }]; })) : {},
 perks: strArr(g.perks).filter((id) => perkById(id)),
+license: num(g.license, 0), licDay: num(g.licDay, 0), carDay: num(g.carDay, 0), carOwned: g.carOwned === true,
+hangover: g.hangover === true, record: num(g.record, 0),
+romance: g.romance && typeof g.romance === "object" && !Array.isArray(g.romance) ? Object.fromEntries(Object.entries(g.romance as Record<string, unknown>).filter(([k, v]) => NPCS.some((n) => n.name === k) && typeof v === "number")) as Record<string, number> : {},
+cohabit: g.cohabit === true, actCount: num(g.actCount, 0), partyPlays: num(g.partyPlays, 0),
 };
 return { profile: { playerId: prof.playerId, name: prof.name }, gs };
 };
@@ -1230,8 +1260,15 @@ else if (mode === "bike") { cost = bikeFare(dist); energyCost = Math.round(dist 
 else if (mode === "bus") { cost = busFare(dist); energyCost = Math.max(1, Math.round(dist * 0.12)); effMode = "bus"; modeLabel = "公交"; if (s0.money < cost) cost = 0; }
 else if (mode === "ferry") { cost = 60; energyCost = 4; effMode = "ferry"; modeLabel = "轮渡"; if (s0.money < cost) { showToast(`轮渡船票要 ¥${cost}，钱不够，改步行了。`); cost = 0; energyCost = Math.round(dist * 0.5); effMode = "walk"; modeLabel = "步行"; } }
 else if (mode === "flight") { cost = 420; energyCost = 6; effMode = "flight"; modeLabel = "飞机"; if (s0.money < cost) { showToast(`机票要 ¥${cost}，钱不够，改步行了。`); cost = 0; energyCost = Math.round(dist * 0.5); effMode = "walk"; modeLabel = "步行"; } }
+else if (mode === "car") {
+  const hasCar = (s0.license ?? 0) >= 3 && (s0.carOwned || s0.carDay === s0.day);
+  if (!hasCar) { showToast((s0.license ?? 0) < 3 ? "还没有驾照：去图书馆/车站的「驾校练车」考三科。这次改打车。" : "今天没有车：去车站「租一天车」。这次改打车。"); cost = Math.round(taxiFare(dist) * (evRef.current.taxiMul ?? 1)); energyCost = 1; effMode = "taxi"; modeLabel = "打车"; if (s0.money < cost) { cost = 0; energyCost = Math.round(dist * 0.5); effMode = "walk"; modeLabel = "步行"; } }
+  else { cost = Math.round(5 + dist * 0.5); energyCost = 2; effMode = "car"; modeLabel = "自驾"; }
+}
 else { energyCost = Math.round(dist * 0.5); }
-const tripMin = Math.round(etaMinutes(effMode, dist) * ((s0.perks ?? []).includes("route") ? 0.8 : 1));
+const jam = ["car", "taxi", "bus"].includes(effMode) && isRushHour(nowMin(s0));
+if (jam) showToast(`🚦 高峰期，路上堵车，${modeLabel}要多花一半时间。`);
+const tripMin = Math.round(etaMinutes(effMode, dist) * ((s0.perks ?? []).includes("route") ? 0.8 : 1) * (jam ? 1.5 : 1));
 mutate((s) => { s.money -= cost; s.energy -= energyCost; s.minute = nowMin(s) + tripMin; });
 if (cost > 0) showToast(`${modeLabel}去${to.short}，-¥${cost}${energyCost ? `，能量 -${energyCost}` : ""}，预计约 ${etaMinutes(effMode, dist)} 分钟到。`);
 else showToast(`${modeLabel}去${to.short}，预计约 ${etaMinutes(effMode, dist)} 分钟到。${effMode === "walk" ? "换个更快的出行方式能省不少时间。" : ""}`);
@@ -1595,7 +1632,10 @@ if ((s.interviews ?? []).includes(key)) break;
 s.interviews = [...(s.interviews ?? []).slice(-60), key];
 s.energy -= 12;
 const gaps = companyGaps(co, s);
-if (co.formal && s.outfit !== "formal") {
+if ((s.record ?? 0) >= 2 || ((s.record ?? 0) >= 1 && co.formal)) {
+s.mood -= 6; s.xp += 1;
+msg = `${co.short}做了背景调查，发现你有违法记录，没有通过。好好过日子，案底会跟着你一整局。`;
+} else if (co.formal && s.outfit !== "formal") {
 s.mood -= 4; s.xp += 1;
 msg = `${co.short}的面试官上下打量了你一眼：「我们这儿面试要穿正装。」这次没过。去商场买身正装再来，经验 +1。`;
 } else if (gaps.length > 0) {
@@ -1943,6 +1983,7 @@ rentMsg += ` 理财收益 +${fmt(gain)}。`;
 }
 const lowMood = s.mood <= 5;
 const morning = morningEnergy(nowMin(s));
+if (s.hangover) { morning.energy = Math.max(30, morning.energy - 25); morning.note += " 宿醉头疼，能量 -25。"; s.hangover = false; }
 if (morning.note) rentMsg += ` ${morning.note}`;
 if (nowMin(s) <= 22 * 60) s.mood += 4;
 s.day += 1;
@@ -2009,7 +2050,7 @@ mutate((s) => { s.finished = true;});
 const prof = profileRef.current;
 if (prof) {
 const storiesDone = Object.values(s0.story ?? {}).filter((p) => p.done).length;
-const lp = runPoints({ reason, money: s0.money, goal: s0.goal, careerIdx: s0.careerIdx, bigCo: (s0.employer ?? "startup") !== "startup", stories: storiesDone });
+const lp = runPoints({ reason, money: s0.money, goal: s0.goal, careerIdx: s0.careerIdx, bigCo: (s0.employer ?? "startup") !== "startup", stories: storiesDone, romance: Math.max(0, ...Object.values(s0.romance ?? {}).map(romanceStage)), buddies: s0.partyPlays ?? 0 });
 setLegacyGain(lp);
 updMeta((m) => { m.runs += 1; m.legacy = { ...m.legacy, pts: m.legacy.pts + lp.pts, total: m.legacy.total + lp.pts, history: [{ title: r.title, pts: lp.pts, day: dateKey() }, ...m.legacy.history].slice(0, 20) }; });
 void api.finishSeason({
@@ -2304,6 +2345,131 @@ addLog(`${text}`);
       : `📖 ${story.title} · 第 ${prog.ch + 1} 章完${fxs ? `（${fxs}）` : ""}。${last ? `明天再来找${name}，看看结局。` : `后续明天揭晓——和${name}关系再近一些就能看下一章。`}`);
     addLog(`📖 ${name}：${ch.title}——你选了「${choice.label}」。`);
   };
+
+  /* ---------- 独立玩法：活动、组局、约会 ---------- */
+  const L2t = (x: [string, string]) => (en ? x[1] : x[0]);
+  const durL = (m: number) => (en ? (m < 60 ? `${m} min` : `${+(m / 60).toFixed(1)} h`) : durLabel(m));
+  const NO_PARTY = new Set(["license", "rentcar", "antiscam", "farejump", "scalp", "daijia", "rideshare"]);
+  const actBlock = (a: Activity, s: GameState, here: boolean): string | null => {
+    if (!here) return en ? "Get there first" : "到了才能玩";
+    const now = nowMin(s);
+    if (now >= DAY_END) return en ? "Past midnight — go home and sleep" : "过了午夜，回家睡觉吧";
+    if (a.hours && (now < a.hours[0] || now >= a.hours[1])) return en ? `Only ${clockStr(a.hours[0])}–${a.hours[1] >= DAY_END ? "24:00" : clockStr(a.hours[1])}` : `${clockStr(a.hours[0])}–${a.hours[1] >= DAY_END ? "24:00" : clockStr(a.hours[1])} 才能玩`;
+    if (a.cost > 0 && s.money < a.cost) return en ? `Needs ¥${a.cost}` : `要 ¥${a.cost}，钱不够`;
+    if (a.energy > 0 && s.energy < a.energy) return en ? "Not enough energy" : "能量不够了";
+    if (a.needs === "license" && (s.license ?? 0) < 3) return en ? "Needs a driving licence" : "要先考到驾照";
+    if (a.needs === "car" && !((s.license ?? 0) >= 3 && (s.carOwned || s.carDay === s.day))) return en ? "No car today — rent one at a station" : "今天没车：去车站租一天";
+    if (a.needs === "notLicensed" && (s.license ?? 0) >= 3) return en ? "You already have a licence" : "已经有驾照了";
+    if (a.id === "license" && s.licDay === s.day) return en ? "One test a day" : "一天只能考一科";
+    if (a.id === "rentcar" && (s.carOwned || s.carDay === s.day)) return en ? "You already have a car today" : "今天已经有车了";
+    return null;
+  };
+  const datePartners = (s: GameState) => NPCS.filter((n) => memOf(s.npcMem ?? {}, n.name).rel >= 15 || (s.romance?.[n.name] ?? 0) > 0);
+  const specFor = (a: Activity): GameSpec => (a.cat === "date" && a.game.type === "quiz" ? { ...a.game, questions: [...DATE_QUESTIONS].sort(() => Math.random() - 0.5).slice(0, 3) } : a.game);
+  const startActivity = (a: Activity, opts: { partyId?: number; mate?: string; locId?: string } = {}) => {
+    const s0 = gsRef.current; if (!s0 || play) return;
+    const here = !walking && !carriage && currentLocRef.current === (opts.locId ?? selectedLoc);
+    const why = actBlock(a, s0, here);
+    if (why) { showToast(`⏰ ${why}${en ? "." : "。"}`); return; }
+    if (a.needs === "date" && !opts.mate) {
+      if (datePartners(s0).length === 0) { showToast(en ? "Nobody to ask yet — get to know a neighbour first (bond +15)." : "还没有能约的人：先和街坊混熟（关系到 +15）。"); return; }
+      setDatePick(a); return;
+    }
+    setPlay({ act: a, spec: specFor(a), ...(opts.partyId ? { partyId: opts.partyId } : {}), ...(opts.mate ? { mate: opts.mate } : {}) });
+  };
+  const ACT_ANIM: Record<string, LifeKind> = { climb: "hike", trail: "hike", surf: "beach", dive: "beach", seawalk: "beach", "volunteer-clean": "beach", kite: "stroll", cycle: "stroll", photo: "stroll", run: "gym", hoops: "gym", ktv: "gathering", drink: "gathering", bar: "gathering", club: "gathering", bizktv: "gathering", livehouse: "gathering", mahjong: "gathering", jubensha: "gathering", skewers: "eat", dinner: "eat", teahouse: "eat", themedate: "coaster", claw: "shopping", catcafe: "shopping", movie: "shopping" };
+  const finishActivity = (r: GameResult) => {
+    const p = play; const s0 = gsRef.current; if (!p || !s0) return;
+    setPlay(null);
+    const a = p.act;
+    const loc = locById(currentLocRef.current);
+    const party = p.partyId ? parties.find((x) => x.id === p.partyId) : undefined;
+    const mates = party ? party.members.filter((m) => m.id !== myPubRef.current).length : 0;
+    const out = resolveActivity(a, r, { payMul: CITIES[s0.cityKey].payMul, mates, locId: loc.id, locName: en ? trText(loc.name) : loc.name });
+    let stageMsg = "";
+    mutate((s) => {
+      s.money += out.money - a.cost; s.earned += out.money; s.energy -= out.energy; s.mood += out.mood;
+      s.xp += out.xp; s.skill += out.skill; s.fit += out.fit; s.network += out.network;
+      s.minute = nowMin(s) + out.minutes;
+      s.actCount = (s.actCount ?? 0) + 1;
+      if (mates > 0) s.partyPlays = (s.partyPlays ?? 0) + 1;
+      if (out.drop?.food) s.groceries += 1;
+      if (a.id === "license") {
+        s.licDay = s.day;
+        if (out.passedLicense) { s.license = Math.min(3, (s.license ?? 0) + 1); stageMsg = s.license >= 3 ? (en ? "🪪 Licence acquired! Rent a car at a station, then pick \"Drive\" when travelling." : "🪪 拿到驾照了！去车站租车，出行就能选「自驾」。") : (en ? `🪪 Test ${s.license}/3 passed — next one tomorrow.` : `🪪 科目 ${s.license}/3 通过，明天考下一科。`); }
+      }
+      if (a.id === "rentcar") s.carDay = s.day;
+      if (p.mate) {
+        const before = romanceStage(s.romance?.[p.mate] ?? 0);
+        const pts = Math.max(0, (s.romance?.[p.mate] ?? 0) + out.romance);
+        s.romance = { ...(s.romance ?? {}), [p.mate]: pts };
+        const m = { ...memOf(s.npcMem ?? {}, p.mate) }; m.rel = Math.max(-100, Math.min(100, m.rel + out.rel)); m.lastDay = s.day; s.npcMem = { ...(s.npcMem ?? {}), [p.mate]: m };
+        const after = romanceStage(pts);
+        if (after > before) {
+          const st = ROMANCE_STAGES[after]!;
+          stageMsg = en ? `💕 You and ${trText(p.mate)}: ${st.name[1]}!` : `💕 你和${p.mate}：${st.name[0]}！`;
+          if (after >= 3 && !s.cohabit) { s.cohabit = true; s.rent = Math.round(s.rent / 20) * 10; s.baseRent = Math.round(s.baseRent / 20) * 10; stageMsg += en ? " Living together halves your rent." : "搬到一起住，房租减半。"; }
+          s.npcNews = [...(s.npcNews ?? []), { kind: "home" as const, text: after >= 3 ? `和${p.mate}住到了一起` : after >= 2 ? `和${p.mate}在一起了` : `和${p.mate}有点暧昧`, day: s.day }];
+        }
+      }
+      if (out.risk) {
+        const k = out.risk.kind;
+        if (k === "police") { s.money -= out.risk.fine; s.mood -= 15; s.record = (s.record ?? 0) + 1; s.minute = Math.max(nowMin(s), 23 * 60); }
+        else if (k === "injury") { s.energy -= 25; s.money -= out.risk.fine; s.mood -= 8; }
+        else if (k === "hangover") s.hangover = true;
+        else if (k === "scam") { s.money -= out.risk.fine; s.mood -= 12; }
+      }
+    });
+    let firstFind = false;
+    if (out.drop) { const key = out.drop.key; updMeta((m) => { firstFind = !m.collect[key]; m.collect = { ...m.collect, [key]: (m.collect[key] ?? 0) + 1 }; }); }
+    const fx = [out.money ? `+${fmt(out.money)}` : "", a.cost ? `-${fmt(a.cost)}` : "", out.mood ? `${en ? "Mood" : "心情"} ${out.mood > 0 ? "+" : ""}${out.mood}` : "",
+      out.xp ? `${en ? "XP" : "经验"} +${out.xp}` : "", out.skill ? `${en ? "Skill" : "技能"} +${out.skill}` : "", out.fit ? `${en ? "Fitness" : "体质"} +${out.fit}` : "", out.network ? `${en ? "Network" : "人脉"} +${out.network}` : ""].filter(Boolean).join(" · ");
+    const dropTxt = out.drop ? (en ? ` 🎁 ${out.drop.emoji} ${out.drop.name[1]}${firstFind ? " — new in your collection!" : ""}` : ` 🎁 ${out.drop.emoji} ${out.drop.name[0]}${firstFind ? "（图鉴新增！）" : ""}`) : "";
+    showToast(`${a.emoji} ${L2t(out.line)}${fx ? (en ? ` (${fx})` : `（${fx}）`) : ""}${dropTxt}`);
+    addLog(`${a.emoji} ${a.name[0]}：${out.line[0]}${out.drop ? ` 收获${out.drop.name[0]}。` : ""}`);
+    if (out.money) floatReward(`+${fmt(out.money)}`, "gold");
+    if (out.mood >= 6) floatReward(`${en ? "Mood" : "心情"} +${out.mood}`, "green");
+    if (out.drop) floatReward(`${out.drop.emoji} ${L2t(out.drop.name)}`, "blue");
+    let delay = 3600;
+    if (out.risk) { const rk = out.risk; window.setTimeout(() => showToast(`${{ police: "🚓", injury: "🩹", hangover: "🍺", scam: "💸" }[rk.kind]} ${L2t(rk.text)}${rk.fine ? ` -${fmt(rk.fine)}` : ""}${rk.kind === "police" ? (en ? " A record follows you: big companies' background checks may fail." : " 留下案底：大厂背调可能过不了。") : ""}`), delay); addLog(`⚠️ ${rk.text[0]}`); delay += 3600; }
+    if (stageMsg) window.setTimeout(() => showToast(stageMsg), delay);
+    if (out.drop && firstFind) { const hit = dropById(out.drop.key); if (hit && hit.item.rarity === 3) postFeed("life", `${a.name[0]}收获了稀有的${hit.item.name[0]}`); }
+    const anim = ACT_ANIM[a.id];
+    if (anim) playLifeAnim(anim);
+    if (p.partyId && profileRef.current) {
+      const pid = p.partyId;
+      setPartyResult(pid);
+      void api.submitPartyScore({ playerId: profileRef.current.playerId, partyId: pid, score: Math.round(out.score * 100) / 100 }).then(() => partiesQuery.refetch()).catch(() => {});
+    }
+  };
+  const hostParty = (a: Activity) => {
+    const s0 = gsRef.current; const prof = profileRef.current; if (!s0 || !prof) return;
+    const loc = locById(selectedLoc);
+    void api.createParty({ playerId: prof.playerId, cityKey: s0.cityKey, locId: loc.id, locName: loc.name, activityId: a.id, title: a.name[0] }).then((r) => {
+      if (!r.ok) { showToast(r.error ?? (en ? "Couldn't open the party." : "组局失败了。")); return; }
+      showToast(en ? `🎉 Party open: ${a.name[1]} at ${trText(loc.name)}. Everyone in the city can see it — start when you're ready; neighbours fill empty seats.` : `🎉 组局成功：在${loc.name}${a.name[0]}。同城玩家都能看到；人到了就开始，没人来街坊会来凑数。`);
+      void partiesQuery.refetch(); setPartyOpen(true);
+    }).catch(() => showToast(en ? "Network hiccup — try again." : "网络不太好，再试一次。"));
+  };
+  const joinPartyNow = (pt: (typeof parties)[number]) => {
+    const prof = profileRef.current; if (!prof) return;
+    void api.joinParty({ playerId: prof.playerId, partyId: pt.id }).then((r) => {
+      if (!r.ok) { showToast(r.error ?? ""); return; }
+      void partiesQuery.refetch();
+      if (currentLocRef.current !== pt.locId) { showToast(en ? `Joined! Heading to ${trText(pt.locName)}…` : `加入了！正在赶去${pt.locName}……`); setPartyOpen(false); setSelectedLoc(pt.locId); walkTo(pt.locId); }
+      else showToast(en ? "Joined! Wait for the host to start." : "加入了！等发起人开始。");
+    }).catch(() => {});
+  };
+  const leavePartyNow = (pt: (typeof parties)[number]) => { const prof = profileRef.current; if (!prof) return; void api.leaveParty({ playerId: prof.playerId, partyId: pt.id }).then(() => partiesQuery.refetch()); };
+  const startPartyNow = (pt: (typeof parties)[number]) => {
+    const prof = profileRef.current; if (!prof) return;
+    void api.startParty({ playerId: prof.playerId, partyId: pt.id }).then((r) => {
+      if (!r.ok) { showToast(r.error ?? ""); return; }
+      void partiesQuery.refetch().then(() => { const a = activityById(pt.activityId); if (a) { setPartyOpen(false); startActivity(a, { partyId: pt.id, locId: pt.locId }); } });
+    });
+  };
+  /* NPC companions for a party nobody joined: deterministic per party */
+  const ghostMates = (pid: number) => { const pool = NPCS.slice().sort((x, y) => ((hashStr(x.name + pid) % 97) - (hashStr(y.name + pid) % 97))); return pool.slice(0, 2).map((n, i) => ({ id: `npc-${n.name}`, name: n.name, emoji: n.emoji, score: ((hashStr(`${n.name}:${pid}:${i}`) % 70) + 25) / 100, buddy: 0 })); };
 
   const likeNpcPost = (postId: string) => {
     mutate((s) => {
@@ -3139,6 +3305,7 @@ return (
 <div className="mt-4 grid grid-cols-3 gap-2 text-center">
 {[
 ["最终存款", fmt(s.money)], ["存活天数", `${Math.min(s.day, 30)} 天`], ["上班", `${s.workCount} 次`],
+["玩过的活动", `${s.actCount ?? 0} 次`], ["和真人组局", `${s.partyPlays ?? 0} 次`], ["感情", (() => { const top = Object.entries(s.romance ?? {}).sort((x, y) => y[1] - x[1])[0]; return top ? `${top[0]} · ${ROMANCE_STAGES[romanceStage(top[1])]!.name[0]}` : "单身"; })()],
 ["总收入", fmt(s.earned)], ["交租", fmt(s.rentPaid)], ["最终心情", `${Math.round(s.mood)}`],
 ["职级", (CAREERS[s.careerIdx] ?? CAREERS[0]!).name], ["技能", `${s.skill} 点`], ["人脉", `${s.network} 人`],
 ["我的家", homeName(s)], ["舒适度", `${computeComfort(s)}`], ["峰会服务", `${s.apecCount} 次`], [s.cityKey === "hz" ? "坐城轨/高铁" : "坐地铁", `${s.metroRides ?? 0} 次`], ["风景打卡", `${(s.visitedScenic ?? []).length} / ${scenicTotal(s.cityKey)} 处`],
@@ -3257,6 +3424,7 @@ return (
 <span className="flex items-center gap-1 text-xs font-bold">⚡<span className="h-2 w-10 overflow-hidden rounded-full bg-[var(--surface2)]"><span className="block h-full bg-amber-500 transition-all" style={{ width: `${s.energy}%` }} /></span>{Math.round(s.energy)}</span>
 <span className="flex items-center gap-1 text-xs font-bold">😊<span className="h-2 w-10 overflow-hidden rounded-full bg-[var(--surface2)]"><span className="block h-full bg-emerald-500 transition-all" style={{ width: `${s.mood}%` }} /></span>{Math.round(s.mood)}</span>
 <span className={`chip ${nowMin(s) >= 22 * 60 ? "text-[var(--accent)]" : ""}`} title="一天从早上 8:00 到午夜：上班、出行、玩都花时间，过了午夜只能回家睡觉，熬夜第二天能量少">{`🕘 ${clockStr(nowMin(s))}${nowMin(s) >= DAY_END ? " · 该睡了" : ` · 剩 ${durLabel(DAY_END - nowMin(s))}`}`}</span>
+<button type="button" onClick={() => setPartyOpen(true)} className={`chip ${parties.some((pt) => pt.status === "open") ? "border-[var(--accent)] text-[var(--accent)]" : ""}`} title={en ? "Parties in this city: join other players" : "同城组局：和真人一起玩"}>🎉 {en ? "Parties" : "组局"} {parties.filter((pt) => pt.status === "open").length}</button>
 <span className="chip" title={iden.name}>{iden.emoji} {career.name} ×{career.mul}</span>
 {(() => { const co = employerHere(s); return co ? <span className="chip" title={co.culture}>{co.emoji} {co.short}</span> : null; })()}
 {meta.title && <span className="chip" style={{ borderColor: "var(--gold)", color: "var(--gold)" }}>🏅 {meta.title}</span>}
@@ -3577,6 +3745,31 @@ return (
 </button>
 ); })}
 </div>
+{(() => { const acts = activitiesAt(selLoc); if (!acts.length) return null; const openHere = parties.filter((pt) => pt.locId === selLoc.id && pt.status === "open"); const cats = [...new Set(acts.map((a) => a.cat))] as ActCat[]; return (
+<div className="mt-4">
+<p className="flex items-baseline justify-between gap-2"><span className="text-xs font-black tracking-wide">{en ? `🎮 Things to do here · ${acts.length}` : `🎮 在这里能玩 · ${acts.length} 个`}</span><span className="text-[11px] font-bold text-[var(--dim)]">{en ? "Play solo, or open a party" : "自己玩，或者组局等人"}</span></p>
+{openHere.map((pt) => { const a = activityById(pt.activityId); const mine = pt.members.some((m) => m.id === myId); return (
+<p key={pt.id} className="mt-2 flex items-center gap-2 rounded-[12px] border-2 border-[var(--accent)] bg-[var(--surface2)] px-3 py-2 text-xs font-bold"><span className="min-w-0 flex-1">🎉 {en ? `Party here: ${a?.name[1] ?? ""} · ${pt.members.map((m) => m.name).join(", ")}` : `这里有个局：${a?.name[0] ?? ""} · ${pt.members.map((m) => m.name).join("、")}`}</span>
+{mine ? <span className="shrink-0">{en ? "You're in" : "已加入"}</span> : <button type="button" onClick={() => joinPartyNow(pt)} className="shrink-0 rounded-full bg-[var(--accent)] px-3 py-1 text-[11px] font-black text-white">{en ? "Join" : "加入"}</button>}</p> ); })}
+{cats.map((c) => (
+<div key={c} className="mt-2">
+<p className="text-[11px] font-black text-[var(--dim)]">{L2t(CAT_LABEL[c])}</p>
+<div className="mt-1 grid gap-2 sm:grid-cols-2">
+{acts.filter((a) => a.cat === c).map((a) => { const why = actBlock(a, s, arrived); const groupable = !NO_PARTY.has(a.id) && a.cat !== "date"; return (
+<div key={a.id} className="rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-2.5">
+<p className="text-sm font-black">{a.emoji} {L2t(a.name)}</p>
+<p className="mt-0.5 text-xs leading-relaxed text-[var(--dim)]">{L2t(a.desc)}</p>
+<p className="mt-1 text-[11px] font-bold text-[var(--accent2)]">{[a.cost ? `¥${a.cost}` : (en ? "Free" : "免费"), a.energy > 0 ? `${en ? "Energy" : "能量"} -${a.energy}` : a.energy < 0 ? `${en ? "Energy" : "能量"} +${-a.energy}` : "", `⏱ ${durL(a.min)}`, a.money ? `${en ? "earn up to" : "最多赚"} ¥${Math.round(a.money * CITIES[s.cityKey].payMul)}` : "", a.risk ? (en ? "⚠️ risky" : "⚠️ 有风险") : ""].filter(Boolean).join(" · ")}</p>
+{why && <p className="mt-0.5 text-[11px] font-bold text-[var(--accent)]">⏰ {why}</p>}
+<div className="mt-1.5 flex gap-1.5">
+<button type="button" disabled={!!why} onClick={() => startActivity(a)} className="flex-1 rounded-full bg-[var(--text)] py-1.5 text-xs font-black text-[var(--bg)] disabled:opacity-40">{a.needs === "date" ? (en ? "💕 Ask someone" : "💕 约人") : (en ? "▶ Play" : "▶ 自己玩")}</button>
+{groupable && <button type="button" disabled={!!why} onClick={() => hostParty(a)} className="flex-1 rounded-full border-2 border-[var(--text)] py-1.5 text-xs font-black disabled:opacity-40">{en ? "👥 Open a party" : "👥 组局"}</button>}
+</div>
+</div> ); })}
+</div>
+</div>
+))}
+</div> ); })()}
 {(() => {
 const svc = nearbyServices(s.cityKey, selLoc.id).filter((r) => r.id !== selLoc.id);
 if (svc.length === 0) return null;
@@ -3695,6 +3888,18 @@ return (
 </Fold>
 )}
 </div>
+{(() => { const col = meta.collect; const peaks = Object.keys(col).filter((k) => k.startsWith("peak:")); const total = DROP_SETS.reduce((n, st) => n + st.items.length, 0); const got = DROP_SETS.reduce((n, st) => n + st.items.filter((x) => col[x.id]).length, 0); return (
+<Fold title={en ? "📔 Collection book" : "📔 收藏图鉴"} summary={en ? `${got}/${total} found · ${peaks.length} summits · kept across runs` : `已收集 ${got}/${total} · 登顶 ${peaks.length} 座 · 跨局保留`} groupKey="collect">
+<div className="grid gap-3">
+{DROP_SETS.map((st) => (
+<div key={st.id}>
+<p className="text-xs font-black">{L2t(st.name)} <span className="text-[var(--dim)]">{st.items.filter((x) => col[x.id]).length}/{st.items.length}</span></p>
+<div className="mt-1 flex flex-wrap gap-1.5">{st.items.map((x) => <span key={x.id} title={col[x.id] ? L2t(x.name) : "？"} className={`chip ${x.rarity === 3 && col[x.id] ? "border-[var(--gold)]" : ""}`}>{col[x.id] ? `${x.emoji} ${L2t(x.name)}${col[x.id]! > 1 ? ` ×${col[x.id]}` : ""}` : `❓${"★".repeat(x.rarity)}`}</span>)}</div>
+</div>
+))}
+<div><p className="text-xs font-black">{en ? "🚩 Summits" : "🚩 登顶记录"} <span className="text-[var(--dim)]">{peaks.length}</span></p><p className="mt-1 text-xs text-[var(--dim)]">{peaks.length ? peaks.map((k) => { const l = resolveLoc(s.cityKey, k.slice(5)) ?? resolveLoc(s.cityKey === "sz" ? "hz" : "sz", k.slice(5)); return l ? (en ? trText(l.name) : l.name) : k.slice(5); }).join(" · ") : (en ? "Climb a mountain to plant your first flag." : "去爬座山，插下第一面旗。")}</p></div>
+</div>
+</Fold> ); })()}
 <Fold title="📓 我的日子 · 生活日志" summary={s.log[0] ? `最近：第 ${s.log[0].day} 天 · ${s.log[0].text}` : "还没有记录"} groupKey="my-log">
 <div className="grid max-h-[280px] gap-1.5 overflow-y-auto pr-0.5">
 {s.log.slice(0, 10).map((entry, i) => (
@@ -4202,6 +4407,74 @@ onLocate={(x, z, name) => { setMetroMapOpen(false); setMapFocus({ x, z, nonce: D
 <div className="flex gap-1">{scene.steps.map((_, i) => (<span key={i} className={`h-1.5 rounded-full transition-all ${i <= lifeAnim.idx ? "w-5 bg-[var(--accent)]" : "w-2.5 bg-[var(--line)]"}`} />))}</div>
 <button type="button" aria-label="跳过生活动画" onClick={finishLifeAnim} className="ml-auto rounded-full border-2 border-[var(--text)] px-4 py-2 text-xs font-black">跳过 ⏭</button>
 </div>
+</div>
+</div> ); })()}
+
+{/* ===== 小游戏 ===== */}
+{play && <MiniGame spec={play.spec} title={`${play.act.emoji} ${L2t(play.act.name)}${play.mate ? (en ? ` with ${trText(play.mate)}` : ` · 和${play.mate}`) : ""}`} en={en} onDone={finishActivity} onQuit={() => setPlay(null)} />}
+
+{/* ===== 约会：选人 ===== */}
+{datePick && (
+<div className="fixed inset-0 z-[66] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={en ? "Who to ask" : "约谁"}>
+<div className="rise max-h-[85vh] w-full max-w-md overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] p-4">
+<p className="flex items-center justify-between"><span className="font-display text-xl font-black">{datePick.emoji} {en ? `Who will you ask? · ${datePick.name[1]}` : `约谁一起？· ${datePick.name[0]}`}</span><button type="button" onClick={() => setDatePick(null)} className="rounded-full border px-3 py-1 text-xs font-black">✕</button></p>
+<p className="mt-1 text-xs text-[var(--dim)]">{en ? "Neighbours you're close to (bond +15). Good dates build romance: Dating → It's complicated → Partners → Living together (rent halved)." : "关系到 +15 的街坊都能约。约会顺利会积累感情：约会对象 → 暧昧 → 恋人 → 同居（房租减半）。"}</p>
+<div className="mt-3 grid gap-2">
+{datePartners(s).map((n) => { const pts = s.romance?.[n.name] ?? 0; const st = ROMANCE_STAGES[romanceStage(pts)]!; return (
+<button key={n.name} type="button" onClick={() => { const a = datePick; setDatePick(null); startActivity(a, { mate: n.name }); }} className="act-btn flex items-center gap-3 text-left">
+<span className="text-2xl">{n.emoji}</span>
+<span className="min-w-0 flex-1"><span className="block text-sm font-black">{en ? trText(n.name) : n.name} <span className="font-normal text-[var(--dim)]">· {en ? trText(n.job) : n.job}</span></span><span className="block text-[11px] text-[var(--dim)]">{en ? `Bond +${memOf(s.npcMem ?? {}, n.name).rel} · ${st.name[1]} (${pts})` : `关系 +${memOf(s.npcMem ?? {}, n.name).rel} · ${st.name[0]}（${pts}）`}</span></span>
+</button> ); })}
+</div>
+</div>
+</div>
+)}
+
+{/* ===== 组局广场 ===== */}
+{partyOpen && (
+<div className="fixed inset-0 z-[66] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={en ? "Parties" : "组局广场"}>
+<div className="rise max-h-[88vh] w-full max-w-lg overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] p-4">
+<p className="flex items-center justify-between gap-2"><span className="font-display text-xl font-black">{en ? `🎉 Parties · ${trText(CITIES[s.cityKey].name)}` : `🎉 组局广场 · ${CITIES[s.cityKey].name}`}</span><button type="button" onClick={() => setPartyOpen(false)} className="rounded-full border px-3 py-1 text-xs font-black">✕</button></p>
+<p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">{en ? "Open a party from any place's \"Things to do here\" with 👥. Everyone in the city sees it and can join. Playing together lifts everyone's rewards, adds network, and counts up your \"buddy\" streak with each player. Nobody came? Start anyway — neighbours fill the seats." : "在任意地点的「在这里能玩」点 👥 组局，同城玩家都能看到、加入。一起玩每人奖励都有加成、人脉 +1，还会累计和每个人的「搭子」次数。没人来？照样开始，街坊会来凑数。"}</p>
+<div className="mt-3 grid gap-2">
+{parties.length === 0 && <p className="rounded-[12px] bg-[var(--surface2)] p-3 text-center text-sm text-[var(--dim)]">{en ? "No parties right now. Be the first to open one!" : "现在还没有局。去开第一个吧！"}</p>}
+{parties.map((pt) => { const a = activityById(pt.activityId); const mine = pt.members.some((m) => m.id === myId); const host = pt.hostId === myId; const meM = pt.members.find((m) => m.id === myId); const there = currentLoc === pt.locId; return (
+<div key={pt.id} className={`rounded-[14px] border-2 p-3 ${mine ? "border-[var(--accent)]" : "border-[var(--line)]"}`}>
+<p className="flex items-center justify-between gap-2 text-sm font-black"><span>{a?.emoji} {a ? L2t(a.name) : pt.activityId} · {en ? trText(pt.locName) : pt.locName}</span><span className="shrink-0 text-[11px] text-[var(--dim)]">{pt.status === "open" ? (en ? "Waiting" : "等人中") : pt.status === "playing" ? (en ? "Playing" : "进行中") : (en ? "Finished" : "已结束")}</span></p>
+<div className="mt-1.5 flex flex-wrap gap-1.5">{pt.members.map((m) => <span key={m.id} className="chip">{m.emoji} {m.name}{m.id === myId ? (en ? " (you)" : "（你）") : ""}{m.buddy > 0 ? ` · 🤝×${m.buddy}` : ""}{m.score !== null ? ` · ${Math.round(m.score * 100)}` : ""}</span>)}</div>
+<div className="mt-2 flex flex-wrap gap-1.5">
+{!mine && pt.status === "open" && <button type="button" onClick={() => joinPartyNow(pt)} className="rounded-full bg-[var(--accent)] px-4 py-1.5 text-xs font-black text-white">{en ? "Join" : "加入"}</button>}
+{mine && !there && pt.status !== "done" && <button type="button" onClick={() => { setPartyOpen(false); setSelectedLoc(pt.locId); walkTo(pt.locId); }} className="rounded-full bg-[var(--text)] px-4 py-1.5 text-xs font-black text-[var(--bg)]">{en ? "Go there" : "赶过去"}</button>}
+{host && pt.status === "open" && <button type="button" disabled={!there} onClick={() => startPartyNow(pt)} className="rounded-full bg-[var(--accent)] px-4 py-1.5 text-xs font-black text-white disabled:opacity-40">{pt.members.length > 1 ? (en ? "Start" : "开始") : (en ? "Start (neighbours fill in)" : "开始（街坊凑数）")}</button>}
+{mine && pt.status === "playing" && meM?.score === null && a && <button type="button" disabled={!there} onClick={() => { setPartyOpen(false); startActivity(a, { partyId: pt.id, locId: pt.locId }); }} className="rounded-full bg-[var(--accent)] px-4 py-1.5 text-xs font-black text-white disabled:opacity-40">{en ? "▶ Play now" : "▶ 开玩"}</button>}
+{mine && pt.status === "open" && <button type="button" onClick={() => leavePartyNow(pt)} className="rounded-full border px-4 py-1.5 text-xs font-black">{host ? (en ? "Cancel" : "解散") : (en ? "Leave" : "退出")}</button>}
+{mine && pt.status !== "open" && meM?.score !== null && <button type="button" onClick={() => { setPartyOpen(false); setPartyResult(pt.id); }} className="rounded-full border px-4 py-1.5 text-xs font-black">{en ? "Results" : "看结果"}</button>}
+</div>
+</div> ); })}
+</div>
+</div>
+</div>
+)}
+
+{/* 局开始了：提醒还没玩的成员 */}
+{!play && (() => { const pt = parties.find((x) => x.status === "playing" && x.members.some((m) => m.id === myId && m.score === null)); const a = pt ? activityById(pt.activityId) : null; if (!pt || !a) return null; const there = currentLoc === pt.locId; return (
+<div className="fixed left-1/2 top-3 z-[60] flex w-[92%] max-w-md -translate-x-1/2 items-center gap-2 rounded-[14px] border-2 border-[var(--accent)] bg-[var(--surface)] px-3 py-2 text-sm font-black shadow-lg">
+<span className="min-w-0 flex-1">🎉 {en ? `The party started: ${a.name[1]} at ${trText(pt.locName)}` : `局开始了：${pt.locName} · ${a.name[0]}`}</span>
+{there ? <button type="button" onClick={() => startActivity(a, { partyId: pt.id, locId: pt.locId })} className="shrink-0 rounded-full bg-[var(--accent)] px-3 py-1 text-xs text-white">{en ? "Play" : "开玩"}</button>
+: <button type="button" onClick={() => { setSelectedLoc(pt.locId); walkTo(pt.locId); }} className="shrink-0 rounded-full bg-[var(--text)] px-3 py-1 text-xs text-[var(--bg)]">{en ? "Go" : "赶过去"}</button>}
+</div> ); })()}
+
+{/* ===== 组局结果 ===== */}
+{partyResult !== null && !play && (() => { const pt = parties.find((x) => x.id === partyResult); if (!pt) return null; const a = activityById(pt.activityId); const real = pt.members; const rows = [...real, ...(real.length === 1 ? ghostMates(pt.id) : [])].sort((x, y) => (y.score ?? -1) - (x.score ?? -1)); const waiting = real.some((m) => m.score === null) && pt.status !== "done"; return (
+<div className="fixed inset-0 z-[66] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={en ? "Party results" : "组局结果"}>
+<div className="rise w-full max-w-md rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] p-4">
+<p className="font-display text-xl font-black">🏆 {a ? L2t(a.name) : ""} · {en ? trText(pt.locName) : pt.locName}</p>
+{waiting && <p className="mt-1 text-xs font-bold text-[var(--dim)]">{en ? "Waiting for the others to finish…" : "等其他人玩完……"}</p>}
+<div className="mt-3 grid gap-1.5">{rows.map((m, i) => (
+<p key={m.id} className={`flex items-center gap-2 rounded-[10px] px-3 py-2 text-sm ${m.id === myId ? "bg-[var(--surface2)] font-black" : ""}`}><span className="w-6 font-black">{m.score === null ? "…" : i + 1}</span><span>{m.emoji}</span><span className="min-w-0 flex-1 truncate">{m.id.startsWith("npc-") ? (en ? `${trText(m.name)} (neighbour)` : `${m.name}（街坊凑数）`) : m.name}{m.id === myId ? (en ? " (you)" : "（你）") : ""}</span>{m.buddy > 0 && <span className="text-[11px] text-[var(--dim)]">🤝×{m.buddy + (pt.status === "done" ? 1 : 0)}</span>}<span className="font-black">{m.score === null ? "—" : Math.round(m.score * 100)}</span></p>
+))}</div>
+<p className="mt-2 text-[11px] text-[var(--dim)]">{real.length > 1 ? (en ? "Playing with real players gave everyone a reward boost and +1 network. Your buddy count with each of them went up." : "和真人一起玩：每人奖励加成、人脉 +1，和每个人的「搭子」次数 +1。") : (en ? "Nobody else came this time — the neighbours filled in. Open a party earlier next time, or invite friends with your invite link." : "这次没有真人来，街坊来凑了数。下次早点组局，或者用邀请链接拉朋友来。")}</p>
+<button type="button" onClick={() => setPartyResult(null)} className="mt-3 w-full rounded-full bg-[var(--text)] py-2.5 text-sm font-black text-[var(--bg)]">{en ? "Done" : "好的"}</button>
 </div>
 </div> ); })()}
 

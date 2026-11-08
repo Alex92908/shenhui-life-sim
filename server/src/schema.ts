@@ -4,7 +4,7 @@
 // derived from lastSeen (a player counts as online for ~90s after their last
 // heartbeat). game fields are the player's current run snapshot, used for the
 // live leaderboard and the finished-season rankings.
-import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 export const players = sqliteTable("players", {
   id: text("id").primaryKey(),
@@ -101,3 +101,29 @@ export const cloudSaves = sqliteTable("cloud_saves", {
     .notNull()
     .$defaultFn(() => new Date()),
 });
+
+// 组局 (0007): a player opens a party for an activity at a place; others in
+// the same city join, the host starts it, everyone plays the mini-game and
+// submits a score. members is a JSON array of
+// { id (public), name, emoji, score|null }.
+export const parties = sqliteTable("parties", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  hostId: text("host_id").notNull(),
+  hostName: text("host_name").notNull(),
+  cityKey: text("city_key").notNull(),
+  locId: text("loc_id").notNull(),
+  locName: text("loc_name").notNull(),
+  activityId: text("activity_id").notNull(),
+  members: text("members").notNull().default("[]"),
+  status: text("status").notNull().default("open"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  startedAt: integer("started_at", { mode: "timestamp_ms" }),
+});
+
+// 搭子: how many parties two players (private ids, a < b) played together.
+export const buddies = sqliteTable("buddies", {
+  a: text("a").notNull(),
+  b: text("b").notNull(),
+  n: integer("n").notNull().default(0),
+  lastAt: integer("last_at", { mode: "timestamp_ms" }).notNull(),
+}, (t) => [primaryKey({ columns: [t.a, t.b] })]);

@@ -721,7 +721,7 @@ export function isSaturday(day: number): boolean {
 }
 
 /* ================= 交通方式 ================= */
-export type TransportModeId = "walk" | "bike" | "moto" | "bus" | "metro" | "taxi" | "rail" | "ferry" | "flight";
+export type TransportModeId = "walk" | "bike" | "moto" | "bus" | "metro" | "taxi" | "car" | "rail" | "ferry" | "flight";
 /** Speed tiers — deliberately far apart so the choice of mode is a real
     decision: mapSpeed is world-units/sec (drives BOTH the map figure's
     movement speed and the real trip timer, so what you see is how long
@@ -736,6 +736,7 @@ export const TRANSPORT_MODES: TransportMode[] = [
   { id: "bus", emoji: "🚌", name: "公交", desc: "¥2起，要等车、站站停，比电动车稳但快不了多少", energyPerUnit: 0.12, mapSpeed: 16.5, etaPerUnit: 1.0, etaFixed: 5, speedTag: "中速" },
   { id: "metro", emoji: "🚇", name: "地铁", desc: "按站收费，不堵车，进车厢真实乘车——中长途比地面交通快得多", energyPerUnit: 0.1, mapSpeed: 22, etaPerUnit: 0.62, etaFixed: 7, speedTag: "快" },
   { id: "taxi", emoji: "🚕", name: "打车", desc: "按距离计价，地面最快，点对点直达不用等站", energyPerUnit: 0.04, mapSpeed: 20, etaPerUnit: 0.72, etaFixed: 3, speedTag: "快" },
+  { id: "car", emoji: "🚗", name: "自驾", desc: "要驾照和车（租一天或自己买）：点对点最快的地面方式，油费 + 停车费，高峰会堵", energyPerUnit: 0.05, mapSpeed: 21, etaPerUnit: 0.66, etaFixed: 4, speedTag: "快" },
   { id: "rail", emoji: "🚄", name: "城际/高铁", desc: "全场最快：深惠跨城，深圳北↔惠州南，含进站安检时间", energyPerUnit: 0.06, mapSpeed: 34, etaPerUnit: 0.3, etaFixed: 12, speedTag: "最快" },
   { id: "ferry", emoji: "⛴️", name: "轮渡", desc: "蛇口邮轮港出发看海，船速不慢但要等班次", energyPerUnit: 0.08, mapSpeed: 15, etaPerUnit: 1.0, etaFixed: 15, speedTag: "中速" },
   { id: "flight", emoji: "✈️", name: "飞机", desc: "飞起来最快，但值机安检的固定开销最大，短途反而不划算", energyPerUnit: 0.05, mapSpeed: 30, etaPerUnit: 0.22, etaFixed: 50, speedTag: "最快" },
