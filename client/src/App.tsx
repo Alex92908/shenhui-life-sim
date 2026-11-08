@@ -429,7 +429,7 @@ if (!c && !note) return null;
 return (
 <p className="px-3 pt-1.5 text-[10px] leading-snug text-[var(--dim)]">
 {note && <span className="mr-1">ℹ️ {note}。</span>}
-{c && <>📷 <a href={c.page} target="_blank" rel="noreferrer" className="underline">{c.artist || c.title}</a> · {c.license} · Wikimedia Commons</>}
+{c && <>📷 <a href={c.page} target="_blank" rel="noreferrer" className="underline">{c.artist || c.title}</a> · {c.license} · {c.source ?? "Wikimedia Commons"}</>}
 </p>
 );
 }

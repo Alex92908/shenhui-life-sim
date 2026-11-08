@@ -53,6 +53,8 @@ import placeTurtle from "./assets/place-turtle.jpg";
 import placeTurtle2 from "./assets/place-turtle2.jpg";
 import placeXunliao from "./assets/place-xunliao.jpg";
 import placeXlHotel from "./assets/place-xlhotel.jpg";
+import phSzMission from "./assets/sz-mission.jpg";
+import phSzMission2 from "./assets/sz-mission2.jpg";
 import phSzCablecar from "./assets/sz-cablecar.jpg";
 import phSzCoaster from "./assets/sz-coaster.jpg";
 import phSzDapeng from "./assets/sz-dapeng.jpg";
@@ -441,6 +443,16 @@ export const GUIDE: GuidePlace[] = [
     factEn: "Designed by Fumihiko Maki and opened in 2017 — stacked white volumes cantilevered over the Shekou waterfront, with a design museum and theatre.",
     npc: "阿琳", story: "阿琳说她最喜欢在顶层平台坐着，看蛇口港的船一艘艘开出去。",
     sourceName: "Wikimedia Commons", sourceUrl: "https://commons.wikimedia.org/wiki/Category:Sea_World_Culture_and_Arts_Center",
+  },
+  {
+    key: "missionhills", cityKey: "sz", locName: "观澜湖旅游休闲度假区", nameEn: "Mission Hills Resort, Shenzhen",
+    photos: [phSzMission, phSzMission2],
+    address: "龙华区观澜高尔夫大道 1 号", price: "公共区域免费 · 球场、酒店等项目另计", hours: "全天（各项目以官方公告为准）",
+    tip: "不打球也可以去体育生态公园走走，周末适合带小朋友。",
+    fact: "国家 5A 级旅游景区（2011 年评定），以高尔夫球场群闻名，园区里还有约 22 万平方米的体育生态公园、酒店和商业街。",
+    factEn: "A national 5A attraction since 2011, famous for its golf courses, with a 220,000 m² sports and eco park, hotels and a shopping street.",
+    npc: "老周", story: "老周说他开车接过来打球的外国客人，一路上听他们夸这里的草比老家的还绿。",
+    sourceName: "中国日报网 · Mission Hills Resort, Shenzhen", sourceUrl: "https://govt.chinadaily.com.cn/s/201812/17/WS5ce75ce0498e079e68021961/mission-hills-resort-shenzhen.html",
   },
   {
     key: "baylight", cityKey: "sz", locName: "欢乐港湾", nameEn: "OH Bay · Bay Glory Ferris Wheel",

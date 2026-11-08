@@ -3,8 +3,11 @@
    require attribution: every photo the game shows carries this credit line
    (author · licence · link to the file page). Regenerate the set with
    tools/photos/ (see DATA-PLAN.md). */
-export interface PhotoCredit { title: string; artist: string; license: string; page: string }
+/** `source` set = not from Commons (e.g. an official promo page); shown instead of "Wikimedia Commons". */
+export interface PhotoCredit { title: string; artist: string; license: string; page: string; source?: string }
 export const PHOTO_CREDITS: Record<string, PhotoCredit> = {
+ "sz-mission": {"title": "Mission Hills Resort, Shenzhen", "artist": "中国日报网 · 深圳政府合作页面", "license": "授权待确认", "page": "https://govt.chinadaily.com.cn/s/201812/17/WS5ce75ce0498e079e68021961/mission-hills-resort-shenzhen.html", "source": "官方宣传页（未获书面授权，上线前需确认）"},
+ "sz-mission2": {"title": "Mission Hills Resort, Shenzhen", "artist": "中国日报网 · 深圳政府合作页面", "license": "授权待确认", "page": "https://govt.chinadaily.com.cn/s/201812/17/WS5ce75ce0498e079e68021961/mission-hills-resort-shenzhen.html", "source": "官方宣传页（未获书面授权，上线前需确认）"},
  "scene-park": {
   "title": "Shenzhen Bay Park Sunrise Theatre 20210904.jpg",
   "artist": "歪歪",
