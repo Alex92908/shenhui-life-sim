@@ -672,7 +672,7 @@ const [agreed, setAgreed] = useState(() => { try { return localStorage.getItem("
 const setAgreedStored = (v: boolean) => { setAgreed(v); try { if (v) localStorage.setItem("shhr-legal", LEGAL_VERSION); else localStorage.removeItem("shhr-legal"); } catch { /* storage unavailable */ } };
 const [quiz, setQuiz] = useState<{ key: string; opts: string[]; picked: string | null } | null>(null);
 /* 📌 固定收起：钉住后地区面板不再自动弹出，只有点右侧竖条才展开 */
-const [asideOpen, setAsideOpen] = useState(() => { if (typeof window !== "undefined" && window.innerWidth < 640) return false; /* on a phone the panel covers the whole map: show the city first */ try { return localStorage.getItem("shhr-pin-aside") !== "1"; } catch { return true; } });
+const [asideOpen, setAsideOpen] = useState(() => { if (typeof window !== "undefined" && (window.innerWidth < 640 || window.innerHeight < 500)) return false; /* on a phone the panel covers the whole map: show the city first */ try { return localStorage.getItem("shhr-pin-aside") !== "1"; } catch { return true; } });
 /* Top-area compaction: status detail / Summit activity / city intro all
    start folded away behind one-line bars so the map stays the hero. */
 const [fold, setFold] = useState<"hud" | "apec" | "intro" | null>(null);
@@ -4105,7 +4105,7 @@ return (
     down the left edge), and place/feed/wall/chat/board live in a
     floating translucent panel that collapses vertically into a slim
     strip on the right edge — never fully hidden, always one tap away. */}
-<section className="relative h-[calc(100dvh-61px)] min-h-[540px] w-full overflow-hidden">
+<section className="relative h-[calc(100dvh-61px)] min-h-[300px] w-full overflow-hidden">
 <div className="float-bars absolute left-3 top-[60px] z-20 w-[min(720px,calc(100vw-24px))]">
 {/* ONE merged card (was three stacked bars: status / Summit / city intro).
     Row 1 = core stats; row 2 = slim Summit strip + three fold tabs that
@@ -4127,27 +4127,27 @@ return (
 <span className="flex items-center gap-1 text-xs font-bold">😊<span className="h-2 w-10 overflow-hidden rounded-full bg-[var(--surface2)]"><span className="block h-full bg-emerald-500 transition-all" style={{ width: `${s.mood}%` }} /></span>{Math.round(s.mood)}</span>
 <span className="chip" title="游戏时间就是北京时间：每个自然月是一个赛季，第 N 天 = 本月 N 号；做事有真实冷却；地铁、商场、景区按真实营业时间开关">{`🕘 ${clockStr(nowMin())}`}</span>
 {s.busyUntil && Date.now() < s.busyUntil ? <span className="chip border-[var(--accent)] text-[var(--accent)]">{`⏳ ${s.busyWhat ?? "忙"} ${countdown(s.busyUntil - Date.now())}`}</span> : null}
-<button type="button" onClick={() => setPartyOpen(true)} className={`chip ${parties.some((pt) => pt.status === "open") ? "border-[var(--accent)] text-[var(--accent)]" : ""}${hudMore ? "" : " max-sm:hidden!"}`} title={en ? "Parties in this city: join other players" : "同城组局：和真人一起玩"}>🎉 {en ? "Parties" : "组局"} {parties.filter((pt) => pt.status === "open").length}</button>
+<button type="button" onClick={() => setPartyOpen(true)} className={`chip ${parties.some((pt) => pt.status === "open") ? "border-[var(--accent)] text-[var(--accent)]" : ""}${hudMore ? "" : " compact-hide"}`} title={en ? "Parties in this city: join other players" : "同城组局：和真人一起玩"}>🎉 {en ? "Parties" : "组局"} {parties.filter((pt) => pt.status === "open").length}</button>
 <button type="button" onClick={() => { setHubOpen(true); track("hub_open"); }} className="chip border-[var(--text)] bg-[var(--text)] text-[var(--bg)]" title={en ? "Everything you can do right now, nearest first" : "现在能做的所有事，按远近排"}>🧭 {en ? "What can I do?" : "现在能干嘛"}</button>
-<button type="button" onClick={() => setStoreOpen(true)} className={`chip${hudMore ? "" : " max-sm:hidden!"}`} title={en ? "Starlight store: looks, season pass, membership" : "星光商店：外观、赛季通行证、会员"}>✨ {en ? "Store" : "商店"}</button>
-<button type="button" onClick={() => { setUpdatesOpen(true); setUpdateSeen(latestKey); try { localStorage.setItem("shhr-update-seen", latestKey); } catch { /* storage unavailable */ } }} className={`chip ${updateSeen !== latestKey ? "border-[var(--accent)] text-[var(--accent)]" : ""}${hudMore ? "" : " max-sm:hidden!"}`} title={en ? "What's new, and a feedback box" : "更新公告和意见箱"}>🆕 {en ? "What's new" : "更新"}{updateSeen !== latestKey ? " ●" : ""}</button>
-<button type="button" onClick={() => setBondsOpen(true)} className={`chip ${bondInvites ? "border-[var(--accent)] text-[var(--accent)]" : ""}${hudMore ? "" : " max-sm:hidden!"}`} title={en ? "Roommates, sworn siblings, partner — real players" : "和真人合租、结拜、在一起"}>🤝 {en ? "People" : "关系"}{bondInvites ? ` ${bondInvites}` : bonds.some((b) => b.status === "active") ? ` · ${bonds.filter((b) => b.status === "active").map((b) => BOND_INFO[b.kind].emoji).join("")}` : ""}</button>
-<button type="button" onClick={() => setAdsOpen(true)} className={`chip${hudMore ? "" : " max-sm:hidden!"}`} title={en ? "Rent a billboard on the city map" : "在全城地图上挂广告牌"}>📢 {en ? "Billboards" : "广告牌"}</button>
-<button type="button" onClick={() => setGigsOpen(true)} className={`chip ${gigActive ? "border-[var(--accent)] text-[var(--accent)]" : ""}${hudMore ? "" : " max-sm:hidden!"}`} title={en ? "Gigs: hire real players, or take their jobs" : "零工：雇真人帮忙，或者接别人的活"}>💼 {en ? "Gigs" : "零工"}{gigActive ? ` ${gigActive}` : (gigsQuery.data?.open.length ? ` · ${gigsQuery.data.open.length}` : "")}</button>
-<button type="button" onClick={() => setCommitteeOpen(true)} className={`chip${hudMore ? "" : " max-sm:hidden!"}`} title={en ? "Weekly estate-committee election: the chair's policy applies citywide" : "每周业委会选举：主任的政策全城生效"}>🏛️ {en ? "Committee" : "业委会"}{committeeQuery.data?.chair ? ` · ${en ? PLEDGE_INFO[committeeQuery.data.chair.pledge].short[1] : PLEDGE_INFO[committeeQuery.data.chair.pledge].short[0]}` : ""}</button>
-<button type="button" onClick={() => setAccountOpen(true)} className={`chip ${!loggedIn && s.day >= 2 ? "border-[var(--accent)] text-[var(--accent)]" : ""}${hudMore ? "" : " max-sm:hidden!"}`} title={en ? "Account: keep your progress, unlock DMs and parties" : "账号：保住进度，解锁私聊和组局"}>👤 {loggedIn ? (en ? "Account" : "账号") : (en ? "Sign in" : "绑定账号")}</button>
-<button type="button" onClick={() => setDmOpen(true)} className={`chip ${unreadDm ? "border-[var(--accent)] text-[var(--accent)]" : ""}${hudMore || unreadDm ? "" : " max-sm:hidden!"}`} title={en ? "Private messages" : "私信"}>💬 {en ? "DMs" : "私信"}{unreadDm ? ` ${unreadDm}` : ""}</button>
-<span className={`chip${hudMore ? "" : " max-sm:hidden!"}`} title={iden.name}>{iden.emoji} {career.name} ×{career.mul}</span>
+<button type="button" onClick={() => setStoreOpen(true)} className={`chip${hudMore ? "" : " compact-hide"}`} title={en ? "Starlight store: looks, season pass, membership" : "星光商店：外观、赛季通行证、会员"}>✨ {en ? "Store" : "商店"}</button>
+<button type="button" onClick={() => { setUpdatesOpen(true); setUpdateSeen(latestKey); try { localStorage.setItem("shhr-update-seen", latestKey); } catch { /* storage unavailable */ } }} className={`chip ${updateSeen !== latestKey ? "border-[var(--accent)] text-[var(--accent)]" : ""}${hudMore ? "" : " compact-hide"}`} title={en ? "What's new, and a feedback box" : "更新公告和意见箱"}>🆕 {en ? "What's new" : "更新"}{updateSeen !== latestKey ? " ●" : ""}</button>
+<button type="button" onClick={() => setBondsOpen(true)} className={`chip ${bondInvites ? "border-[var(--accent)] text-[var(--accent)]" : ""}${hudMore ? "" : " compact-hide"}`} title={en ? "Roommates, sworn siblings, partner — real players" : "和真人合租、结拜、在一起"}>🤝 {en ? "People" : "关系"}{bondInvites ? ` ${bondInvites}` : bonds.some((b) => b.status === "active") ? ` · ${bonds.filter((b) => b.status === "active").map((b) => BOND_INFO[b.kind].emoji).join("")}` : ""}</button>
+<button type="button" onClick={() => setAdsOpen(true)} className={`chip${hudMore ? "" : " compact-hide"}`} title={en ? "Rent a billboard on the city map" : "在全城地图上挂广告牌"}>📢 {en ? "Billboards" : "广告牌"}</button>
+<button type="button" onClick={() => setGigsOpen(true)} className={`chip ${gigActive ? "border-[var(--accent)] text-[var(--accent)]" : ""}${hudMore ? "" : " compact-hide"}`} title={en ? "Gigs: hire real players, or take their jobs" : "零工：雇真人帮忙，或者接别人的活"}>💼 {en ? "Gigs" : "零工"}{gigActive ? ` ${gigActive}` : (gigsQuery.data?.open.length ? ` · ${gigsQuery.data.open.length}` : "")}</button>
+<button type="button" onClick={() => setCommitteeOpen(true)} className={`chip${hudMore ? "" : " compact-hide"}`} title={en ? "Weekly estate-committee election: the chair's policy applies citywide" : "每周业委会选举：主任的政策全城生效"}>🏛️ {en ? "Committee" : "业委会"}{committeeQuery.data?.chair ? ` · ${en ? PLEDGE_INFO[committeeQuery.data.chair.pledge].short[1] : PLEDGE_INFO[committeeQuery.data.chair.pledge].short[0]}` : ""}</button>
+<button type="button" onClick={() => setAccountOpen(true)} className={`chip ${!loggedIn && s.day >= 2 ? "border-[var(--accent)] text-[var(--accent)]" : ""}${hudMore ? "" : " compact-hide"}`} title={en ? "Account: keep your progress, unlock DMs and parties" : "账号：保住进度，解锁私聊和组局"}>👤 {loggedIn ? (en ? "Account" : "账号") : (en ? "Sign in" : "绑定账号")}</button>
+<button type="button" onClick={() => setDmOpen(true)} className={`chip ${unreadDm ? "border-[var(--accent)] text-[var(--accent)]" : ""}${hudMore || unreadDm ? "" : " compact-hide"}`} title={en ? "Private messages" : "私信"}>💬 {en ? "DMs" : "私信"}{unreadDm ? ` ${unreadDm}` : ""}</button>
+<span className={`chip${hudMore ? "" : " compact-hide"}`} title={iden.name}>{iden.emoji} {career.name} ×{career.mul}</span>
 {(() => { const t0 = s.startTier ?? tierOfIden(s.idenId); const t1 = tierAt(s); const T = TIERS[s.cityKey]; const top = T[3]!; return <span className="chip" title={en ? `Started in ${T[t0]!.en}; your savings now put you in ${T[t1]!.en}. Reach the goal to move up.` : `出身：${T[t0]!.zh}；按现在的存款，你在「${T[t1]!.zh}」。攒够目标就能往上爬。`}>🪜 {T[t0]!.emoji}→{T[t1]!.emoji} {en ? T[t1]!.en : T[t1]!.zh}{t1 < 3 ? (en ? ` · aim: ${top.en}` : ` · 目标${top.zh}`) : ""}</span>; })()}
-{(() => { const co = employerHere(s); return co ? <span className={`chip${hudMore ? "" : " max-sm:hidden!"}`} title={co.culture}>{co.emoji} {co.short}</span> : null; })()}
-{meta.title && <span className={`chip${hudMore ? "" : " max-sm:hidden!"}`} style={{ borderColor: "var(--gold)", color: "var(--gold)" }}>🏅 {meta.title}</span>}
+{(() => { const co = employerHere(s); return co ? <span className={`chip${hudMore ? "" : " compact-hide"}`} title={co.culture}>{co.emoji} {co.short}</span> : null; })()}
+{meta.title && <span className={`chip${hudMore ? "" : " compact-hide"}`} style={{ borderColor: "var(--gold)", color: "var(--gold)" }}>🏅 {meta.title}</span>}
 {isSaturday(s.day) && <span className="chip text-[var(--accent)]">🏠 今天交租 {fmt(s.rent)}</span>}
-{s.invest > 0 && <span className={`chip${hudMore ? "" : " max-sm:hidden!"}`}>💹 {fmt(s.invest)}</span>}
-<button type="button" onClick={() => setHudMore((v) => !v)} aria-expanded={hudMore} className="chip sm:hidden!">{hudMore ? (en ? "▴ Less" : "▴ 收起") : `⋯ ${en ? "More" : "更多"}${updateSeen !== latestKey || bondInvites ? " ●" : ""}`}</button>
+{s.invest > 0 && <span className={`chip${hudMore ? "" : " compact-hide"}`}>💹 {fmt(s.invest)}</span>}
+<button type="button" onClick={() => setHudMore((v) => !v)} aria-expanded={hudMore} className="chip compact-only">{hudMore ? (en ? "▴ Less" : "▴ 收起") : `⋯ ${en ? "More" : "更多"}${updateSeen !== latestKey || bondInvites ? " ●" : ""}`}</button>
 <button type="button" aria-label="竖着收起状态卡，收成屏幕左侧的竖排按钮" title="竖着收起，收成屏幕左侧的竖排按钮，点一下就展开" onClick={() => setBarsHidden(true)} className="ml-auto shrink-0 rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] font-black transition hover:border-[var(--border)]">◂ 收起</button>
 </div>
 
-<div className={`mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-[var(--line)] pt-2 text-[11px] font-bold${hudMore ? "" : " max-sm:hidden!"}`}>
+<div className={`mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-[var(--line)] pt-2 text-[11px] font-bold${hudMore ? "" : " compact-hide"}`}>
 <span className="shrink-0 rounded-full border border-[var(--gold)] bg-[#fdf6da] px-2 py-0.5 font-black text-[#5c4a00]">🌐 峰会{s.cityKey === "sz" ? ` · ${s.day < 14 ? `还有 ${14 - s.day} 天` : s.day <= 19 ? "进行中" : "已结束"}` : " · 深圳 14–19 日"}</span>
 {s.cityKey === "sz" ? (
 <>
@@ -4271,9 +4271,9 @@ return (
 <div className="relative px-1.5 pb-2.5">
 <div className="flex gap-2">
 <input value={mapQuery} onChange={(e) => setMapQuery(e.target.value)} placeholder={s.cityKey === "hz" ? "🔍 搜地点或城轨/高铁站：西湖、老街、惠州南…" : s.cityKey === "hk" ? "🔍 搜地点或港铁站：旺角、中环、山顶、迪士尼…" : "🔍 搜地点或地铁站：公园、商场、医院、博物馆、海滩…"} aria-label={`搜索地点或${railWord(s.cityKey)}站`} className="min-w-0 flex-1 rounded-full border border-[var(--line)] bg-[var(--surface)] px-3.5 py-2 text-sm outline-none focus:border-[var(--border)]" />
-<button type="button" aria-label="打开景点分布图" onClick={() => setPlacesMapOpen(true)} className="shrink-0 rounded-full bg-[var(--green)] px-3.5 py-2 text-xs font-black text-white">🗺️ 景点分布图</button>
-<button type="button" aria-label={s.cityKey === "hz" ? "打开惠州城际高铁线网图" : s.cityKey === "hk" ? "打开香港港铁线网图" : "打开地铁线路图"} onClick={() => { setMetroMapDest(null); setMetroMapOpen(true); }} className="shrink-0 rounded-full bg-[var(--accent2)] px-3.5 py-2 text-xs font-black text-white">{s.cityKey === "hz" ? "🚆 城际/高铁线网图" : "🚇 地铁线路图"}</button>
-<button type="button" aria-label={mapFullscreen ? "退出地图全屏" : "地图全屏"} aria-pressed={mapFullscreen} onClick={toggleMapFullscreen} className={`shrink-0 rounded-full px-3.5 py-2 text-xs font-black text-white ${mapFullscreen ? "bg-[var(--accent)]" : "bg-[#14202b]"}`}>{mapFullscreen ? "⛶ 退出全屏" : "⛶ 全屏看地图"}</button>
+<button type="button" aria-label="打开景点分布图" onClick={() => setPlacesMapOpen(true)} className="shrink-0 rounded-full bg-[var(--green)] px-3.5 py-2 text-xs font-black text-white max-sm:px-3"><span className="compact-only">🗺️</span><span className="compact-hide">🗺️ 景点分布图</span></button>
+<button type="button" aria-label={s.cityKey === "hz" ? "打开惠州城际高铁线网图" : s.cityKey === "hk" ? "打开香港港铁线网图" : "打开地铁线路图"} onClick={() => { setMetroMapDest(null); setMetroMapOpen(true); }} className="shrink-0 rounded-full bg-[var(--accent2)] px-3.5 py-2 text-xs font-black text-white max-sm:px-3"><span className="compact-only">{s.cityKey === "hz" ? "🚆" : "🚇"}</span><span className="compact-hide">{s.cityKey === "hz" ? "🚆 城际/高铁线网图" : "🚇 地铁线路图"}</span></button>
+<button type="button" aria-label={mapFullscreen ? "退出地图全屏" : "地图全屏"} aria-pressed={mapFullscreen} onClick={toggleMapFullscreen} className={`shrink-0 rounded-full px-3.5 py-2 text-xs font-black text-white ${mapFullscreen ? "bg-[var(--accent)]" : "bg-[#14202b]"}`}><span className="compact-only">{mapFullscreen ? "✕" : "⛶"}</span><span className="compact-hide">{mapFullscreen ? "⛶ 退出全屏" : "⛶ 全屏看地图"}</span></button>
 </div>
 {mapQuery.trim() !== "" && (() => {
 const q = mapQuery.trim();
@@ -4333,14 +4333,14 @@ return (
 {/* 左侧中段控制簇：出行导航 + 弹幕开关（不在顶部，不挡地图中心） */}
 <div className="absolute left-3 top-1/2 z-20 flex -translate-y-1/2 flex-col items-start gap-2">
 <button type="button" aria-label={navOpen ? "收起地图上的出行导航" : "打开地图上的出行导航"} aria-expanded={navOpen} onClick={() => setNavOpen((o) => !o)} className="rounded-full border border-black/40 bg-[#14202b]/90 px-3.5 py-2 text-xs font-black text-white shadow-lg">
-🧭<span className="max-sm:hidden"> {navOpen ? "收起导航" : `出行导航 · ${modesForCity(s.cityKey).find((m) => m.id === travelMode)?.emoji ?? ""} ${modesForCity(s.cityKey).find((m) => m.id === travelMode)?.name ?? ""}`}</span><span className="sm:hidden"> {modesForCity(s.cityKey).find((m) => m.id === travelMode)?.emoji ?? ""}</span>
+🧭<span className="compact-hide"> {navOpen ? "收起导航" : `出行导航 · ${modesForCity(s.cityKey).find((m) => m.id === travelMode)?.emoji ?? ""} ${modesForCity(s.cityKey).find((m) => m.id === travelMode)?.name ?? ""}`}</span><span className="compact-only"> {modesForCity(s.cityKey).find((m) => m.id === travelMode)?.emoji ?? ""}</span>
 </button>
 <button type="button" aria-label={danmakuOn ? "关闭弹幕" : "开启弹幕"} aria-pressed={danmakuOn} onClick={() => setDanmakuOn((v) => !v)} className={`rounded-full border px-3.5 py-2 text-xs font-black shadow-lg ${danmakuOn ? "border-transparent bg-[var(--accent)] text-white" : "border-black/40 bg-[#14202b]/90 text-white"}`}>
-💬<span className="max-sm:hidden"> 弹幕{danmakuOn ? "开" : "关"}</span>
+💬<span className="compact-hide"> 弹幕{danmakuOn ? "开" : "关"}</span>
 </button>
 {(Object.keys(CITIES) as CityKey[]).filter((k) => k !== s.cityKey).map((k) => (
 <button key={k} type="button" aria-label={`去${CITIES[k].name}：${crossRoutes(s.cityKey, k).length} 条真实路线可选`} title="换座城市过日子：选口岸 / 高铁 / 船 / 大巴 / 自驾，按真实开放时间；进度原样带着" onClick={() => setCrossTo(k)} className="rounded-full border border-black/40 bg-[#14202b]/90 px-3.5 py-2 text-xs font-black text-white shadow-lg">
-{k === "hk" || s.cityKey === "hk" ? "🛃" : "🚄"}<span className="max-sm:hidden">{en ? ` ${k === "hk" || s.cityKey === "hk" ? "Cross" : "Travel"} · to ${CITY_EN[k]}` : ` ${k === "hk" || s.cityKey === "hk" ? "过关" : "切换城市"} · 去${CITIES[k].name}`}</span><span className="sm:hidden"> {CITIES[k].emoji}</span>
+{k === "hk" || s.cityKey === "hk" ? "🛃" : "🚄"}<span className="compact-hide">{en ? ` ${k === "hk" || s.cityKey === "hk" ? "Cross" : "Travel"} · to ${CITY_EN[k]}` : ` ${k === "hk" || s.cityKey === "hk" ? "过关" : "切换城市"} · 去${CITIES[k].name}`}</span><span className="compact-only"> {CITIES[k].emoji}</span>
 </button>
 ))}
 </div>
@@ -5310,7 +5310,7 @@ return (
 </div>
 {dmPeer && (
 <div className="flex min-w-0 flex-1 flex-col">
-<p className="flex items-center gap-2 border-b border-[var(--line)] p-3 text-sm font-black"><button type="button" onClick={() => setDmPeer(null)} className="sm:hidden">←</button><button type="button" onClick={() => setCardOf(dmPeer)} className="min-w-0 flex-1 truncate text-left underline decoration-dotted">{peerName}</button><button type="button" onClick={() => { setDmOpen(false); setDmPeer(null); }} className="rounded-full border px-2.5 py-0.5 text-xs">✕</button></p>
+<p className="flex items-center gap-2 border-b border-[var(--line)] p-3 text-sm font-black"><button type="button" onClick={() => setDmPeer(null)} className="compact-only">←</button><button type="button" onClick={() => setCardOf(dmPeer)} className="min-w-0 flex-1 truncate text-left underline decoration-dotted">{peerName}</button><button type="button" onClick={() => { setDmOpen(false); setDmPeer(null); }} className="rounded-full border px-2.5 py-0.5 text-xs">✕</button></p>
 <div className="flex-1 overflow-y-auto p-3">
 {(th?.messages ?? []).map((m) => { const inv = /^\[\[party:(\d+)\]\]$/.exec(m.body); const pt = inv ? parties.find((x) => x.id === Number(inv[1])) : undefined; const act = pt ? activityById(pt.activityId) : null; return (
 <div key={m.id} className={`mb-1.5 max-w-[85%] rounded-[12px] px-3 py-2 text-[13px] ${m.mine ? "ml-auto bg-[var(--text)] text-[var(--bg)]" : "border border-[var(--line)] bg-[var(--bg)]"}`}>

@@ -440,7 +440,7 @@ export function MapView(p: Props) {
   type LabelDensity = "few" | "normal" | "all";
   const [labelDensity, setLabelDensity] = useState<LabelDensity>(() => {
     try { const v = localStorage.getItem("shhr-labels"); if (v === "few" || v === "normal" || v === "all") return v; } catch { /* default */ }
-    return typeof window !== "undefined" && window.innerWidth < 640 ? "few" : "normal"; // a phone screen fits far fewer names
+    return typeof window !== "undefined" && (window.innerWidth < 640 || window.innerHeight < 500) ? "few" : "normal"; // a phone screen fits far fewer names
   });
   const labelDensityRef = useRef(labelDensity);
   labelDensityRef.current = labelDensity;
@@ -467,7 +467,7 @@ export function MapView(p: Props) {
      the player dot, NPC dots, remote players and the destination marker
      move exactly when the big map moves. Clicking it points the main
      camera at that spot through the same lookRef channel search uses. */
-  const [miniOpen, setMiniOpen] = useState(() => typeof window === "undefined" || window.innerWidth >= 640); // phones: the map first, the minimap on request
+  const [miniOpen, setMiniOpen] = useState(() => typeof window === "undefined" || (window.innerWidth >= 640 && window.innerHeight >= 500)); // phones and landscape phones: the map first, the minimap on request
   const miniCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   /* Day-cycle phase control: jumped instantly via the ☀️/🌇/🌙 buttons,
@@ -828,7 +828,27 @@ export function MapView(p: Props) {
       const shapes = TERRAIN[cityKey].ACROSS.map((poly) => { const sh = toShape2(poly[0]!); for (const hole of poly.slice(1)) sh.holes.push(toShape2(hole)); return sh; });
       const g2 = new THREE.ExtrudeGeometry(shapes, { depth: LAND * 0.8, bevelEnabled: false });
       g2.rotateX(-Math.PI / 2);
-      const across = new THREE.Mesh(g2, new THREE.MeshStandardMaterial({ color: 0x8b8f87, roughness: 1 }));
+      /* only a band of the neighbour shows: solid within ~2 units of the shared
+         border, fading out by ~5 — the border reads clearly without a big grey
+         block filling the screen (portrait phones see far to the south). The
+         fade is per pixel (distance to sampled border points), so big
+         triangles don't smear it. */
+      const ownPts: [number, number][] = [];
+      for (const poly of TERRAIN[cityKey].LAND) { const ring = poly[0] ?? []; const step = Math.max(1, Math.floor(ring.length / 600)); for (let i = 0; i < ring.length; i += step) ownPts.push(ring[i]!); }
+      const acrossPts: [number, number][] = [];
+      for (const poly of TERRAIN[cityKey].ACROSS) { const ring = poly[0] ?? []; const step = Math.max(1, Math.floor(ring.length / 600)); for (let i = 0; i < ring.length; i += step) acrossPts.push(ring[i]!); }
+      let border = ownPts.filter(([x, z]) => acrossPts.some(([ax, az]) => (ax - x) ** 2 + (az - z) ** 2 < 2.25));
+      if (border.length === 0) border = ownPts;
+      const N = 64;
+      const pick: THREE.Vector2[] = [];
+      for (let i = 0; i < N; i++) { const p = border[Math.floor((i * border.length) / N)] ?? border[0]!; pick.push(new THREE.Vector2(p[0], p[1])); }
+      const acrossMat = new THREE.MeshStandardMaterial({ color: 0x8b8f87, roughness: 1 });
+      acrossMat.onBeforeCompile = (sh) => {
+        sh.uniforms.uBorder = { value: pick };
+        sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nvarying vec2 vXZ;").replace("#include <begin_vertex>", "#include <begin_vertex>\nvXZ = (modelMatrix * vec4(transformed, 1.0)).xz;");
+        sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec2 vXZ;\nuniform vec2 uBorder[64];").replace("#include <dithering_fragment>", "#include <dithering_fragment>\nfloat bd = 1e9; for (int i = 0; i < 64; i++) { bd = min(bd, distance(vXZ, uBorder[i])); }\nfloat fade = 1.0 - smoothstep(3.0, 7.0, bd); float nz = fract(sin(dot(floor(gl_FragCoord.xy), vec2(12.9898, 78.233))) * 43758.5453); if (fade < nz) discard;");
+      };
+      const across = new THREE.Mesh(g2, acrossMat);
       across.receiveShadow = true;
       scene.add(across);
     }
@@ -3315,7 +3335,7 @@ export function MapView(p: Props) {
         <button type="button" aria-label="标签密度" title={labelDensity === "few" ? "标签：精简（点一下切换）" : labelDensity === "normal" ? "标签：标准（点一下切换）" : "标签：全部（点一下切换）"} onClick={cycleLabels} className="grid h-9 min-w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 px-2 text-[11px] font-black text-[#14202b] shadow">🏷️{labelDensity === "few" ? "简" : labelDensity === "normal" ? "标" : "全"}</button>
         <button type="button" aria-label="重置视角" onClick={resetCam} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">⌂</button>
       </div>
-      <p className="pointer-events-none absolute left-3 top-3 z-10 rounded-full bg-[#0b1622]/70 px-3 py-1.5 text-[11px] font-bold text-white/90 max-sm:hidden">
+      <p className="pointer-events-none absolute left-3 top-3 z-10 rounded-full bg-[#0b1622]/70 px-3 py-1.5 text-[11px] font-bold text-white/90 compact-hide">
         拖动旋转 · 滚轮/＋－缩放（右下角显示比例） · 点建筑或标签前往 · 左下小地图看全城、点它定位镜头 · 天色按当地真实时间、云雨按真实天气走 · 右下 ☀️🌇🌙 预览时间 · 🕐 回到真实时间 · 🎥 延时演示 · 🎬 电影镜头 · 🚶 街景视角贴到街面：看车流等红灯、行人过马路、NPC 打招呼
       </p>
       {/* LOL-style minimap: whole-city thumbnail, live-linked to the big map */}
