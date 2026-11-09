@@ -302,3 +302,39 @@ export const entitlements = sqliteTable("entitlements", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
   revokedAt: integer("revoked_at", { mode: "timestamp_ms" }),
 });
+
+/* ---- 上线运营 + 真人关系 (0013) ---- */
+// 玩家反馈：游戏里「🆕 更新」面板底下的意见箱
+export const feedback = sqliteTable("feedback", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  playerId: text("player_id").notNull(),
+  kind: text("kind").notNull(), // bug | idea | other
+  body: text("body").notNull(),
+  city: text("city"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+// 真人关系：合租室友 / 结拜 / 情侣。a 发起，b 接受；ended 之后保留记录
+export const bonds = sqliteTable("bonds", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  a: text("a").notNull(),
+  b: text("b").notNull(),
+  kind: text("kind").notNull(), // roommate | sworn | partner
+  status: text("status").notNull().default("pending"), // pending | active | declined | ended
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+// 业委会选举：每城每周一届，参选人带一条政策承诺，得票最多的人下周当主任、政策全城生效
+export const committeeCandidates = sqliteTable("committee_candidates", {
+  week: integer("week").notNull(),
+  city: text("city").notNull(),
+  playerId: text("player_id").notNull(),
+  pledge: text("pledge").notNull(), // rent | metro | eat
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+}, (t) => [primaryKey({ columns: [t.week, t.city, t.playerId] })]);
+export const committeeVotes = sqliteTable("committee_votes", {
+  week: integer("week").notNull(),
+  city: text("city").notNull(),
+  voterId: text("voter_id").notNull(),
+  candidateId: text("candidate_id").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+}, (t) => [primaryKey({ columns: [t.week, t.city, t.voterId] })]);

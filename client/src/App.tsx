@@ -6,6 +6,7 @@ import { api, type ApiResponse } from "./api";
 import { AREA_LABELS } from "./areas";
 import { AccountModal, accountToken } from "./Account";
 import { StoreModal, LOOK_COLOR, LOOK_TITLE } from "./Store";
+import { UpdatesModal, BondsModal, CommitteeModal, BOND_INFO, PLEDGE_INFO, policyMul, LATEST_UPDATE, type BondKind } from "./Social";
 const lookOf = (b: object): string | null => (b as { look?: string | null }).look ?? null;
 import { TERMS, PRIVACY, LEGAL_VERSION, OPERATOR_MISSING } from "./legal";
 import { getLang, setLangStored, installTranslator, LANGS, trText, type Lang } from "./i18n";
@@ -89,6 +90,9 @@ const RW_LABEL: Record<RealWeather["kind"], string> = { clear: "晴", partly: "�
 
 interface GameState {
 cityKey: CityKey;
+/** real-player roommate (rent split in half) and the committee rent cut, kept in the save so the Saturday rent is right even before the server answers */
+roommate?: string;
+rentPolicy?: number;
 /** the origin drawn at the start (抽签投胎) and the housing rung it started on */
 origin?: string;
 startTier?: number;
@@ -775,6 +779,10 @@ const [cardOf, setCardOf] = useState<string | null>(null);
 const [dmOpen, setDmOpen] = useState(false);
 const [accountOpen, setAccountOpen] = useState(false);
 const [storeOpen, setStoreOpen] = useState(false);
+const [updatesOpen, setUpdatesOpen] = useState(false);
+const [updateSeen, setUpdateSeen] = useState(() => { try { return localStorage.getItem("shhr-update-seen") ?? ""; } catch { return ""; } });
+const [bondsOpen, setBondsOpen] = useState(false);
+const [committeeOpen, setCommitteeOpen] = useState(false);
 /* back from the Stripe payment page: ?paid=<order> (or cancel) */
 useEffect(() => {
   const q = new URLSearchParams(window.location.search).get("paid");
@@ -807,7 +815,7 @@ const tierAt = (st: GameState) => tierNow(st.startTier ?? tierOfIden(st.idenId),
 const drawFate = () => {
   if (shuffle) return;
   if (drawn) { if (rerolls <= 0) return; setRerolls((n) => n - 1); }
-  const final = drawOrigin(Math.random, drawn?.id);
+  const final = drawOrigin(Math.random, drawn?.id, { apec: setupCity === "sz" && isApecSeason() });
   let k = 0;
   const tick = () => {
     k += 1;
@@ -875,6 +883,47 @@ refetchInterval: 5000,
 });
 const threads = inboxQuery.data?.threads ?? [];
 const unreadDm = threads.reduce((n, t) => n + t.unread, 0);
+/* 真人关系 + 业委会：一分钟刷新一次 */
+const bondsQuery = useQuery({
+queryKey: ["bonds", profile?.playerId ?? ""],
+queryFn: () => api.getBonds({ playerId: profile!.playerId }),
+enabled: !!profile && phase === "game",
+refetchInterval: 60_000,
+});
+const bonds = bondsQuery.data?.bonds ?? [];
+const bondInvites = bonds.filter((b) => b.status === "pending" && !b.mine).length;
+const committeeQuery = useQuery({
+queryKey: ["committee", profile?.playerId ?? "", gs?.cityKey ?? "sz"],
+queryFn: () => api.committeeState({ playerId: profile!.playerId, city: gs?.cityKey ?? "sz" }),
+enabled: !!profile && phase === "game" && !!gs,
+refetchInterval: 120_000,
+});
+/* the week's prices follow the elected chair's pledge; a roommate halves your rent */
+const policyRef = useRef(policyMul(null));
+policyRef.current = policyMul(committeeQuery.data?.chair?.pledge);
+const roommateRef = useRef<string | null>(null);
+roommateRef.current = bonds.find((b) => b.kind === "roommate" && b.status === "active")?.peerName ?? null;
+/* mirror the roommate and the rent policy into the save once the server has answered */
+useEffect(() => {
+  const g = gsRef.current; if (!g || phase !== "game" || !bondsQuery.isSuccess) return;
+  const mate = roommateRef.current ?? undefined;
+  if (g.roommate !== mate) { mutate((x) => { x.roommate = mate; }); if (mate) showToast(en ? `🏠 You now share a flat with ${mate} — rent split in half.` : `🏠 和${mate}合租了，房租各付一半。`); }
+// eslint-disable-next-line react-hooks/exhaustive-deps
+}, [bondsQuery.dataUpdatedAt, phase]);
+useEffect(() => {
+  const g = gsRef.current; if (!g || phase !== "game" || !committeeQuery.isSuccess) return;
+  const pol = policyRef.current.rent;
+  if ((g.rentPolicy ?? 1) !== pol) mutate((x) => { x.rentPolicy = pol; });
+// eslint-disable-next-line react-hooks/exhaustive-deps
+}, [committeeQuery.dataUpdatedAt, phase]);
+const proposeBond = async (toId: string, kind: BondKind) => {
+  if (!profile) return;
+  try {
+    const r = await api.proposeBond({ playerId: profile.playerId, toId, kind });
+    if (r.ok) { showToast(en ? `${BOND_INFO[kind].emoji} Invitation sent — they'll see it in their messages.` : `${BOND_INFO[kind].emoji} 邀请发出去了，对方会在私信里看到。`); void bondsQuery.refetch(); }
+    else { showToast(r.error ?? (en ? "Couldn't send the invitation" : "邀请没发出去")); if (r.error?.includes("账号")) setAccountOpen(true); }
+  } catch { showToast(en ? "Network hiccup — try again." : "网络不太好，稍后再试。"); }
+};
 const cardQuery = useQuery({
 queryKey: ["card", cardOf ?? "", profile?.playerId ?? ""],
 queryFn: () => api.getPlayerCard({ playerId: profile!.playerId, targetId: cardOf! }),
@@ -1242,7 +1291,7 @@ perks: strArr(g.perks).filter((id) => perkById(id)),
 license: num(g.license, 0), licDay: num(g.licDay, 0), carDay: num(g.carDay, 0), carOwned: g.carOwned === true,
 hangover: g.hangover === true, record: num(g.record, 0),
 romance: g.romance && typeof g.romance === "object" && !Array.isArray(g.romance) ? Object.fromEntries(Object.entries(g.romance as Record<string, unknown>).filter(([k, v]) => NPCS.some((n) => n.name === k) && typeof v === "number")) as Record<string, number> : {},
-cohabit: g.cohabit === true, origin: typeof g.origin === "string" && g.origin.length < 40 ? g.origin : undefined, startTier: typeof g.startTier === "number" && g.startTier >= 0 && g.startTier <= 3 ? Math.round(g.startTier) : undefined, loc: typeof g.loc === "string" && g.loc.length < 120 ? g.loc : undefined, routine: g.routine && typeof g.routine === "object" && !Array.isArray(g.routine) ? (g.routine as RoutineDay) : undefined, actCount: num(g.actCount, 0), partyPlays: num(g.partyPlays, 0),
+cohabit: g.cohabit === true, roommate: typeof g.roommate === "string" && g.roommate.length < 40 ? g.roommate : undefined, rentPolicy: typeof g.rentPolicy === "number" && g.rentPolicy >= 0.9 && g.rentPolicy <= 1 ? g.rentPolicy : undefined, origin: typeof g.origin === "string" && g.origin.length < 40 ? g.origin : undefined, startTier: typeof g.startTier === "number" && g.startTier >= 0 && g.startTier <= 3 ? Math.round(g.startTier) : undefined, loc: typeof g.loc === "string" && g.loc.length < 120 ? g.loc : undefined, routine: g.routine && typeof g.routine === "object" && !Array.isArray(g.routine) ? (g.routine as RoutineDay) : undefined, actCount: num(g.actCount, 0), partyPlays: num(g.partyPlays, 0),
 };
 return { profile: { playerId: prof.playerId, name: prof.name }, gs };
 };
@@ -1329,7 +1378,7 @@ pendingAfterRide.current = null;
 pendingSleep.current = false;
 }
 const isRail = c.route.legs.some((l) => ["szhz-rail", "guangshen", "hz-intercity", "ganshen-rail", "guangshan-rail"].includes(l.line.id));
-const fareNow = evRef.current.metroFree ? 0 : c.route.fare;
+const fareNow = evRef.current.metroFree ? 0 : Math.round(c.route.fare * policyRef.current.metro);
 mutate((s) => { s.money -= fareNow; s.energy -= Math.max(3, Math.round(c.route.stops * 1.2)) + (c.gaveSeat ? 2 : 0); s.metroRides = (s.metroRides ?? 0) + 1; if (c.gaveSeat) { s.network += 1; s.mood += 4; } if (c.phoneUsed) s.mood += 2; });
 setCurrentLoc(c.toLoc); currentLocRef.current = c.toLoc; setSelectedLoc(c.toLoc);
 const lastSt = c.route.stations[c.route.stations.length - 1]?.name ?? "";
@@ -1557,6 +1606,22 @@ if (file && navigator.canShare?.({ files: [file] })) await navigator.share({ fil
 else if (navigator.share) await navigator.share({ text, url: link });
 else { await navigator.clipboard.writeText(`${text}${link}`); showToast("分享文案和邀请链接已复制，粘贴给朋友就行。"); }
 } catch { /* user closed the share sheet */ }
+};
+/* ready-made posts for 朋友圈 / 小红书 / 抖音: the origin and the climb are the hook */
+const copyPost = async (where: "moments" | "xhs" | "douyin") => {
+const st = gsRef.current; const prof = profileRef.current;
+if (!st || !prof) return;
+const T = TIERS[st.cityKey]; const t0 = st.startTier ?? tierOfIden(st.idenId); const t1 = tierAt(st); const og = originById(st.origin);
+const link = inviteLink(myPubRef.current, prof.name, st.employer);
+const who = og ? og.zh : IDENTITIES.find((i) => i.id === st.idenId)?.name ?? "深漂";
+const climb = `${T[t0]!.zh} → ${T[t1]!.zh}`;
+const text = where === "moments"
+  ? `在《深惠人生》抽签投胎，抽到「${who}」😂 第 ${Math.min(30, st.day)} 天，${climb}。30 天能搬进${T[3]!.zh}吗？你也来抽一签：${link}`
+  : where === "xhs"
+  ? `🎲 抽签投胎｜我在深圳的 30 天\n\n开局抽到：${who}\n现在：${climb}（${climbVerdict(t0, t1, false)}）\n\n真实地图 + 真实地铁 + 真人联机，11 月 14–19 日峰会周还能去会场当志愿者。你会抽到什么出身？👉 ${link}\n\n#深惠人生 #抽签投胎 #深圳打工人 #APEC深圳 #模拟人生`
+  : `开局抽到「${who}」，30 天能不能从${T[t0]!.zh}爬到${T[3]!.zh}？第 ${Math.min(30, st.day)} 天战报：${climb}。评论区晒你的出身👇 ${link} #深惠人生 #抽签投胎`;
+try { await navigator.clipboard.writeText(text); showToast(en ? "Copied — paste it with the image." : "文案已复制，配上分享图发出去吧。"); track("share_copy", { where }); }
+catch { showToast(en ? "Couldn't copy — long-press to copy the link instead." : "复制失败，长按链接手动复制。"); }
 };
 const copyInvite = async () => {
 const st = gsRef.current; const prof = profileRef.current;
@@ -2080,7 +2145,7 @@ break;
 case "eat": {
 const f = FOODS[s.cityKey][arg];
 if (!f) break;
-const fc = Math.round(f.cost * (ev.eatMul ?? 1));
+const fc = Math.round(f.cost * (ev.eatMul ?? 1) * policyRef.current.eat);
 const fm = f.mood + (ev.eatMood ?? 0);
 s.money -= fc; s.energy += f.energy; s.mood += fm; s.mealCount += 1;
 msg = `${f.name}下肚，能量 +${f.energy}，心情 +${fm}${ev.eatMul ? `（美食节价 ¥${fc}）` : ""}。`;
@@ -2392,9 +2457,10 @@ if (!/周六|周日/.test(weekday(d))) { const w = Math.round(basePay(s) * 0.6);
 s.money -= 40; s.mealCount += 2;
 }
 if (isSaturday(d)) {
-s.money -= s.rent;
-s.rentPaid += s.rent;
-rentMsg += ` 周六交租 -${fmt(s.rent)}。`;
+{ const pol = s.rentPolicy ?? 1; const mate = s.roommate; const due = Math.round(s.rent * pol * (mate ? 0.5 : 1));
+s.money -= due;
+s.rentPaid += due;
+rentMsg += ` 周六交租 -${fmt(due)}${mate ? `（和室友${mate}平摊）` : ""}${pol < 1 ? "（业委会减租 5%）" : ""}。`; }
 if (s.money < -500) broke = true;
 }
 if (s.invest > 0) {
@@ -3713,6 +3779,7 @@ return (
   <section className="mt-4 rounded-[20px] border-2 border-[var(--border)] bg-[var(--surface)] p-4 shadow-[5px_5px_0_var(--border)]" aria-label={en ? "Draw your origin" : "抽签投胎"}>
     <p className="font-display text-2xl font-black leading-snug">{hook}</p>
     <p className="mt-1 text-sm text-[var(--dim)]">{en ? "You don't choose who you are — you draw it. Most people start at the bottom. Where you end up is up to you." : "出身靠抽签：骑手、保安、厨师……还是深二代？大多数人从最底层开始，结局看你自己。"}</p>
+    {setupCity === "sz" && isApecSeason() && <p className="mt-2 rounded-[10px] bg-[#fdf6da] px-3 py-1.5 text-xs font-black text-[#5c4a00]">🌐 {en ? "Summit week special: some draws land on the limited “student volunteer” origin (14–19 Nov)." : "峰会周限定：有机会抽到「大学生志愿者」出身（11 月 14–19 日）。"}</p>}
     <div className="mt-3 flex flex-wrap gap-1.5">
       {(Object.keys(CITIES) as CityKey[]).map((k) => (
         <button key={k} type="button" onClick={() => setSetupCity(k)} aria-pressed={setupCity === k} className={`rounded-full border-2 px-3 py-1 text-xs font-black ${setupCity === k ? "border-[var(--border)] bg-[var(--text)] text-[var(--bg)]" : "border-[var(--line)]"}`}>{CITIES[k].emoji} {en ? trText(CITIES[k].name) : CITIES[k].name}</button>
@@ -3727,7 +3794,7 @@ return (
       <div className={`mt-3 flex items-start gap-3 rounded-[14px] border-2 p-3 ${shuffle ? "border-dashed border-[var(--line)] opacity-70" : "border-[var(--accent)]"}`} aria-live="polite">
         <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full text-3xl" style={{ background: hexCss(ci.color) + "2b" }}>{ci.emoji}</span>
         <span className="min-w-0">
-          <span className="block text-base font-black">{en ? card.en : card.zh}</span>
+          <span className="block text-base font-black">{card.id === "o-apec" && !shuffle ? "🌐 " : ""}{en ? card.en : card.zh}</span>
           <span className="block text-xs leading-relaxed text-[var(--dim)]">{en ? card.lineEn : card.line}</span>
           {!shuffle && <span className="mt-0.5 block text-xs font-bold">{en ? `Start with ${fmt(ci.money)} · about ${fmt(ci.pay)} a day` : `开局 ${fmt(ci.money)} · 日薪约 ${fmt(ci.pay)}`}</span>}
         </span>
@@ -4005,6 +4072,9 @@ return (
 <button type="button" onClick={() => setPartyOpen(true)} className={`chip ${parties.some((pt) => pt.status === "open") ? "border-[var(--accent)] text-[var(--accent)]" : ""}`} title={en ? "Parties in this city: join other players" : "同城组局：和真人一起玩"}>🎉 {en ? "Parties" : "组局"} {parties.filter((pt) => pt.status === "open").length}</button>
 <button type="button" onClick={() => { setHubOpen(true); track("hub_open"); }} className="chip border-[var(--text)] bg-[var(--text)] text-[var(--bg)]" title={en ? "Everything you can do right now, nearest first" : "现在能做的所有事，按远近排"}>🧭 {en ? "What can I do?" : "现在能干嘛"}</button>
 <button type="button" onClick={() => setStoreOpen(true)} className="chip" title={en ? "Starlight store: looks, season pass, membership" : "星光商店：外观、赛季通行证、会员"}>✨ {en ? "Store" : "商店"}</button>
+<button type="button" onClick={() => { setUpdatesOpen(true); setUpdateSeen(LATEST_UPDATE); try { localStorage.setItem("shhr-update-seen", LATEST_UPDATE); } catch { /* storage unavailable */ } }} className={`chip ${updateSeen !== LATEST_UPDATE ? "border-[var(--accent)] text-[var(--accent)]" : ""}`} title={en ? "What's new, and a feedback box" : "更新公告和意见箱"}>🆕 {en ? "What's new" : "更新"}{updateSeen !== LATEST_UPDATE ? " ●" : ""}</button>
+<button type="button" onClick={() => setBondsOpen(true)} className={`chip ${bondInvites ? "border-[var(--accent)] text-[var(--accent)]" : ""}`} title={en ? "Roommates, sworn siblings, partner — real players" : "和真人合租、结拜、在一起"}>🤝 {en ? "People" : "关系"}{bondInvites ? ` ${bondInvites}` : bonds.some((b) => b.status === "active") ? ` · ${bonds.filter((b) => b.status === "active").map((b) => BOND_INFO[b.kind].emoji).join("")}` : ""}</button>
+<button type="button" onClick={() => setCommitteeOpen(true)} className="chip" title={en ? "Weekly estate-committee election: the chair's policy applies citywide" : "每周业委会选举：主任的政策全城生效"}>🏛️ {en ? "Committee" : "业委会"}{committeeQuery.data?.chair ? ` · ${en ? PLEDGE_INFO[committeeQuery.data.chair.pledge].short[1] : PLEDGE_INFO[committeeQuery.data.chair.pledge].short[0]}` : ""}</button>
 <button type="button" onClick={() => setAccountOpen(true)} className={`chip ${!loggedIn && s.day >= 2 ? "border-[var(--accent)] text-[var(--accent)]" : ""}`} title={en ? "Account: keep your progress, unlock DMs and parties" : "账号：保住进度，解锁私聊和组局"}>👤 {loggedIn ? (en ? "Account" : "账号") : (en ? "Sign in" : "绑定账号")}</button>
 <button type="button" onClick={() => setDmOpen(true)} className={`chip ${unreadDm ? "border-[var(--accent)] text-[var(--accent)]" : ""}`} title={en ? "Private messages" : "私信"}>💬 {en ? "DMs" : "私信"}{unreadDm ? ` ${unreadDm}` : ""}</button>
 <span className="chip" title={iden.name}>{iden.emoji} {career.name} ×{career.mul}</span>
@@ -4893,6 +4963,12 @@ return (
 {shareImg ? <a href={shareImg.url} download="深惠人生战绩.png" className="rounded-full bg-[var(--text)] py-3 text-center text-sm font-black text-[var(--bg)]">⬇️ 保存图片</a> : <span />}
 </div>
 <button type="button" onClick={() => void copyInvite()} className="mt-2 w-full rounded-full border-2 border-[var(--border)] py-2.5 text-sm font-black">🔗 复制邀请链接</button>
+<p className="mt-3 text-xs font-black text-[var(--dim)]">{en ? "Ready-made posts (copy, then paste with the image):" : "现成文案（复制后配上面的图发出去）："}</p>
+<div className="mt-1.5 grid grid-cols-3 gap-1.5">
+{(["moments", "xhs", "douyin"] as const).map((k) => (
+<button key={k} type="button" onClick={() => void copyPost(k)} className="rounded-full border-2 border-[var(--line)] py-2 text-xs font-black">{k === "moments" ? (en ? "WeChat Moments" : "朋友圈") : k === "xhs" ? (en ? "Xiaohongshu" : "小红书") : (en ? "Douyin" : "抖音")}</button>
+))}
+</div>
 <p className="mt-2 break-all rounded-[10px] bg-[var(--surface2)] px-3 py-2 text-[11px] text-[var(--dim)]">{profile && s && myPub ? inviteLink(myPub, profile.name, s.employer) : "（联网后生成）"}</p>
 <p className="mt-2 text-xs leading-relaxed text-[var(--dim)]">朋友用这个链接进来：开局多 ¥100{s && (s.employer ?? "startup") !== "startup" ? `，还自带${companyById(s.employer).short}的内推` : ""}；他玩满 3 天、和真人组过一次局后，你收到 ¥200 邀请奖励（同一台设备或同一个网络的账号不算，每周最多 10 份）。</p>
 </div>
@@ -5096,6 +5172,11 @@ return (
 <button type="button" disabled={s.money < GIFTS.tea.cost} onClick={() => sendGift(cardOf, c?.name ?? ol?.name ?? "", "tea")} className="rounded-full border-2 border-[var(--text)] py-2 text-xs font-black disabled:opacity-40">{GIFTS.tea.emoji} {en ? `Send a bubble tea ¥${GIFTS.tea.cost}` : `请杯${GIFTS.tea.name} ¥${GIFTS.tea.cost}`}</button>
 <button type="button" onClick={() => blockNow(cardOf, !c?.blocked)} className="rounded-full border-2 border-[var(--line)] py-2 text-xs font-black">{c?.blocked ? (en ? "Unblock" : "取消拉黑") : (en ? "🚫 Block" : "🚫 拉黑")}</button>
 </div>
+{(() => { const mineWith = bonds.filter((b) => b.peerId === cardOf); return (
+<div className="mt-2 grid grid-cols-3 gap-1.5">
+{(Object.keys(BOND_INFO) as BondKind[]).map((k) => { const has = mineWith.find((b) => b.kind === k); return (
+<button key={k} type="button" disabled={c?.blocked || !!has} onClick={() => void proposeBond(cardOf, k)} className="rounded-full border-2 border-[var(--line)] py-1.5 text-[11px] font-black disabled:opacity-50" title={en ? BOND_INFO[k].perk[1] : BOND_INFO[k].perk[0]}>{BOND_INFO[k].emoji} {has ? (has.status === "active" ? (en ? BOND_INFO[k].en : BOND_INFO[k].zh) : (en ? "Sent" : "已邀请")) : (en ? BOND_INFO[k].ask[1] : BOND_INFO[k].ask[0])}</button> ); })}
+</div> ); })()}
 <details className="mt-2 text-xs"><summary className="cursor-pointer font-black text-[var(--dim)]">⚠️ {en ? "Report" : "举报"}</summary>
 <div className="mt-1.5 flex flex-wrap gap-1.5">{([["harassment", "骚扰", "Harassment"], ["scam", "诈骗", "Scam"], ["spam", "广告刷屏", "Spam"], ["inappropriate", "不当内容", "Inappropriate"], ["minor", "疑似未成年人安全问题", "Child safety"], ["other", "其他", "Other"]] as const).map(([k, zh, e]) => <button key={k} type="button" onClick={() => reportNow(cardOf, k)} className="chip">{en ? e : zh}</button>)}</div>
 </details>
@@ -5133,6 +5214,9 @@ return (
 </div>
 )}
 {rideBig && (roadRide || carriage) && <button type="button" onClick={() => setRideBig(false)} className="fixed bottom-3 right-[min(412px,calc(100vw-12px))] z-[61] rounded-full border-2 border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-black shadow-xl">▾ {en ? "Fold" : "收起"}</button>}
+{updatesOpen && phase === "game" && profile && <UpdatesModal en={en} playerId={profile.playerId} city={s.cityKey} onClose={() => setUpdatesOpen(false)} toast={showToast} />}
+{bondsOpen && phase === "game" && profile && <BondsModal en={en} playerId={profile.playerId} bonds={bonds} onClose={() => setBondsOpen(false)} toast={showToast} refresh={() => void bondsQuery.refetch()} openCard={(pub) => { setBondsOpen(false); setCardOf(pub); }} />}
+{committeeOpen && phase === "game" && profile && <CommitteeModal en={en} playerId={profile.playerId} city={s.cityKey} cityName={en ? trText(CITIES[s.cityKey].name) : CITIES[s.cityKey].name} st={committeeQuery.data} onClose={() => setCommitteeOpen(false)} toast={showToast} refresh={() => void committeeQuery.refetch()} openAccount={() => { setCommitteeOpen(false); setAccountOpen(true); }} />}
 {storeOpen && phase === "game" && <StoreModal en={en} onClose={() => setStoreOpen(false)} toast={showToast} openAccount={() => setAccountOpen(true)} />}
 {accountOpen && phase === "game" && <AccountModal en={en} playerId={profile?.playerId ?? null} saveKey={LS_KEY} onClose={() => setAccountOpen(false)} toast={showToast} onChange={(v) => { setLoggedIn(v); track(v ? "account_login" : "account_logout"); }} />}
 {dmOpen && (() => { const th = threads.find((t) => t.peerId === dmPeer); const peerName = th?.peerName ?? (world?.online ?? []).find((x) => x.id === dmPeer)?.name ?? ""; return (
@@ -5143,7 +5227,7 @@ return (
 {threads.length === 0 && <p className="px-3 text-xs text-[var(--dim)]">{en ? "No messages yet. Tap a player's name on the map to say hi." : "还没有私信。点地图上玩家的名字，打个招呼吧。"}</p>}
 {threads.map((t) => (
 <button key={t.peerId} type="button" onClick={() => openDm(t.peerId)} className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm ${t.peerId === dmPeer ? "bg-[var(--surface2)]" : ""}`}>
-<span className="text-xl">{t.peerEmoji}</span><span className="min-w-0 flex-1"><span className="block truncate font-black">{t.online ? "🟢 " : ""}{t.peerName}</span><span className="block truncate text-[11px] text-[var(--dim)]">{(t.messages[t.messages.length - 1]?.body ?? "").replace(/^\[\[party:\d+\]\]$/, en ? "🎉 Party invite" : "🎉 组局邀请")}</span></span>{t.unread > 0 && <span className="rounded-full bg-[var(--accent)] px-1.5 text-[10px] font-black text-white">{t.unread}</span>}
+<span className="text-xl">{t.peerEmoji}</span><span className="min-w-0 flex-1"><span className="block truncate font-black">{t.online ? "🟢 " : ""}{t.peerName}</span><span className="block truncate text-[11px] text-[var(--dim)]">{(t.messages[t.messages.length - 1]?.body ?? "").replace(/^\[\[party:\d+\]\]$/, en ? "🎉 Party invite" : "🎉 组局邀请").replace(/^\[\[bond:(\w+)\]\]$/, (_m, k: string) => { const b = BOND_INFO[k as BondKind]; return b ? `${b.emoji} ${en ? b.ask[1] : b.ask[0]}` : ""; })}</span></span>{t.unread > 0 && <span className="rounded-full bg-[var(--accent)] px-1.5 text-[10px] font-black text-white">{t.unread}</span>}
 </button>
 ))}
 </div>
@@ -5153,7 +5237,7 @@ return (
 <div className="flex-1 overflow-y-auto p-3">
 {(th?.messages ?? []).map((m) => { const inv = /^\[\[party:(\d+)\]\]$/.exec(m.body); const pt = inv ? parties.find((x) => x.id === Number(inv[1])) : undefined; const act = pt ? activityById(pt.activityId) : null; return (
 <div key={m.id} className={`mb-1.5 max-w-[85%] rounded-[12px] px-3 py-2 text-[13px] ${m.mine ? "ml-auto bg-[var(--text)] text-[var(--bg)]" : "border border-[var(--line)] bg-[var(--bg)]"}`}>
-{inv ? (pt && act ? <span>🎉 {en ? `Party invite: ${act.name[1]} at ${trText(pt.locName)}` : `组局邀请：${pt.locName} · ${act.name[0]}`}{!m.mine && pt.status === "open" && !pt.members.some((x) => x.id === myId) && <button type="button" onClick={() => { setDmOpen(false); joinPartyNow(pt); }} className="ml-2 rounded-full bg-[var(--accent)] px-2.5 py-0.5 text-[11px] font-black text-white">{en ? "Join" : "加入"}</button>}</span> : <span className="opacity-70">{en ? "🎉 Party invite (this party has ended)" : "🎉 组局邀请（这个局已经结束了）"}</span>) : <span className="whitespace-pre-wrap break-words">{m.body}</span>}
+{/^\[\[bond:(\w+)\]\]$/.test(m.body) ? (() => { const k = /^\[\[bond:(\w+)\]\]$/.exec(m.body)![1] as BondKind; const b = BOND_INFO[k]; return b ? <span>{b.emoji} {m.mine ? (en ? `You sent: ${b.ask[1]}` : `你发出了：${b.ask[0]}`) : (en ? `${b.ask[1]} — ${b.perk[1]}` : `${b.ask[0]}——${b.perk[0]}`)}{!m.mine && <button type="button" onClick={() => { setDmOpen(false); setBondsOpen(true); }} className="ml-2 rounded-full bg-[var(--accent)] px-2.5 py-0.5 text-[11px] font-black text-white">{en ? "Reply" : "去回复"}</button>}</span> : null; })() : inv ? (pt && act ? <span>🎉 {en ? `Party invite: ${act.name[1]} at ${trText(pt.locName)}` : `组局邀请：${pt.locName} · ${act.name[0]}`}{!m.mine && pt.status === "open" && !pt.members.some((x) => x.id === myId) && <button type="button" onClick={() => { setDmOpen(false); joinPartyNow(pt); }} className="ml-2 rounded-full bg-[var(--accent)] px-2.5 py-0.5 text-[11px] font-black text-white">{en ? "Join" : "加入"}</button>}</span> : <span className="opacity-70">{en ? "🎉 Party invite (this party has ended)" : "🎉 组局邀请（这个局已经结束了）"}</span>) : <span className="whitespace-pre-wrap break-words">{m.body}</span>}
 </div> ); })}
 </div>
 <form className="flex gap-2 border-t border-[var(--line)] p-2" onSubmit={(e) => { e.preventDefault(); sendDmNow(dmPeer, dmInput); }}>

@@ -416,6 +416,38 @@ const envFlag = (k: string): string => { try { return String((globalThis as { pr
 /** Social features (DMs, parties) need a bound account unless SOCIAL_REQUIRES_ACCOUNT=0. */
 const socialNeedsAccount = () => envFlag("SOCIAL_REQUIRES_ACCOUNT") !== "0";
 const NEED_ACCOUNT = "先绑定账号（右上角 👤 账号），才能私聊和组局——防骚扰、防小号";
+
+/* ---- 真人关系 + 业委会 helpers ---- */
+const BOND_KINDS = ["roommate", "sworn", "partner"] as const;
+type BondKind = (typeof BOND_KINDS)[number];
+const PLEDGES = ["rent", "metro", "eat"] as const;
+type Pledge = (typeof PLEDGES)[number];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Db = any;
+/** room for one more bond of this kind: one roommate, one partner, up to three sworn siblings */
+async function bondRoom(db: Db, who: string, kind: BondKind): Promise<string | null> {
+  const n = await db.select({ n: sql<number>`count(*)` }).from(schema.bonds)
+    .where(sql`(${schema.bonds.a} = ${who} OR ${schema.bonds.b} = ${who}) AND ${schema.bonds.kind} = ${kind} AND ${schema.bonds.status} = 'active'`);
+  const have = Number(n[0]?.n ?? 0);
+  if (kind === "roommate" && have >= 1) return "已经有室友了，一间房只能两个人合租";
+  if (kind === "partner" && have >= 1) return "已经有另一半了";
+  if (kind === "sworn" && have >= 3) return "结拜的兄弟姐妹最多 3 个";
+  return null;
+}
+/** Beijing-time week number (weeks start Monday 00:00 Beijing) */
+const bjWeek = (ms = Date.now()) => Math.floor((Math.floor((ms + 8 * 3600_000) / 86_400_000) + 3) / 7);
+const weekStartMs = (week: number) => (week * 7 - 3) * 86_400_000 - 8 * 3600_000;
+async function committeeRace(db: Db, week: number, city: string): Promise<{ playerId: string; pub: string; name: string; emoji: string; pledge: Pledge; votes: number; at: number }[]> {
+  const cands = await db.select().from(schema.committeeCandidates).where(and(eq(schema.committeeCandidates.week, week), eq(schema.committeeCandidates.city, city)));
+  const out = [];
+  for (const c of cands) {
+    const [pl] = await db.select().from(schema.players).where(eq(schema.players.id, c.playerId)).limit(1);
+    if (!pl || pl.banned) continue;
+    const v = await db.select({ n: sql<number>`count(*)` }).from(schema.committeeVotes).where(and(eq(schema.committeeVotes.week, week), eq(schema.committeeVotes.city, city), eq(schema.committeeVotes.candidateId, c.playerId)));
+    out.push({ playerId: c.playerId, pub: pl.pub ?? pubOf(pl.id), name: pl.name, emoji: pl.emoji, pledge: c.pledge as Pledge, votes: Number(v[0]?.n ?? 0), at: c.createdAt.getTime() });
+  }
+  return out.sort((x, y) => y.votes - x.votes || x.at - y.at).slice(0, 20);
+}
 function normSubject(provider: "email" | "phone", to: string): string | null {
   const t = to.trim();
   if (provider === "email") { const e = t.toLowerCase(); return /^[^\s@]{1,64}@[^\s@]{1,190}\.[a-z]{2,}$/.test(e) ? e : null; }
@@ -1035,6 +1067,177 @@ export const Actions = {
     },
   }),
 
+  /* ---- 意见箱：游戏里「🆕 更新」面板底下 ---- */
+  sendFeedback: defineAction({
+    description: "Stores a player's bug report or idea for the team (shown on the admin page). At most 8 a day per player.",
+    request: z.object({ playerId: z.string().min(4).max(64), kind: z.enum(["bug", "idea", "other"]), body: z.string().trim().min(2).max(600), city: z.enum(["sz", "hz", "hk"]).optional() }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const [me] = await db.select().from(schema.players).where(eq(schema.players.id, args.playerId)).limit(1);
+      if (!me) return { ok: false, error: "先进游戏再提意见" };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      const today = await db.select({ n: sql<number>`count(*)` }).from(schema.feedback).where(and(eq(schema.feedback.playerId, me.id), gte(schema.feedback.createdAt, new Date(Date.now() - 24 * 3600_000))));
+      if (Number(today[0]?.n ?? 0) >= 8) return { ok: false, error: "今天已经提了很多条了，谢谢！明天再来" };
+      await db.insert(schema.feedback).values({ playerId: me.id, kind: args.kind, body: cleanText(args.body).slice(0, 600), city: args.city ?? me.cityKey, createdAt: new Date() });
+      return { ok: true };
+    },
+  }),
+
+  /* ---- 真人关系：合租室友 / 结拜 / 情侣 ---- */
+  getBonds: defineAction({
+    description: "The caller's bonds with other real players (roommate, sworn sibling, partner): active ones and invitations waiting for an answer.",
+    request: z.object({ playerId: z.string().min(4).max(64) }),
+    response: z.object({ bonds: z.array(z.object({ id: z.number(), kind: z.enum(BOND_KINDS), status: z.enum(["pending", "active"]), mine: z.boolean(), peerId: z.string(), peerName: z.string(), peerEmoji: z.string(), peerCity: z.string(), online: z.boolean(), since: z.string() })) }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const rows = await db.select().from(schema.bonds)
+        .where(sql`(${schema.bonds.a} = ${args.playerId} OR ${schema.bonds.b} = ${args.playerId}) AND ${schema.bonds.status} IN ('pending', 'active')`)
+        .orderBy(desc(schema.bonds.id)).limit(30);
+      const out = [];
+      for (const r of rows) {
+        const peer = r.a === args.playerId ? r.b : r.a;
+        const [pl] = await db.select().from(schema.players).where(eq(schema.players.id, peer)).limit(1);
+        if (!pl) continue;
+        out.push({ id: r.id, kind: r.kind as BondKind, status: r.status as "pending" | "active", mine: r.a === args.playerId, peerId: pl.pub ?? pubOf(pl.id), peerName: pl.name, peerEmoji: pl.emoji, peerCity: pl.cityKey, online: Date.now() - pl.lastSeen.getTime() < ONLINE_WINDOW_MS, since: r.updatedAt.toISOString() });
+      }
+      return { bonds: out };
+    },
+  }),
+
+  proposeBond: defineAction({
+    description: "Invites another real player to become your roommate (rent split in half), sworn sibling or partner. Needs an account; only people you've partied with or exchanged messages with.",
+    request: z.object({ playerId: z.string().min(4).max(64), toId: z.string().min(4).max(64), kind: z.enum(BOND_KINDS) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const [me] = await db.select().from(schema.players).where(eq(schema.players.id, args.playerId)).limit(1);
+      const [to] = await db.select().from(schema.players).where(eq(schema.players.pub, args.toId)).limit(1);
+      if (!me || !to) return { ok: false, error: "对方不存在" };
+      if (me.id === to.id) return { ok: false, error: "不能和自己结对" };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (socialNeedsAccount() && !me.accountId) return { ok: false, error: NEED_ACCOUNT };
+      const [bl] = await db.select().from(schema.blocks).where(and(eq(schema.blocks.a, to.id), eq(schema.blocks.b, me.id))).limit(1);
+      if (bl) return { ok: false, error: "对方不接收你的邀请" };
+      if (args.kind === "roommate" && me.cityKey !== to.cityKey) return { ok: false, error: "合租要在同一座城" };
+      // only people you actually know: partied together, or both have written to each other
+      const [ka, kb] = pairKey(me.id, to.id);
+      const [bd] = await db.select().from(schema.buddies).where(and(eq(schema.buddies.a, ka), eq(schema.buddies.b, kb))).limit(1);
+      if (!bd) {
+        const w1 = await db.select({ n: sql<number>`count(*)` }).from(schema.messages).where(and(eq(schema.messages.fromId, me.id), eq(schema.messages.toId, to.id)));
+        const w2 = await db.select({ n: sql<number>`count(*)` }).from(schema.messages).where(and(eq(schema.messages.fromId, to.id), eq(schema.messages.toId, me.id)));
+        if (!(Number(w1[0]?.n ?? 0) > 0 && Number(w2[0]?.n ?? 0) > 0)) return { ok: false, error: "先一起组个局、或者互相聊过天，再发出邀请" };
+      }
+      const open = await db.select().from(schema.bonds).where(sql`((${schema.bonds.a} = ${me.id} AND ${schema.bonds.b} = ${to.id}) OR (${schema.bonds.a} = ${to.id} AND ${schema.bonds.b} = ${me.id})) AND ${schema.bonds.kind} = ${args.kind} AND ${schema.bonds.status} IN ('pending', 'active')`).limit(1);
+      if (open.length) return { ok: false, error: open[0]!.status === "active" ? "你们已经是这层关系了" : "邀请已经发出，等对方回复" };
+      const lim = await bondRoom(db, me.id, args.kind);
+      if (lim) return { ok: false, error: lim };
+      const pendingMine = await db.select({ n: sql<number>`count(*)` }).from(schema.bonds).where(and(eq(schema.bonds.a, me.id), eq(schema.bonds.status, "pending")));
+      if (Number(pendingMine[0]?.n ?? 0) >= 5) return { ok: false, error: "已经发出 5 个邀请了，等等回复" };
+      const now = new Date();
+      await db.insert(schema.bonds).values({ a: me.id, b: to.id, kind: args.kind, status: "pending", createdAt: now, updatedAt: now });
+      await db.insert(schema.messages).values({ fromId: me.id, toId: to.id, body: `[[bond:${args.kind}]]`, read: 0, createdAt: now });
+      return { ok: true };
+    },
+  }),
+
+  answerBond: defineAction({
+    description: "Accepts or declines a bond invitation sent to the caller.",
+    request: z.object({ playerId: z.string().min(4).max(64), bondId: z.number().int().positive(), accept: z.boolean() }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const [r] = await db.select().from(schema.bonds).where(eq(schema.bonds.id, args.bondId)).limit(1);
+      if (!r || r.b !== args.playerId || r.status !== "pending") return { ok: false, error: "这个邀请已经失效了" };
+      if (args.accept) {
+        const lim = (await bondRoom(db, r.a, r.kind as BondKind)) ?? (await bondRoom(db, r.b, r.kind as BondKind));
+        if (lim) return { ok: false, error: lim };
+      }
+      await db.update(schema.bonds).set({ status: args.accept ? "active" : "declined", updatedAt: new Date() }).where(eq(schema.bonds.id, r.id));
+      return { ok: true };
+    },
+  }),
+
+  endBond: defineAction({
+    description: "Ends a bond (moving out, parting ways) or withdraws an invitation the caller sent. Either side can do it.",
+    request: z.object({ playerId: z.string().min(4).max(64), bondId: z.number().int().positive() }),
+    response: z.object({ ok: z.boolean() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const [r] = await db.select().from(schema.bonds).where(eq(schema.bonds.id, args.bondId)).limit(1);
+      if (!r || (r.a !== args.playerId && r.b !== args.playerId) || (r.status !== "active" && r.status !== "pending")) return { ok: false };
+      await db.update(schema.bonds).set({ status: "ended", updatedAt: new Date() }).where(eq(schema.bonds.id, r.id));
+      return { ok: true };
+    },
+  }),
+
+  /* ---- 业委会选举：每城每周一届 ---- */
+  committeeState: defineAction({
+    description: "This week's estate-committee chair and their policy for a city (elected last week), plus this week's race: candidates, votes, and the caller's own vote / candidacy.",
+    request: z.object({ playerId: z.string().min(4).max(64), city: z.enum(["sz", "hz", "hk"]) }),
+    response: z.object({
+      week: z.number(), endsAt: z.string(),
+      chair: z.object({ id: z.string(), name: z.string(), emoji: z.string(), pledge: z.enum(PLEDGES), votes: z.number() }).nullable(),
+      candidates: z.array(z.object({ id: z.string(), name: z.string(), emoji: z.string(), pledge: z.enum(PLEDGES), votes: z.number(), me: z.boolean() })),
+      myVote: z.string().nullable(), running: z.boolean(),
+    }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const week = bjWeek();
+      const race = await committeeRace(db, week, args.city);
+      const prev = await committeeRace(db, week - 1, args.city);
+      const top = prev[0];
+      const [mv] = await db.select().from(schema.committeeVotes).where(and(eq(schema.committeeVotes.week, week), eq(schema.committeeVotes.city, args.city), eq(schema.committeeVotes.voterId, args.playerId))).limit(1);
+      return {
+        week, endsAt: new Date(weekStartMs(week + 1)).toISOString(),
+        chair: top && top.votes > 0 ? { id: top.pub, name: top.name, emoji: top.emoji, pledge: top.pledge, votes: top.votes } : null,
+        candidates: race.map((c) => ({ id: c.pub, name: c.name, emoji: c.emoji, pledge: c.pledge, votes: c.votes, me: c.playerId === args.playerId })),
+        myVote: mv ? pubOf(mv.candidateId) : null,
+        running: race.some((c) => c.playerId === args.playerId),
+      };
+    },
+  }),
+
+  runForCommittee: defineAction({
+    description: "Stands for this week's estate-committee election in the caller's city with one policy pledge (rent -5%, metro fares -20%, eating out -10%). Needs an account.",
+    request: z.object({ playerId: z.string().min(4).max(64), city: z.enum(["sz", "hz", "hk"]), pledge: z.enum(PLEDGES) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const [me] = await db.select().from(schema.players).where(eq(schema.players.id, args.playerId)).limit(1);
+      if (!me) return { ok: false, error: "先进游戏" };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (socialNeedsAccount() && !me.accountId) return { ok: false, error: "先绑定账号（右上角 👤 账号），才能参选——防小号刷票" };
+      if (me.cityKey !== args.city) return { ok: false, error: "只能在你住的城市参选" };
+      const week = bjWeek();
+      await db.insert(schema.committeeCandidates).values({ week, city: args.city, playerId: me.id, pledge: args.pledge, createdAt: new Date() })
+        .onConflictDoUpdate({ target: [schema.committeeCandidates.week, schema.committeeCandidates.city, schema.committeeCandidates.playerId], set: { pledge: args.pledge } });
+      return { ok: true };
+    },
+  }),
+
+  voteCommittee: defineAction({
+    description: "Casts (or moves) the caller's one vote in this week's estate-committee election of their city. Needs an account; you can't vote for yourself.",
+    request: z.object({ playerId: z.string().min(4).max(64), city: z.enum(["sz", "hz", "hk"]), candidateId: z.string().min(4).max(64) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const [me] = await db.select().from(schema.players).where(eq(schema.players.id, args.playerId)).limit(1);
+      const [cand] = await db.select().from(schema.players).where(eq(schema.players.pub, args.candidateId)).limit(1);
+      if (!me || !cand) return { ok: false, error: "候选人不存在" };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (socialNeedsAccount() && !me.accountId) return { ok: false, error: "先绑定账号（右上角 👤 账号），才能投票——一人一票" };
+      if (me.id === cand.id) return { ok: false, error: "不能投给自己" };
+      if (me.cityKey !== args.city) return { ok: false, error: "只能给你住的城市投票" };
+      const week = bjWeek();
+      const [isCand] = await db.select().from(schema.committeeCandidates).where(and(eq(schema.committeeCandidates.week, week), eq(schema.committeeCandidates.city, args.city), eq(schema.committeeCandidates.playerId, cand.id))).limit(1);
+      if (!isCand) return { ok: false, error: "对方这周没有参选" };
+      await db.insert(schema.committeeVotes).values({ week, city: args.city, voterId: me.id, candidateId: cand.id, createdAt: new Date() })
+        .onConflictDoUpdate({ target: [schema.committeeVotes.week, schema.committeeVotes.city, schema.committeeVotes.voterId], set: { candidateId: cand.id, createdAt: new Date() } });
+      return { ok: true };
+    },
+  }),
+
   /* ---- ✨ 商店 ---- */
   storeState: defineAction({
     description: "The logged-in account's ✨ balance, owned looks, season pass progress, membership and the catalogue.",
@@ -1479,8 +1682,11 @@ export const Actions = {
         orders: recentOrders.map((o) => ({ id: o.id, product: o.product, amount: o.amount, currency: o.currency, status: o.status, provider: o.provider, at: o.createdAt.toISOString() })),
         starsOutstanding: starsOut,
       };
+      const fbRows = await db.select().from(schema.feedback).orderBy(desc(schema.feedback.id)).limit(80);
+      const feedback = [];
+      for (const f of fbRows) { const [pl] = await db.select({ name: schema.players.name }).from(schema.players).where(eq(schema.players.id, f.playerId)).limit(1); feedback.push({ id: f.id, kind: f.kind, body: f.body, city: f.city, name: pl?.name ?? "?", at: f.createdAt.toISOString() }); }
       return { ok: true, data: {
-        totalPlayers, banned, economy,
+        totalPlayers, banned, economy, feedback,
         dau: [...dau.entries()].sort((a, b) => a[0].localeCompare(b[0])).slice(-30),
         d1: cohort(1), d7: cohort(7),
         topEvents: top.map((t) => ({ name: t.name, n: Number(t.n) })),

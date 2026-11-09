@@ -85,6 +85,13 @@
       "when": 1794900000000,
       "tag": "0012_economy",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1795000000000,
+      "tag": "0013_launch_social",
+      "breakpoints": true
     }
   ]
 }
