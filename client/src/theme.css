@@ -261,7 +261,10 @@ body {
   .compact-only { display: inline-flex !important; }
 }
 
-/* on compact screens the minimap sits above the two rows of map buttons instead of covering them */
+/* compact screens: one bottom row — minimap card on the left, a short button row on the right */
 @media (max-width: 639px), (max-height: 500px) {
-  .mini-dock { bottom: 104px !important; }
+  .mini-card { width: 132px !important; }
+  .mini-canvas { width: 132px !important; height: 73px !important; }
+  .compact-dock { max-width: calc(100% - 148px) !important; gap: 4px !important; }
+  .left-cluster > button { width: 38px; height: 38px; padding: 0 !important; display: grid; place-items: center; font-size: 15px; }
 }

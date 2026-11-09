@@ -700,6 +700,8 @@ const setMapMode = (m: "city" | "follow") => {
   showToast(m === "follow" ? (en ? "🎯 Follow view: the camera stays with you; the minimap shows the whole city." : "🎯 跟随视角：镜头跟着你，小地图看全城。") : (en ? "🗺️ Whole-city view." : "🗺️ 全城视角：一眼看全城。"));
 };
 const [retrainOpen, setRetrainOpen] = useState(false);
+/* compact screens: the right-hand panel rail folds behind one ☰ button */
+const [railOpen, setRailOpen] = useState(false);
 /* Map fullscreen: the map shell becomes a fixed full-viewport stage
    (plus the native Fullscreen API when the browser allows it). */
 const [mapFullscreen, setMapFullscreen] = useState(false);
@@ -4348,16 +4350,16 @@ return (
 ))}
 </div>
 {/* 左侧中段控制簇：出行导航 + 弹幕开关（不在顶部，不挡地图中心） */}
-<div className="absolute left-3 top-1/2 z-20 flex -translate-y-1/2 flex-col items-start gap-2">
+<div className="left-cluster absolute left-3 top-1/2 z-20 flex -translate-y-1/2 flex-col items-start gap-2">
 <button type="button" aria-label={navOpen ? "收起地图上的出行导航" : "打开地图上的出行导航"} aria-expanded={navOpen} onClick={() => setNavOpen((o) => !o)} className="rounded-full border border-black/40 bg-[#14202b]/90 px-3.5 py-2 text-xs font-black text-white shadow-lg">
-🧭<span className="compact-hide"> {navOpen ? "收起导航" : `出行导航 · ${modesForCity(s.cityKey).find((m) => m.id === travelMode)?.emoji ?? ""} ${modesForCity(s.cityKey).find((m) => m.id === travelMode)?.name ?? ""}`}</span><span className="compact-only"> {modesForCity(s.cityKey).find((m) => m.id === travelMode)?.emoji ?? ""}</span>
+🧭<span className="compact-hide"> {navOpen ? "收起导航" : `出行导航 · ${modesForCity(s.cityKey).find((m) => m.id === travelMode)?.emoji ?? ""} ${modesForCity(s.cityKey).find((m) => m.id === travelMode)?.name ?? ""}`}</span>
 </button>
 <button type="button" aria-label={danmakuOn ? "关闭弹幕" : "开启弹幕"} aria-pressed={danmakuOn} onClick={() => setDanmakuOn((v) => !v)} className={`rounded-full border px-3.5 py-2 text-xs font-black shadow-lg ${danmakuOn ? "border-transparent bg-[var(--accent)] text-white" : "border-black/40 bg-[#14202b]/90 text-white"}`}>
 💬<span className="compact-hide"> 弹幕{danmakuOn ? "开" : "关"}</span>
 </button>
 {(Object.keys(CITIES) as CityKey[]).filter((k) => k !== s.cityKey).map((k) => (
 <button key={k} type="button" aria-label={`去${CITIES[k].name}：${crossRoutes(s.cityKey, k).length} 条真实路线可选`} title="换座城市过日子：选口岸 / 高铁 / 船 / 大巴 / 自驾，按真实开放时间；进度原样带着" onClick={() => setCrossTo(k)} className="rounded-full border border-black/40 bg-[#14202b]/90 px-3.5 py-2 text-xs font-black text-white shadow-lg">
-{k === "hk" || s.cityKey === "hk" ? "🛃" : "🚄"}<span className="compact-hide">{en ? ` ${k === "hk" || s.cityKey === "hk" ? "Cross" : "Travel"} · to ${CITY_EN[k]}` : ` ${k === "hk" || s.cityKey === "hk" ? "过关" : "切换城市"} · 去${CITIES[k].name}`}</span><span className="compact-only"> {CITIES[k].emoji}</span>
+{k === "hk" || s.cityKey === "hk" ? "🛃" : "🚄"}<span className="compact-hide">{en ? ` ${k === "hk" || s.cityKey === "hk" ? "Cross" : "Travel"} · to ${CITY_EN[k]}` : ` ${k === "hk" || s.cityKey === "hk" ? "过关" : "切换城市"} · 去${CITIES[k].name}`}</span>
 </button>
 ))}
 </div>
@@ -4898,13 +4900,14 @@ return (
     全屏，不被面板挤占。 */}
 {!asideOpen && (
 <div className="float-panel fixed right-0 top-1/2 z-40 flex -translate-y-1/2 flex-col items-center gap-0.5 rounded-l-[12px] border-2 border-r-0 border-[var(--border)] px-0.5 py-1.5 opacity-85 shadow-lg transition-opacity hover:opacity-100">
+<button type="button" aria-label={railOpen ? "收起侧栏" : "展开侧栏：状态、地点、集章、动态、聊天、排行、图鉴"} aria-expanded={railOpen} onClick={() => setRailOpen((o) => !o)} className="compact-only h-8 w-8 place-items-center justify-center rounded-[10px] text-[15px] font-black">{railOpen ? "✕" : "☰"}</button>
 {/* 状态卡的开关也收在这条竖条上（原来是左边单独一个「状态」竖钮） */}
-<button type="button" aria-label={barsHidden ? "展开状态卡" : "收起状态卡"} title={barsHidden ? "展开状态卡" : "收起状态卡"} aria-pressed={!barsHidden} onClick={() => setBarsHidden((h) => !h)} className={`flex w-8 flex-col items-center gap-0.5 rounded-[10px] px-0.5 py-1 text-[15px] leading-none transition hover:bg-[var(--surface2)] ${barsHidden ? "" : "bg-[var(--surface2)]"}`}><span aria-hidden="true">💰</span><span className="text-[10px] font-black hidden [writing-mode:vertical-rl]">状态</span></button>
-<span className="my-0.5 h-px w-6 bg-[var(--line)]" aria-hidden="true" />
+<button type="button" aria-label={barsHidden ? "展开状态卡" : "收起状态卡"} title={barsHidden ? "展开状态卡" : "收起状态卡"} aria-pressed={!barsHidden} onClick={() => setBarsHidden((h) => !h)} className={`${railOpen ? "" : "compact-hide "}flex w-8 flex-col items-center gap-0.5 rounded-[10px] px-0.5 py-1 text-[15px] leading-none transition hover:bg-[var(--surface2)] ${barsHidden ? "" : "bg-[var(--surface2)]"}`}><span aria-hidden="true">💰</span><span className="text-[10px] font-black hidden [writing-mode:vertical-rl]">状态</span></button>
+<span className={`${railOpen ? "" : "compact-hide "}my-0.5 h-px w-6 bg-[var(--line)]`} aria-hidden="true" />
 {([["place", "📍", "地点"], ["collect", "🎫", "集章"], ["feed", "🏘️", "动态"], ["wall", "🧑‍🤝‍🧑", "街坊墙"], ["chat", "💬", "聊天"], ["board", "🏆", "排行"], ["guide", "📖", "图鉴"]] as const).map(([k, icon, label]) => (
-<button key={k} type="button" aria-label={`展开地区面板 · ${label}`} title={`展开地区面板 · ${label}`} onClick={() => { setAsideTab(k); setAsideOpen(true); }} className={`flex w-8 flex-col items-center gap-0.5 rounded-[10px] px-0.5 py-1 text-[15px] leading-none transition hover:bg-[var(--surface2)] ${asideTab === k ? "bg-[var(--surface2)]" : ""}`}><span aria-hidden="true">{icon}</span><span className="text-[10px] font-black hidden [writing-mode:vertical-rl]">{label}</span></button>
+<button key={k} type="button" aria-label={`展开地区面板 · ${label}`} title={`展开地区面板 · ${label}`} onClick={() => { setAsideTab(k); setAsideOpen(true); }} className={`${railOpen ? "" : "compact-hide "}flex w-8 flex-col items-center gap-0.5 rounded-[10px] px-0.5 py-1 text-[15px] leading-none transition hover:bg-[var(--surface2)] ${asideTab === k ? "bg-[var(--surface2)]" : ""}`}><span aria-hidden="true">{icon}</span><span className="text-[10px] font-black hidden [writing-mode:vertical-rl]">{label}</span></button>
 ))}
-<button type="button" aria-label={asidePinned ? "取消固定收起" : "固定收起地区面板"} aria-pressed={asidePinned} title={asidePinned ? "已固定收起：面板不会自动弹出，点上面的图标才展开；再点取消" : "固定收起：面板不再自动弹出"} onClick={() => togglePin("aside")} className={`mt-1 flex w-8 flex-col items-center gap-0.5 rounded-[10px] px-0.5 py-1 text-[15px] leading-none ${asidePinned ? "bg-[var(--text)] text-[var(--bg)]" : "hover:bg-[var(--surface2)]"}`}><span aria-hidden="true">📌</span><span className="text-[10px] font-black hidden [writing-mode:vertical-rl]">{asidePinned ? "已固定" : "固定"}</span></button>
+<button type="button" aria-label={asidePinned ? "取消固定收起" : "固定收起地区面板"} aria-pressed={asidePinned} title={asidePinned ? "已固定收起：面板不会自动弹出，点上面的图标才展开；再点取消" : "固定收起：面板不再自动弹出"} onClick={() => togglePin("aside")} className={`${railOpen ? "" : "compact-hide "}mt-1 flex w-8 flex-col items-center gap-0.5 rounded-[10px] px-0.5 py-1 text-[15px] leading-none ${asidePinned ? "bg-[var(--text)] text-[var(--bg)]" : "hover:bg-[var(--surface2)]"}`}><span aria-hidden="true">📌</span><span className="text-[10px] font-black hidden [writing-mode:vertical-rl]">{asidePinned ? "已固定" : "固定"}</span></button>
 </div>
 )}
 </>

@@ -522,6 +522,8 @@ export function MapView(p: Props) {
   }
   const rateRef = useRef(REAL_RATE);
   const [demo, setDemo] = useState(false);
+  /* compact screens: the time-of-day / camera / label buttons live behind one 🎛️ button */
+  const [viewMenu, setViewMenu] = useState(false);
   const demoRef = useRef(false);
   const currentPhase = (): number => {
     const pr = phaseRef.current!;
@@ -2941,9 +2943,11 @@ export function MapView(p: Props) {
       }
       const distNow = cam.distCur;
       const azNow = cam.az + cutEase * 0.5;
-      const cx = cam.tx + Math.sin(azNow) * Math.sin(cam.pol) * distNow;
-      const cy = Math.cos(cam.pol) * distNow + 2;
-      const cz = cam.tz + Math.cos(azNow) * Math.sin(cam.pol) * distNow;
+      // portrait screens look more steeply down: the whole-city view used to be half sky and sea
+      const polNow = !streetRef.current && mount.clientWidth / Math.max(1, mount.clientHeight) < 0.8 ? Math.min(cam.pol, 0.42) : cam.pol;
+      const cx = cam.tx + Math.sin(azNow) * Math.sin(polNow) * distNow;
+      const cy = Math.cos(polNow) * distNow + 2;
+      const cz = cam.tz + Math.cos(azNow) * Math.sin(polNow) * distNow;
       camera.position.set(cx, Math.max(4, cy), cz);
       camera.lookAt(cam.tx, LAND, cam.tz);
       const targetFov = cineRef.current && self ? 42 + self.blend * 2.5 : 42;
@@ -3211,10 +3215,10 @@ export function MapView(p: Props) {
       const locs = getLocations(cityKey);
       // sea, then the landmass deck (schematic, same bounds as the 3D one)
       const sea = g.createLinearGradient(0, 0, 0, H);
-      sea.addColorStop(0, "#0d2c4c"); sea.addColorStop(1, "#14507e");
+      sea.addColorStop(0, "#9fd3f0"); sea.addColorStop(1, "#6fb6e3");
       g.fillStyle = sea; g.fillRect(0, 0, W, H);
-      g.fillStyle = "#476a4d";
-      g.strokeStyle = "rgba(255,255,255,0.35)"; g.lineWidth = 2;
+      g.fillStyle = "#eef0e2";
+      g.strokeStyle = "#8fb3c9"; g.lineWidth = 2;
       if (TERRAIN[cityKey].LAND.length) {
         // the real islands and peninsulas, same polygons as the 3D land
         for (const poly of TERRAIN[cityKey].LAND) {
@@ -3222,26 +3226,33 @@ export function MapView(p: Props) {
           for (const ring of poly) ring.forEach(([x, z], i) => (i ? g.lineTo(px(x), py(z)) : g.moveTo(px(x), py(z))));
           g.fill("evenodd"); g.stroke();
         }
-        g.fillStyle = "#3a4a44";
+        g.fillStyle = "#c9cdc4";
         for (const poly of TERRAIN[cityKey].ACROSS) {
           g.beginPath();
           for (const ring of poly) ring.forEach(([x, z], i) => (i ? g.lineTo(px(x), py(z)) : g.moveTo(px(x), py(z))));
           g.fill("evenodd");
         }
-        g.fillStyle = "#476a4d";
+        g.fillStyle = "#eef0e2";
       } else {
         const lx = px(-38), ly = py(-24), lw = px(38) - lx, lh = py(14) - ly;
         g.beginPath(); g.rect(lx, ly, lw, lh); g.fill(); g.stroke();
       }
       // road corridors
-      g.strokeStyle = "rgba(255,240,200,0.4)"; g.lineCap = "round";
+      g.strokeStyle = "rgba(255,255,255,0.95)"; g.lineCap = "round";
       for (const r of ROADS[cityKey]) {
         g.lineWidth = Math.max(1.4, Math.min(4, r.w * sx * 0.55));
         g.beginPath(); g.moveTo(px(r.x1), py(r.z1)); g.lineTo(px(r.x2), py(r.z2)); g.stroke();
       }
-      // every location as a faint dot
-      g.fillStyle = "rgba(255,233,184,0.75)";
-      for (const l of locs) { g.beginPath(); g.arc(px(l.x), py(l.z), 3, 0, Math.PI * 2); g.fill(); }
+      // the real metro / rail lines in their own colours: the minimap reads like a transit map
+      g.lineJoin = "round";
+      for (const line of metroLinesForCity(cityKey)) {
+        if (line.stations.length < 2) continue;
+        g.strokeStyle = line.colorCss; g.lineWidth = 3;
+        g.beginPath(); line.stations.forEach((st, i) => (i ? g.lineTo(px(st.x), py(st.z)) : g.moveTo(px(st.x), py(st.z)))); g.stroke();
+      }
+      // every location as a small dot
+      g.fillStyle = "rgba(60,70,80,0.55)";
+      for (const l of locs) { g.beginPath(); g.arc(px(l.x), py(l.z), 2.6, 0, Math.PI * 2); g.fill(); }
       const actors = actorsRef.current;
       const self = actors.get("self");
       // destination: pulsing red target while it differs from where you stand
@@ -3255,7 +3266,7 @@ export function MapView(p: Props) {
       }
       // camera view centre: a dashed ring showing where the big map looks
       const cam = camRef.current;
-      g.strokeStyle = "rgba(255,255,255,0.55)"; g.lineWidth = 1.6; g.setLineDash([5, 4]);
+      g.strokeStyle = "rgba(20,32,43,0.55)"; g.lineWidth = 1.8; g.setLineDash([5, 4]);
       g.beginPath(); g.arc(px(cam.tx), py(cam.tz), Math.max(8, cam.distCur * 0.3 * sx), 0, Math.PI * 2); g.stroke();
       g.setLineDash([]);
       // NPCs + remote players (live positions, straight from the actor set)
@@ -3339,18 +3350,19 @@ export function MapView(p: Props) {
       {cine && (
         <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-[5]" style={{ background: "radial-gradient(ellipse 118% 96% at 50% 42%, transparent 62%, rgba(5,10,18,0.34) 100%), linear-gradient(to bottom, rgba(5,10,18,0.16), transparent 13%, transparent 88%, rgba(5,10,18,0.2))" }} />
       )}
-      <div className="absolute bottom-3 right-3 z-10 flex max-w-[calc(100%-24px)] flex-wrap justify-end gap-1.5">
-        <button type="button" aria-label="跳到白天" onClick={() => jumpToPhase(0.32)} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow">☀️</button>
-        <button type="button" aria-label="跳到黄昏" onClick={() => jumpToPhase(0.74)} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow">🌇</button>
-        <button type="button" aria-label="跳到夜晚" onClick={() => jumpToPhase(0.93)} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow">🌙</button>
-        <button type="button" aria-label="回到真实时间：天色按深圳/惠州当地此刻走" onClick={backToRealTime} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow">🕐</button>
-        <button type="button" aria-label={demo ? "停止延时演示" : "延时演示：一昼夜30秒，看昼夜光影全程"} aria-pressed={demo} onClick={toggleDemo} className={`grid h-9 w-9 place-items-center rounded-full border text-base shadow ${demo ? "border-[var(--accent)] bg-[#14202b]/95" : "border-black/40 bg-[#fffdf8]/95"}`}>🎥</button>
-        <button type="button" aria-label={streetCam ? "回到全景视角" : "街景视角：贴到街面上，站在街道里看车流、红绿灯和行人"} aria-pressed={streetCam} onClick={toggleStreetCam} className={`grid h-9 w-9 place-items-center rounded-full border text-base shadow ${streetCam ? "border-[var(--accent)] bg-[#14202b]/95" : "border-black/40 bg-[#fffdf8]/95"}`}>🚶</button>
-        <button type="button" aria-label={cine ? "关闭电影镜头" : "开启电影镜头"} aria-pressed={cine} onClick={() => setCine((c) => !c)} className={`grid h-9 w-9 place-items-center rounded-full border text-base shadow ${cine ? "border-[var(--accent)] bg-[#14202b]/95" : "border-black/40 bg-[#fffdf8]/95"}`}>🎬</button>
-        <span className="grid h-9 min-w-9 place-items-center rounded-full border border-black/40 bg-[#14202b]/90 px-2 text-[11px] font-black text-white shadow" aria-label={`当前缩放 ${zoomPct}%`} title="当前缩放比例（⌂ 回到 100%）">{zoomPct}%</span>
+      <div className="absolute bottom-3 right-3 z-10 flex max-w-[calc(100%-24px)] flex-wrap justify-end gap-1.5 compact-dock">
+        <button type="button" aria-label={viewMenu ? "收起视角和时间按钮" : "更多：时间、镜头、标签"} aria-expanded={viewMenu} onClick={() => setViewMenu((v) => !v)} className={`compact-only h-9 w-9 place-items-center justify-center rounded-full border text-base shadow ${viewMenu ? "border-[var(--accent)] bg-[#14202b]/95 text-white" : "border-black/40 bg-[#fffdf8]/95"}`}>🎛️</button>
+        <button type="button" aria-label="跳到白天" onClick={() => jumpToPhase(0.32)} className={`grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow${viewMenu ? "" : " compact-hide"}`}>☀️</button>
+        <button type="button" aria-label="跳到黄昏" onClick={() => jumpToPhase(0.74)} className={`grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow${viewMenu ? "" : " compact-hide"}`}>🌇</button>
+        <button type="button" aria-label="跳到夜晚" onClick={() => jumpToPhase(0.93)} className={`grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow${viewMenu ? "" : " compact-hide"}`}>🌙</button>
+        <button type="button" aria-label="回到真实时间：天色按深圳/惠州当地此刻走" onClick={backToRealTime} className={`grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow${viewMenu ? "" : " compact-hide"}`}>🕐</button>
+        <button type="button" aria-label={demo ? "停止延时演示" : "延时演示：一昼夜30秒，看昼夜光影全程"} aria-pressed={demo} onClick={toggleDemo} className={`grid h-9 w-9 place-items-center rounded-full border text-base shadow ${demo ? "border-[var(--accent)] bg-[#14202b]/95" : "border-black/40 bg-[#fffdf8]/95"}${viewMenu ? "" : " compact-hide"}`}>🎥</button>
+        <button type="button" aria-label={streetCam ? "回到全景视角" : "街景视角：贴到街面上，站在街道里看车流、红绿灯和行人"} aria-pressed={streetCam} onClick={toggleStreetCam} className={`grid h-9 w-9 place-items-center rounded-full border text-base shadow ${streetCam ? "border-[var(--accent)] bg-[#14202b]/95" : "border-black/40 bg-[#fffdf8]/95"}${viewMenu ? "" : " compact-hide"}`}>🚶</button>
+        <button type="button" aria-label={cine ? "关闭电影镜头" : "开启电影镜头"} aria-pressed={cine} onClick={() => setCine((c) => !c)} className={`grid h-9 w-9 place-items-center rounded-full border text-base shadow ${cine ? "border-[var(--accent)] bg-[#14202b]/95" : "border-black/40 bg-[#fffdf8]/95"}${viewMenu ? "" : " compact-hide"}`}>🎬</button>
+        <span className={`grid h-9 min-w-9 place-items-center rounded-full border border-black/40 bg-[#14202b]/90 px-2 text-[11px] font-black text-white shadow${viewMenu ? "" : " compact-hide"}`} aria-label={`当前缩放 ${zoomPct}%`} title="当前缩放比例（⌂ 回到 100%）">{zoomPct}%</span>
         <button type="button" aria-label="放大地图" onClick={() => zoomBy(0.78)} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">＋</button>
         <button type="button" aria-label="缩小地图" onClick={() => zoomBy(1.28)} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">－</button>
-        <button type="button" aria-label="标签密度" title={labelDensity === "few" ? "标签：精简（点一下切换）" : labelDensity === "normal" ? "标签：标准（点一下切换）" : "标签：全部（点一下切换）"} onClick={cycleLabels} className="grid h-9 min-w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 px-2 text-[11px] font-black text-[#14202b] shadow">🏷️{labelDensity === "few" ? "简" : labelDensity === "normal" ? "标" : "全"}</button>
+        <button type="button" aria-label="标签密度" title={labelDensity === "few" ? "标签：精简（点一下切换）" : labelDensity === "normal" ? "标签：标准（点一下切换）" : "标签：全部（点一下切换）"} onClick={cycleLabels} className={`grid h-9 min-w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 px-2 text-[11px] font-black text-[#14202b] shadow${viewMenu ? "" : " compact-hide"}`}>🏷️{labelDensity === "few" ? "简" : labelDensity === "normal" ? "标" : "全"}</button>
         <button type="button" aria-label={p.mapMode === "follow" ? "切换到全城视角" : "切换到跟随视角"} title={p.mapMode === "follow" ? "现在：跟随视角（镜头跟着你，小地图看全城）。点一下换成一眼看全城" : "现在：全城视角。点一下换成跟随视角（镜头跟着你，小地图看全城）"} onClick={() => p.onMapMode?.(p.mapMode === "follow" ? "city" : "follow")} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">{p.mapMode === "follow" ? "🗺️" : "🎯"}</button>
         <button type="button" aria-label="重置视角" onClick={resetCam} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">⌂</button>
       </div>
@@ -3360,8 +3372,9 @@ export function MapView(p: Props) {
       {/* LOL-style minimap: whole-city thumbnail, live-linked to the big map */}
       <div className="mini-dock absolute bottom-3 left-3 z-10">
         {miniOpen ? (
-          <div className="overflow-hidden rounded-[12px] border border-black/50 bg-[#0b1622]/85 shadow-xl">
-            <div className="flex items-center gap-1 px-2 py-1">
+          <div className="mini-card relative w-[176px] overflow-hidden rounded-[12px] border border-black/50 bg-[#0b1622]/85 shadow-xl sm:w-[220px]">
+            <button type="button" aria-label="收起小地图" onClick={() => setMiniOpen(false)} className="compact-only absolute right-1 top-1 z-10 h-6 w-6 place-items-center justify-center rounded-full bg-black/55 text-[11px] font-black text-white">✕</button>
+            <div className="compact-hide flex items-center gap-1 px-2 py-1">
               <span className="min-w-0 flex-1 truncate text-[11px] font-black text-white/90">🗺️ 小地图 · {CITIES[p.cityKey].name}全城</span>
               <button type="button" aria-label="收起小地图" onClick={() => setMiniOpen(false)} className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-black text-white/85 transition hover:bg-white/20">收起 ▾</button>
             </div>
@@ -3372,12 +3385,12 @@ export function MapView(p: Props) {
               onClick={onMiniClick}
               role="img"
               aria-label="全城小地图：白色大圆点是你，彩色小点是NPC和在线玩家，红色靶心是目的地，虚线圈是大地图镜头位置；点击小地图任意位置，大地图镜头会定位过去"
-              className="block h-[97px] w-[176px] cursor-crosshair sm:h-[121px] sm:w-[220px]"
+              className="mini-canvas block h-[97px] w-[176px] cursor-crosshair sm:h-[121px] sm:w-[220px]"
             />
             <p className="compact-hide px-2 py-1 text-[10px] font-bold leading-tight text-white/70">⚪ 你 · 🟡 NPC/玩家 · 🔴 目的地 · 点图定位镜头</p>
           </div>
         ) : (
-          <button type="button" aria-label="展开小地图" onClick={() => setMiniOpen(true)} className="rounded-full border border-black/50 bg-[#0b1622]/85 px-3.5 py-2 text-xs font-black text-white shadow-xl transition hover:bg-[#0b1622]">🗺️ 小地图 ▸</button>
+          <button type="button" aria-label="展开小地图" onClick={() => setMiniOpen(true)} className="rounded-full border border-black/50 bg-[#0b1622]/85 px-3.5 py-2 text-xs font-black text-white shadow-xl transition hover:bg-[#0b1622]">🗺️<span className="compact-hide"> 小地图 ▸</span></button>
         )}
       </div>
       {p.navOverlay}
