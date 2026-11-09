@@ -66,7 +66,7 @@ export function UpdatesModal({ en, playerId, city, onClose, toast }: { en: boole
     setBusy(false);
   };
   return (
-    <div className="fixed inset-0 z-[68] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={T("更新公告", "What's new")}>
+    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={T("更新公告", "What's new")}>
       <div className="rise max-h-[88vh] w-full max-w-md overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] p-4">
         <p className="flex items-center justify-between"><span className="font-display text-xl font-black">🆕 {T("更新公告", "What's new")}</span><button type="button" onClick={onClose} className="rounded-full border px-3 py-1 text-xs font-black">✕</button></p>
         {UPDATES.map((u) => (
@@ -104,7 +104,7 @@ export function BondsModal({ en, playerId, bonds, onClose, toast, refresh, openC
   const active = bonds.filter((b) => b.status === "active");
   const sent = bonds.filter((b) => b.status === "pending" && b.mine);
   return (
-    <div className="fixed inset-0 z-[68] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={T("我的关系", "My people")}>
+    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={T("我的关系", "My people")}>
       <div className="rise max-h-[88vh] w-full max-w-md overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] p-4">
         <p className="flex items-center justify-between"><span className="font-display text-xl font-black">🤝 {T("我的关系", "My people")}</span><button type="button" onClick={onClose} className="rounded-full border px-3 py-1 text-xs font-black">✕</button></p>
         <p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">{T("和真人玩家合租（房租各付一半）、结拜、在一起。点地图上玩家的名字 → 名片里发出邀请；只能邀请一起组过局、或者互相聊过天的人。", "Share a flat with a real player (half rent each), become sworn siblings, get together. Tap a player's name on the map → their card to invite; only people you've partied or chatted with.")}</p>
@@ -154,7 +154,7 @@ export function CommitteeModal({ en, playerId, city, cityName, st, onClose, toas
   const ends = st ? new Date(st.endsAt) : null;
   const left = ends ? Math.max(0, Math.ceil((ends.getTime() - Date.now()) / 86_400_000)) : 0;
   return (
-    <div className="fixed inset-0 z-[68] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={T("业委会选举", "Estate committee")}>
+    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={T("业委会选举", "Estate committee")}>
       <div className="rise max-h-[88vh] w-full max-w-md overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] p-4">
         <p className="flex items-center justify-between"><span className="font-display text-xl font-black">🏛️ {T(`${cityName}业委会`, `${cityName} estate committee`)}</span><button type="button" onClick={onClose} className="rounded-full border px-3 py-1 text-xs font-black">✕</button></p>
         <div className="mt-3 rounded-[14px] border-2 border-[var(--gold)] bg-[#fdf6da] p-3 text-[#5c4a00]">

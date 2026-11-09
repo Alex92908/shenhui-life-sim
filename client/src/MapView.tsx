@@ -436,7 +436,7 @@ export function MapView(p: Props) {
   type LabelDensity = "few" | "normal" | "all";
   const [labelDensity, setLabelDensity] = useState<LabelDensity>(() => {
     try { const v = localStorage.getItem("shhr-labels"); if (v === "few" || v === "normal" || v === "all") return v; } catch { /* default */ }
-    return "normal";
+    return typeof window !== "undefined" && window.innerWidth < 640 ? "few" : "normal"; // a phone screen fits far fewer names
   });
   const labelDensityRef = useRef(labelDensity);
   labelDensityRef.current = labelDensity;
@@ -463,7 +463,7 @@ export function MapView(p: Props) {
      the player dot, NPC dots, remote players and the destination marker
      move exactly when the big map moves. Clicking it points the main
      camera at that spot through the same lookRef channel search uses. */
-  const [miniOpen, setMiniOpen] = useState(true);
+  const [miniOpen, setMiniOpen] = useState(() => typeof window === "undefined" || window.innerWidth >= 640); // phones: the map first, the minimap on request
   const miniCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   /* Day-cycle phase control: jumped instantly via the ☀️/🌇/🌙 buttons,
@@ -2895,11 +2895,14 @@ export function MapView(p: Props) {
       const density = labelDensityRef.current;
       const english = document.documentElement.lang === "en";
       // how many place labels may show at once (zoomed out it is the city view)
-      const locCap = density === "all" ? 999 : overview ? (density === "few" ? 8 : 22) : density === "few" ? 14 : 60;
+      // a phone shows a fraction of a desktop's map area, so it gets a fraction of the labels
+      const scr = Math.max(0.35, Math.min(1, (w * h) / (1100 * 650)));
+      const locCap = density === "all" ? 999 : Math.max(4, Math.round((overview ? (density === "few" ? 8 : 22) : density === "few" ? 14 : 60) * scr));
       let locShown = 0;
       /* separate budgets so place pins, neighbourhood names and stations never
          swamp the view (zoomed in they used to fill every gap) */
-      const kindCap = density === "all" ? { place: 999, area: 999, station: 999 } : density === "few" ? { place: 4, area: 4, station: 3 } : { place: 10, area: 8, station: 6 };
+      const kc = (n: number) => Math.max(2, Math.round(n * scr));
+      const kindCap = density === "all" ? { place: 999, area: 999, station: 999 } : density === "few" ? { place: kc(4), area: kc(4), station: kc(3) } : { place: kc(10), area: kc(8), station: kc(6) };
       const kindShown = { place: 0, area: 0, station: 0 };
       const cands: { chip: Chip; sx: number; sy: number; prio: number; near: boolean }[] = [];
       let measured = 0;
@@ -2987,7 +2990,11 @@ export function MapView(p: Props) {
         const txt = chip.el.textContent ?? "";
         if (chip.w === 0 || (chip.kind === "actor" && txt !== chip.lastText)) {
           // measuring a label forces a layout: only a few per pass, so moving across the map doesn't stutter
-          if (measured >= 8 && !chip.self && chip.kind !== "loc") continue;
+          if (measured >= 8 && !chip.self && chip.kind !== "loc") {
+            // not measured yet: keep it hidden until its turn, or the first seconds after loading show every label at once
+            if (chip.visible) { chip.visible = false; chip.el.style.display = "none"; }
+            continue;
+          }
           measured++;
           chip.el.style.display = "";
           chip.w = chip.el.offsetWidth;

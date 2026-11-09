@@ -90,6 +90,8 @@ const RW_LABEL: Record<RealWeather["kind"], string> = { clear: "晴", partly: "�
 
 interface GameState {
 cityKey: CityKey;
+/** 转行: the game day of the last job switch (one every three days) */
+switchDay?: number;
 /** real-player roommate (rent split in half) and the committee rent cut, kept in the save so the Saturday rent is right even before the server answers */
 roommate?: string;
 rentPolicy?: number;
@@ -679,6 +681,9 @@ const [fold, setFold] = useState<"hud" | "apec" | "intro" | null>(null);
    （状态 / Summit / 深圳/惠州）, freeing more of the map; tapping a rail
    button brings its bar back. All shown by default. */
 const [barsHidden, setBarsHidden] = useState(false);
+/* phones: the status card shows the essentials; the rest folds behind “⋯ More” */
+const [hudMore, setHudMore] = useState(false);
+const [retrainOpen, setRetrainOpen] = useState(false);
 /* Map fullscreen: the map shell becomes a fixed full-viewport stage
    (plus the native Fullscreen API when the browser allows it). */
 const [mapFullscreen, setMapFullscreen] = useState(false);
@@ -1291,7 +1296,7 @@ perks: strArr(g.perks).filter((id) => perkById(id)),
 license: num(g.license, 0), licDay: num(g.licDay, 0), carDay: num(g.carDay, 0), carOwned: g.carOwned === true,
 hangover: g.hangover === true, record: num(g.record, 0),
 romance: g.romance && typeof g.romance === "object" && !Array.isArray(g.romance) ? Object.fromEntries(Object.entries(g.romance as Record<string, unknown>).filter(([k, v]) => NPCS.some((n) => n.name === k) && typeof v === "number")) as Record<string, number> : {},
-cohabit: g.cohabit === true, roommate: typeof g.roommate === "string" && g.roommate.length < 40 ? g.roommate : undefined, rentPolicy: typeof g.rentPolicy === "number" && g.rentPolicy >= 0.9 && g.rentPolicy <= 1 ? g.rentPolicy : undefined, origin: typeof g.origin === "string" && g.origin.length < 40 ? g.origin : undefined, startTier: typeof g.startTier === "number" && g.startTier >= 0 && g.startTier <= 3 ? Math.round(g.startTier) : undefined, loc: typeof g.loc === "string" && g.loc.length < 120 ? g.loc : undefined, routine: g.routine && typeof g.routine === "object" && !Array.isArray(g.routine) ? (g.routine as RoutineDay) : undefined, actCount: num(g.actCount, 0), partyPlays: num(g.partyPlays, 0),
+cohabit: g.cohabit === true, switchDay: typeof g.switchDay === "number" ? Math.round(g.switchDay) : undefined, roommate: typeof g.roommate === "string" && g.roommate.length < 40 ? g.roommate : undefined, rentPolicy: typeof g.rentPolicy === "number" && g.rentPolicy >= 0.9 && g.rentPolicy <= 1 ? g.rentPolicy : undefined, origin: typeof g.origin === "string" && g.origin.length < 40 ? g.origin : undefined, startTier: typeof g.startTier === "number" && g.startTier >= 0 && g.startTier <= 3 ? Math.round(g.startTier) : undefined, loc: typeof g.loc === "string" && g.loc.length < 120 ? g.loc : undefined, routine: g.routine && typeof g.routine === "object" && !Array.isArray(g.routine) ? (g.routine as RoutineDay) : undefined, actCount: num(g.actCount, 0), partyPlays: num(g.partyPlays, 0),
 };
 return { profile: { playerId: prof.playerId, name: prof.name }, gs };
 };
@@ -1908,6 +1913,29 @@ useEffect(() => {
   else if (o.stage === "toDest" && currentLoc === o.dest) mutate((x) => { x.routine = { ...rd, order: { ...o, stage: "atDoor" } }; });
 // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [currentLoc]);
+/* ---------- 转行 / 考证：换一份工作 ---------- */
+/** what a new job asks of you: skill points for the skilled trades, start-up money for a business */
+const RETRAIN_NEED: Record<string, { skill?: number; cash?: number }> = { coder: { skill: 5 }, nurse: { skill: 4 }, teacher: { skill: 4 }, chef: { skill: 2 }, coach: { skill: 1 }, barber: { skill: 1 }, masseur: { skill: 1 }, boss: { cash: 8000 } };
+const retrainFee = (idenId: string, g: GameState) => { const it = IDENTITIES.find((i) => i.id === idenId); return Math.round(((it?.pay ?? 200) * 4 * CITIES[g.cityKey].payMul) / 10) * 10 + (RETRAIN_NEED[idenId]?.cash ?? 0); };
+const retrainBlock = (idenId: string, g: GameState): string | null => {
+  const need = RETRAIN_NEED[idenId];
+  if (need?.skill && g.skill < need.skill) return en ? `Needs skill ${need.skill} (you have ${g.skill}) — study at the library or night school first` : `需要技能 ${need.skill}（你现在 ${g.skill}），先去图书馆 / 夜校学`;
+  if (g.money < retrainFee(idenId, g)) return en ? "Not enough money for the course" : "钱不够交培训费";
+  return null;
+};
+const switchJob = (idenId: string) => {
+  const g = gsRef.current; if (!g) return;
+  const it = IDENTITIES.find((i) => i.id === idenId); if (!it || it.id === g.idenId || it.id === "rich") return;
+  if (g.switchDay !== undefined && g.day - g.switchDay < 3) { showToast(en ? `You changed jobs recently — try again on day ${g.switchDay + 3}.` : `刚转过行，第 ${g.switchDay + 3} 天之后才能再转。`); return; }
+  const block = retrainBlock(idenId, g); if (block) { showToast(block); return; }
+  const fee = retrainFee(idenId, g);
+  const from = idenOf(g);
+  mutate((x) => { x.money -= fee; x.idenId = it.id; x.careerIdx = 0; x.routine = undefined; x.switchDay = x.day; x.mood = clamp(x.mood + 6, 0, 100); });
+  addLog(`转行：从「${from.name}」换成「${it.name}」，培训费 ${fmt(fee)}。`);
+  showToast(en ? `${it.emoji} You're now a ${trText(it.name).toLowerCase()} (course fee ${fmt(fee)}). New daily routine unlocked.` : `${it.emoji} 转行成功：现在是「${it.name}」了（培训费 ${fmt(fee)}），新的日常已解锁。`);
+  track("job_switch", { from: from.id, to: it.id });
+  setRetrainOpen(false);
+};
 const routineActs = (loc: Loc, g: GameState): ActDef[] => {
   const role = routineRole(g.idenId);
   if (!isOrderRole(role) && !atJob(role, loc, g)) return [];
@@ -3221,6 +3249,7 @@ playLifeAnim("shopping");
     const acts = co ? [...companyActions(co, s), ...(loc.type === "work" ? [] : baseActionsFor(loc, s))] : baseActionsFor(loc, s);
     const ev = todayEvent;
     acts.unshift(...routineActs(loc, s));
+    if (loc.type === "learn") acts.push({ kind: "__retrain", emoji: "🎓", title: en ? "Retrain / get certified" : "转行培训 / 考证", desc: en ? "Switch to another job: pay the course fee, have the skill it needs." : "换一份工作：交培训费，技能够就能转。外卖员也能考成护士。", cost: en ? "course fee" : "培训费" });
     const tn = nowMin();
     for (const r of CROSS_ROUTES) {
       if (r.from !== s.cityKey || r.fromLoc !== loc.id) continue;
@@ -4069,24 +4098,25 @@ return (
 <span className="flex items-center gap-1 text-xs font-bold">😊<span className="h-2 w-10 overflow-hidden rounded-full bg-[var(--surface2)]"><span className="block h-full bg-emerald-500 transition-all" style={{ width: `${s.mood}%` }} /></span>{Math.round(s.mood)}</span>
 <span className="chip" title="游戏时间就是北京时间：每个自然月是一个赛季，第 N 天 = 本月 N 号；做事有真实冷却；地铁、商场、景区按真实营业时间开关">{`🕘 ${clockStr(nowMin())}`}</span>
 {s.busyUntil && Date.now() < s.busyUntil ? <span className="chip border-[var(--accent)] text-[var(--accent)]">{`⏳ ${s.busyWhat ?? "忙"} ${countdown(s.busyUntil - Date.now())}`}</span> : null}
-<button type="button" onClick={() => setPartyOpen(true)} className={`chip ${parties.some((pt) => pt.status === "open") ? "border-[var(--accent)] text-[var(--accent)]" : ""}`} title={en ? "Parties in this city: join other players" : "同城组局：和真人一起玩"}>🎉 {en ? "Parties" : "组局"} {parties.filter((pt) => pt.status === "open").length}</button>
+<button type="button" onClick={() => setPartyOpen(true)} className={`chip ${parties.some((pt) => pt.status === "open") ? "border-[var(--accent)] text-[var(--accent)]" : ""}${hudMore ? "" : " max-sm:hidden!"}`} title={en ? "Parties in this city: join other players" : "同城组局：和真人一起玩"}>🎉 {en ? "Parties" : "组局"} {parties.filter((pt) => pt.status === "open").length}</button>
 <button type="button" onClick={() => { setHubOpen(true); track("hub_open"); }} className="chip border-[var(--text)] bg-[var(--text)] text-[var(--bg)]" title={en ? "Everything you can do right now, nearest first" : "现在能做的所有事，按远近排"}>🧭 {en ? "What can I do?" : "现在能干嘛"}</button>
-<button type="button" onClick={() => setStoreOpen(true)} className="chip" title={en ? "Starlight store: looks, season pass, membership" : "星光商店：外观、赛季通行证、会员"}>✨ {en ? "Store" : "商店"}</button>
-<button type="button" onClick={() => { setUpdatesOpen(true); setUpdateSeen(LATEST_UPDATE); try { localStorage.setItem("shhr-update-seen", LATEST_UPDATE); } catch { /* storage unavailable */ } }} className={`chip ${updateSeen !== LATEST_UPDATE ? "border-[var(--accent)] text-[var(--accent)]" : ""}`} title={en ? "What's new, and a feedback box" : "更新公告和意见箱"}>🆕 {en ? "What's new" : "更新"}{updateSeen !== LATEST_UPDATE ? " ●" : ""}</button>
-<button type="button" onClick={() => setBondsOpen(true)} className={`chip ${bondInvites ? "border-[var(--accent)] text-[var(--accent)]" : ""}`} title={en ? "Roommates, sworn siblings, partner — real players" : "和真人合租、结拜、在一起"}>🤝 {en ? "People" : "关系"}{bondInvites ? ` ${bondInvites}` : bonds.some((b) => b.status === "active") ? ` · ${bonds.filter((b) => b.status === "active").map((b) => BOND_INFO[b.kind].emoji).join("")}` : ""}</button>
-<button type="button" onClick={() => setCommitteeOpen(true)} className="chip" title={en ? "Weekly estate-committee election: the chair's policy applies citywide" : "每周业委会选举：主任的政策全城生效"}>🏛️ {en ? "Committee" : "业委会"}{committeeQuery.data?.chair ? ` · ${en ? PLEDGE_INFO[committeeQuery.data.chair.pledge].short[1] : PLEDGE_INFO[committeeQuery.data.chair.pledge].short[0]}` : ""}</button>
-<button type="button" onClick={() => setAccountOpen(true)} className={`chip ${!loggedIn && s.day >= 2 ? "border-[var(--accent)] text-[var(--accent)]" : ""}`} title={en ? "Account: keep your progress, unlock DMs and parties" : "账号：保住进度，解锁私聊和组局"}>👤 {loggedIn ? (en ? "Account" : "账号") : (en ? "Sign in" : "绑定账号")}</button>
-<button type="button" onClick={() => setDmOpen(true)} className={`chip ${unreadDm ? "border-[var(--accent)] text-[var(--accent)]" : ""}`} title={en ? "Private messages" : "私信"}>💬 {en ? "DMs" : "私信"}{unreadDm ? ` ${unreadDm}` : ""}</button>
-<span className="chip" title={iden.name}>{iden.emoji} {career.name} ×{career.mul}</span>
+<button type="button" onClick={() => setStoreOpen(true)} className={`chip${hudMore ? "" : " max-sm:hidden!"}`} title={en ? "Starlight store: looks, season pass, membership" : "星光商店：外观、赛季通行证、会员"}>✨ {en ? "Store" : "商店"}</button>
+<button type="button" onClick={() => { setUpdatesOpen(true); setUpdateSeen(LATEST_UPDATE); try { localStorage.setItem("shhr-update-seen", LATEST_UPDATE); } catch { /* storage unavailable */ } }} className={`chip ${updateSeen !== LATEST_UPDATE ? "border-[var(--accent)] text-[var(--accent)]" : ""}${hudMore ? "" : " max-sm:hidden!"}`} title={en ? "What's new, and a feedback box" : "更新公告和意见箱"}>🆕 {en ? "What's new" : "更新"}{updateSeen !== LATEST_UPDATE ? " ●" : ""}</button>
+<button type="button" onClick={() => setBondsOpen(true)} className={`chip ${bondInvites ? "border-[var(--accent)] text-[var(--accent)]" : ""}${hudMore ? "" : " max-sm:hidden!"}`} title={en ? "Roommates, sworn siblings, partner — real players" : "和真人合租、结拜、在一起"}>🤝 {en ? "People" : "关系"}{bondInvites ? ` ${bondInvites}` : bonds.some((b) => b.status === "active") ? ` · ${bonds.filter((b) => b.status === "active").map((b) => BOND_INFO[b.kind].emoji).join("")}` : ""}</button>
+<button type="button" onClick={() => setCommitteeOpen(true)} className={`chip${hudMore ? "" : " max-sm:hidden!"}`} title={en ? "Weekly estate-committee election: the chair's policy applies citywide" : "每周业委会选举：主任的政策全城生效"}>🏛️ {en ? "Committee" : "业委会"}{committeeQuery.data?.chair ? ` · ${en ? PLEDGE_INFO[committeeQuery.data.chair.pledge].short[1] : PLEDGE_INFO[committeeQuery.data.chair.pledge].short[0]}` : ""}</button>
+<button type="button" onClick={() => setAccountOpen(true)} className={`chip ${!loggedIn && s.day >= 2 ? "border-[var(--accent)] text-[var(--accent)]" : ""}${hudMore ? "" : " max-sm:hidden!"}`} title={en ? "Account: keep your progress, unlock DMs and parties" : "账号：保住进度，解锁私聊和组局"}>👤 {loggedIn ? (en ? "Account" : "账号") : (en ? "Sign in" : "绑定账号")}</button>
+<button type="button" onClick={() => setDmOpen(true)} className={`chip ${unreadDm ? "border-[var(--accent)] text-[var(--accent)]" : ""}${hudMore || unreadDm ? "" : " max-sm:hidden!"}`} title={en ? "Private messages" : "私信"}>💬 {en ? "DMs" : "私信"}{unreadDm ? ` ${unreadDm}` : ""}</button>
+<span className={`chip${hudMore ? "" : " max-sm:hidden!"}`} title={iden.name}>{iden.emoji} {career.name} ×{career.mul}</span>
 {(() => { const t0 = s.startTier ?? tierOfIden(s.idenId); const t1 = tierAt(s); const T = TIERS[s.cityKey]; const top = T[3]!; return <span className="chip" title={en ? `Started in ${T[t0]!.en}; your savings now put you in ${T[t1]!.en}. Reach the goal to move up.` : `出身：${T[t0]!.zh}；按现在的存款，你在「${T[t1]!.zh}」。攒够目标就能往上爬。`}>🪜 {T[t0]!.emoji}→{T[t1]!.emoji} {en ? T[t1]!.en : T[t1]!.zh}{t1 < 3 ? (en ? ` · aim: ${top.en}` : ` · 目标${top.zh}`) : ""}</span>; })()}
-{(() => { const co = employerHere(s); return co ? <span className="chip" title={co.culture}>{co.emoji} {co.short}</span> : null; })()}
-{meta.title && <span className="chip" style={{ borderColor: "var(--gold)", color: "var(--gold)" }}>🏅 {meta.title}</span>}
+{(() => { const co = employerHere(s); return co ? <span className={`chip${hudMore ? "" : " max-sm:hidden!"}`} title={co.culture}>{co.emoji} {co.short}</span> : null; })()}
+{meta.title && <span className={`chip${hudMore ? "" : " max-sm:hidden!"}`} style={{ borderColor: "var(--gold)", color: "var(--gold)" }}>🏅 {meta.title}</span>}
 {isSaturday(s.day) && <span className="chip text-[var(--accent)]">🏠 今天交租 {fmt(s.rent)}</span>}
-{s.invest > 0 && <span className="chip">💹 {fmt(s.invest)}</span>}
+{s.invest > 0 && <span className={`chip${hudMore ? "" : " max-sm:hidden!"}`}>💹 {fmt(s.invest)}</span>}
+<button type="button" onClick={() => setHudMore((v) => !v)} aria-expanded={hudMore} className="chip sm:hidden">{hudMore ? (en ? "▴ Less" : "▴ 收起") : `⋯ ${en ? "More" : "更多"}${updateSeen !== LATEST_UPDATE || bondInvites ? " ●" : ""}`}</button>
 <button type="button" aria-label="竖着收起状态卡，收成屏幕左侧的竖排按钮" title="竖着收起，收成屏幕左侧的竖排按钮，点一下就展开" onClick={() => setBarsHidden(true)} className="ml-auto shrink-0 rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] font-black transition hover:border-[var(--border)]">◂ 收起</button>
 </div>
 
-<div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-[var(--line)] pt-2 text-[11px] font-bold">
+<div className={`mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-[var(--line)] pt-2 text-[11px] font-bold${hudMore ? "" : " max-sm:hidden!"}`}>
 <span className="shrink-0 rounded-full border border-[var(--gold)] bg-[#fdf6da] px-2 py-0.5 font-black text-[#5c4a00]">🌐 峰会{s.cityKey === "sz" ? ` · ${s.day < 14 ? `还有 ${14 - s.day} 天` : s.day <= 19 ? "进行中" : "已结束"}` : " · 深圳 14–19 日"}</span>
 {s.cityKey === "sz" ? (
 <>
@@ -4272,14 +4302,14 @@ return (
 {/* 左侧中段控制簇：出行导航 + 弹幕开关（不在顶部，不挡地图中心） */}
 <div className="absolute left-3 top-1/2 z-20 flex -translate-y-1/2 flex-col items-start gap-2">
 <button type="button" aria-label={navOpen ? "收起地图上的出行导航" : "打开地图上的出行导航"} aria-expanded={navOpen} onClick={() => setNavOpen((o) => !o)} className="rounded-full border border-black/40 bg-[#14202b]/90 px-3.5 py-2 text-xs font-black text-white shadow-lg">
-🧭 {navOpen ? "收起导航" : `出行导航 · ${modesForCity(s.cityKey).find((m) => m.id === travelMode)?.emoji ?? ""} ${modesForCity(s.cityKey).find((m) => m.id === travelMode)?.name ?? ""}`}
+🧭<span className="max-sm:hidden"> {navOpen ? "收起导航" : `出行导航 · ${modesForCity(s.cityKey).find((m) => m.id === travelMode)?.emoji ?? ""} ${modesForCity(s.cityKey).find((m) => m.id === travelMode)?.name ?? ""}`}</span><span className="sm:hidden"> {modesForCity(s.cityKey).find((m) => m.id === travelMode)?.emoji ?? ""}</span>
 </button>
 <button type="button" aria-label={danmakuOn ? "关闭弹幕" : "开启弹幕"} aria-pressed={danmakuOn} onClick={() => setDanmakuOn((v) => !v)} className={`rounded-full border px-3.5 py-2 text-xs font-black shadow-lg ${danmakuOn ? "border-transparent bg-[var(--accent)] text-white" : "border-black/40 bg-[#14202b]/90 text-white"}`}>
-💬 弹幕{danmakuOn ? "开" : "关"}
+💬<span className="max-sm:hidden"> 弹幕{danmakuOn ? "开" : "关"}</span>
 </button>
 {(Object.keys(CITIES) as CityKey[]).filter((k) => k !== s.cityKey).map((k) => (
 <button key={k} type="button" aria-label={`去${CITIES[k].name}：${crossRoutes(s.cityKey, k).length} 条真实路线可选`} title="换座城市过日子：选口岸 / 高铁 / 船 / 大巴 / 自驾，按真实开放时间；进度原样带着" onClick={() => setCrossTo(k)} className="rounded-full border border-black/40 bg-[#14202b]/90 px-3.5 py-2 text-xs font-black text-white shadow-lg">
-{en ? `${k === "hk" || s.cityKey === "hk" ? "🛃 Cross" : "🚄 Travel"} · to ${CITY_EN[k]}` : `${k === "hk" || s.cityKey === "hk" ? "🛃 过关" : "🚄 切换城市"} · 去${CITIES[k].name}`}
+{k === "hk" || s.cityKey === "hk" ? "🛃" : "🚄"}<span className="max-sm:hidden">{en ? ` ${k === "hk" || s.cityKey === "hk" ? "Cross" : "Travel"} · to ${CITY_EN[k]}` : ` ${k === "hk" || s.cityKey === "hk" ? "过关" : "切换城市"} · 去${CITIES[k].name}`}</span><span className="sm:hidden"> {CITIES[k].emoji}</span>
 </button>
 ))}
 </div>
@@ -4400,7 +4430,7 @@ return (
 <p className="mt-3.5 flex items-baseline justify-between gap-2"><span className="text-xs font-black tracking-wide">📍 在这里能做 · 常用操作</span><span className="text-[11px] font-bold text-[var(--dim)]">{arrived ? "点一下就行动" : "到了才能做"}</span></p>
 <div className="mt-2 grid gap-2">
 {actionsFor(selLoc, s).map((a) => { const own = a.kind.startsWith("__routine-") && (a.kind !== "__routine-wait" || routineRole(s.idenId) === "driver") || a.kind.startsWith("__rider-"); /* the rider's own steps don't depend on the shop's hours; a taxi passenger waves from anywhere, any hour */ const tb = timeBlock(a.kind, s) ?? (a.kind === "__sleep" || a.kind === "rest" || own ? null : venueClosed(selLoc)); return (
-<button key={a.kind + (a.arg ?? 0)} type="button" disabled={!arrived || a.disabled || !!tb} onClick={() => { if (a.kind === "__sleep") playLifeAnim("sleep", () => doSleep()); else if (a.kind.startsWith("__gocity-")) setCrossTo(a.kind.slice("__gocity-".length) as CityKey); else if (a.kind.startsWith("__routine-")) doRoutine(a.kind.slice("__routine-".length)); else if (a.kind === "__rider-go") riderGo(); else if (a.kind === "__rider-cancel") { const g0 = gsRef.current; if (g0) { const rd0 = routineToday(g0); mutate((x) => { x.routine = { ...rd0, order: null }; x.money -= 2; x.mood = clamp(x.mood - 3, 0, 100); }); showToast(en ? "Order cancelled (−¥2)." : "这单取消了，平台扣了 ¥2。"); } } else if (a.kind.startsWith("__cross-")) { const r = CROSS_ROUTES.find((x) => x.id === a.kind.slice("__cross-".length)); if (r) takeRoute(r); } else doAction(a.kind, a.arg ?? 0); }} className="act-btn">
+<button key={a.kind + (a.arg ?? 0)} type="button" disabled={!arrived || a.disabled || !!tb} onClick={() => { if (a.kind === "__sleep") playLifeAnim("sleep", () => doSleep()); else if (a.kind.startsWith("__gocity-")) setCrossTo(a.kind.slice("__gocity-".length) as CityKey); else if (a.kind.startsWith("__routine-")) doRoutine(a.kind.slice("__routine-".length)); else if (a.kind === "__rider-go") riderGo(); else if (a.kind === "__retrain") setRetrainOpen(true); else if (a.kind === "__rider-cancel") { const g0 = gsRef.current; if (g0) { const rd0 = routineToday(g0); mutate((x) => { x.routine = { ...rd0, order: null }; x.money -= 2; x.mood = clamp(x.mood - 3, 0, 100); }); showToast(en ? "Order cancelled (−¥2)." : "这单取消了，平台扣了 ¥2。"); } } else if (a.kind.startsWith("__cross-")) { const r = CROSS_ROUTES.find((x) => x.id === a.kind.slice("__cross-".length)); if (r) takeRoute(r); } else doAction(a.kind, a.arg ?? 0); }} className="act-btn">
 <span className="flex items-center justify-between text-sm font-black"><span>{a.title}</span><span>{a.emoji}</span></span>
 <span className="mt-0.5 block text-xs leading-relaxed text-[var(--dim)]">{a.desc}</span>
 <span className="mt-1 block text-xs font-bold text-[var(--accent2)]">{a.cost}{a.kind !== "__sleep" && ` · ⏳ ${realMinLabel(actionMinutes(a.kind))}`}</span>
@@ -5217,6 +5247,21 @@ return (
 {updatesOpen && phase === "game" && profile && <UpdatesModal en={en} playerId={profile.playerId} city={s.cityKey} onClose={() => setUpdatesOpen(false)} toast={showToast} />}
 {bondsOpen && phase === "game" && profile && <BondsModal en={en} playerId={profile.playerId} bonds={bonds} onClose={() => setBondsOpen(false)} toast={showToast} refresh={() => void bondsQuery.refetch()} openCard={(pub) => { setBondsOpen(false); setCardOf(pub); }} />}
 {committeeOpen && phase === "game" && profile && <CommitteeModal en={en} playerId={profile.playerId} city={s.cityKey} cityName={en ? trText(CITIES[s.cityKey].name) : CITIES[s.cityKey].name} st={committeeQuery.data} onClose={() => setCommitteeOpen(false)} toast={showToast} refresh={() => void committeeQuery.refetch()} openAccount={() => { setCommitteeOpen(false); setAccountOpen(true); }} />}
+{retrainOpen && phase === "game" && (
+<div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={en ? "Retrain" : "转行培训"}>
+<div className="rise max-h-[88vh] w-full max-w-md overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] p-4">
+<p className="flex items-center justify-between"><span className="font-display text-xl font-black">🎓 {en ? "Retrain / get certified" : "转行培训 / 考证"}</span><button type="button" onClick={() => setRetrainOpen(false)} className="rounded-full border px-3 py-1 text-xs font-black">✕</button></p>
+<p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">{en ? `Now: ${idenOf(s).emoji} ${trText(idenOf(s).name)} · skill ${s.skill}. Your money, origin and ladder rung stay; your career level starts over. One switch every three days.` : `现在：${idenOf(s).emoji} ${idenOf(s).name} · 技能 ${s.skill}。存款、出身和阶层梯子都保留，职级从头开始；三天只能转一次。`}</p>
+<div className="mt-3 grid gap-2">
+{IDENTITIES.filter((i) => i.id !== s.idenId && i.id !== "rich").sort((a, b) => b.pay - a.pay).map((i) => { const block = retrainBlock(i.id, s); const fee = retrainFee(i.id, s); return (
+<button key={i.id} type="button" disabled={!!block} onClick={() => switchJob(i.id)} className="flex items-start gap-3 rounded-[14px] border-2 border-[var(--line)] p-2.5 text-left disabled:opacity-50">
+<span className="text-2xl">{i.emoji}</span>
+<span className="min-w-0 flex-1"><span className="block text-sm font-black">{en ? trText(i.name) : i.name} <span className="text-[var(--accent)]">{en ? `≈ ${fmt(Math.round(i.pay * CITIES[s.cityKey].payMul))}/day` : `日薪约 ${fmt(Math.round(i.pay * CITIES[s.cityKey].payMul))}`}</span></span><span className="block text-xs text-[var(--dim)]">{block ?? (en ? `Course fee ${fmt(fee)}` : `培训费 ${fmt(fee)}`)}</span></span>
+</button> ); })}
+</div>
+</div>
+</div>
+)}
 {storeOpen && phase === "game" && <StoreModal en={en} onClose={() => setStoreOpen(false)} toast={showToast} openAccount={() => setAccountOpen(true)} />}
 {accountOpen && phase === "game" && <AccountModal en={en} playerId={profile?.playerId ?? null} saveKey={LS_KEY} onClose={() => setAccountOpen(false)} toast={showToast} onChange={(v) => { setLoggedIn(v); track(v ? "account_login" : "account_logout"); }} />}
 {dmOpen && (() => { const th = threads.find((t) => t.peerId === dmPeer); const peerName = th?.peerName ?? (world?.online ?? []).find((x) => x.id === dmPeer)?.name ?? ""; return (
