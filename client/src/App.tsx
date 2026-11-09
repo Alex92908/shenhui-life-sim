@@ -261,6 +261,8 @@ const CITY_EN: Record<CityKey, string> = { sz: "Shenzhen", hz: "Huizhou", hk: "H
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 const fmt = (n: number, ck: CityKey = "sz") => fmtMoney(n, ck);
 const hexCss = (n: number) => `#${n.toString(16).padStart(6, "0")}`;
+/** blend colour a toward b (t = share of b) */
+const mixHex = (a: number, b: number, t: number) => { const ch = (sh: number) => Math.round(((a >> sh) & 255) * (1 - t) + ((b >> sh) & 255) * t) << sh; return ch(16) | ch(8) | ch(0); };
 
 function idenOf(gs: GameState) {
 return IDENTITIES.find((i) => i.id === gs.idenId)?? IDENTITIES[0]!;
@@ -721,16 +723,16 @@ const [roadRideStep, setRoadRideStep] = useState(0);
     还在等最后一步演完；演完由下面的 effect 统一收起。 */
 const [roadRideArrived, setRoadRideArrived] = useState(false);
 useEffect(() => {
-if (!roadRide || roadRideStep >= 3) return;
-const stepMs = Math.max(120, roadRide.durMs / 4);
+if (!roadRide || roadRideStep >= 4) return;
+const stepMs = Math.max(120, roadRide.durMs / 5);
 const elapsed = Date.now() - roadRide.startedAt;
 const remain = Math.max(30, stepMs * (roadRideStep + 1) - elapsed);
-const tm = window.setTimeout(() => setRoadRideStep((v) => Math.min(3, v + 1)), remain);
+const tm = window.setTimeout(() => setRoadRideStep((v) => Math.min(4, v + 1)), remain);
 return () => window.clearTimeout(tm);
 }, [roadRide, roadRideStep]);
 useEffect(() => {
 if (!roadRide || !roadRideArrived) return;
-if (roadRideStep >= 3 && Date.now() - roadRide.startedAt >= roadRide.durMs) {
+if (roadRideStep >= 4 && Date.now() - roadRide.startedAt >= roadRide.durMs) {
 setRoadRide(null);
 setRoadRideArrived(false);
 }
@@ -875,7 +877,7 @@ const [retrainOpen, setRetrainOpen] = useState(false);
 const [liveOpen, setLiveOpen] = useState(false);
 const [home3d, setHome3d] = useState(false);
 const [furnSel, setFurnSel] = useState<string | null>(null);
-const [venue3d, setVenue3d] = useState<{ set: LifeSet; name: string; line: string } | null>(null);
+const [venue3d, setVenue3d] = useState<{ set: LifeSet; name: string; line: string; id?: string; emoji?: string; color?: number } | null>(null);
 const [venueTalk, setVenueTalk] = useState<VenueTalk | null>(null);
 /* compact screens: the right-hand panel rail folds behind one ☰ button */
 /* Map fullscreen: the map shell becomes a fixed full-viewport stage
@@ -1723,7 +1725,7 @@ setWalking(true);
 /* each mode keeps its own pace (bike < e-bike/bus < taxi < own car) — a loose limit only, so speeds stay visibly different */
 /* on-screen pace per mode (map units / s): slow enough to watch, always walk < run < bike < e-bike < bus < taxi < car */
 const WATCH: Partial<Record<TransportModeId, number>> = { walk: 1.6, run: 2.4, bike: 3, moto: 3.8, bus: 4.2, taxi: 5, drive: 5.5 };
-const ms = clamp((dist / (WATCH[effMode] ?? modeById(effMode).mapSpeed)) * 1000 * (jam ? 1.5 : 1), 1500, 45000);
+const ms = clamp((dist / (WATCH[effMode] ?? modeById(effMode).mapSpeed)) * 1000 * (jam ? 1.5 : 1), effMode === "bus" ? 12000 : effMode === "taxi" || effMode === "drive" ? 10000 : 1500, 45000);
 setTripEta(Date.now() + ms);
 tripRef.current = { fromId: from.id, toId: locId, fx: from.x, fz: from.z, tx: to.x, tz: to.z, startedAt: Date.now(), ms, cost, mode: effMode };
 setTripTo(locId);
@@ -4749,7 +4751,7 @@ return (
 <p className="mt-3.5 flex items-baseline justify-between gap-2"><span className="text-xs font-black tracking-wide">📍 在这里能做 · 常用操作</span><span className="text-[11px] font-bold text-[var(--dim)]">{arrived ? "点一下就行动" : "到了才能做"}</span></p>
 <div className="mt-2 grid gap-2">
 {actionsFor(selLoc, s).map((a) => { const own = a.kind.startsWith("__routine-") && (a.kind !== "__routine-wait" || routineRole(s.idenId) === "driver") || a.kind.startsWith("__rider-") || a.kind.startsWith("__scenic-") || a.kind === "__livehouse" || a.kind === "__venue3d"; /* the rider's own steps don't depend on the shop's hours; a taxi passenger waves from anywhere, any hour */ const tb = timeBlock(a.kind, s) ?? (a.kind === "__sleep" || a.kind === "rest" || own ? null : venueClosed(selLoc)); return (
-<button key={a.kind + (a.arg ?? 0)} type="button" disabled={!arrived || a.disabled || !!tb} onClick={() => { if (a.kind === "__sleep") playLifeAnim("sleep", () => doSleep()); else if (a.kind.startsWith("__gocity-")) setCrossTo(a.kind.slice("__gocity-".length) as CityKey); else if (a.kind.startsWith("__routine-")) doRoutine(a.kind.slice("__routine-".length)); else if (a.kind === "__rider-go") riderGo(); else if (a.kind === "__retrain") setRetrainOpen(true); else if (a.kind.startsWith("__scenic-")) startScenic(a.kind.slice("__scenic-".length)); else if (a.kind === "__livehouse") setLiveOpen(true); else if (a.kind === "__venue3d") { const vs = VENUE_SETS[selLoc.type]; if (vs) setVenueTalk(null), setVenue3d({ set: vs.set, name: en ? trText(selLoc.name) : selLoc.name, line: en ? vs.en : vs.zh }); } else if (a.kind === "__rider-cancel") { const g0 = gsRef.current; if (g0) { const rd0 = routineToday(g0); mutate((x) => { x.routine = { ...rd0, order: null }; x.money -= 2; x.mood = clamp(x.mood - 3, 0, 100); }); showToast(en ? "Order cancelled (−¥2)." : "这单取消了，平台扣了 ¥2。"); } } else if (a.kind.startsWith("__cross-")) { const r = CROSS_ROUTES.find((x) => x.id === a.kind.slice("__cross-".length)); if (r) takeRoute(r); } else doAction(a.kind, a.arg ?? 0); }} className="act-btn">
+<button key={a.kind + (a.arg ?? 0)} type="button" disabled={!arrived || a.disabled || !!tb} onClick={() => { if (a.kind === "__sleep") playLifeAnim("sleep", () => doSleep()); else if (a.kind.startsWith("__gocity-")) setCrossTo(a.kind.slice("__gocity-".length) as CityKey); else if (a.kind.startsWith("__routine-")) doRoutine(a.kind.slice("__routine-".length)); else if (a.kind === "__rider-go") riderGo(); else if (a.kind === "__retrain") setRetrainOpen(true); else if (a.kind.startsWith("__scenic-")) startScenic(a.kind.slice("__scenic-".length)); else if (a.kind === "__livehouse") setLiveOpen(true); else if (a.kind === "__venue3d") { const vs = VENUE_SETS[selLoc.type]; if (vs) setVenueTalk(null), setVenue3d({ set: vs.set, name: en ? trText(selLoc.name) : selLoc.name, line: en ? vs.en : vs.zh, id: selLoc.id, emoji: selLoc.emoji, color: selLoc.color }); } else if (a.kind === "__rider-cancel") { const g0 = gsRef.current; if (g0) { const rd0 = routineToday(g0); mutate((x) => { x.routine = { ...rd0, order: null }; x.money -= 2; x.mood = clamp(x.mood - 3, 0, 100); }); showToast(en ? "Order cancelled (−¥2)." : "这单取消了，平台扣了 ¥2。"); } } else if (a.kind.startsWith("__cross-")) { const r = CROSS_ROUTES.find((x) => x.id === a.kind.slice("__cross-".length)); if (r) takeRoute(r); } else doAction(a.kind, a.arg ?? 0); }} className="act-btn">
 <span className="flex items-center justify-between text-sm font-black"><span>{a.title}</span><span>{a.emoji}</span></span>
 <span className="mt-0.5 block text-xs leading-relaxed text-[var(--dim)]">{a.desc}</span>
 <span className="mt-1 block text-xs font-bold text-[var(--accent2)]">{a.cost}{a.kind !== "__sleep" && ` · ⏳ ${realMinLabel(actionMinutes(a.kind))}`}</span>
@@ -5218,7 +5220,7 @@ return (
 <div className="mt-2 flex gap-1.5">
 {!arrived && <button type="button" onClick={() => walkTo(selectedLoc)} className="pc-btn pc-primary">🚶 {en ? "Go here" : "去这里"}</button>}
 {arrived && sm && <button type="button" onClick={() => startScenic(sm.id)} className="pc-btn">{sm.emoji} {en ? "View" : "观景"}</button>}
-{arrived && vs && <button type="button" onClick={() => { setVenueTalk(null); setVenue3d({ set: vs.set, name: en ? trText(selLoc.name) : selLoc.name, line: en ? vs.en : vs.zh }); }} className="pc-btn">🚪 {en ? "Step inside" : "进店 3D"}</button>}
+{arrived && vs && <button type="button" onClick={() => { setVenueTalk(null); setVenue3d({ set: vs.set, name: en ? trText(selLoc.name) : selLoc.name, line: en ? vs.en : vs.zh, id: selLoc.id, emoji: selLoc.emoji, color: selLoc.color }); }} className="pc-btn">🚪 {en ? "Step inside" : "进店 3D"}</button>}
 {arrived && selLoc.type === "social" && <button type="button" onClick={() => setLiveOpen(true)} className="pc-btn">🎶 {en ? "Live" : "听歌"}</button>}
 <button type="button" onClick={() => { setAsideTab("place"); setAsideOpen(true); }} className={`pc-btn${arrived ? " pc-primary" : ""}`}>{arrived ? (en ? "⌃ Things to do" : "⌃ 能做的事") : (en ? "⌃ Details" : "⌃ 详情")}</button>
 </div>
@@ -5289,16 +5291,19 @@ const rr = roadRide;
 const isBus = rr.mode === "bus";
 const isDrive = rr.mode === "drive";
 const steps: { pose: LifePose; caption: string; sub: string }[] = isDrive ? [
+{ pose: "walk", caption: "去停车场取车", sub: "下楼走到停车场，按一下车钥匙，车灯闪了两下" },
 { pose: "walk", caption: "上车，点火出发", sub: "拉开车门坐进驾驶座，系好安全带，点火、看一眼后视镜，慢慢汇入车流" },
 { pose: "drive", caption: "路口等红灯", sub: "前面路口红灯亮了——跟全城的车一起停下来等。绿灯一亮，脚下给油，车流重新流动起来" },
 { pose: "drive", caption: "跟着车流走", sub: "双手扶着方向盘，商圈、写字楼、行道树从挡风玻璃前一段段划过——这座城市的路，你越来越熟" },
 { pose: "walk", caption: "找车位，停好下车", sub: "绕了一小圈找到车位，倒车入库、拉手刹、锁车——到了" },
 ] : isBus ? [
+{ pose: "idle", caption: "站台等车", sub: "站牌下看一眼电子屏：你要坐的车还有 3 站进站。路灯下几个人和你一起等" },
 { pose: "walk", caption: "公交进站，上车", sub: "车在站台稳稳停住，前门打开——你刷卡上车，往里走找座位" },
 { pose: "sit", caption: "坐稳了，看窗外", sub: "公交一站站往前开，街景、行道树和店铺在窗外一段段往后退" },
 { pose: "sit", caption: "快到了，准备下车", sub: "车载广播报站：下一站就是你的目的地——按一下下车铃，扶好站起来" },
 { pose: "walk", caption: "到站下车", sub: "后门下车，脚一落地，新地方到了" },
 ] : [
+{ pose: "idle", caption: "路边叫车，等车来", sub: "打开打车 App 下单：「司机正在赶来，还有 2 分钟，车牌粤B·D7×××」。你站在路边盯着每一辆亮着灯的车" },
 { pose: "walk", caption: "车到了，上车", sub: "你叫的车停在面前，拉开车门坐进后排，系好安全带，跟司机确认目的地" },
 { pose: "sit", caption: "坐在车里看城市", sub: "车汇入车流，高架、商圈、写字楼在窗外划过——打车就是图个快和省心" },
 { pose: "sit", caption: "快到了", sub: "司机打了转向灯靠边：前面路口就是你的目的地" },
@@ -5326,14 +5331,14 @@ return (
 </div>
 <div className="mx-4 mt-3 overflow-hidden rounded-[16px] border-2 border-[var(--line)]">
 <div className="relative h-52">
-<LifeStage3D key={`road-${rr.mode}-${roadRideStep >= 3 ? "out" : roadRideStep === 0 ? "in" : "ride"}`} setKind={rr.mode} pose={step.pose} shirt={outfitR.shirt} pants={outfitR.pants} night={false} emoji={iden.emoji} cur={Y} />
+<LifeStage3D key={`road-${rr.mode}-${roadRideStep >= 4 ? "out" : roadRideStep === 0 ? "wait" : roadRideStep === 1 ? "in" : "ride"}`} setKind={roadRideStep === 0 ? "station" : rr.mode} pose={step.pose} shirt={outfitR.shirt} pants={outfitR.pants} night={nowMin() >= 19 * 60 || nowMin() < 6 * 60} emoji={iden.emoji} cur={Y} />
 <div className="cine-grade" />
 </div>
 <p className="bg-[var(--surface2)] px-3 py-2 text-xs leading-relaxed"><b>{step.caption}</b> · {step.sub}</p>
 </div>
 <div className="flex items-center gap-2 px-4 py-3.5">
 <div className="flex gap-1">{steps.map((_, i) => (<span key={i} className={`h-1.5 rounded-full transition-all ${i <= roadRideStep ? "w-5 bg-[var(--accent)]" : "w-2.5 bg-[var(--line)]"}`} />))}</div>
-<span className="text-[11px] font-bold text-[var(--dim)]">{roadRideStep >= 3 ? "到站了，马上回到地图" : roadRideArrived ? "车已到站，演完这一步就回到地图" : "行驶中…四步演完才收起，不会中途掐断"}</span>
+<span className="text-[11px] font-bold text-[var(--dim)]">{roadRideStep >= 4 ? "到站了，马上回到地图" : roadRideStep === 0 ? (rr.mode === "drive" ? "取车中…" : "等车中…") : roadRideArrived ? "车已到站，演完这一步就回到地图" : "行驶中…演完才收起，不会中途掐断"}</span>
 <button type="button" aria-label="跳过搭乘动画，回到地图看行程" onClick={() => { setRoadRide(null); setRoadRideArrived(false); }} className="ml-auto rounded-full border-2 border-[var(--text)] px-4 py-2 text-xs font-black">看地图 ⏭</button>
 </div>
 </div>
@@ -5630,7 +5635,7 @@ return (
 <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/70 p-3 sm:items-center" role="dialog" aria-label={venue3d.name}>
 <div className="rise max-h-[94vh] w-full max-w-lg overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)]">
 <div className="relative h-[40vh] min-h-[220px]">
-<LifeStage3D key={`venue-${venue3d.set}-${venueTalk?.id ?? ""}`} setKind={venue3d.set} pose={venueTalk?.pose ?? "idle"} partner={venueTalk?.partner ? { shirt: venueTalk.partner[0], pants: venueTalk.partner[1] } : undefined} shirt={outfitOf(s.outfit).shirt} pants={outfitOf(s.outfit).pants} night={nowMin() >= 18 * 60 || nowMin() < 6 * 60} emoji={iden.emoji} />
+<LifeStage3D key={`venue-${venue3d.id ?? venue3d.set}-${venueTalk?.id ?? ""}`} sign={{ text: venue3d.name, emoji: venue3d.emoji, color: venue3d.color }} seed={[...(venue3d.id ?? venue3d.name)].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 100003, 7)} wall={venue3d.color !== undefined ? mixHex(venue3d.color, 0xf6efe2, 0.82) : undefined} setKind={venue3d.set} pose={venueTalk?.pose ?? "idle"} partner={venueTalk?.partner ? { shirt: venueTalk.partner[0], pants: venueTalk.partner[1] } : undefined} shirt={outfitOf(s.outfit).shirt} pants={outfitOf(s.outfit).pants} night={nowMin() >= 18 * 60 || nowMin() < 6 * 60} emoji={iden.emoji} />
 <div className="cine-grade" />
 {venueTalk && <div key={venueTalk.id} className="rise pointer-events-none absolute inset-x-3 top-3 mr-10 rounded-[14px] bg-white/92 px-3 py-2 text-[13px] font-bold leading-snug text-black shadow-lg"><span className="text-[11px] font-black text-[#b45309]">{en ? venueTalk.whoEn : venueTalk.who}</span><br />{en ? venueTalk.sayEn : venueTalk.say}</div>}
 <button type="button" onClick={() => { setVenue3d(null); setVenueTalk(null); }} className="absolute right-3 top-3 rounded-full bg-black/55 px-3 py-1 text-xs font-black text-white">✕</button>

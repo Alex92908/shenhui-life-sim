@@ -32,6 +32,9 @@ interface Props {
   furn?: { id: string; slot: number; color: number }[];
   /** "flat": wall colour from the chosen decoration style */
   wall?: number;
+  /** a venue's own identity: its name on the wall in its brand colour, and a seed that varies the extras */
+  sign?: { text: string; emoji?: string; color?: number };
+  seed?: number;
   /** someone who walks up and talks with the player (shop clerk, doctor, friend) */
   partner?: { shirt: number; pants: number };
 }
@@ -382,7 +385,7 @@ export function LifeStage3D(p: Props) {
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
-    const { setKind, pose, shirt, pants, night, emoji, cur, tier, furn, wall, partner } = propsRef.current;
+    const { setKind, pose, shirt, pants, night, emoji, cur, tier, furn, wall, partner, sign, seed } = propsRef.current;
     // Same WebGL guard as the main map: a refused context degrades to the
     // emoji fallback below instead of crashing the animation overlay.
     let renderer: THREE.WebGLRenderer;
@@ -506,7 +509,7 @@ export function LifeStage3D(p: Props) {
 
     /* ---- room shell for indoor sets: two-tone walls, wainscot, window, lamp ---- */
     const roomShell = (wallColor0: number, wainsColor: number, opts: { windowX?: number; windowW?: number; clock?: boolean } = {}) => {
-      const wallColor = setKind === "flat" && wall !== undefined ? wall : wallColor0;
+      const wallColor = wall !== undefined ? wall : wallColor0;
       box(22, 8, 0.3, wallColor, 0, 4, -3.75, 1);
       box(22, 1.05, 0.34, wainsColor, 0, 0.53, -3.73, 0.7);
       box(22, 0.09, 0.36, 0x4a3a28, 0, 1.1, -3.72, 0.6);
@@ -1606,6 +1609,25 @@ export function LifeStage3D(p: Props) {
       cyl(0.26, 0.2, 0.36, 0xb0653a, 5.9, 0.18, -2.85, 0.8);
       const fol3 = new THREE.Mesh(new THREE.SphereGeometry(0.45, 8, 7), mat(0x4d9b5f, 1, { flatShading: true }));
       fol3.position.set(5.9, 0.72, -2.85); fol3.castShadow = true; scene.add(fol3);
+    }
+    /* venue identity: name board in the brand colour, an accent stripe, and seeded extras
+       (more or fewer people, plants, posters) so two offices / two restaurants never look alike */
+    if (sign && indoor) {
+      const hex = "#" + (sign.color ?? 0xb3352c).toString(16).padStart(6, "0");
+      const sc = sign.color ?? 0xb3352c; const lum = ((sc >> 16) & 255) * 0.3 + ((sc >> 8) & 255) * 0.59 + (sc & 255) * 0.11;
+      box(4.1, 0.78, 0.08, 0x111827, 0.2, 3.05, -3.55, 0.5);
+      plane(3.95, 0.68, boardTex(hex, [{ t: `${sign.emoji ?? ""} ${sign.text}`.trim(), s: sign.text.length > 9 ? 44 : 56, c: lum > 150 ? "#111827" : "#ffffff", bold: true }], 768, 128), 0.2, 3.05, -3.49);
+      box(22, 0.14, 0.36, sign.color ?? 0xb3352c, 0, 1.2, -3.7, 0.5);
+      addGlow(0.2, 3.05, -3.3, 2.6, sign.color ?? 0xffc98a, 0.22);
+    }
+    if (seed !== undefined && indoor) {
+      let r = (seed * 9301 + 49297) % 233280; const rnd = () => (r = (r * 9301 + 49297) % 233280) / 233280;
+      const spots: [number, number][] = [[-5.4, 0.9], [5.3, 0.6], [-2.6, -2.6], [4.8, -2.2], [-5.8, -1.4], [2.2, 1.2]];
+      const cols = [0x3b82f6, 0xf59e0b, 0x10b981, 0xef4444, 0x8b5cf6, 0x06b6d4, 0xec4899, 0x64748b];
+      const people = 1 + Math.floor(rnd() * 3);
+      for (let i = 0; i < people; i++) { const sp = spots[Math.floor(rnd() * spots.length)]!; extraFigure(sp[0], 0, sp[1], rnd() * Math.PI * 2, cols[Math.floor(rnd() * cols.length)]!, 0x1f2937); }
+      if (rnd() < 0.7) { const px = rnd() < 0.5 ? -6.4 : 6.2; cyl(0.28, 0.22, 0.4, 0xb0653a, px, 0.2, -3.0, 0.8); const lf = new THREE.Mesh(new THREE.SphereGeometry(0.55, 8, 7), mat(0x4d9b5f, 1, { flatShading: true })); lf.position.set(px, 0.85, -3.0); lf.castShadow = true; scene.add(lf); }
+      if (rnd() < 0.6) { const c = cols[Math.floor(rnd() * cols.length)]!; box(1.0, 1.3, 0.05, c, -6.9 + 0.2, 2.6, -1.2, 0.8).rotation.y = Math.PI / 2; }
     }
     let talker: Figure | null = null;
     if (partner) {
