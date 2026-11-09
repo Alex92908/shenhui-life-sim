@@ -268,3 +268,11 @@ body {
   .compact-dock { max-width: calc(100% - 148px) !important; gap: 4px !important; }
   .left-cluster > button { width: 38px; height: 38px; padding: 0 !important; display: grid; place-items: center; font-size: 15px; }
 }
+
+/* map control tooltips: hover on desktop, press-and-hold on phones */
+.tipbtn{position:relative}
+.tipbtn::after{content:attr(data-tip);position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%) translateY(4px);white-space:nowrap;background:rgba(11,22,34,.92);color:#fff;font-size:11px;font-weight:800;line-height:1;padding:6px 9px;border-radius:999px;opacity:0;pointer-events:none;transition:opacity .15s,transform .15s;z-index:30;box-shadow:0 4px 12px rgba(0,0,0,.25)}
+.tipbtn.tip-r::after{left:auto;right:0;transform:translateY(4px)}
+.tipbtn:hover::after,.tipbtn:focus-visible::after,.tipbtn:active::after{opacity:1;transform:translateX(-50%) translateY(0)}
+.tipbtn.tip-r:hover::after,.tipbtn.tip-r:focus-visible::after,.tipbtn.tip-r:active::after{transform:translateY(0)}
+@media (hover:none){.tipbtn:hover::after{opacity:0}.tipbtn:active::after{opacity:1}}
