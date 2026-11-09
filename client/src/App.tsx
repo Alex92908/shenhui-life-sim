@@ -603,6 +603,13 @@ setRoadRideArrived(false);
 }, [roadRide, roadRideArrived, roadRideStep]);
 const [rideEntry, setRideEntry] = useState<number | null>(null);
 const [mapQuery, setMapQuery] = useState("");
+/* search: recent searches (kept on this device) and the place pinned on the map until the next search */
+type SearchHit = { locId: string; name: string; city: CityKey; station?: boolean };
+const [searchHist, setSearchHist] = useState<SearchHit[]>(() => { try { const v = JSON.parse(localStorage.getItem("shhr-search-hist") ?? "[]"); return Array.isArray(v) ? v.slice(0, 20) : []; } catch { return []; } });
+const [searchFocus, setSearchFocus] = useState(false);
+const [pinLoc, setPinLoc] = useState<string | null>(null);
+const rememberSearch = (h: SearchHit) => setSearchHist((old) => { const next = [h, ...old.filter((x) => !(x.locId === h.locId && x.city === h.city))].slice(0, 20); try { localStorage.setItem("shhr-search-hist", JSON.stringify(next)); } catch { /* storage unavailable */ } return next; });
+const clearSearchHist = () => { setSearchHist([]); try { localStorage.removeItem("shhr-search-hist"); } catch { /* storage unavailable */ } };
 const [mapFocus, setMapFocus] = useState<{ locId?: string; x?: number; z?: number; nonce: number } | null>(null);
 const [metroMapOpen, setMetroMapOpen] = useState(false);
 const [navOpen, setNavOpen] = useState(false);
@@ -4367,11 +4374,22 @@ return (
 <div ref={mapShellRef} className={mapFullscreen ? "fixed inset-0 z-[38] flex flex-col bg-[var(--bg)] p-3 pt-safe" : "absolute inset-0 flex flex-col p-2.5"}>
 <div className="relative px-1.5 pb-2.5">
 <div className="flex gap-2">
-<input value={mapQuery} onChange={(e) => setMapQuery(e.target.value)} placeholder={s.cityKey === "hz" ? "🔍 搜地点或城轨/高铁站：西湖、老街、惠州南…" : s.cityKey === "hk" ? "🔍 搜地点或港铁站：旺角、中环、山顶、迪士尼…" : "🔍 搜地点或地铁站：公园、商场、医院、博物馆、海滩…"} aria-label={`搜索地点或${railWord(s.cityKey)}站`} className="min-w-0 flex-1 rounded-full border border-[var(--line)] bg-[var(--surface)] px-3.5 py-2 text-sm outline-none focus:border-[var(--border)]" />
+<input value={mapQuery} onChange={(e) => setMapQuery(e.target.value)} onFocus={() => setSearchFocus(true)} onBlur={() => window.setTimeout(() => setSearchFocus(false), 220)} placeholder={s.cityKey === "hz" ? "🔍 搜地点或城轨/高铁站：西湖、老街、惠州南…" : s.cityKey === "hk" ? "🔍 搜地点或港铁站：旺角、中环、山顶、迪士尼…" : "🔍 搜地点或地铁站：公园、商场、医院、博物馆、海滩…"} aria-label={`搜索地点或${railWord(s.cityKey)}站`} className="min-w-0 flex-1 rounded-full border border-[var(--line)] bg-[var(--surface)] px-3.5 py-2 text-sm outline-none focus:border-[var(--border)]" />
 <button type="button" aria-label="打开景点分布图" onClick={() => setPlacesMapOpen(true)} className="shrink-0 rounded-full bg-[var(--green)] px-3.5 py-2 text-xs font-black text-white max-sm:px-3"><span className="compact-only">🗺️</span><span className="compact-hide">🗺️ 景点分布图</span></button>
 <button type="button" aria-label={s.cityKey === "hz" ? "打开惠州城际高铁线网图" : s.cityKey === "hk" ? "打开香港港铁线网图" : "打开地铁线路图"} onClick={() => { setMetroMapDest(null); setMetroMapOpen(true); }} className="shrink-0 rounded-full bg-[var(--accent2)] px-3.5 py-2 text-xs font-black text-white max-sm:px-3"><span className="compact-only">{s.cityKey === "hz" ? "🚆" : "🚇"}</span><span className="compact-hide">{s.cityKey === "hz" ? "🚆 城际/高铁线网图" : "🚇 地铁线路图"}</span></button>
 <button type="button" aria-label={mapFullscreen ? "退出地图全屏" : "地图全屏"} aria-pressed={mapFullscreen} onClick={toggleMapFullscreen} className={`shrink-0 rounded-full px-3.5 py-2 text-xs font-black text-white ${mapFullscreen ? "bg-[var(--accent)]" : "bg-[#14202b]"}`}><span className="compact-only">{mapFullscreen ? "✕" : "⛶"}</span><span className="compact-hide">{mapFullscreen ? "⛶ 退出全屏" : "⛶ 全屏看地图"}</span></button>
 </div>
+{mapQuery.trim() === "" && searchFocus && searchHist.some((h) => h.city === s.cityKey) && (
+<div className="absolute inset-x-1.5 top-full z-30 max-h-72 overflow-y-auto rounded-[14px] border-2 border-[var(--border)] bg-[var(--surface)] p-1.5 shadow-xl">
+<p className="flex items-center justify-between px-2 py-1 text-[11px] font-black text-[var(--dim)]"><span>🕘 {en ? "Recent searches" : "最近搜索"}</span><button type="button" onMouseDown={(e) => e.preventDefault()} onClick={clearSearchHist} className="rounded-full border border-[var(--line)] px-2 py-0.5">{en ? "Clear" : "清除"}</button></p>
+{searchHist.filter((h) => h.city === s.cityKey).slice(0, 8).map((h) => (
+<button key={h.locId} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { setSearchFocus(false); if (h.station) { setMetroMapDest(h.name.replace(/站$/, "")); setMetroMapOpen(true); } else { setSelectedLoc(h.locId); setAsideTab("place"); autoOpenAside(); setMapFocus({ locId: h.locId, nonce: Date.now() }); } setPinLoc(h.locId); rememberSearch(h); }} className="flex w-full items-center gap-2 rounded-[10px] px-2 py-1.5 text-left text-sm font-bold hover:bg-[var(--surface2)]">
+<span>{h.station ? (s.cityKey === "hz" ? "🚆" : "🚇") : "📍"}</span><span className="min-w-0 flex-1 truncate">{en ? trText(h.name) : h.name}</span><span className="text-[11px] font-black text-[var(--accent2)]">{en ? "Show" : "定位"}</span>
+{!h.station && <span role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); setSearchFocus(false); setPinLoc(h.locId); rememberSearch(h); walkTo(h.locId); }} onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); setPinLoc(h.locId); walkTo(h.locId); } }} className="shrink-0 rounded-full bg-[var(--accent)] px-2.5 py-1 text-[11px] font-black text-white">{en ? "Go" : "去这里"}</span>}
+</button>
+))}
+</div>
+)}
 {mapQuery.trim() !== "" && (() => {
 const q = mapQuery.trim();
 /* 口岸 / 过关 / 码头…: list every way out of the city (ports, ferry piers, the
@@ -4393,15 +4411,16 @@ return (
 {locResults.map((l) => {
 const plan = l.id !== currentLoc ? planRailTrip(s.cityKey, currentLoc, l.id) : null;
 return (
-<button key={l.id} type="button" aria-label={`定位到${l.name}`} onClick={() => { setSelectedLoc(l.id); setAsideTab("place"); autoOpenAside(); setMapFocus({ locId: l.id, nonce: Date.now() }); setMapQuery(""); }} className="flex w-full items-center gap-2 rounded-[10px] px-2 py-1.5 text-left hover:bg-[var(--surface2)]">
+<button key={l.id} type="button" aria-label={`定位到${l.name}`} onClick={() => { setSelectedLoc(l.id); setAsideTab("place"); autoOpenAside(); setMapFocus({ locId: l.id, nonce: Date.now() }); setMapQuery(""); setPinLoc(l.id); rememberSearch({ locId: l.id, name: l.name, city: s.cityKey }); }} className="flex w-full items-center gap-2 rounded-[10px] px-2 py-1.5 text-left hover:bg-[var(--surface2)]">
 <span className="text-lg">{l.emoji}</span>
 <span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold">{en ? trText(l.name) : l.name}</span><span className="block truncate text-[11px] text-[var(--dim)]">{l.id === currentLoc ? "你现在在这里" : plan ? `怎么去：${plan.boardLoc !== currentLoc ? `先步行到${locById(plan.boardLoc).short}站 · ` : ""}${railWord(s.cityKey)} ${plan.route.summary} · ${plan.route.stops} 站 · ${Y}${plan.route.fare}${plan.alightLoc !== l.id ? ` · 到${locById(plan.alightLoc).short}站再步行过去` : ""}` : "怎么去：离得很近，步行就到（在下方选好出行方式，点地点名或地图上的建筑前往）"}</span></span>
-<span className="shrink-0 text-[11px] font-black text-[var(--accent2)]">定位 →</span>
+<span className="shrink-0 text-[11px] font-black text-[var(--accent2)]">定位</span>
+<span role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); setMapQuery(""); setPinLoc(l.id); rememberSearch({ locId: l.id, name: l.name, city: s.cityKey }); walkTo(l.id); }} onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); setMapQuery(""); setPinLoc(l.id); walkTo(l.id); } }} className="shrink-0 rounded-full bg-[var(--accent)] px-2.5 py-1 text-[11px] font-black text-white">{en ? "Go" : "去这里"}</span>
 </button>
 );
 })}
 {stationResults.map((st) => (
-<button key={st.name} type="button" aria-label={`在线网图上规划去${st.name}站`} onClick={() => { setMetroMapDest(st.name); setMetroMapOpen(true); setMapQuery(""); }} className="flex w-full items-center gap-2 rounded-[10px] px-2 py-1.5 text-left hover:bg-[var(--surface2)]">
+<button key={st.name} type="button" aria-label={`在线网图上规划去${st.name}站`} onClick={() => { setMetroMapDest(st.name); setMetroMapOpen(true); setMapQuery(""); setPinLoc(stationLocId(st.name)); rememberSearch({ locId: stationLocId(st.name), name: `${st.name}站`, city: s.cityKey, station: true }); }} className="flex w-full items-center gap-2 rounded-[10px] px-2 py-1.5 text-left hover:bg-[var(--surface2)]">
 <span className="text-lg">{s.cityKey === "hz" ? "🚆" : "🚇"}</span>
 <span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold">{en ? `${trText(st.name)} Station` : `${st.name}站`}</span><span className="block truncate text-[11px] text-[var(--dim)]">{st.lines.join(" · ")}</span></span>
 <span className="shrink-0 text-[11px] font-black text-[var(--accent2)]">在线网图规划 →</span>
@@ -4411,7 +4430,7 @@ return (
 );
 })()}
 </div>
-<MapView lite={lite} scenic={scenicMoment ? (() => { const m = scenicMoment.m; const l = locById(currentLoc); /* look out past the spot (over the water for sea views), from a little above the rooftops */ const az = m.faceSea && !m.path ? seawardAz(s.cityKey, l.x, l.z, m.az) : m.az; const ox = -Math.sin(az) * m.dist * 0.75, oz = -Math.cos(az) * m.dist * 0.75; return { x: (m.path ? m.path[0]![0] : l.x) + ox, z: (m.path ? m.path[0]![1] : l.z) + oz, phase: m.phase, az, pol: m.path ? Math.min(m.pol, 1.08) : 0.9, dist: m.path ? m.dist : m.dist * 2.1, path: m.path, durMs: m.durMs, nonce: scenicMoment.nonce }; })() : null} mapMode={mapMode} onMapMode={setMapMode} fill paused={!!lifeAnim} train={carriage ? { pts: carriage.route.stations.map((st) => [st.x, st.z] as [number, number]), idx: carriage.stopIdx, stepMs: hopMs(carriage.route, carriage.stopIdx), color: (carriage.route.legs[carriage.legIdx]?.line ?? carriage.route.line).color, rail: carriage.route.legs.some((l) => ["szhz-rail", "guangshen", "hz-intercity", "ganshen-rail", "guangshan-rail", "hsr-hk"].includes(l.line.id)), hold: rideEntry !== null || carriage.awaitingTransfer || carriage.stopIdx >= carriage.route.stations.length - 1 } : null} cityKey={s.cityKey} selfLocId={walking || carriage ? (tripTo ?? selectedLoc) : currentLoc} selfEmoji={iden.emoji} selfColor={iden.color} selfName={profile?.name ?? "我"} remotePlayers={remotePlayers} billboards={(billboardsQuery.data?.slots ?? []).flatMap((b) => (b.ad ? [{ slot: b.slot, text: b.ad.text, emoji: b.ad.emoji, owner: b.ad.owner }] : []))} selfOutfitId={s.outfit} travelModeId={tripMode ?? travelMode} selfEtaAt={tripEta ?? undefined} arrival={arrival} weatherKind={rwOk ? realWeather!.kind : "unknown"} npcMoodEmoji={Object.fromEntries(npcsForCity(s.cityKey).map((n) => [n.name, moodEmoji(memOf(s.npcMem ?? {}, n.name).mood)]))} apecDay={isApecWeek(s.day)} focusLocId={mapFocus?.locId} focusX={mapFocus?.x} focusZ={mapFocus?.z} focusNonce={mapFocus?.nonce} destLocId={selectedLoc} onSelect={walkTo} onPickActor={pickActor} navOverlay={(
+<MapView lite={lite} pinLocId={pinLoc} onPinClear={() => setPinLoc(null)} scenic={scenicMoment ? (() => { const m = scenicMoment.m; const l = locById(currentLoc); /* look out past the spot (over the water for sea views), from a little above the rooftops */ const az = m.faceSea && !m.path ? seawardAz(s.cityKey, l.x, l.z, m.az) : m.az; const ox = -Math.sin(az) * m.dist * 0.75, oz = -Math.cos(az) * m.dist * 0.75; return { x: (m.path ? m.path[0]![0] : l.x) + ox, z: (m.path ? m.path[0]![1] : l.z) + oz, phase: m.phase, az, pol: m.path ? Math.min(m.pol, 1.08) : 0.9, dist: m.path ? m.dist : m.dist * 2.1, path: m.path, durMs: m.durMs, nonce: scenicMoment.nonce }; })() : null} mapMode={mapMode} onMapMode={setMapMode} fill paused={!!lifeAnim} train={carriage ? { pts: carriage.route.stations.map((st) => [st.x, st.z] as [number, number]), idx: carriage.stopIdx, stepMs: hopMs(carriage.route, carriage.stopIdx), color: (carriage.route.legs[carriage.legIdx]?.line ?? carriage.route.line).color, rail: carriage.route.legs.some((l) => ["szhz-rail", "guangshen", "hz-intercity", "ganshen-rail", "guangshan-rail", "hsr-hk"].includes(l.line.id)), hold: rideEntry !== null || carriage.awaitingTransfer || carriage.stopIdx >= carriage.route.stations.length - 1 } : null} cityKey={s.cityKey} selfLocId={walking || carriage ? (tripTo ?? selectedLoc) : currentLoc} selfEmoji={iden.emoji} selfColor={iden.color} selfName={profile?.name ?? "我"} remotePlayers={remotePlayers} billboards={(billboardsQuery.data?.slots ?? []).flatMap((b) => (b.ad ? [{ slot: b.slot, text: b.ad.text, emoji: b.ad.emoji, owner: b.ad.owner }] : []))} selfOutfitId={s.outfit} travelModeId={tripMode ?? travelMode} selfEtaAt={tripEta ?? undefined} arrival={arrival} weatherKind={rwOk ? realWeather!.kind : "unknown"} npcMoodEmoji={Object.fromEntries(npcsForCity(s.cityKey).map((n) => [n.name, moodEmoji(memOf(s.npcMem ?? {}, n.name).mood)]))} apecDay={isApecWeek(s.day)} focusLocId={mapFocus?.locId} focusX={mapFocus?.x} focusZ={mapFocus?.z} focusNonce={mapFocus?.nonce} destLocId={selectedLoc} onSelect={walkTo} onPickActor={pickActor} navOverlay={(
 <>
 {/* 弹幕层：联机动态 / 聊天 / 街坊发言飘过地图上半区 */}
 {danmakuOn && !scenicMoment && (

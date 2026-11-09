@@ -39,6 +39,9 @@ interface Props {
   lite?: boolean;
   /** A/B map mode: "city" frames the whole city (A); "follow" keeps the camera close on you with the minimap always on (B) */
   mapMode?: "city" | "follow";
+  /** the searched place: a label that always stays, a light pillar on the map, "go" and "✕" on the label */
+  pinLocId?: string | null;
+  onPinClear?: () => void;
   /** 观景时刻: the camera flies low over a spot at sunset / night (null = normal map) */
   scenic?: { x: number; z: number; phase: number; az: number; pol: number; dist: number; path?: [number, number][]; durMs: number; nonce: number } | null;
   onMapMode?: (m: "city" | "follow") => void;
@@ -401,6 +404,8 @@ interface Chip {
   place?: boolean;
   /** billboard slot (0–2): always shown while rented, outside the label caps */
   ad?: number;
+  /** the searched place's pinned label */
+  pin?: boolean;
   /** A neighbourhood / town name over the filler blocks and woods. */
   area?: "big" | "small";
   /** The small English subtitle line under a place name, if any. */
@@ -466,6 +471,12 @@ export function MapView(p: Props) {
   /* a spot picked on the minimap stays the camera's centre (no drifting back to
      the player) until the player sets off on a new trip */
   const anchorRef = useRef<{ x: number; z: number } | null>(null);
+  /* the searched place, pinned until the next search or ✕ */
+  const pinRef = useRef<{ id: string; x: number; z: number; name: string } | null>(null);
+  useEffect(() => {
+    const l = p.pinLocId ? resolveLoc(p.cityKey, p.pinLocId) : undefined;
+    pinRef.current = l && p.pinLocId ? { id: p.pinLocId, x: l.x, z: l.z, name: document.documentElement.lang === "en" ? (LOC_EN[l.name] ?? l.name) : l.name } : null;
+  }, [p.pinLocId, p.cityKey]);
   /* B mode: the camera rides close behind you (about a third of the whole-city distance) */
   const FOLLOW_K = 0.34;
   const followRef = useRef(p.mapMode === "follow");
@@ -2013,6 +2024,30 @@ export function MapView(p: Props) {
       chips.push({ el: d, kind: "road", place: true, w: 0, h: 0, lastText: "", visible: true, clampDx: 0, clampDy: 0, getPos: () => ({ x: pl.x, y: LAND + 1.0, z: pl.z }) });
     }
 
+    /* ---- 📍 the searched place: a label that always shows + a light pillar ---- */
+    {
+      const d = document.createElement("div");
+      d.style.cssText = "position:absolute;left:0;top:0;pointer-events:auto;display:none;align-items:center;gap:4px;font:900 12px 'Noto Sans SC',sans-serif;padding:4px 5px 4px 10px;border-radius:999px;color:#fff;background:#e63a1f;border:2px solid #fff;box-shadow:0 3px 12px rgba(0,0,0,.4);white-space:nowrap;z-index:3;";
+      const nameEl = document.createElement("span");
+      const goEl = document.createElement("button"); goEl.type = "button";
+      goEl.style.cssText = "border:0;border-radius:999px;background:#fff;color:#e63a1f;font:900 11px 'Noto Sans SC',sans-serif;padding:2px 8px;cursor:pointer;";
+      goEl.textContent = document.documentElement.lang === "en" ? "Go →" : "去这里 →";
+      goEl.addEventListener("click", (e) => { e.stopPropagation(); const pin = pinRef.current; if (pin) propsRef.current.onSelect(pin.id); });
+      const xEl = document.createElement("button"); xEl.type = "button";
+      xEl.style.cssText = "border:0;border-radius:999px;background:rgba(0,0,0,.25);color:#fff;font:900 11px sans-serif;width:20px;height:20px;cursor:pointer;";
+      xEl.textContent = "✕"; xEl.setAttribute("aria-label", "取消标记");
+      xEl.addEventListener("click", (e) => { e.stopPropagation(); propsRef.current.onPinClear?.(); });
+      d.append(nameEl, goEl, xEl);
+      labels.appendChild(d);
+      chips.push({ el: d as HTMLDivElement, kind: "road", pin: true, w: 0, h: 0, lastText: "", visible: false, clampDx: 0, clampDy: 0, getPos: () => ({ x: pinRef.current?.x ?? 0, y: LAND + 3.4, z: pinRef.current?.z ?? 0 }) });
+      (d as HTMLDivElement & { nameEl?: HTMLSpanElement }).nameEl = nameEl;
+    }
+    const pinBeam = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 9, 18, 1, true), new THREE.MeshBasicMaterial({ color: 0xff3b30, transparent: true, opacity: 0.32, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+    const pinRing = new THREE.Mesh(new THREE.RingGeometry(0.55, 0.8, 36), new THREE.MeshBasicMaterial({ color: 0xff3b30, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false }));
+    pinRing.rotation.x = -Math.PI / 2;
+    pinBeam.visible = pinRing.visible = false;
+    scene.add(pinBeam, pinRing);
+
     /* ---- 📢 billboards: one chip per spot, filled from props each pass ---- */
     billboardSpots(cityKey).forEach((spot, slot) => {
       const d = mkChip("", "");
@@ -3070,6 +3105,15 @@ export function MapView(p: Props) {
             continue;
           }
           prio = (chip.area === "big" ? 9.1 : 9.6) + dCam / 40;
+        } else if (chip.pin) {
+          const pin = pinRef.current;
+          if (!pin || scenicRef.current) { if (chip.visible) { chip.visible = false; chip.el.style.display = "none"; } continue; }
+          const nameEl = (chip.el as HTMLDivElement & { nameEl?: HTMLSpanElement }).nameEl;
+          const t = `📍 ${pin.name}`;
+          if (nameEl && nameEl.textContent !== t) { nameEl.textContent = t; chip.w = 0; }
+          if (chip.w === 0) { chip.el.style.display = "flex"; chip.w = chip.el.offsetWidth; chip.h = chip.el.offsetHeight; }
+          cands.push({ chip, sx, sy, prio: -1, near: true });
+          continue;
         } else if (chip.ad !== undefined) {
           const ad = propsRef.current.billboards?.find((b) => b.slot === chip.ad);
           if (!ad) { if (chip.visible) { chip.visible = false; chip.el.style.display = "none"; } continue; }
@@ -3131,7 +3175,7 @@ export function MapView(p: Props) {
             c.chip.el.style.display = "none";
             continue;
           }
-          const kk = c.chip.place ? "place" : c.chip.area ? "area" : c.chip.station ? "station" : c.chip.kind === "road" && !c.chip.metro && c.chip.ad === undefined ? "road" : null;
+          const kk = c.chip.place ? "place" : c.chip.area ? "area" : c.chip.station ? "station" : c.chip.kind === "road" && !c.chip.metro && c.chip.ad === undefined && !c.chip.pin ? "road" : null;
           if (kk && !c.near && kindShown[kk] >= kindCap[kk]) {
             c.chip.visible = false;
             c.chip.el.style.display = "none";
@@ -3165,7 +3209,7 @@ export function MapView(p: Props) {
           if (c.chip.kind === "loc") locShown++;
           if (kk) kindShown[kk]++;
           c.chip.visible = true;
-          c.chip.el.style.display = "";
+          c.chip.el.style.display = c.chip.pin ? "flex" : "";
           c.chip.el.style.transform = `translate(-50%,-100%) translate(${ax.toFixed(1)}px,${ay.toFixed(1)}px)`;
           if (c.chip.kind === "loc") {
             const pos = c.chip.getPos();
@@ -3175,6 +3219,15 @@ export function MapView(p: Props) {
         }
       }
 
+      {
+        const pin = pinRef.current;
+        pinBeam.visible = pinRing.visible = !!pin && !scenicRef.current;
+        if (pin) {
+          pinBeam.position.set(pin.x, LAND + 4.5, pin.z);
+          pinRing.position.set(pin.x, LAND + 0.08, pin.z);
+          const k = 1 + Math.sin(performance.now() / 260) * 0.18; pinRing.scale.set(k, k, k);
+        }
+      }
       if (fx) fx.render();
       else renderer.render(scene, camera);
     };
