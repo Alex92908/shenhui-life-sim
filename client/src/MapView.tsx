@@ -673,11 +673,17 @@ export function MapView(p: Props) {
       setGlFailed(true);
       return;
     }
-    // 1.5x cap: on Retina (dpr 2) the full post chain at 2x is 4x the pixels
-    // of 1x — the single biggest per-frame GPU cost. 1.5x stays crisp.
     const lite = !!propsRef.current.lite;
-    // phones run "lite" (no shadows / post-fx) but still render at 2× — at 1× a 3× phone screen looks blurry
-    renderer.setPixelRatio(lite ? Math.min(2, window.devicePixelRatio || 1) : Math.min(1.5, window.devicePixelRatio || 1));
+    /* Adaptive resolution: start sharp — a phone at its native density (up to
+       3×), a desktop at up to 2× — then watch the frame rate and step down
+       (3× → 2× → 1.5× → 1×) when the device can't keep up, or back up once
+       when it runs smoothly. Text and labels are HTML and always native. */
+    const dpr = window.devicePixelRatio || 1;
+    const phoneLike = lite || window.innerWidth < 768 || (typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches);
+    const prTop = Math.min(phoneLike ? 3 : 2, dpr);
+    const prLadder = [prTop, 2, 1.5, 1].filter((v, i, a) => v <= prTop && a.indexOf(v) === i);
+    let prIdx = 0;
+    renderer.setPixelRatio(prLadder[0]!);
     renderer.shadowMap.enabled = !lite;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -2335,13 +2341,33 @@ export function MapView(p: Props) {
     let last = performance.now();
     const clockStart = performance.now();
 
+    // adaptive resolution bookkeeping (see prLadder above)
+    let prFrames = 0, prTime = 0, prWindows = 0, prSmooth = 0, prChanges = 0;
+    const applyPixelRatio = () => {
+      const pr = prLadder[prIdx]!;
+      renderer.setPixelRatio(pr);
+      fx?.setPixelRatio(pr);
+      resize();
+      prChanges += 1;
+    };
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
       if (propsRef.current.paused) {
         last = now;
         return;
       }
-      const dt = Math.min(0.05, (now - last) / 1000);
+      const rawDt = (now - last) / 1000;
+      if (!document.hidden && rawDt < 1) { prFrames += 1; prTime += rawDt; }
+      if (prTime >= 2.5 && prChanges < 3) {
+        const fps = prFrames / prTime;
+        prFrames = 0; prTime = 0; prWindows += 1;
+        if (prWindows > 1) { // the first window is loading noise
+          if (fps < 32 && prIdx < prLadder.length - 1) { prIdx += 1; prSmooth = 0; prWindows = 0; applyPixelRatio(); }
+          else if (fps >= 57 && prIdx > 0) { prSmooth += 1; if (prSmooth >= 3) { prIdx -= 1; prSmooth = 0; prWindows = 0; applyPixelRatio(); } }
+          else prSmooth = 0;
+        }
+      }
+      const dt = Math.min(0.05, rawDt);
       last = now;
       const tSec = (now - clockStart) / 1000;
 
