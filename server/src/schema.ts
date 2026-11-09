@@ -1,4 +1,4 @@
-// Drizzle schema for 深惠人生模拟多人联机版.
+// Drizzle schema for 湾区人生.
 //
 // players: one row per person who has entered the shared city. Presence is
 // derived from lastSeen (a player counts as online for ~90s after their last

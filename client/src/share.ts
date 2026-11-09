@@ -102,7 +102,7 @@ export async function drawShareCard(d: CardData): Promise<Blob | null> {
   const towers = [[80, 380], [170, 520], [250, 300], [330, 640], [420, 450], [500, 760], [590, 420], [660, 560], [760, 340], [850, 600], [940, 380]];
   for (const [x, h] of towers) g.fillRect(x!, 980 - h!, 70, h!);
   const font = (w: number, size: number) => `${w} ${size}px "PingFang SC","Noto Sans SC","Microsoft YaHei",sans-serif`;
-  g.fillStyle = "#ffd34d"; g.font = font(900, 40); g.fillText("深惠人生模拟", 72, 110);
+  g.fillStyle = "#ffd34d"; g.font = font(900, 40); g.fillText("湾区人生", 72, 110);
   g.fillStyle = "#fff"; g.font = font(900, 84); g.fillText(`${d.name}的${d.cityName}第 ${d.day} 天`, 72, 220);
   if (d.climb) {
     g.fillStyle = "#ffd34d"; g.font = font(800, 40); g.fillText(fit(g, `${d.climb.from} → ${d.climb.to} · ${d.climb.verdict}`, W - 144), 72, 290);

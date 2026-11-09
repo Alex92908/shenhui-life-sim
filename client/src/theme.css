@@ -260,3 +260,8 @@ body {
   .compact-hide { display: none !important; }
   .compact-only { display: inline-flex !important; }
 }
+
+/* on compact screens the minimap sits above the two rows of map buttons instead of covering them */
+@media (max-width: 639px), (max-height: 500px) {
+  .mini-dock { bottom: 104px !important; }
+}

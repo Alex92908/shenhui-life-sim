@@ -24,7 +24,7 @@ export const TERMS: Record<"zh" | "en", LegalDoc> = {
   zh: {
     title: "用户协议",
     sections: [
-      { h: "1. 服务说明", p: [`《深惠人生模拟》（下称「本游戏」）由 ${OPERATOR.name} 运营，是一款免费的网页生活模拟游戏。使用本游戏即表示你同意本协议和《隐私政策》。`] },
+      { h: "1. 服务说明", p: [`《湾区人生》（下称「本游戏」）由 ${OPERATOR.name} 运营，是一款免费的网页生活模拟游戏。使用本游戏即表示你同意本协议和《隐私政策》。`] },
       { h: "2. 真实名称与虚构内容", p: [
         "游戏里出现的真实企业和机构名称（如腾讯、华为、字节跳动、平安、港铁等）只用来标示它们在城市里的真实位置；工资、岗位、加班、面试等玩法和剧情都是虚构的，不代表这些企业的真实情况或立场，本游戏与它们没有合作、赞助或授权关系。商标归各自权利人所有。峰会活动（「湾区国际峰会」）、人物和剧情均为虚构。",
         "地图上的地铁站、公园、医院等真实地点数据来自 OpenStreetMap（© OpenStreetMap contributors，ODbL 许可），可能不准确或已过时。医院、药店、派出所等信息仅供参考，紧急情况请直接拨打 120 / 110。",
@@ -52,7 +52,7 @@ export const TERMS: Record<"zh" | "en", LegalDoc> = {
   en: {
     title: "Terms of Service",
     sections: [
-      { h: "1. The service", p: [`"Shenzhen–Huizhou Life Sim" (the "Game") is a free browser-based life simulation operated by ${OPERATOR.name}. By using the Game you agree to these Terms and the Privacy Policy.`] },
+      { h: "1. The service", p: [`"Bay Area Life" (the "Game") is a free browser-based life simulation operated by ${OPERATOR.name}. By using the Game you agree to these Terms and the Privacy Policy.`] },
       { h: "2. Real names and fiction", p: [
         "Real company and organisation names in the Game (e.g. Tencent, Huawei, ByteDance, Ping An, MTR) only mark where they really are in the city. Pay, jobs, overtime, interviews and storylines are fictional and do not describe these companies or their views; the Game is not affiliated with, sponsored or endorsed by them. Trademarks belong to their owners. The \"Bay Area International Summit\", characters and storylines are fictional.",
         "Real-world map data (metro stations, parks, hospitals, etc.) comes from OpenStreetMap (© OpenStreetMap contributors, ODbL) and may be inaccurate or out of date. Hospital, pharmacy and police information is for reference only — in an emergency in China call 120 (ambulance) or 110 (police).",

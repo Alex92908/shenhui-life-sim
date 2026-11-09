@@ -683,6 +683,22 @@ const [fold, setFold] = useState<"hud" | "apec" | "intro" | null>(null);
 const [barsHidden, setBarsHidden] = useState(false);
 /* phones: the status card shows the essentials; the rest folds behind “⋯ More” */
 const [hudMore, setHudMore] = useState(false);
+/* map mode A/B: each device starts in "city" (A, see the whole city) or "follow" (B, camera on you + minimap) at random; players can switch */
+const [mapMode, setMapModeState] = useState<"city" | "follow">(() => {
+  try {
+    const v = localStorage.getItem("shhr-mapmode"); if (v === "city" || v === "follow") return v;
+    const pick = Math.random() < 0.5 ? "city" : "follow";
+    localStorage.setItem("shhr-mapmode", pick); localStorage.setItem("shhr-mapmode-ab", pick);
+    return pick;
+  } catch { return "city"; }
+});
+const mapAb = (() => { try { return localStorage.getItem("shhr-mapmode-ab") ?? "?"; } catch { return "?"; } })();
+const setMapMode = (m: "city" | "follow") => {
+  setMapModeState(m);
+  try { localStorage.setItem("shhr-mapmode", m); } catch { /* storage unavailable */ }
+  track("map_mode_switch", { to: m, ab: mapAb });
+  showToast(m === "follow" ? (en ? "🎯 Follow view: the camera stays with you; the minimap shows the whole city." : "🎯 跟随视角：镜头跟着你，小地图看全城。") : (en ? "🗺️ Whole-city view." : "🗺️ 全城视角：一眼看全城。"));
+};
 const [retrainOpen, setRetrainOpen] = useState(false);
 /* Map fullscreen: the map shell becomes a fixed full-viewport stage
    (plus the native Fullscreen API when the browser allows it). */
@@ -879,7 +895,7 @@ const parties = partiesQuery.data?.parties ?? [];
 useEffect(() => {
 if (phase !== "game" || !profile) return;
 setAnalyticsPlayer(profile.playerId);
-track("session_start", { city: gs?.cityKey ?? "sz", day: gs?.day ?? 0, lang });
+track("session_start", { city: gs?.cityKey ?? "sz", day: gs?.day ?? 0, lang, mapMode, mapAb });
 }, [phase, profile?.playerId]);
 /* 私信：5 秒刷新一次收件箱 */
 const inboxQuery = useQuery({
@@ -1634,9 +1650,9 @@ const st = gsRef.current; const prof = profileRef.current;
 if (!st || !prof) return;
 const link = inviteLink(myPubRef.current, prof.name, st.employer);
 const T = TIERS[st.cityKey]; const t0 = st.startTier ?? tierOfIden(st.idenId); const t1 = tierAt(st); const og = originById(st.origin);
-const text = `我在《深惠人生模拟》${og ? `抽到的出身是「${og.zh}」，` : ""}从「${T[t0]!.zh}」开始，第 ${Math.min(30, st.day)} 天${t1 > t0 ? "已经爬到" : t1 < t0 ? "跌到了" : "还在"}「${T[t1]!.zh}」。30 天能搬进${T[3]!.zh}吗？你也来抽一签：`;
+const text = `我在《湾区人生》${og ? `抽到的出身是「${og.zh}」，` : ""}从「${T[t0]!.zh}」开始，第 ${Math.min(30, st.day)} 天${t1 > t0 ? "已经爬到" : t1 < t0 ? "跌到了" : "还在"}「${T[t1]!.zh}」。30 天能搬进${T[3]!.zh}吗？你也来抽一签：`;
 try {
-const file = shareImg ? new File([shareImg.blob], "shenhui-life.png", { type: "image/png" }) : null;
+const file = shareImg ? new File([shareImg.blob], "bay-area-life.png", { type: "image/png" }) : null;
 if (file && navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], text, url: link });
 else if (navigator.share) await navigator.share({ text, url: link });
 else { await navigator.clipboard.writeText(`${text}${link}`); showToast("分享文案和邀请链接已复制，粘贴给朋友就行。"); }
@@ -1651,10 +1667,10 @@ const link = inviteLink(myPubRef.current, prof.name, st.employer);
 const who = og ? og.zh : IDENTITIES.find((i) => i.id === st.idenId)?.name ?? "深漂";
 const climb = `${T[t0]!.zh} → ${T[t1]!.zh}`;
 const text = where === "moments"
-  ? `在《深惠人生》抽签投胎，抽到「${who}」😂 第 ${Math.min(30, st.day)} 天，${climb}。30 天能搬进${T[3]!.zh}吗？你也来抽一签：${link}`
+  ? `在《湾区人生》抽签投胎，抽到「${who}」😂 第 ${Math.min(30, st.day)} 天，${climb}。30 天能搬进${T[3]!.zh}吗？你也来抽一签：${link}`
   : where === "xhs"
-  ? `🎲 抽签投胎｜我在深圳的 30 天\n\n开局抽到：${who}\n现在：${climb}（${climbVerdict(t0, t1, false)}）\n\n真实地图 + 真实地铁 + 真人联机，11 月 14–19 日峰会周还能去会场当志愿者。你会抽到什么出身？👉 ${link}\n\n#深惠人生 #抽签投胎 #深圳打工人 #APEC深圳 #模拟人生`
-  : `开局抽到「${who}」，30 天能不能从${T[t0]!.zh}爬到${T[3]!.zh}？第 ${Math.min(30, st.day)} 天战报：${climb}。评论区晒你的出身👇 ${link} #深惠人生 #抽签投胎`;
+  ? `🎲 抽签投胎｜我在深圳的 30 天\n\n开局抽到：${who}\n现在：${climb}（${climbVerdict(t0, t1, false)}）\n\n真实地图 + 真实地铁 + 真人联机，11 月 14–19 日峰会周还能去会场当志愿者。你会抽到什么出身？👉 ${link}\n\n#湾区人生 #抽签投胎 #深圳打工人 #APEC深圳 #模拟人生`
+  : `开局抽到「${who}」，30 天能不能从${T[t0]!.zh}爬到${T[3]!.zh}？第 ${Math.min(30, st.day)} 天战报：${climb}。评论区晒你的出身👇 ${link} #湾区人生 #抽签投胎`;
 try { await navigator.clipboard.writeText(text); showToast(en ? "Copied — paste it with the image." : "文案已复制，配上分享图发出去吧。"); track("share_copy", { where }); }
 catch { showToast(en ? "Couldn't copy — long-press to copy the link instead." : "复制失败，长按链接手动复制。"); }
 };
@@ -4315,7 +4331,7 @@ return (
 );
 })()}
 </div>
-<MapView lite={lite} fill paused={!!lifeAnim} train={carriage ? { pts: carriage.route.stations.map((st) => [st.x, st.z] as [number, number]), idx: carriage.stopIdx, stepMs: hopMs(carriage.route, carriage.stopIdx), color: (carriage.route.legs[carriage.legIdx]?.line ?? carriage.route.line).color, rail: carriage.route.legs.some((l) => ["szhz-rail", "guangshen", "hz-intercity", "ganshen-rail", "guangshan-rail", "hsr-hk"].includes(l.line.id)), hold: rideEntry !== null || carriage.awaitingTransfer || carriage.stopIdx >= carriage.route.stations.length - 1 } : null} cityKey={s.cityKey} selfLocId={walking || carriage ? (tripTo ?? selectedLoc) : currentLoc} selfEmoji={iden.emoji} selfColor={iden.color} selfName={profile?.name ?? "我"} remotePlayers={remotePlayers} billboards={(billboardsQuery.data?.slots ?? []).flatMap((b) => (b.ad ? [{ slot: b.slot, text: b.ad.text, emoji: b.ad.emoji, owner: b.ad.owner }] : []))} selfOutfitId={s.outfit} travelModeId={tripMode ?? travelMode} selfEtaAt={tripEta ?? undefined} arrival={arrival} weatherKind={rwOk ? realWeather!.kind : "unknown"} npcMoodEmoji={Object.fromEntries(npcsForCity(s.cityKey).map((n) => [n.name, moodEmoji(memOf(s.npcMem ?? {}, n.name).mood)]))} apecDay={isApecWeek(s.day)} focusLocId={mapFocus?.locId} focusX={mapFocus?.x} focusZ={mapFocus?.z} focusNonce={mapFocus?.nonce} destLocId={selectedLoc} onSelect={walkTo} onPickActor={pickActor} navOverlay={(
+<MapView lite={lite} mapMode={mapMode} onMapMode={setMapMode} fill paused={!!lifeAnim} train={carriage ? { pts: carriage.route.stations.map((st) => [st.x, st.z] as [number, number]), idx: carriage.stopIdx, stepMs: hopMs(carriage.route, carriage.stopIdx), color: (carriage.route.legs[carriage.legIdx]?.line ?? carriage.route.line).color, rail: carriage.route.legs.some((l) => ["szhz-rail", "guangshen", "hz-intercity", "ganshen-rail", "guangshan-rail", "hsr-hk"].includes(l.line.id)), hold: rideEntry !== null || carriage.awaitingTransfer || carriage.stopIdx >= carriage.route.stations.length - 1 } : null} cityKey={s.cityKey} selfLocId={walking || carriage ? (tripTo ?? selectedLoc) : currentLoc} selfEmoji={iden.emoji} selfColor={iden.color} selfName={profile?.name ?? "我"} remotePlayers={remotePlayers} billboards={(billboardsQuery.data?.slots ?? []).flatMap((b) => (b.ad ? [{ slot: b.slot, text: b.ad.text, emoji: b.ad.emoji, owner: b.ad.owner }] : []))} selfOutfitId={s.outfit} travelModeId={tripMode ?? travelMode} selfEtaAt={tripEta ?? undefined} arrival={arrival} weatherKind={rwOk ? realWeather!.kind : "unknown"} npcMoodEmoji={Object.fromEntries(npcsForCity(s.cityKey).map((n) => [n.name, moodEmoji(memOf(s.npcMem ?? {}, n.name).mood)]))} apecDay={isApecWeek(s.day)} focusLocId={mapFocus?.locId} focusX={mapFocus?.x} focusZ={mapFocus?.z} focusNonce={mapFocus?.nonce} destLocId={selectedLoc} onSelect={walkTo} onPickActor={pickActor} navOverlay={(
 <>
 {/* 弹幕层：联机动态 / 聊天 / 街坊发言飘过地图上半区 */}
 {danmakuOn && (
@@ -5017,11 +5033,11 @@ return (
 <div className="rise max-h-[92vh] w-full max-w-md overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] p-4 shadow-xl">
 <div className="flex items-center justify-between"><p className="text-lg font-black">📤 分享战绩 · 邀请朋友</p><button type="button" aria-label="关闭分享" onClick={() => setShareOpen(false)} className="rounded-full border border-[var(--line)] px-3 py-1 text-sm font-black">✕</button></div>
 <div className="mt-3 overflow-hidden rounded-[14px] border border-[var(--line)] bg-[var(--bg)]">
-{shareImg ? <img src={shareImg.url} alt="我的深惠人生战绩卡" className="block w-full" /> : <p className="p-8 text-center text-sm text-[var(--dim)]">正在生成战绩卡…</p>}
+{shareImg ? <img src={shareImg.url} alt="我的湾区人生战绩卡" className="block w-full" /> : <p className="p-8 text-center text-sm text-[var(--dim)]">正在生成战绩卡…</p>}
 </div>
 <div className="mt-3 grid grid-cols-2 gap-2">
 <button type="button" onClick={() => void shareNative()} className="rounded-full bg-[var(--accent)] py-3 text-sm font-black text-white">📲 分享给朋友</button>
-{shareImg ? <a href={shareImg.url} download="深惠人生战绩.png" className="rounded-full bg-[var(--text)] py-3 text-center text-sm font-black text-[var(--bg)]">⬇️ 保存图片</a> : <span />}
+{shareImg ? <a href={shareImg.url} download="湾区人生战绩.png" className="rounded-full bg-[var(--text)] py-3 text-center text-sm font-black text-[var(--bg)]">⬇️ 保存图片</a> : <span />}
 </div>
 <button type="button" onClick={() => void copyInvite()} className="mt-2 w-full rounded-full border-2 border-[var(--border)] py-2.5 text-sm font-black">🔗 复制邀请链接</button>
 <p className="mt-3 text-xs font-black text-[var(--dim)]">{en ? "Ready-made posts (copy, then paste with the image):" : "现成文案（复制后配上面的图发出去）："}</p>

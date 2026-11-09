@@ -1,4 +1,4 @@
-// Actions for 深惠人生模拟多人联机版 — the shared-city backend.
+// Actions for 湾区人生 — the shared-city backend.
 //
 // The game simulation itself runs on the client; this server owns everything
 // that has to be shared between real people: presence (who is online, in
@@ -1529,7 +1529,7 @@ export const Actions = {
       const id = `o_${randomBytes(12).toString("hex")}`;
       await db.insert(schema.orders).values({ id, accountId: acc.id, product: args.product, amount, currency, status: "pending", provider: mode, createdAt: new Date() });
       if (mode === "dev") return { ok: true, orderId: id, dev: true };
-      try { return { ok: true, orderId: id, url: await stripeCheckout({ id, amount, currency, name: `深惠人生 · ${pr.name}` }, args.origin) }; }
+      try { return { ok: true, orderId: id, url: await stripeCheckout({ id, amount, currency, name: `湾区人生 · ${pr.name}` }, args.origin) }; }
       catch (e) { await db.update(schema.orders).set({ status: "failed" }).where(eq(schema.orders.id, id)); return { ok: false, error: `支付页打不开：${(e as Error).message}` }; }
     },
   }),

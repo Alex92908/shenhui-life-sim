@@ -41,7 +41,7 @@ const EN: Record<string, string> = {
   "TCL集团": "CL Group", "德赛西威": "Desay SV", "亿纬锂能": "EVE Energy", "中海油大亚湾石化": "CNOOC Daya Bay Petrochem", "仲恺的老牌电子大厂，电视、面板、手机一条龙，园区大、食堂便宜，惠州人眼里的「铁饭碗」。": "A long-established electronics giant in Zhongkai — TVs, panels and phones under one roof. Huge campus, cheap canteen; an \"iron rice bowl\" in Huizhou eyes.", "做智能座舱和车载电子的上市公司，研发楼对着测试车道，工程师文化，面试会考你懂不懂车。": "A listed maker of smart cockpits and car electronics. The R&D block faces a test track; engineering culture — the interview checks whether you know cars.", "锂电池大厂扩产快、招人多、门槛低，三班倒，加班费给得足。": "A lithium-battery giant expanding fast: lots of hiring, low bar, three shifts, generous overtime pay.", "大亚湾石化区的央企炼化基地，待遇在惠州数一数二，安全规矩极严，面试要穿正装。": "A state-owned refinery base in the Daya Bay petrochemical zone: among the best pay in Huizhou, very strict safety rules; formal wear for the interview.", "仲恺高新区的TCL总部和液晶产业园：总部大楼、成排的厂房和员工宿舍，上下班高峰园区门口全是电动车。": "CL's HQ and LCD industrial park in the Zhongkai Hi-Tech Zone: the HQ tower, rows of plants and staff dorms; at rush hour the gate is a sea of e-bikes.", "仲恺的德赛西威：蓝玻璃研发楼，楼下一条测试车道，智能座舱样车天天在跑。": "Desay SV in Zhongkai: a blue-glass R&D building with a test track below, where smart-cockpit prototypes run every day.", "仲恺潼湖的锂电池产业园，锯齿屋顶的厂房一排排，三班倒，宿舍和食堂都在园区里。": "A lithium-battery park at Tonghu, Zhongkai: rows of saw-tooth-roof plants, three shifts, dorms and canteen on site.", "大亚湾石化区：炼化塔、球罐和码头，夜里灯火通明像一座钢铁城。待遇好、规矩严。": "The Daya Bay petrochemical zone: refinery columns, sphere tanks and a jetty, lit up at night like a steel city. Good pay, strict rules.",
   "深圳国际交流中心": "Shenzhen International Exchange Center", "云山": "Yunshan", "今天坐城轨全程免费。": "Intercity rail is free today.", "频道 ·": " channel ·", "频道": " channel", "人在线：": "online: ",
   // header / chrome
-  "深惠人生模拟电脑高配版": "Shenzhen–Huizhou Life Sim", "深惠人生模拟": "Shenzhen–Huizhou Life Sim",
+  "湾区人生": "Bay Area Life",
   "📋 任务": "📋 Tasks", "📤 分享": "📤 Share", "📱 手机": "📱 Phone", "😴 回家睡觉": "😴 Go home & sleep", "人在线": "online",
   "🚇 地铁线路图": "🚇 Metro map", "⛶ 全屏看地图": "⛶ Fullscreen map", "⛶ 退出全屏": "⛶ Exit fullscreen",
   "地区面板": "Area panel", "竖收起 »": "Collapse »", "◂ 收起": "◂ Hide", "收起 ✕": "Close ✕", "收起 ▴": "Hide ▴", "展开 ▾": "Show ▾", "展开详情": "Details",
@@ -248,7 +248,7 @@ const EN: Record<string, string> = {
   "公园 · 山海": "Parks · hills & sea", "文化 · 校园": "Culture · campuses", "医院 · 公共服务": "Hospitals · services", "搜地点名…": "Search places…", "📍 在地图上定位": "📍 Show on map", "前往 →": "Go →",
   "点一个点看详情；名字放不下时会自动隐藏，放大能看到更多。红圈是你现在的位置。地点数据 © OpenStreetMap contributors。": "Tap a point for details; names hide when they would overlap — zoom in to see more. The red ring is you. Place data © OpenStreetMap contributors.",
   // misc
-  "知道了": "Got it", "关闭": "Close", "中文": "中文", "深惠人生战绩.png": "shenzhen-life.png", "我的深惠人生战绩卡": "My Shenzhen life card",
+  "知道了": "Got it", "关闭": "Close", "中文": "中文", "湾区人生战绩.png": "bay-area-life.png", "我的湾区人生战绩卡": "My Bay Area Life card",
   "真实天气暂时取不到": "Live weather unavailable", "🌡️ 实况加载中…": "🌡️ Loading weather…", "（网络不通，这是上次的缓存）": "(offline — cached)",
   "职场新人": "Rookie", "业务骨干": "Core staff", "小组主管": "Team lead", "部门经理": "Manager", "城市合伙人": "City partner",
   "上班": "Work", "加班": "Overtime", "交租": "Rent", "今日": "Today", "已完成": "Done", "进行中": "In progress", "已结束": "Ended", "无路线": "No route",

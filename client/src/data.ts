@@ -1,4 +1,4 @@
-// Static game data for 深惠人生模拟电脑高配版.
+// Static game data for 湾区人生.
 // Locations / identities / careers / foods ported from the previous edition;
 // ZhuyaHome style templates, furniture and material prices are ZhuyaHome's
 // real catalog data. Summit venues follow a fictional 湾区国际峰会 (no real event) in

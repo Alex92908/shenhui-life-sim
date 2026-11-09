@@ -37,6 +37,9 @@ interface Props {
   selfLocId: string;
   /** 省电画质（手机 / 低配）：1x 像素、无阴影、无后期、树更少。只在建图时读取。 */
   lite?: boolean;
+  /** A/B map mode: "city" frames the whole city (A); "follow" keeps the camera close on you with the minimap always on (B) */
+  mapMode?: "city" | "follow";
+  onMapMode?: (m: "city" | "follow") => void;
   selfEmoji: string;
   selfColor: number;
   selfName: string;
@@ -461,7 +464,21 @@ export function MapView(p: Props) {
   /* a spot picked on the minimap stays the camera's centre (no drifting back to
      the player) until the player sets off on a new trip */
   const anchorRef = useRef<{ x: number; z: number } | null>(null);
+  /* B mode: the camera rides close behind you (about a third of the whole-city distance) */
+  const FOLLOW_K = 0.34;
+  const followRef = useRef(p.mapMode === "follow");
+  followRef.current = p.mapMode === "follow";
+  const baseDist = () => Math.max(16, (fitDistRef.current || 46) * (followRef.current ? FOLLOW_K : 1));
   useEffect(() => { anchorRef.current = null; }, [p.selfLocId]);
+  useEffect(() => {
+    // switching A ↔ B re-frames at that mode's distance; B always shows the minimap
+    anchorRef.current = null;
+    autoFitRef.current = true;
+    camRef.current.dist = baseDist();
+    setZoomPct(Math.round(((fitDistRef.current || 46) / camRef.current.dist) * 100));
+    if (p.mapMode === "follow") setMiniOpen(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.mapMode]);
   /* LOL-style minimap: a live 2D thumbnail of the whole miniature, drawn
      on a small canvas from the SAME actor refs the 3D scene animates, so
      the player dot, NPC dots, remote players and the destination marker
@@ -2325,8 +2342,8 @@ export function MapView(p: Props) {
       // all re-fit the city to the frame while auto-fit is armed.
       fitDistRef.current = fitDistForAspect(w / h, propsRef.current.cityKey);
       if (autoFitRef.current) {
-        camRef.current.dist = fitDistRef.current;
-        setZoomPct(100);
+        camRef.current.dist = baseDist();
+        setZoomPct(Math.round((fitDistRef.current / camRef.current.dist) * 100));
       }
     };
     resize();
@@ -2894,7 +2911,7 @@ export function MapView(p: Props) {
           // so following never stalls at the map's edge districts.
           const movingNow = self.blend > 0.25;
           const fitD = fitDistRef.current || 46;
-          const centerW = movingNow ? 0 : THREE.MathUtils.clamp((cam.distCur - fitD * 0.7) / (fitD * 0.3), 0, 1); // at the overview distance the city frame is the picture
+          const centerW = movingNow || followRef.current ? 0 : THREE.MathUtils.clamp((cam.distCur - fitD * 0.7) / (fitD * 0.3), 0, 1); // at the overview distance the city frame is the picture
           const fr = frameOf(propsRef.current.cityKey);
           const fx = (self.x + leadX) * (1 - centerW) + fr.cx * centerW;
           const fz = (self.z + leadZ) * (1 - centerW) + (fr.cz - fr.h * 0.08) * centerW; // a touch north: the tilted view shows more foreground
@@ -3161,8 +3178,8 @@ export function MapView(p: Props) {
     camRef.current.az = 0; // north up: the long cities (Shenzhen strip, Hong Kong, Huizhou) fill the screen side to side
     camRef.current.pol = CAM_POL;
     autoFitRef.current = true;
-    camRef.current.dist = fitDistRef.current;
-    setZoomPct(100);
+    camRef.current.dist = baseDist();
+    setZoomPct(Math.round((fitDistRef.current / camRef.current.dist) * 100));
   };
   const toggleStreetCam = () => {
     const next = !streetRef.current;
@@ -3284,7 +3301,8 @@ export function MapView(p: Props) {
     // lookRef channel wins over follow for a few seconds) — it locates,
     // it does not start walking the player there.
     lookRef.current = { x: wx, z: wz, until: performance.now() + 5000 };
-    anchorRef.current = { x: wx, z: wz };
+    // whole-city mode keeps the picked spot until the next trip; follow mode glances there, then comes back to you
+    if (!followRef.current) anchorRef.current = { x: wx, z: wz };
   };
 
   if (glFailed) {
@@ -3333,13 +3351,14 @@ export function MapView(p: Props) {
         <button type="button" aria-label="放大地图" onClick={() => zoomBy(0.78)} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">＋</button>
         <button type="button" aria-label="缩小地图" onClick={() => zoomBy(1.28)} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">－</button>
         <button type="button" aria-label="标签密度" title={labelDensity === "few" ? "标签：精简（点一下切换）" : labelDensity === "normal" ? "标签：标准（点一下切换）" : "标签：全部（点一下切换）"} onClick={cycleLabels} className="grid h-9 min-w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 px-2 text-[11px] font-black text-[#14202b] shadow">🏷️{labelDensity === "few" ? "简" : labelDensity === "normal" ? "标" : "全"}</button>
+        <button type="button" aria-label={p.mapMode === "follow" ? "切换到全城视角" : "切换到跟随视角"} title={p.mapMode === "follow" ? "现在：跟随视角（镜头跟着你，小地图看全城）。点一下换成一眼看全城" : "现在：全城视角。点一下换成跟随视角（镜头跟着你，小地图看全城）"} onClick={() => p.onMapMode?.(p.mapMode === "follow" ? "city" : "follow")} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">{p.mapMode === "follow" ? "🗺️" : "🎯"}</button>
         <button type="button" aria-label="重置视角" onClick={resetCam} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">⌂</button>
       </div>
       <p className="pointer-events-none absolute left-3 top-3 z-10 rounded-full bg-[#0b1622]/70 px-3 py-1.5 text-[11px] font-bold text-white/90 compact-hide">
         拖动旋转 · 滚轮/＋－缩放（右下角显示比例） · 点建筑或标签前往 · 左下小地图看全城、点它定位镜头 · 天色按当地真实时间、云雨按真实天气走 · 右下 ☀️🌇🌙 预览时间 · 🕐 回到真实时间 · 🎥 延时演示 · 🎬 电影镜头 · 🚶 街景视角贴到街面：看车流等红灯、行人过马路、NPC 打招呼
       </p>
       {/* LOL-style minimap: whole-city thumbnail, live-linked to the big map */}
-      <div className="absolute bottom-3 left-3 z-10">
+      <div className="mini-dock absolute bottom-3 left-3 z-10">
         {miniOpen ? (
           <div className="overflow-hidden rounded-[12px] border border-black/50 bg-[#0b1622]/85 shadow-xl">
             <div className="flex items-center gap-1 px-2 py-1">
@@ -3355,7 +3374,7 @@ export function MapView(p: Props) {
               aria-label="全城小地图：白色大圆点是你，彩色小点是NPC和在线玩家，红色靶心是目的地，虚线圈是大地图镜头位置；点击小地图任意位置，大地图镜头会定位过去"
               className="block h-[97px] w-[176px] cursor-crosshair sm:h-[121px] sm:w-[220px]"
             />
-            <p className="px-2 py-1 text-[10px] font-bold leading-tight text-white/70">⚪ 你 · 🟡 NPC/玩家 · 🔴 目的地 · 点图定位镜头</p>
+            <p className="compact-hide px-2 py-1 text-[10px] font-bold leading-tight text-white/70">⚪ 你 · 🟡 NPC/玩家 · 🔴 目的地 · 点图定位镜头</p>
           </div>
         ) : (
           <button type="button" aria-label="展开小地图" onClick={() => setMiniOpen(true)} className="rounded-full border border-black/50 bg-[#0b1622]/85 px-3.5 py-2 text-xs font-black text-white shadow-xl transition hover:bg-[#0b1622]">🗺️ 小地图 ▸</button>
