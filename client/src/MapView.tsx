@@ -21,7 +21,7 @@ import * as THK from "./terrain-hk";
 import { ROADS as REAL_ROADS } from "./roads";
 /* Real land / inland water / bridges / rivers per city (tools/terrain/gen_terrain.py). */
 const TERRAIN: Record<CityKey, typeof THK> = { sz: TSZ, hz: THZ, hk: THK };
-import { CITIES, LOC_EN, getLocations, resolveLoc, areaLocId, placesForCity, PLACE_KINDS, stationLocId, metroLinesForCity, modeById, npcsForCity, outfitOf, type CityKey, type Loc, type LocType, type Npc, type TransportModeId } from "./data";
+import { CITIES, LOC_EN, getLocations, resolveLoc, areaLocId, placesForCity, billboardSpots, PLACE_KINDS, stationLocId, metroLinesForCity, modeById, npcsForCity, outfitOf, type CityKey, type Loc, type LocType, type Npc, type TransportModeId } from "./data";
 import { makePostFx, type PostFx } from "./postfx";
 
 export interface RemotePlayer {
@@ -41,6 +41,8 @@ interface Props {
   selfColor: number;
   selfName: string;
   remotePlayers: RemotePlayer[];
+  /** 📢 rented billboards by slot (0–2), shown at the city's billboard spots */
+  billboards?: { slot: number; text: string; emoji: string; owner: string }[];
   selfOutfitId?: string;
   travelModeId?: string;
   npcMoodEmoji?: Record<string, string>;
@@ -392,6 +394,8 @@ interface Chip {
   station?: boolean;
   /** A real place (park, mall, museum …) — shown only when zoomed in. */
   place?: boolean;
+  /** billboard slot (0–2): always shown while rented, outside the label caps */
+  ad?: number;
   /** A neighbourhood / town name over the filler blocks and woods. */
   area?: "big" | "small";
   /** The small English subtitle line under a place name, if any. */
@@ -672,7 +676,8 @@ export function MapView(p: Props) {
     // 1.5x cap: on Retina (dpr 2) the full post chain at 2x is 4x the pixels
     // of 1x — the single biggest per-frame GPU cost. 1.5x stays crisp.
     const lite = !!propsRef.current.lite;
-    renderer.setPixelRatio(lite ? 1 : Math.min(1.5, window.devicePixelRatio || 1));
+    // phones run "lite" (no shadows / post-fx) but still render at 2× — at 1× a 3× phone screen looks blurry
+    renderer.setPixelRatio(lite ? Math.min(2, window.devicePixelRatio || 1) : Math.min(1.5, window.devicePixelRatio || 1));
     renderer.shadowMap.enabled = !lite;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -1943,6 +1948,13 @@ export function MapView(p: Props) {
       chips.push({ el: d, kind: "road", place: true, w: 0, h: 0, lastText: "", visible: true, clampDx: 0, clampDy: 0, getPos: () => ({ x: pl.x, y: LAND + 1.0, z: pl.z }) });
     }
 
+    /* ---- 📢 billboards: one chip per spot, filled from props each pass ---- */
+    billboardSpots(cityKey).forEach((spot, slot) => {
+      const d = mkChip("", "");
+      d.style.cssText += "pointer-events:none;font:900 11px 'Noto Sans SC',sans-serif;padding:3px 9px;border-radius:6px;color:#fff;background:linear-gradient(135deg,#e63a1f,#f59e0b);border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.35);display:none;";
+      chips.push({ el: d, kind: "road", ad: slot, w: 0, h: 0, lastText: "", visible: false, clampDx: 0, clampDy: 0, getPos: () => ({ x: spot.x, y: LAND + 4.2, z: spot.z }) });
+    });
+
     /* ---- actors (3D) ---- */
     const actorViews = new Map<string, THREE.Group>();
     const actorChips = new Map<string, Chip>();
@@ -2957,6 +2969,12 @@ export function MapView(p: Props) {
             continue;
           }
           prio = (chip.area === "big" ? 9.1 : 9.6) + dCam / 40;
+        } else if (chip.ad !== undefined) {
+          const ad = propsRef.current.billboards?.find((b) => b.slot === chip.ad);
+          if (!ad) { if (chip.visible) { chip.visible = false; chip.el.style.display = "none"; } continue; }
+          const t = `📢 ${ad.emoji} ${ad.text}`;
+          if (chip.el.textContent !== t) { chip.el.textContent = t; chip.el.title = `${ad.owner} · 广告 / Ad`; chip.w = 0; }
+          prio = 1.5;
         } else if (chip.station || chip.place) {
           if (!near && (overview || dCam > (chip.place ? 11 : 12))) {
             chip.visible = false;
@@ -3012,7 +3030,7 @@ export function MapView(p: Props) {
             c.chip.el.style.display = "none";
             continue;
           }
-          const kk = c.chip.place ? "place" : c.chip.area ? "area" : c.chip.station ? "station" : c.chip.kind === "road" && !c.chip.metro ? "road" : null;
+          const kk = c.chip.place ? "place" : c.chip.area ? "area" : c.chip.station ? "station" : c.chip.kind === "road" && !c.chip.metro && c.chip.ad === undefined ? "road" : null;
           if (kk && !c.near && kindShown[kk] >= kindCap[kk]) {
             c.chip.visible = false;
             c.chip.el.style.display = "none";
@@ -3271,7 +3289,7 @@ export function MapView(p: Props) {
         <button type="button" aria-label="标签密度" title={labelDensity === "few" ? "标签：精简（点一下切换）" : labelDensity === "normal" ? "标签：标准（点一下切换）" : "标签：全部（点一下切换）"} onClick={cycleLabels} className="grid h-9 min-w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 px-2 text-[11px] font-black text-[#14202b] shadow">🏷️{labelDensity === "few" ? "简" : labelDensity === "normal" ? "标" : "全"}</button>
         <button type="button" aria-label="重置视角" onClick={resetCam} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">⌂</button>
       </div>
-      <p className="pointer-events-none absolute left-3 top-3 z-10 rounded-full bg-[#0b1622]/70 px-3 py-1.5 text-[11px] font-bold text-white/90">
+      <p className="pointer-events-none absolute left-3 top-3 z-10 rounded-full bg-[#0b1622]/70 px-3 py-1.5 text-[11px] font-bold text-white/90 max-sm:hidden">
         拖动旋转 · 滚轮/＋－缩放（右下角显示比例） · 点建筑或标签前往 · 左下小地图看全城、点它定位镜头 · 天色按当地真实时间、云雨按真实天气走 · 右下 ☀️🌇🌙 预览时间 · 🕐 回到真实时间 · 🎥 延时演示 · 🎬 电影镜头 · 🚶 街景视角贴到街面：看车流等红灯、行人过马路、NPC 打招呼
       </p>
       {/* LOL-style minimap: whole-city thumbnail, live-linked to the big map */}

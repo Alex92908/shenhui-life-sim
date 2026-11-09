@@ -6,7 +6,7 @@ import { api, type ApiResponse } from "./api";
 import { AREA_LABELS } from "./areas";
 import { AccountModal, accountToken } from "./Account";
 import { StoreModal, LOOK_COLOR, LOOK_TITLE } from "./Store";
-import { UpdatesModal, BondsModal, CommitteeModal, BOND_INFO, PLEDGE_INFO, policyMul, LATEST_UPDATE, type BondKind } from "./Social";
+import { UpdatesModal, BondsModal, CommitteeModal, GigsModal, BillboardModal, BOND_INFO, PLEDGE_INFO, policyMul, LATEST_UPDATE, type BondKind } from "./Social";
 const lookOf = (b: object): string | null => (b as { look?: string | null }).look ?? null;
 import { TERMS, PRIVACY, LEGAL_VERSION, OPERATOR_MISSING } from "./legal";
 import { getLang, setLangStored, installTranslator, LANGS, trText, type Lang } from "./i18n";
@@ -21,7 +21,7 @@ findMetroRoute, findStationRoute, exitLocForStation, resolveLoc, partialFare, ne
 RESTAURANTS, DELIVERY_PLATFORMS, SHOP_VENUES, LODGINGS, rentFlatWeekly, OUTFITS, outfitOf, isRainy, HOME_ROOMS,
 LOC_EN, LOC_GRADE, CITY_INTRO,
 type AppId, type CityKey, type Loc, type TransportModeId, type MetroRoute,
-crossRoutes, isCrossOpen, crossHoursStr, crossFareStr, crossName, crossNote, CROSS_ROUTES, type CrossRoute, areaLocId, stationLocId
+crossRoutes, isCrossOpen, crossHoursStr, crossFareStr, crossName, crossNote, CROSS_ROUTES, type CrossRoute, areaLocId, stationLocId, billboardSpots
 } from "./data";
 import { pickEvent, type GameEvent } from "./events";
 import {
@@ -788,6 +788,8 @@ const [updatesOpen, setUpdatesOpen] = useState(false);
 const [updateSeen, setUpdateSeen] = useState(() => { try { return localStorage.getItem("shhr-update-seen") ?? ""; } catch { return ""; } });
 const [bondsOpen, setBondsOpen] = useState(false);
 const [committeeOpen, setCommitteeOpen] = useState(false);
+const [gigsOpen, setGigsOpen] = useState(false);
+const [adsOpen, setAdsOpen] = useState(false);
 /* back from the Stripe payment page: ?paid=<order> (or cancel) */
 useEffect(() => {
   const q = new URLSearchParams(window.location.search).get("paid");
@@ -903,6 +905,33 @@ queryFn: () => api.committeeState({ playerId: profile!.playerId, city: gs?.cityK
 enabled: !!profile && phase === "game" && !!gs,
 refetchInterval: 120_000,
 });
+/* 📢 广告牌 + 📣 运营公告 */
+const billboardsQuery = useQuery({
+queryKey: ["billboards", gs?.cityKey ?? "sz"],
+queryFn: () => api.getBillboards({ city: gs?.cityKey ?? "sz" }),
+enabled: phase === "game" && !!gs,
+refetchInterval: adsOpen ? 15_000 : 300_000,
+});
+const newsQuery = useQuery({ queryKey: ["news"], queryFn: () => api.getAnnouncements({}), enabled: phase === "game", refetchInterval: 600_000 });
+const news = newsQuery.data?.items ?? [];
+const latestKey = news[0] ? `${LATEST_UPDATE}#${news[0].id}` : LATEST_UPDATE;
+/* 零工：一分钟刷新；有到账的工钱 / 退款自动收进钱包 */
+const gigsQuery = useQuery({
+queryKey: ["gigs", profile?.playerId ?? "", gs?.cityKey ?? "sz"],
+queryFn: () => api.getGigs({ playerId: profile!.playerId, city: gs?.cityKey ?? "sz" }),
+enabled: !!profile && phase === "game" && !!gs,
+refetchInterval: gigsOpen ? 15_000 : 60_000,
+});
+const gigClaiming = useRef(false);
+useEffect(() => {
+  if (!profile || phase !== "game" || !(gigsQuery.data?.unclaimed) || gigClaiming.current) return;
+  gigClaiming.current = true;
+  void api.claimGigMoney({ playerId: profile.playerId }).then((r) => {
+    if (r.ok && r.money > 0) { mutate((x) => { x.money += r.money; x.earned += r.money; }); floatReward(`+${fmt(r.money)}`, "gold"); showToast(`💼 ${r.lines.join("；")}`); void gigsQuery.refetch(); }
+  }).catch(() => {}).finally(() => { gigClaiming.current = false; });
+// eslint-disable-next-line react-hooks/exhaustive-deps
+}, [gigsQuery.data?.unclaimed, phase]);
+const gigActive = (gigsQuery.data?.mine ?? []).filter((g) => (g.role === "worker" && g.status === "taken") || (g.role === "employer" && g.status === "delivered")).length;
 /* the week's prices follow the elected chair's pledge; a roommate halves your rent */
 const policyRef = useRef(policyMul(null));
 policyRef.current = policyMul(committeeQuery.data?.chair?.pledge);
@@ -4101,8 +4130,10 @@ return (
 <button type="button" onClick={() => setPartyOpen(true)} className={`chip ${parties.some((pt) => pt.status === "open") ? "border-[var(--accent)] text-[var(--accent)]" : ""}${hudMore ? "" : " max-sm:hidden!"}`} title={en ? "Parties in this city: join other players" : "同城组局：和真人一起玩"}>🎉 {en ? "Parties" : "组局"} {parties.filter((pt) => pt.status === "open").length}</button>
 <button type="button" onClick={() => { setHubOpen(true); track("hub_open"); }} className="chip border-[var(--text)] bg-[var(--text)] text-[var(--bg)]" title={en ? "Everything you can do right now, nearest first" : "现在能做的所有事，按远近排"}>🧭 {en ? "What can I do?" : "现在能干嘛"}</button>
 <button type="button" onClick={() => setStoreOpen(true)} className={`chip${hudMore ? "" : " max-sm:hidden!"}`} title={en ? "Starlight store: looks, season pass, membership" : "星光商店：外观、赛季通行证、会员"}>✨ {en ? "Store" : "商店"}</button>
-<button type="button" onClick={() => { setUpdatesOpen(true); setUpdateSeen(LATEST_UPDATE); try { localStorage.setItem("shhr-update-seen", LATEST_UPDATE); } catch { /* storage unavailable */ } }} className={`chip ${updateSeen !== LATEST_UPDATE ? "border-[var(--accent)] text-[var(--accent)]" : ""}${hudMore ? "" : " max-sm:hidden!"}`} title={en ? "What's new, and a feedback box" : "更新公告和意见箱"}>🆕 {en ? "What's new" : "更新"}{updateSeen !== LATEST_UPDATE ? " ●" : ""}</button>
+<button type="button" onClick={() => { setUpdatesOpen(true); setUpdateSeen(latestKey); try { localStorage.setItem("shhr-update-seen", latestKey); } catch { /* storage unavailable */ } }} className={`chip ${updateSeen !== latestKey ? "border-[var(--accent)] text-[var(--accent)]" : ""}${hudMore ? "" : " max-sm:hidden!"}`} title={en ? "What's new, and a feedback box" : "更新公告和意见箱"}>🆕 {en ? "What's new" : "更新"}{updateSeen !== latestKey ? " ●" : ""}</button>
 <button type="button" onClick={() => setBondsOpen(true)} className={`chip ${bondInvites ? "border-[var(--accent)] text-[var(--accent)]" : ""}${hudMore ? "" : " max-sm:hidden!"}`} title={en ? "Roommates, sworn siblings, partner — real players" : "和真人合租、结拜、在一起"}>🤝 {en ? "People" : "关系"}{bondInvites ? ` ${bondInvites}` : bonds.some((b) => b.status === "active") ? ` · ${bonds.filter((b) => b.status === "active").map((b) => BOND_INFO[b.kind].emoji).join("")}` : ""}</button>
+<button type="button" onClick={() => setAdsOpen(true)} className={`chip${hudMore ? "" : " max-sm:hidden!"}`} title={en ? "Rent a billboard on the city map" : "在全城地图上挂广告牌"}>📢 {en ? "Billboards" : "广告牌"}</button>
+<button type="button" onClick={() => setGigsOpen(true)} className={`chip ${gigActive ? "border-[var(--accent)] text-[var(--accent)]" : ""}${hudMore ? "" : " max-sm:hidden!"}`} title={en ? "Gigs: hire real players, or take their jobs" : "零工：雇真人帮忙，或者接别人的活"}>💼 {en ? "Gigs" : "零工"}{gigActive ? ` ${gigActive}` : (gigsQuery.data?.open.length ? ` · ${gigsQuery.data.open.length}` : "")}</button>
 <button type="button" onClick={() => setCommitteeOpen(true)} className={`chip${hudMore ? "" : " max-sm:hidden!"}`} title={en ? "Weekly estate-committee election: the chair's policy applies citywide" : "每周业委会选举：主任的政策全城生效"}>🏛️ {en ? "Committee" : "业委会"}{committeeQuery.data?.chair ? ` · ${en ? PLEDGE_INFO[committeeQuery.data.chair.pledge].short[1] : PLEDGE_INFO[committeeQuery.data.chair.pledge].short[0]}` : ""}</button>
 <button type="button" onClick={() => setAccountOpen(true)} className={`chip ${!loggedIn && s.day >= 2 ? "border-[var(--accent)] text-[var(--accent)]" : ""}${hudMore ? "" : " max-sm:hidden!"}`} title={en ? "Account: keep your progress, unlock DMs and parties" : "账号：保住进度，解锁私聊和组局"}>👤 {loggedIn ? (en ? "Account" : "账号") : (en ? "Sign in" : "绑定账号")}</button>
 <button type="button" onClick={() => setDmOpen(true)} className={`chip ${unreadDm ? "border-[var(--accent)] text-[var(--accent)]" : ""}${hudMore || unreadDm ? "" : " max-sm:hidden!"}`} title={en ? "Private messages" : "私信"}>💬 {en ? "DMs" : "私信"}{unreadDm ? ` ${unreadDm}` : ""}</button>
@@ -4112,7 +4143,7 @@ return (
 {meta.title && <span className={`chip${hudMore ? "" : " max-sm:hidden!"}`} style={{ borderColor: "var(--gold)", color: "var(--gold)" }}>🏅 {meta.title}</span>}
 {isSaturday(s.day) && <span className="chip text-[var(--accent)]">🏠 今天交租 {fmt(s.rent)}</span>}
 {s.invest > 0 && <span className={`chip${hudMore ? "" : " max-sm:hidden!"}`}>💹 {fmt(s.invest)}</span>}
-<button type="button" onClick={() => setHudMore((v) => !v)} aria-expanded={hudMore} className="chip sm:hidden!">{hudMore ? (en ? "▴ Less" : "▴ 收起") : `⋯ ${en ? "More" : "更多"}${updateSeen !== LATEST_UPDATE || bondInvites ? " ●" : ""}`}</button>
+<button type="button" onClick={() => setHudMore((v) => !v)} aria-expanded={hudMore} className="chip sm:hidden!">{hudMore ? (en ? "▴ Less" : "▴ 收起") : `⋯ ${en ? "More" : "更多"}${updateSeen !== latestKey || bondInvites ? " ●" : ""}`}</button>
 <button type="button" aria-label="竖着收起状态卡，收成屏幕左侧的竖排按钮" title="竖着收起，收成屏幕左侧的竖排按钮，点一下就展开" onClick={() => setBarsHidden(true)} className="ml-auto shrink-0 rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] font-black transition hover:border-[var(--border)]">◂ 收起</button>
 </div>
 
@@ -4283,7 +4314,7 @@ return (
 );
 })()}
 </div>
-<MapView lite={lite} fill paused={!!lifeAnim} train={carriage ? { pts: carriage.route.stations.map((st) => [st.x, st.z] as [number, number]), idx: carriage.stopIdx, stepMs: hopMs(carriage.route, carriage.stopIdx), color: (carriage.route.legs[carriage.legIdx]?.line ?? carriage.route.line).color, rail: carriage.route.legs.some((l) => ["szhz-rail", "guangshen", "hz-intercity", "ganshen-rail", "guangshan-rail", "hsr-hk"].includes(l.line.id)), hold: rideEntry !== null || carriage.awaitingTransfer || carriage.stopIdx >= carriage.route.stations.length - 1 } : null} cityKey={s.cityKey} selfLocId={walking || carriage ? (tripTo ?? selectedLoc) : currentLoc} selfEmoji={iden.emoji} selfColor={iden.color} selfName={profile?.name ?? "我"} remotePlayers={remotePlayers} selfOutfitId={s.outfit} travelModeId={tripMode ?? travelMode} selfEtaAt={tripEta ?? undefined} arrival={arrival} weatherKind={rwOk ? realWeather!.kind : "unknown"} npcMoodEmoji={Object.fromEntries(npcsForCity(s.cityKey).map((n) => [n.name, moodEmoji(memOf(s.npcMem ?? {}, n.name).mood)]))} apecDay={isApecWeek(s.day)} focusLocId={mapFocus?.locId} focusX={mapFocus?.x} focusZ={mapFocus?.z} focusNonce={mapFocus?.nonce} destLocId={selectedLoc} onSelect={walkTo} onPickActor={pickActor} navOverlay={(
+<MapView lite={lite} fill paused={!!lifeAnim} train={carriage ? { pts: carriage.route.stations.map((st) => [st.x, st.z] as [number, number]), idx: carriage.stopIdx, stepMs: hopMs(carriage.route, carriage.stopIdx), color: (carriage.route.legs[carriage.legIdx]?.line ?? carriage.route.line).color, rail: carriage.route.legs.some((l) => ["szhz-rail", "guangshen", "hz-intercity", "ganshen-rail", "guangshan-rail", "hsr-hk"].includes(l.line.id)), hold: rideEntry !== null || carriage.awaitingTransfer || carriage.stopIdx >= carriage.route.stations.length - 1 } : null} cityKey={s.cityKey} selfLocId={walking || carriage ? (tripTo ?? selectedLoc) : currentLoc} selfEmoji={iden.emoji} selfColor={iden.color} selfName={profile?.name ?? "我"} remotePlayers={remotePlayers} billboards={(billboardsQuery.data?.slots ?? []).flatMap((b) => (b.ad ? [{ slot: b.slot, text: b.ad.text, emoji: b.ad.emoji, owner: b.ad.owner }] : []))} selfOutfitId={s.outfit} travelModeId={tripMode ?? travelMode} selfEtaAt={tripEta ?? undefined} arrival={arrival} weatherKind={rwOk ? realWeather!.kind : "unknown"} npcMoodEmoji={Object.fromEntries(npcsForCity(s.cityKey).map((n) => [n.name, moodEmoji(memOf(s.npcMem ?? {}, n.name).mood)]))} apecDay={isApecWeek(s.day)} focusLocId={mapFocus?.locId} focusX={mapFocus?.x} focusZ={mapFocus?.z} focusNonce={mapFocus?.nonce} destLocId={selectedLoc} onSelect={walkTo} onPickActor={pickActor} navOverlay={(
 <>
 {/* 弹幕层：联机动态 / 聊天 / 街坊发言飘过地图上半区 */}
 {danmakuOn && (
@@ -5243,9 +5274,11 @@ return (
 </div>
 )}
 {rideBig && (roadRide || carriage) && <button type="button" onClick={() => setRideBig(false)} className="fixed bottom-3 right-[min(412px,calc(100vw-12px))] z-[61] rounded-full border-2 border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-black shadow-xl">▾ {en ? "Fold" : "收起"}</button>}
-{updatesOpen && phase === "game" && profile && <UpdatesModal en={en} playerId={profile.playerId} city={s.cityKey} onClose={() => setUpdatesOpen(false)} toast={showToast} />}
+{updatesOpen && phase === "game" && profile && <UpdatesModal en={en} playerId={profile.playerId} city={s.cityKey} news={news} onClose={() => setUpdatesOpen(false)} toast={showToast} />}
 {bondsOpen && phase === "game" && profile && <BondsModal en={en} playerId={profile.playerId} bonds={bonds} onClose={() => setBondsOpen(false)} toast={showToast} refresh={() => void bondsQuery.refetch()} openCard={(pub) => { setBondsOpen(false); setCardOf(pub); }} />}
 {committeeOpen && phase === "game" && profile && <CommitteeModal en={en} playerId={profile.playerId} city={s.cityKey} cityName={en ? trText(CITIES[s.cityKey].name) : CITIES[s.cityKey].name} st={committeeQuery.data} onClose={() => setCommitteeOpen(false)} toast={showToast} refresh={() => void committeeQuery.refetch()} openAccount={() => { setCommitteeOpen(false); setAccountOpen(true); }} />}
+{adsOpen && phase === "game" && profile && <BillboardModal en={en} token={accountToken()} playerName={profile.name} city={s.cityKey} spots={billboardSpots(s.cityKey).map((l) => (en ? trText(l.name) : l.name))} st={billboardsQuery.data} onClose={() => setAdsOpen(false)} toast={showToast} refresh={() => void billboardsQuery.refetch()} openAccount={() => { setAdsOpen(false); setAccountOpen(true); }} openStore={() => { setAdsOpen(false); setStoreOpen(true); }} />}
+{gigsOpen && phase === "game" && profile && <GigsModal en={en} playerId={profile.playerId} city={s.cityKey} money={s.money} st={gigsQuery.data} onClose={() => setGigsOpen(false)} toast={showToast} refresh={() => void gigsQuery.refetch()} onHeld={(n) => mutate((x) => { x.money -= n; })} onDeliver={() => { const g = gsRef.current; if (!g || g.energy < 8) { showToast(en ? "Too tired to deliver — rest first." : "太累了，先休息一下再交付。"); return false; } mutate((x) => { x.energy -= 8; }); return true; }} openAccount={() => { setGigsOpen(false); setAccountOpen(true); }} />}
 {retrainOpen && phase === "game" && (
 <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={en ? "Retrain" : "转行培训"}>
 <div className="rise max-h-[88vh] w-full max-w-md overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] p-4">

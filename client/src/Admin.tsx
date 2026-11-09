@@ -34,7 +34,7 @@ export function AdminPage() {
   const [input, setInput] = useState("");
   const [data, setData] = useState<Overview | null>(null);
   const [err, setErr] = useState("");
-  const [tab, setTab] = useState<"reports" | "numbers" | "chat" | "errors" | "risk" | "economy" | "feedback">("reports");
+  const [tab, setTab] = useState<"reports" | "numbers" | "chat" | "errors" | "risk" | "economy" | "feedback" | "ops">("reports");
   const [banPub, setBanPub] = useState("");
   const load = async (tok = token) => {
     if (!tok) return;
@@ -81,9 +81,10 @@ export function AdminPage() {
             ))}
           </div>
           <div className="mt-3 flex flex-wrap gap-1.5">
-            {([["reports", `举报（${data.reports.length}）`], ["feedback", `意见箱（${data.feedback?.length ?? 0}）`], ["risk", "风险 / 薅羊毛"], ["economy", "经济 / 订单"], ["numbers", "数据"], ["chat", "最近公开聊天"], ["errors", `报错（${data.errors.length}）`]] as const).map(([k, l]) => <button key={k} type="button" onClick={() => setTab(k)} className={`rounded-full border-2 px-3 py-1 text-xs font-black ${tab === k ? "bg-[var(--text)] text-[var(--bg)]" : ""}`}>{l}</button>)}
+            {([["reports", `举报（${data.reports.length}）`], ["ops", "📣 公告 / 📢 广告牌"], ["feedback", `意见箱（${data.feedback?.length ?? 0}）`], ["risk", "风险 / 薅羊毛"], ["economy", "经济 / 订单"], ["numbers", "数据"], ["chat", "最近公开聊天"], ["errors", `报错（${data.errors.length}）`]] as const).map(([k, l]) => <button key={k} type="button" onClick={() => setTab(k)} className={`rounded-full border-2 px-3 py-1 text-xs font-black ${tab === k ? "bg-[var(--text)] text-[var(--bg)]" : ""}`}>{l}</button>)}
           </div>
 
+          {tab === "ops" && <OpsPanel token={token} />}
           {tab === "feedback" && (
             <div className="mt-3 space-y-2">
               {(data.feedback ?? []).length === 0 && <p className="text-sm text-[var(--dim)]">还没有玩家反馈。</p>}
@@ -187,6 +188,43 @@ export function AdminPage() {
             </div>
           )}
         </>)}
+      </div>
+    </div>
+  );
+}
+
+/* 运营：发公告（玩家「🆕 更新」里立刻看到）、替本地商家挂地图广告牌 */
+function OpsPanel({ token }: { token: string }) {
+  const [zh, setZh] = useState(""); const [en, setEn] = useState("");
+  const [items, setItems] = useState<{ id: number; zh: string; en: string; at: string }[]>([]);
+  const [msg, setMsg] = useState("");
+  const [ad, setAd] = useState({ city: "sz" as "sz" | "hz" | "hk", slot: 0, owner: "", text: "", emoji: "📢", days: 7 });
+  const loadNews = async () => { const r = await api.getAnnouncements({}).catch(() => null); setItems(r?.items ?? []); };
+  useEffect(() => { void loadNews(); }, []);
+  const post = async (deleteId?: number) => { const r = await api.postAnnouncement({ token, zh: deleteId ? undefined : zh, en: deleteId ? undefined : en, deleteId }); setMsg(r.ok ? (deleteId ? "已删除" : "已发布，玩家下次刷新就能看到") : r.error ?? "失败"); if (r.ok && !deleteId) { setZh(""); setEn(""); } void loadNews(); };
+  const placeAd = async () => { const r = await api.adminBillboard({ token, ...ad }); setMsg(r.ok ? (ad.days > 0 && ad.text ? "广告牌已挂上" : "广告牌已撤下") : r.error ?? "失败"); };
+  const inp = "w-full rounded-[10px] border-2 border-[var(--line)] bg-[var(--bg)] px-2.5 py-1.5 text-sm";
+  return (
+    <div className="mt-3 grid gap-4 text-sm">
+      {msg && <p className="rounded-[10px] bg-[var(--surface2)] px-3 py-1.5 font-bold">{msg}</p>}
+      <div className="rounded-[14px] border-2 border-[var(--line)] p-3">
+        <p className="font-black">📣 发更新公告</p>
+        <textarea value={zh} onChange={(e) => setZh(e.target.value.slice(0, 400))} rows={3} placeholder="中文：今天上线了……（玩家的「🆕 更新」会亮红点）" className={`${inp} mt-2`} />
+        <textarea value={en} onChange={(e) => setEn(e.target.value.slice(0, 400))} rows={2} placeholder="English (optional)" className={`${inp} mt-2`} />
+        <button type="button" disabled={!zh.trim()} onClick={() => void post()} className="mt-2 rounded-full bg-[var(--text)] px-4 py-1.5 font-black text-[var(--bg)] disabled:opacity-40">发布</button>
+        {items.map((n) => <p key={n.id} className="mt-2 flex items-start gap-2 text-xs"><span className="min-w-0 flex-1 whitespace-pre-wrap">{new Date(n.at).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })} · {n.zh}</span><button type="button" onClick={() => void post(n.id)} className="shrink-0 rounded-full border px-2 py-0.5">删除</button></p>)}
+      </div>
+      <div className="rounded-[14px] border-2 border-[var(--line)] p-3">
+        <p className="font-black">📢 替本地商家挂广告牌（免 ✨）</p>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <select value={ad.city} onChange={(e) => setAd({ ...ad, city: e.target.value as "sz" | "hz" | "hk" })} className={inp}><option value="sz">深圳</option><option value="hz">惠州</option><option value="hk">香港</option></select>
+          <select value={ad.slot} onChange={(e) => setAd({ ...ad, slot: Number(e.target.value) })} className={inp}><option value={0}>位置 1（商场）</option><option value={1}>位置 2（车站）</option><option value={2}>位置 3（市场）</option></select>
+          <input value={ad.owner} onChange={(e) => setAd({ ...ad, owner: e.target.value.slice(0, 20) })} placeholder="商家名" className={inp} />
+          <input value={ad.emoji} onChange={(e) => setAd({ ...ad, emoji: e.target.value.slice(0, 8) })} placeholder="emoji" className={inp} />
+          <input value={ad.text} onChange={(e) => setAd({ ...ad, text: e.target.value.slice(0, 20) })} placeholder="广告语（20 字内）" className={`${inp} col-span-2`} />
+          <label className="col-span-2 flex items-center gap-2 text-xs font-bold">挂几天 <input type="number" min={0} max={60} value={ad.days} onChange={(e) => setAd({ ...ad, days: Number(e.target.value) })} className={`${inp} w-20`} />（0 = 撤下这个位置）</label>
+        </div>
+        <button type="button" onClick={() => void placeAd()} className="mt-2 rounded-full bg-[var(--text)] px-4 py-1.5 font-black text-[var(--bg)]">挂上 / 撤下</button>
       </div>
     </div>
   );

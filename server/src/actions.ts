@@ -417,6 +417,35 @@ const envFlag = (k: string): string => { try { return String((globalThis as { pr
 const socialNeedsAccount = () => envFlag("SOCIAL_REQUIRES_ACCOUNT") !== "0";
 const NEED_ACCOUNT = "先绑定账号（右上角 👤 账号），才能私聊和组局——防骚扰、防小号";
 
+/* ---- 📢 广告牌 ---- */
+const BILLBOARD_STARS = 300;
+const BILLBOARD_DAYS = 7;
+/* ---- 零工 helpers ---- */
+type GigRow = typeof schema.gigs.$inferSelect;
+const GIG_VIEW = z.object({ id: z.number(), title: z.string(), pay: z.number(), status: z.string(), reason: z.string().nullable(), employer: z.object({ id: z.string(), name: z.string(), emoji: z.string() }), worker: z.object({ id: z.string(), name: z.string(), emoji: z.string() }).nullable(), role: z.enum(["employer", "worker", "none"]), dueAt: z.string().nullable(), canDeliverAt: z.string().nullable(), votes: z.object({ worker: z.number(), employer: z.number() }) });
+async function gigView(db: Db, g: GigRow, me: string) {
+  const who = async (id: string | null) => { if (!id) return null; const [p] = await db.select().from(schema.players).where(eq(schema.players.id, id)).limit(1); return p ? { id: p.pub ?? pubOf(p.id), name: p.name, emoji: p.emoji } : { id: "?", name: "?", emoji: "🙂" }; };
+  const vs = g.status === "disputed" ? await db.select().from(schema.gigVotes).where(eq(schema.gigVotes.gigId, g.id)) : [];
+  return {
+    id: g.id, title: g.title, pay: g.pay, status: g.status, reason: g.reason ?? null,
+    employer: (await who(g.employerId))!, worker: await who(g.workerId),
+    role: (g.employerId === me ? "employer" : g.workerId === me ? "worker" : "none") as "employer" | "worker" | "none",
+    dueAt: g.dueAt ? g.dueAt.toISOString() : null,
+    canDeliverAt: g.takenAt ? new Date(g.takenAt.getTime() + 120_000).toISOString() : null,
+    votes: { worker: vs.filter((v: { side: string }) => v.side === "worker").length, employer: vs.filter((v: { side: string }) => v.side === "employer").length },
+  };
+}
+/** time's up: delivered jobs pay out after 2 h; disputes close after 24 h (tie goes to the worker) */
+async function settleGigs(db: Db) {
+  const now = new Date();
+  await db.update(schema.gigs).set({ status: "paid" }).where(and(eq(schema.gigs.status, "delivered"), sql`${schema.gigs.dueAt} <= ${now.getTime()}`));
+  const due = await db.select().from(schema.gigs).where(and(eq(schema.gigs.status, "disputed"), sql`${schema.gigs.dueAt} <= ${now.getTime()}`));
+  for (const g of due) {
+    const vs = await db.select().from(schema.gigVotes).where(eq(schema.gigVotes.gigId, g.id));
+    const w = vs.filter((v: { side: string }) => v.side === "worker").length, e = vs.filter((v: { side: string }) => v.side === "employer").length;
+    await db.update(schema.gigs).set({ status: e > w ? "refunded" : "paid" }).where(and(eq(schema.gigs.id, g.id), eq(schema.gigs.status, "disputed")));
+  }
+}
 /* ---- 真人关系 + 业委会 helpers ---- */
 const BOND_KINDS = ["roommate", "sworn", "partner"] as const;
 type BondKind = (typeof BOND_KINDS)[number];
@@ -1234,6 +1263,210 @@ export const Actions = {
       if (!isCand) return { ok: false, error: "对方这周没有参选" };
       await db.insert(schema.committeeVotes).values({ week, city: args.city, voterId: me.id, candidateId: cand.id, createdAt: new Date() })
         .onConflictDoUpdate({ target: [schema.committeeVotes.week, schema.committeeVotes.city, schema.committeeVotes.voterId], set: { candidateId: cand.id, createdAt: new Date() } });
+      return { ok: true };
+    },
+  }),
+
+  /* ---- 零工：真人雇真人，工钱由服务器托管；有纠纷交给同城陪审团 ---- */
+  getGigs: defineAction({
+    description: "The city's open gigs (posted by other players), the caller's own gigs as employer or worker, and disputes the caller can sit on the jury for. Settles anything whose time is up.",
+    request: z.object({ playerId: z.string().min(4).max(64), city: z.enum(["sz", "hz", "hk"]) }),
+    response: z.object({ open: z.array(GIG_VIEW), mine: z.array(GIG_VIEW), jury: z.array(GIG_VIEW.extend({ myVote: z.string().nullable() })), unclaimed: z.number() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      await settleGigs(db);
+      const me = args.playerId;
+      const openRows = await db.select().from(schema.gigs).where(and(eq(schema.gigs.city, args.city), eq(schema.gigs.status, "open"))).orderBy(desc(schema.gigs.id)).limit(30);
+      const mineRows = await db.select().from(schema.gigs).where(sql`(${schema.gigs.employerId} = ${me} OR ${schema.gigs.workerId} = ${me})`).orderBy(desc(schema.gigs.id)).limit(20);
+      const juryRows = await db.select().from(schema.gigs).where(and(eq(schema.gigs.city, args.city), eq(schema.gigs.status, "disputed"))).orderBy(desc(schema.gigs.id)).limit(20);
+      const view = async (g: GigRow) => gigView(db, g, me);
+      const jury = [];
+      for (const g of juryRows) {
+        if (g.employerId === me || g.workerId === me) continue;
+        const [v] = await db.select().from(schema.gigVotes).where(and(eq(schema.gigVotes.gigId, g.id), eq(schema.gigVotes.voterId, me))).limit(1);
+        jury.push({ ...(await view(g)), myVote: v?.side ?? null });
+      }
+      const unclaimed = mineRows.filter((g) => (g.status === "paid" && g.workerId === me && !g.workerClaimed) || (g.status === "refunded" && g.employerId === me && !g.employerClaimed)).reduce((t, g) => t + g.pay, 0);
+      return { open: await Promise.all(openRows.filter((g) => g.employerId !== me).map(view)), mine: await Promise.all(mineRows.map(view)), jury, unclaimed };
+    },
+  }),
+
+  postGig: defineAction({
+    description: "Posts a paid gig for other players in the caller's city (pay ¥30–¥500, held by the server until the job is done). Needs an account; at most 3 open gigs.",
+    request: z.object({ playerId: z.string().min(4).max(64), city: z.enum(["sz", "hz", "hk"]), title: z.string().trim().min(2).max(30), pay: z.number().int().min(30).max(500) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), held: z.number().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const [me] = await db.select().from(schema.players).where(eq(schema.players.id, args.playerId)).limit(1);
+      if (!me) return { ok: false, error: "先进游戏" };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (socialNeedsAccount() && !me.accountId) return { ok: false, error: "先绑定账号（右上角 👤 账号），才能雇人——工钱要托管在服务器" };
+      if (me.cityKey !== args.city) return { ok: false, error: "只能在你所在的城市发活" };
+      if (me.money < args.pay) return { ok: false, error: "存款不够付这份工钱" };
+      const open = await db.select({ n: sql<number>`count(*)` }).from(schema.gigs).where(and(eq(schema.gigs.employerId, me.id), sql`${schema.gigs.status} IN ('open', 'taken', 'delivered')`));
+      if (Number(open[0]?.n ?? 0) >= 3) return { ok: false, error: "最多同时挂 3 个活" };
+      const title = cleanText(args.title).slice(0, 30);
+      if (title.trim().length < 2) return { ok: false, error: "活的名字被过滤了，换个说法" };
+      await creditMoney(db, me.id, -args.pay, "gig escrow");
+      await db.insert(schema.gigs).values({ city: args.city, employerId: me.id, title, pay: args.pay, status: "open", createdAt: new Date() });
+      return { ok: true, held: args.pay };
+    },
+  }),
+
+  gigAction: defineAction({
+    description: "Moves a gig along: take (worker), deliver (worker, at least 2 minutes after taking), confirm (employer pays), dispute (employer, within 2 hours of delivery — goes to a 24 h city jury), cancel (employer, only while nobody has taken it — the pay comes back).",
+    request: z.object({ playerId: z.string().min(4).max(64), gigId: z.number().int().positive(), act: z.enum(["take", "deliver", "confirm", "dispute", "cancel"]), reason: z.string().trim().max(80).optional() }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      await settleGigs(db);
+      const [g] = await db.select().from(schema.gigs).where(eq(schema.gigs.id, args.gigId)).limit(1);
+      const [me] = await db.select().from(schema.players).where(eq(schema.players.id, args.playerId)).limit(1);
+      if (!g || !me) return { ok: false, error: "这个活不存在了" };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      const now = new Date();
+      if (args.act === "take") {
+        if (g.status !== "open") return { ok: false, error: "这个活已经被人接了" };
+        if (g.employerId === me.id) return { ok: false, error: "不能接自己发的活" };
+        if (me.cityKey !== g.city) return { ok: false, error: "只能接你所在城市的活" };
+        if (socialNeedsAccount() && !me.accountId) return { ok: false, error: NEED_ACCOUNT };
+        const busy = await db.select({ n: sql<number>`count(*)` }).from(schema.gigs).where(and(eq(schema.gigs.workerId, me.id), eq(schema.gigs.status, "taken")));
+        if (Number(busy[0]?.n ?? 0) >= 2) return { ok: false, error: "手上已经有 2 个活了，先交付" };
+        await db.update(schema.gigs).set({ status: "taken", workerId: me.id, takenAt: now }).where(and(eq(schema.gigs.id, g.id), eq(schema.gigs.status, "open")));
+        return { ok: true };
+      }
+      if (args.act === "deliver") {
+        if (g.workerId !== me.id || g.status !== "taken") return { ok: false, error: "这个活不在你手上" };
+        if (g.takenAt && now.getTime() - g.takenAt.getTime() < 120_000) return { ok: false, error: "活还没干完——接单 2 分钟后才能交付" };
+        await db.update(schema.gigs).set({ status: "delivered", deliveredAt: now, dueAt: new Date(now.getTime() + 2 * 3600_000) }).where(eq(schema.gigs.id, g.id));
+        return { ok: true };
+      }
+      if (args.act === "confirm") {
+        if (g.employerId !== me.id || g.status !== "delivered") return { ok: false, error: "现在不能确认" };
+        await db.update(schema.gigs).set({ status: "paid" }).where(eq(schema.gigs.id, g.id));
+        return { ok: true };
+      }
+      if (args.act === "dispute") {
+        if (g.employerId !== me.id || g.status !== "delivered") return { ok: false, error: "现在不能投诉" };
+        const reason = cleanText(args.reason ?? "").slice(0, 80) || "活没干好";
+        await db.update(schema.gigs).set({ status: "disputed", reason, dueAt: new Date(now.getTime() + 24 * 3600_000) }).where(eq(schema.gigs.id, g.id));
+        return { ok: true };
+      }
+      if (g.employerId !== me.id || g.status !== "open") return { ok: false, error: "已经有人接了，不能撤" };
+      await db.update(schema.gigs).set({ status: "refunded" }).where(eq(schema.gigs.id, g.id));
+      return { ok: true };
+    },
+  }),
+
+  juryVote: defineAction({
+    description: "Sits on the jury of a disputed gig in the caller's city: side with the worker (pay them) or the employer (refund). One vote, changeable until the jury closes; not for the two parties.",
+    request: z.object({ playerId: z.string().min(4).max(64), gigId: z.number().int().positive(), side: z.enum(["worker", "employer"]) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const [g] = await db.select().from(schema.gigs).where(eq(schema.gigs.id, args.gigId)).limit(1);
+      const [me] = await db.select().from(schema.players).where(eq(schema.players.id, args.playerId)).limit(1);
+      if (!g || !me || g.status !== "disputed") return { ok: false, error: "这个纠纷已经结案了" };
+      if (g.employerId === me.id || g.workerId === me.id) return { ok: false, error: "当事人不能投票" };
+      if (me.cityKey !== g.city) return { ok: false, error: "只有同城的人能当陪审员" };
+      if (socialNeedsAccount() && !me.accountId) return { ok: false, error: "先绑定账号，才能当陪审员——一人一票" };
+      await db.insert(schema.gigVotes).values({ gigId: g.id, voterId: me.id, side: args.side, createdAt: new Date() })
+        .onConflictDoUpdate({ target: [schema.gigVotes.gigId, schema.gigVotes.voterId], set: { side: args.side } });
+      return { ok: true };
+    },
+  }),
+
+  claimGigMoney: defineAction({
+    description: "Collects the caller's money from finished gigs: wages for jobs paid out, refunds for jobs cancelled or lost at the jury. Returns the amount to add to the game wallet.",
+    request: z.object({ playerId: z.string().min(4).max(64) }),
+    response: z.object({ ok: z.boolean(), money: z.number(), lines: z.array(z.string()) }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      await settleGigs(db);
+      const me = args.playerId;
+      const rows = await db.select().from(schema.gigs).where(sql`((${schema.gigs.status} = 'paid' AND ${schema.gigs.workerId} = ${me} AND ${schema.gigs.workerClaimed} = 0) OR (${schema.gigs.status} = 'refunded' AND ${schema.gigs.employerId} = ${me} AND ${schema.gigs.employerClaimed} = 0))`);
+      let money = 0; const lines: string[] = [];
+      for (const g of rows) {
+        const asWorker = g.status === "paid" && g.workerId === me;
+        const res = await db.update(schema.gigs).set(asWorker ? { workerClaimed: 1 } : { employerClaimed: 1 }).where(and(eq(schema.gigs.id, g.id), eq(asWorker ? schema.gigs.workerClaimed : schema.gigs.employerClaimed, 0))).returning({ id: schema.gigs.id });
+        if (!res.length) continue; // another request got it first
+        await creditMoney(db, me, g.pay, asWorker ? `gig pay #${g.id}` : `gig refund #${g.id}`);
+        money += g.pay;
+        lines.push(asWorker ? `「${g.title}」工钱 +¥${g.pay}` : `「${g.title}」退回 +¥${g.pay}`);
+      }
+      return { ok: true, money, lines };
+    },
+  }),
+
+  /* ---- 📢 地图广告牌：每城 3 块，✨ 租一周；运营也可以替本地商家挂 ---- */
+  getBillboards: defineAction({
+    description: "The billboards on a city's map right now (three slots; empty slots are listed as free).",
+    request: z.object({ city: z.enum(["sz", "hz", "hk"]) }),
+    response: z.object({ price: z.number(), days: z.number(), slots: z.array(z.object({ slot: z.number(), ad: z.object({ owner: z.string(), text: z.string(), emoji: z.string(), endsAt: z.string() }).nullable() })) }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const now = Date.now();
+      const rows = await db.select().from(schema.billboards).where(and(eq(schema.billboards.city, args.city), sql`${schema.billboards.endsAt} > ${now}`));
+      return { price: BILLBOARD_STARS, days: BILLBOARD_DAYS, slots: [0, 1, 2].map((slot) => { const r = rows.filter((x) => x.slot === slot).sort((a, b) => b.endsAt.getTime() - a.endsAt.getTime())[0]; return { slot, ad: r ? { owner: r.owner, text: r.text, emoji: r.emoji, endsAt: r.endsAt.toISOString() } : null }; }) };
+    },
+  }),
+
+  buyBillboard: defineAction({
+    description: "Rents a free billboard slot on a city's map for 7 days with ✨ (logged-in account). The text is filtered; a few words and an emoji.",
+    request: z.object({ token: z.string().max(200), playerName: z.string().trim().min(1).max(12), city: z.enum(["sz", "hz", "hk"]), slot: z.number().int().min(0).max(2), text: z.string().trim().min(2).max(20), emoji: z.string().min(1).max(8) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const acc = await sessionAccount(db, args.token);
+      if (!acc) return { ok: false, error: "先登录账号" };
+      const now = Date.now();
+      const taken = await db.select().from(schema.billboards).where(and(eq(schema.billboards.city, args.city), eq(schema.billboards.slot, args.slot), sql`${schema.billboards.endsAt} > ${now}`)).limit(1);
+      if (taken.length) return { ok: false, error: "这块广告牌已经有人租了" };
+      const text = cleanText(args.text).slice(0, 20);
+      if (text.trim().length < 2) return { ok: false, error: "广告内容被过滤了，换个说法" };
+      const ok = await bookStars(db, acc.id, -BILLBOARD_STARS, "billboard", `${acc.id}:${args.city}:${args.slot}:${Math.floor(now / 60_000)}`);
+      if (!ok) return { ok: false, error: `✨ 不够（需要 ${BILLBOARD_STARS}）` };
+      await db.insert(schema.billboards).values({ city: args.city, slot: args.slot, accountId: acc.id, owner: cleanName(args.playerName).slice(0, 12) || "玩家", text, emoji: [...args.emoji][0] ?? "📢", endsAt: new Date(now + BILLBOARD_DAYS * 86_400_000), createdAt: new Date() });
+      return { ok: true };
+    },
+  }),
+
+  adminBillboard: defineAction({
+    description: "Admin: places (or clears) a billboard for a local business, free of ✨. Requires the ADMIN_TOKEN.",
+    request: z.object({ token: z.string().max(200), city: z.enum(["sz", "hz", "hk"]), slot: z.number().int().min(0).max(2), owner: z.string().trim().max(20), text: z.string().trim().max(20), emoji: z.string().max(8), days: z.number().int().min(0).max(60) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      if (!isAdmin(args.token)) return { ok: false, error: "口令不对" };
+      const db = ctx.db<typeof schema>();
+      const now = Date.now();
+      await db.update(schema.billboards).set({ endsAt: new Date(now) }).where(and(eq(schema.billboards.city, args.city), eq(schema.billboards.slot, args.slot), sql`${schema.billboards.endsAt} > ${now}`));
+      if (args.days > 0 && args.text.trim()) await db.insert(schema.billboards).values({ city: args.city, slot: args.slot, accountId: null, owner: args.owner.trim() || "本地商家", text: args.text.trim(), emoji: [...args.emoji][0] ?? "📢", endsAt: new Date(now + args.days * 86_400_000), createdAt: new Date() });
+      return { ok: true };
+    },
+  }),
+
+  /* ---- 🆕 运营公告：后台发，玩家在「更新」里看到 ---- */
+  getAnnouncements: defineAction({
+    description: "The latest update notes the operators posted (newest first).",
+    request: z.object({}),
+    response: z.object({ items: z.array(z.object({ id: z.number(), zh: z.string(), en: z.string(), at: z.string() })) }),
+    async handler(ctx) {
+      const db = ctx.db<typeof schema>();
+      const rows = await db.select().from(schema.announcements).orderBy(desc(schema.announcements.id)).limit(20);
+      return { items: rows.map((r) => ({ id: r.id, zh: r.zh, en: r.en, at: r.createdAt.toISOString() })) };
+    },
+  }),
+
+  postAnnouncement: defineAction({
+    description: "Admin: posts an update note to every player's 🆕 panel (red dot until read), or deletes one. Requires the ADMIN_TOKEN.",
+    request: z.object({ token: z.string().max(200), zh: z.string().trim().max(400).optional(), en: z.string().trim().max(400).optional(), deleteId: z.number().int().positive().optional() }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      if (!isAdmin(args.token)) return { ok: false, error: "口令不对" };
+      const db = ctx.db<typeof schema>();
+      if (args.deleteId) { await db.delete(schema.announcements).where(eq(schema.announcements.id, args.deleteId)); return { ok: true }; }
+      if (!args.zh?.trim()) return { ok: false, error: "写点内容" };
+      await db.insert(schema.announcements).values({ zh: args.zh.trim(), en: (args.en ?? "").trim() || args.zh.trim(), createdAt: new Date() });
       return { ok: true };
     },
   }),
