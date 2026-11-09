@@ -15,7 +15,7 @@ import * as THREE from "three";
 import { makePostFx, type PostFx } from "./postfx";
 
 export type LifeSet = "flat" | "station" | "metro" | "train" | "bus" | "taxi" | "drive" | "concourse" | "platform" | "office" | "restaurant" | "market" | "mall" | "kitchen" | "bedroom" | "bathroom" | "gym" | "park" | "home" | "cruise" | "wheel" | "aquarium" | "turtle" | "coaster" | "safari" | "hike" | "beach" | "cablecar" | "club" | "clinic" | "classroom";
-export type LifePose = "walk" | "idle" | "sit" | "drive" | "type" | "cook" | "eat" | "sleep" | "wash" | "lift" | "stretch";
+export type LifePose = "walk" | "idle" | "sit" | "drive" | "type" | "cook" | "eat" | "sleep" | "wash" | "lift" | "stretch" | "talk" | "dance";
 
 interface Props {
   setKind: LifeSet;
@@ -28,7 +28,24 @@ interface Props {
   cur?: string;
   /** "flat": which rung of the housing ladder the home is (0 urban village … 3 Nanshan) */
   tier?: number;
+  /** "flat": furniture the player bought and where they put it (slot index into FURN_SLOTS) */
+  furn?: { id: string; slot: number; color: number }[];
+  /** "flat": wall colour from the chosen decoration style */
+  wall?: number;
+  /** someone who walks up and talks with the player (shop clerk, doctor, friend) */
+  partner?: { shirt: number; pants: number };
 }
+
+/** where furniture can go in the 3D home: x, z, facing — kept clear of the spot the player stands on */
+export const FURN_SLOTS: { x: number; z: number; ry: number; zh: string; en: string }[] = [
+  { x: -2.7, z: -0.6, ry: 0.45, zh: "左中", en: "Middle left" },
+  { x: 2.8, z: -0.6, ry: -0.45, zh: "右中", en: "Middle right" },
+  { x: -3.6, z: -2.4, ry: 0.2, zh: "左后角", en: "Back left" },
+  { x: 3.7, z: -2.4, ry: -0.2, zh: "右后角", en: "Back right" },
+  { x: 1.9, z: -2.7, ry: 0, zh: "靠后墙", en: "Back wall" },
+  { x: -2.2, z: 1.3, ry: 0.6, zh: "左前", en: "Front left" },
+  { x: 2.3, z: 1.3, ry: -0.6, zh: "右前", en: "Front right" },
+];
 
 /* ---------------- canvas texture helpers ---------------- */
 
@@ -365,7 +382,7 @@ export function LifeStage3D(p: Props) {
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
-    const { setKind, pose, shirt, pants, night, emoji, cur, tier } = propsRef.current;
+    const { setKind, pose, shirt, pants, night, emoji, cur, tier, furn, wall, partner } = propsRef.current;
     // Same WebGL guard as the main map: a refused context degrades to the
     // emoji fallback below instead of crashing the animation overlay.
     let renderer: THREE.WebGLRenderer;
@@ -488,7 +505,8 @@ export function LifeStage3D(p: Props) {
     scene.add(floor);
 
     /* ---- room shell for indoor sets: two-tone walls, wainscot, window, lamp ---- */
-    const roomShell = (wallColor: number, wainsColor: number, opts: { windowX?: number; windowW?: number; clock?: boolean } = {}) => {
+    const roomShell = (wallColor0: number, wainsColor: number, opts: { windowX?: number; windowW?: number; clock?: boolean } = {}) => {
+      const wallColor = setKind === "flat" && wall !== undefined ? wall : wallColor0;
       box(22, 8, 0.3, wallColor, 0, 4, -3.75, 1);
       box(22, 1.05, 0.34, wainsColor, 0, 0.53, -3.73, 0.7);
       box(22, 0.09, 0.36, 0x4a3a28, 0, 1.1, -3.72, 0.6);
@@ -1031,6 +1049,51 @@ export function LifeStage3D(p: Props) {
         cyl(0.32, 0.26, 0.55, 0x2b2b2b, 6.2, 0.28, -2.8, 0.6);
         const tree = new THREE.Mesh(new THREE.SphereGeometry(0.8, 9, 8), mat(0x3f8a54, 1, { flatShading: true })); tree.position.set(6.2, 1.5, -2.8); scene.add(tree);
       }
+
+      // the player's own furniture, wherever they put it (see below)
+      for (const it of furn ?? []) {
+        const sl = FURN_SLOTS[it.slot]; if (!sl) continue;
+        const g = new THREE.Group(); g.position.set(sl.x, 0, sl.z); g.rotation.y = sl.ry; scene.add(g);
+        const gb = (w: number, h: number, d: number, c: number, x: number, y: number, z: number, rough = 0.8, extra: Partial<THREE.MeshStandardMaterialParameters> = {}) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(c, rough, extra)); m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; g.add(m); return m; };
+        const gc = (r: number, h: number, c: number, x: number, y: number, z: number) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 18), mat(c, 0.6)); m.position.set(x, y, z); m.castShadow = true; g.add(m); return m; };
+        const c = it.color; const dark = new THREE.Color(c).multiplyScalar(0.8).getHex();
+        const kind = it.id.split("-")[0];
+        if (kind === "sofa") {
+          const tat = it.id === "sofa-tatami";
+          gb(2.4, tat ? 0.25 : 0.45, 1.0, c, 0, tat ? 0.13 : 0.35, 0); gb(2.4, tat ? 0.5 : 0.7, 0.25, dark, 0, tat ? 0.4 : 0.85, -0.42);
+          if (!tat) { gb(0.22, 0.55, 1.0, dark, -1.2, 0.55, 0); gb(0.22, 0.55, 1.0, dark, 1.2, 0.55, 0); }
+          gb(0.5, 0.35, 0.15, 0xf5b942, -0.6, tat ? 0.4 : 0.75, -0.25, 0.95); gb(0.5, 0.35, 0.15, 0x7ea6c9, 0.6, tat ? 0.4 : 0.75, -0.25, 0.95);
+          if (it.id === "sofa-leather") { gb(1.0, 0.45, 1.6, c, 1.7, 0.35, 0.3); }
+        } else if (kind === "table") {
+          if (it.id === "table-oak") { gc(0.6, 0.06, c, 0, 0.45, 0); gc(0.06, 0.42, dark, 0, 0.22, 0); }
+          else { gb(1.3, 0.08, 0.8, c, 0, 0.42, 0, 0.2, { metalness: 0.1 }); for (const [lx, lz] of [[-0.55, -0.32], [0.55, -0.32], [-0.55, 0.32], [0.55, 0.32]]) gb(0.06, 0.4, 0.06, 0x2b2b2b, lx!, 0.2, lz!, 0.4); }
+          gb(0.2, 0.08, 0.14, 0xffffff, 0.15, 0.5, 0.05, 0.4);
+        } else if (it.id === "tv-cabinet") {
+          gb(2.2, 0.45, 0.45, c, 0, 0.23, 0); const tv = gb(1.7, 0.95, 0.06, 0x0b0f19, 0, 1.0, -0.12, 0.3, { emissive: 0x3060c0, emissiveIntensity: night ? 1.2 : 0.4 }); tv.castShadow = false;
+        } else if (it.id === "bed-double") {
+          gb(2.0, 0.35, 2.3, c, 0, 0.2, 0); gb(1.9, 0.22, 2.2, 0xf6efe0, 0, 0.47, 0.02, 0.95); gb(2.0, 0.9, 0.12, dark, 0, 0.6, -1.12);
+          gb(0.7, 0.14, 0.4, 0xffffff, -0.45, 0.65, -0.8, 0.95); gb(0.7, 0.14, 0.4, 0xffffff, 0.45, 0.65, -0.8, 0.95); gb(1.9, 0.08, 1.2, 0x7ea6c9, 0, 0.6, 0.45, 0.95);
+        } else if (it.id === "wardrobe") {
+          gb(1.8, 2.3, 0.65, c, 0, 1.15, 0); for (const dx of [-0.3, 0.3]) gb(0.03, 2.1, 0.02, dark, dx, 1.15, 0.33); for (const dx of [-0.42, 0.18, 0.42]) gb(0.04, 0.25, 0.04, 0xd4af37, dx, 1.2, 0.36, 0.3, { metalness: 0.7 });
+        } else if (it.id === "desk") {
+          gb(1.5, 0.06, 0.7, c, 0, 0.92, 0); for (const lx of [-0.7, 0.7]) gb(0.05, 0.9, 0.6, dark, lx, 0.45, 0);
+          const scr = gb(0.8, 0.45, 0.04, 0x111827, 0, 1.3, -0.2, 0.3, { emissive: 0x4f8cff, emissiveIntensity: night ? 1.5 : 0.5 }); scr.castShadow = false; gb(0.05, 0.25, 0.05, 0x2b2b2b, 0, 1.05, -0.2);
+          gb(0.55, 0.06, 0.55, 0x2b2b2b, 0, 0.55, 0.6); gb(0.55, 0.6, 0.06, 0x2b2b2b, 0, 0.9, 0.85);
+        } else if (it.id === "fridge") {
+          gb(0.85, 1.9, 0.75, c, 0, 0.95, 0, 0.3, { metalness: 0.4 }); gb(0.02, 1.8, 0.02, 0x9ca3af, 0, 0.95, 0.38); gb(0.04, 0.5, 0.04, 0x6b7280, -0.12, 1.3, 0.4); gb(0.04, 0.5, 0.04, 0x6b7280, 0.12, 1.3, 0.4);
+        } else if (it.id === "kitchen-cabinet") {
+          gb(2.6, 0.9, 0.7, c, 0, 0.45, 0); gb(2.7, 0.06, 0.75, 0xf1f5f9, 0, 0.93, 0, 0.3); gc(0.15, 0.03, 0x1f2937, -0.6, 0.97, 0); gc(0.15, 0.03, 0x1f2937, -0.2, 0.97, 0);
+          gb(0.6, 0.06, 0.45, 0x9ca3af, 0.7, 0.96, 0, 0.2, { metalness: 0.7 }); gb(2.6, 0.7, 0.4, dark, 0, 2.2, -0.15);
+        } else if (it.id === "dining-table") {
+          gb(1.5, 0.07, 0.9, c, 0, 0.78, 0); for (const [lx, lz] of [[-0.65, -0.35], [0.65, -0.35], [-0.65, 0.35], [0.65, 0.35]]) gb(0.06, 0.76, 0.06, dark, lx!, 0.38, lz!);
+          for (const cz of [-0.75, 0.75]) for (const cx of [-0.4, 0.4]) { gb(0.4, 0.05, 0.4, dark, cx, 0.46, cz); gb(0.4, 0.45, 0.05, dark, cx, 0.7, cz + (cz > 0 ? 0.18 : -0.18)); }
+          gc(0.14, 0.04, 0xffffff, -0.3, 0.84, 0); gc(0.14, 0.04, 0xffffff, 0.3, 0.84, 0);
+        } else if (it.id === "washer") {
+          gb(0.75, 0.85, 0.7, c, 0, 0.43, 0, 0.4); const door = gc(0.24, 0.05, 0x334155, 0, 0.45, 0.36); door.rotation.x = Math.PI / 2;
+        } else if (it.id === "bathtub") {
+          gb(1.8, 0.6, 0.85, c, 0, 0.3, 0, 0.2); gb(1.6, 0.05, 0.65, 0x7dd3fc, 0, 0.55, 0, 0.1, { transparent: true, opacity: 0.8 });
+        } else { gb(0.8, 0.8, 0.8, c, 0, 0.4, 0); }
+      }
     } else if (setKind === "bedroom") {
       roomShell(0xf3e6cf, 0xc9a877, { windowX: 3.9, windowW: 1.9 });
       // detail pass: glowing bedside lamp, a woven rug, slippers by the bed
@@ -1544,6 +1607,11 @@ export function LifeStage3D(p: Props) {
       const fol3 = new THREE.Mesh(new THREE.SphereGeometry(0.45, 8, 7), mat(0x4d9b5f, 1, { flatShading: true }));
       fol3.position.set(5.9, 0.72, -2.85); fol3.castShadow = true; scene.add(fol3);
     }
+    let talker: Figure | null = null;
+    if (partner) {
+      talker = extraFigure(1.05, 0, 0.6, -Math.PI / 2, partner.shirt, partner.pants);
+      bobbers.splice(bobbers.findIndex((b) => b.g === talker!.g), 1);
+    }
     if (setKind === "cruise") {
       // 东江夜游: a lantern-lit sightseeing boat gliding at night — the far
       // bank's lights and the pagoda-like tower drift past, reflections
@@ -1984,6 +2052,18 @@ export function LifeStage3D(p: Props) {
         A.armR.rotation.x = -1.9 - rub;
         A.head.rotation.x = 0.14 + Math.sin(t * 3.5) * 0.03;
         A.head.position.y = 1.86 + Math.sin(t * 3.5) * 0.02;
+      } else if (pose === "talk") {
+        A.g.position.set(-0.25, 0, 0.6);
+        A.g.rotation.y = Math.PI / 2 * 0.75;
+        A.armL.rotation.x = -0.35 + Math.sin(t * 3.3 + 1) * 0.25;
+        A.head.rotation.x = Math.sin(t * 2.4) * 0.05;
+        A.head.rotation.y = Math.sin(t * 0.8) * 0.1;
+      } else if (pose === "dance") {
+        const b = Math.abs(Math.sin(t * 6.4));
+        A.g.position.set(0, b * 0.14, 0.55);
+        A.g.rotation.y = Math.PI + Math.sin(t * 1.6) * 0.5;
+        A.armL.rotation.x = -2.5 + Math.sin(t * 6.4) * 0.3; A.armR.rotation.x = -2.5 - Math.sin(t * 6.4) * 0.3;
+        A.legL.rotation.x = Math.sin(t * 6.4) * 0.25; A.legR.rotation.x = -Math.sin(t * 6.4) * 0.25;
       } else if (pose === "lift") {
         A.g.position.set(0.3, 0, 0.2);
         const liftPh = (Math.sin(t * 1.9) + 1) / 2;
@@ -2066,6 +2146,14 @@ export function LifeStage3D(p: Props) {
       }
       for (const sw of swayers) sw.g.rotation.z = Math.sin(t * 1.3 + sw.ph) * 0.05;
       for (const sp of spinners) sp.rotation.y = t * 0.8;
+      if (talker) {
+        // walks in from the right, then talks with their hands
+        const u = clamp01(t / 1.1);
+        talker.g.position.x = 3.2 - easeInOut(u) * 2.15;
+        const sw = u < 1 ? Math.sin(t * 9) * 0.5 : 0;
+        talker.legL.rotation.x = sw; talker.legR.rotation.x = -sw;
+        if (u >= 1) { talker.armR.rotation.x = -0.9 + Math.sin(t * 4.2) * 0.35; talker.armR.rotation.z = Math.sin(t * 2.1) * 0.2; talker.head.rotation.x = Math.sin(t * 3.1) * 0.06; talker.armL.rotation.x = -0.3; }
+      }
       for (const d of dancers) { const b = Math.abs(Math.sin(t * 6.4 + d.ph)); d.f.g.position.y = d.y + b * 0.12; d.f.g.rotation.z = Math.sin(t * 3.2 + d.ph) * 0.06; }
       for (const cl of clubLights) { cl.l.intensity = 6 + Math.max(0, Math.sin(t * 3.2 + cl.ph)) * 22; cl.l.position.x += Math.sin(t * 0.9 + cl.ph) * 0.02; }
       for (const mo of motes) {
