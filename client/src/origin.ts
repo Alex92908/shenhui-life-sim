@@ -59,16 +59,19 @@ export const ORIGINS: Origin[] = [
   { id: "o-rich", iden: "rich", tier: 3, zh: "南山有房 · 深二代", en: "Nanshan flat · born rich", line: "别人奋斗一辈子的起点，是你的出生地。", lineEn: "Where others hope to end up is where you were born." },
 ];
 
+/** 峰会周限定：November in Shenzhen, some draws land on a summit volunteer */
+export const APEC_ORIGIN: Origin = { id: "o-apec", iden: "student", tier: 1, zh: "峰会周限定 · 大学生志愿者", en: "Summit week only · student volunteer", line: "胸前挂着工作证，11 月 14–19 日要在三个会场之间来回跑——全深圳最忙的一周，你在现场。", lineEn: "A pass round your neck, running between three venues on 14–19 November — Shenzhen's busiest week, and you're there." };
 /** chance of being born on each rung: most people start at the bottom */
 const TIER_WEIGHT = [0.46, 0.34, 0.14, 0.06];
 
-export function drawOrigin(rand: () => number = Math.random, not?: string): Origin {
+export function drawOrigin(rand: () => number = Math.random, not?: string, opts: { apec?: boolean } = {}): Origin {
+  if (opts.apec && not !== APEC_ORIGIN.id && rand() < 0.18) return APEC_ORIGIN;
   let r = rand(); let tier = 0;
   for (let i = 0; i < TIER_WEIGHT.length; i++) { if (r < TIER_WEIGHT[i]!) { tier = i; break; } r -= TIER_WEIGHT[i]!; tier = i; }
   const pool = ORIGINS.filter((o) => o.tier === tier && o.id !== not);
   return pool[Math.floor(rand() * pool.length)] ?? ORIGINS[0]!;
 }
-export const originById = (id?: string | null) => ORIGINS.find((o) => o.id === id);
+export const originById = (id?: string | null) => (id === APEC_ORIGIN.id ? APEC_ORIGIN : ORIGINS.find((o) => o.id === id));
 /** the rung an identity starts on when it was picked by hand, not drawn */
 export function tierOfIden(iden: string): 0 | 1 | 2 | 3 { return ORIGINS.find((o) => o.iden === iden)?.tier ?? 1; }
 

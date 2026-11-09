@@ -17,6 +17,7 @@ type Overview = {
   errors: { id: number; message: string; stack: string | null; url: string | null; ua: string | null; count: number; lastAt: string }[];
   chat: { id: number; player: string; name: string; city: string; body: string; at: string }[];
   economy?: { clamped: { name: string; pub: string; n: number; sum: number }[]; orders: { id: string; product: string; amount: number; currency: string; status: string; provider: string; at: string }[]; starsOutstanding: number };
+  feedback?: { id: number; kind: string; body: string; city: string | null; name: string; at: string }[];
   risk?: {
     multiDevice: { n: number; names: string }[];
     burstNet: { n: number; names: string }[];
@@ -33,7 +34,7 @@ export function AdminPage() {
   const [input, setInput] = useState("");
   const [data, setData] = useState<Overview | null>(null);
   const [err, setErr] = useState("");
-  const [tab, setTab] = useState<"reports" | "numbers" | "chat" | "errors" | "risk" | "economy">("reports");
+  const [tab, setTab] = useState<"reports" | "numbers" | "chat" | "errors" | "risk" | "economy" | "feedback">("reports");
   const [banPub, setBanPub] = useState("");
   const load = async (tok = token) => {
     if (!tok) return;
@@ -80,9 +81,20 @@ export function AdminPage() {
             ))}
           </div>
           <div className="mt-3 flex flex-wrap gap-1.5">
-            {([["reports", `举报（${data.reports.length}）`], ["risk", "风险 / 薅羊毛"], ["economy", "经济 / 订单"], ["numbers", "数据"], ["chat", "最近公开聊天"], ["errors", `报错（${data.errors.length}）`]] as const).map(([k, l]) => <button key={k} type="button" onClick={() => setTab(k)} className={`rounded-full border-2 px-3 py-1 text-xs font-black ${tab === k ? "bg-[var(--text)] text-[var(--bg)]" : ""}`}>{l}</button>)}
+            {([["reports", `举报（${data.reports.length}）`], ["feedback", `意见箱（${data.feedback?.length ?? 0}）`], ["risk", "风险 / 薅羊毛"], ["economy", "经济 / 订单"], ["numbers", "数据"], ["chat", "最近公开聊天"], ["errors", `报错（${data.errors.length}）`]] as const).map(([k, l]) => <button key={k} type="button" onClick={() => setTab(k)} className={`rounded-full border-2 px-3 py-1 text-xs font-black ${tab === k ? "bg-[var(--text)] text-[var(--bg)]" : ""}`}>{l}</button>)}
           </div>
 
+          {tab === "feedback" && (
+            <div className="mt-3 space-y-2">
+              {(data.feedback ?? []).length === 0 && <p className="text-sm text-[var(--dim)]">还没有玩家反馈。</p>}
+              {(data.feedback ?? []).map((f) => (
+                <div key={f.id} className="rounded-[12px] border-2 border-[var(--line)] p-2.5 text-sm">
+                  <p className="text-xs font-black text-[var(--dim)]">{f.kind === "bug" ? "🐞 Bug" : f.kind === "idea" ? "💡 想法" : "💬 其他"} · {f.name} · {f.city ?? ""} · {t(f.at)}</p>
+                  <p className="mt-1 whitespace-pre-wrap break-words">{f.body}</p>
+                </div>
+              ))}
+            </div>
+          )}
           {tab === "reports" && (
             <div className="mt-3 grid gap-2">
               <form className="flex flex-wrap gap-2 rounded-[12px] border border-[var(--line)] bg-[var(--surface)] p-3" onSubmit={(e) => { e.preventDefault(); if (banPub.trim()) void act({ targetPub: banPub.trim(), action: "ban" }); }}>
