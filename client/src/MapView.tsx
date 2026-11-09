@@ -2897,13 +2897,13 @@ export function MapView(p: Props) {
       // how many place labels may show at once (zoomed out it is the city view)
       // a phone shows a fraction of a desktop's map area, so it gets a fraction of the labels
       const scr = Math.max(0.35, Math.min(1, (w * h) / (1100 * 650)));
-      const locCap = density === "all" ? 999 : Math.max(4, Math.round((overview ? (density === "few" ? 8 : 22) : density === "few" ? 14 : 60) * scr));
+      const locCap = density === "all" ? 999 : Math.max(3, Math.round((overview ? (density === "few" ? 6 : 12) : density === "few" ? 10 : 24) * scr));
       let locShown = 0;
       /* separate budgets so place pins, neighbourhood names and stations never
          swamp the view (zoomed in they used to fill every gap) */
       const kc = (n: number) => Math.max(2, Math.round(n * scr));
-      const kindCap = density === "all" ? { place: 999, area: 999, station: 999 } : density === "few" ? { place: kc(4), area: kc(4), station: kc(3) } : { place: kc(10), area: kc(8), station: kc(6) };
-      const kindShown = { place: 0, area: 0, station: 0 };
+      const kindCap = density === "all" ? { place: 999, area: 999, station: 999, road: 999 } : density === "few" ? { place: kc(3), area: kc(3), station: kc(2), road: 1 } : { place: kc(5), area: kc(4), station: kc(4), road: kc(3) };
+      const kindShown = { place: 0, area: 0, station: 0, road: 0 };
       const cands: { chip: Chip; sx: number; sy: number; prio: number; near: boolean }[] = [];
       let measured = 0;
       for (const chip of chips) {
@@ -3012,7 +3012,7 @@ export function MapView(p: Props) {
             c.chip.el.style.display = "none";
             continue;
           }
-          const kk = c.chip.place ? "place" : c.chip.area ? "area" : c.chip.station ? "station" : null;
+          const kk = c.chip.place ? "place" : c.chip.area ? "area" : c.chip.station ? "station" : c.chip.kind === "road" && !c.chip.metro ? "road" : null;
           if (kk && !c.near && kindShown[kk] >= kindCap[kk]) {
             c.chip.visible = false;
             c.chip.el.style.display = "none";
