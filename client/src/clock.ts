@@ -111,6 +111,13 @@ export function timeBlock(kind: string, s: ClockState, at = Date.now()): string 
 /** 港铁大多 6:00 到凌晨 1 点左右。 */
 export const RAIL_HOURS: Record<CityKey, [number, number]> = { sz: [390, 1410], hz: [390, 1350], hk: [360, 1500] };
 export const MODE_HOURS: Partial<Record<string, [number, number]>> = { bus: [360, 1380], ferry: [480, 1260], flight: [360, 1410] };
+/** when a mode runs in a city (null = any hour). Metro / intercity follow RAIL_HOURS; Shenzhen and Huizhou
+    buses stop around 23:00 (only a handful of night routes after that), Hong Kong has overnight N-routes all night. */
+export function modeHours(mode: string, city: CityKey): [number, number] | null {
+  if (mode === "metro" || mode === "rail") return RAIL_HOURS[city];
+  if (mode === "bus" && city === "hk") return null;
+  return MODE_HOURS[mode] ?? null;
+}
 
 /** Parse simple OSM opening_hours like "09:00-18:00" or "Mo-Su 10:00-22:00". */
 function parseHours(h: string | undefined): [number, number] | null {

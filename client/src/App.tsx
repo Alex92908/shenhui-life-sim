@@ -102,7 +102,7 @@ const VENUE_SETS: Partial<Record<string, { set: LifeSet; zh: string; en: string 
 import { routineRole, routineSteps, CORE_FOR_FULL_DAY, ROLE_META, isOrderRole, type RoutineDay, type RiderOrder, type RoutineStep, type RoutineRole } from "./routines";
 import { GUIDE, SCENE_PHOTOS, guideForLocName, tourForCity, type DayTour, type GuidePlace } from "./experience";
 import { creditFor } from "./photo-credits";
-import { SEASON_START, actionMinutes, clockStr, timeBlock, nowMin, countdown, cooldownMs, realMinLabel, venueClosed, inWindow, windowStr, RAIL_HOURS, MODE_HOURS, realGameDay, seasonStartFor, seasonLength, seasonMonth } from "./clock";
+import { SEASON_START, actionMinutes, clockStr, timeBlock, nowMin, countdown, cooldownMs, realMinLabel, venueClosed, inWindow, windowStr, RAIL_HOURS, modeHours, realGameDay, seasonStartFor, seasonLength, seasonMonth } from "./clock";
 import { PERKS, MAX_EQUIP, perkById, runPoints } from "./legacy";
 import { STORIES, PART, storyOf, storyStatus, type StoryFx, type StoryProg } from "./stories";
 import { storyEN } from "./stories-en";
@@ -1651,7 +1651,7 @@ let mode = modeOverride ?? travelMode;
 {
 const tn = nowMin();
 if ((mode === "metro" || mode === "rail") && !inWindow(tn, RAIL_HOURS[s0.cityKey])) { showToast(`🚇 ${railWord(s0.cityKey)}已经停运（运营 ${windowStr(RAIL_HOURS[s0.cityKey])}，北京时间），这次改打车。`); mode = "taxi"; }
-else if (MODE_HOURS[mode] && !inWindow(tn, MODE_HOURS[mode]!)) { showToast(`这个点${mode === "bus" ? "公交" : mode === "ferry" ? "轮渡" : "航班"}已经没有了（${windowStr(MODE_HOURS[mode]!)}），这次改打车。`); mode = "taxi"; }
+else if (modeHours(mode, s0.cityKey) && !inWindow(tn, modeHours(mode, s0.cityKey)!)) { showToast(`这个点${mode === "bus" ? "公交" : mode === "ferry" ? "轮渡" : "航班"}已经没有了（${windowStr(modeHours(mode, s0.cityKey)!)}），这次改打车。`); mode = "taxi"; }
 }
 const from = locById(currentLocRef.current);
 const to = locById(locId);
@@ -4648,7 +4648,7 @@ return (
 <p className="mt-2.5 text-[11px] font-black tracking-wide text-white/70">出行方式 · 选好再点地点（或直接点地图上的建筑/标签前往）</p>
 <div className="mt-1.5 flex flex-wrap gap-1.5">
 {modesForCity(s.cityKey).map((m) => (
-<button key={m.id} type="button" aria-label={`出行方式${m.name}，速度${m.speedTag}`} aria-pressed={travelMode === m.id} onClick={() => setTravelMode(m.id)} className={`rounded-full border px-2.5 py-1.5 text-xs font-bold ${travelMode === m.id ? "border-transparent bg-[var(--accent)] text-white" : "border-white/25 bg-white/10 text-white"}`}>{m.emoji} {m.name} · {m.speedTag}</button>
+(() => { const h = modeHours(m.id, s.cityKey); const off = h && !inWindow(nowMin(), h); return <button key={m.id} type="button" aria-label={`出行方式${m.name}，速度${m.speedTag}`} title={off ? `现在停运 · 运营 ${windowStr(h!)}（北京时间），选了会自动改打车` : undefined} aria-pressed={travelMode === m.id} onClick={() => setTravelMode(m.id)} className={`rounded-full border px-2.5 py-1.5 text-xs font-bold ${travelMode === m.id ? "border-transparent bg-[var(--accent)] text-white" : "border-white/25 bg-white/10 text-white"}${off ? " opacity-50" : ""}`}>{m.emoji} {m.name} · {off ? (en ? `closed · from ${windowStr(h!).split(/[–-]/)[0]}` : `停运 · ${windowStr(h!).split(/[–-]/)[0]} 起`) : m.speedTag}</button>; })()
 ))}
 </div>
 <p className="mt-1.5 text-[11px] leading-relaxed text-white/70">{modesForCity(s.cityKey).find((m) => m.id === travelMode)?.desc} · 速度差别是真的：步行最慢，跑步快一半，骑行再快近一倍，电动车/公交再快，打车、自驾和{railWord(s.cityKey)}更快，高铁/城际最快——地图上人物的移动速度、实际到达时间都按这个来。公交/打车/自驾/{railWord(s.cityKey)}/高铁搭乘时都会弹车厢动画；自驾是坐进驾驶座自己开，跟车流一起等红灯、到了找车位。</p>
@@ -5605,7 +5605,7 @@ return (
 <button type="button" onClick={() => stopTrip()} className="rounded-full bg-[#dc2626] px-3 py-1 text-xs font-black text-white">🛑 {en ? "Stop here" : "就地下车"}</button>
 <span className="text-[11px] font-bold text-[var(--dim)]">{en ? "or switch to" : "或改用"}</span>
 {modesForCity(s.cityKey).filter((m) => ["walk", "run", "bike", "moto", "bus", "metro", "taxi", "drive"].includes(m.id) && m.id !== tripMode).map((m) => (
-<button key={m.id} type="button" title={en ? trText(m.name) : m.name} aria-label={en ? `Switch to ${trText(m.name)}` : `改用${m.name}`} onClick={() => stopTrip(m.id)} className="rounded-full border border-[var(--line)] px-2 py-1 text-xs font-black">{m.emoji} {en ? trText(m.name) : m.name}</button>
+(() => { const h = modeHours(m.id, s.cityKey); const off = h && !inWindow(nowMin(), h); return <button key={m.id} type="button" disabled={!!off} title={off ? (en ? `Not running now · ${windowStr(h!)}` : `现在停运 · 运营 ${windowStr(h!)}`) : (en ? trText(m.name) : m.name)} aria-label={en ? `Switch to ${trText(m.name)}` : `改用${m.name}`} onClick={() => stopTrip(m.id)} className="rounded-full border border-[var(--line)] px-2 py-1 text-xs font-black disabled:opacity-40">{m.emoji} {en ? trText(m.name) : m.name}{off ? <span className="ml-1 text-[10px] font-bold text-[var(--accent)]">{en ? "closed" : "停运"}</span> : null}</button>; })()
 ))}
 </div>
 )}
