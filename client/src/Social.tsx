@@ -199,7 +199,8 @@ export type GigsState = ApiResponse<typeof api, "getGigs">;
 type Gig = GigsState["mine"][number];
 const GIG_IDEAS: [string, string][] = [["帮我排队买网红奶茶", "Queue for the viral bubble tea"], ["帮忙搬家搬两箱书", "Help move two boxes of books"], ["代送一份文件去福田", "Deliver a document across town"], ["陪练粤语口语", "Cantonese conversation practice"], ["帮我修电脑", "Fix my computer"], ["夜市摊位帮忙一晚", "Help at my night-market stall"]];
 const STATUS: Record<string, [string, string]> = { open: ["等人接", "Waiting"], taken: ["干活中", "In progress"], delivered: ["已交付，待确认", "Delivered — awaiting OK"], disputed: ["陪审中", "With the jury"], paid: ["已付款", "Paid"], refunded: ["已退回", "Refunded"] };
-export function GigsModal({ en, playerId, city, money, st, onClose, toast, refresh, onHeld, onDeliver, openAccount }: { en: boolean; playerId: string; city: "sz" | "hz" | "hk"; money: number; st: GigsState | undefined; onClose: () => void; toast: (m: string) => void; refresh: () => void; onHeld: (n: number) => void; onDeliver: () => boolean; openAccount: () => void }) {
+export interface NpcGig { id: string; who: string; emoji: string; title: string; pay: string; cost: string; done: boolean }
+export function GigsModal({ en, playerId, city, money, st, onClose, toast, refresh, onHeld, onDeliver, openAccount, npcGigs, onNpcGig, prime }: { npcGigs?: NpcGig[]; onNpcGig?: (id: string) => void; prime?: boolean; en: boolean; playerId: string; city: "sz" | "hz" | "hk"; money: number; st: GigsState | undefined; onClose: () => void; toast: (m: string) => void; refresh: () => void; onHeld: (n: number) => void; onDeliver: () => boolean; openAccount: () => void }) {
   const T = (zh: string, e: string) => (en ? e : zh);
   const [tab, setTab] = useState<"find" | "mine" | "jury">("find");
   const [title, setTitle] = useState("");
@@ -239,6 +240,16 @@ export function GigsModal({ en, playerId, city, money, st, onClose, toast, refre
         {tab === "find" && <>
           {(st?.open ?? []).length === 0 && <p className="mt-3 text-xs text-[var(--dim)]">{T("城里暂时没人发活。你也可以在「我的活」里发一个。", "No gigs in town right now. Post one under “My gigs”.")}</p>}
           {(st?.open ?? []).map((g) => card(g, <button type="button" onClick={() => void act(g, "take")} className="mt-2 w-full rounded-full bg-[var(--accent)] py-2 text-sm font-black text-white">{T("接这个活", "Take it")}</button>))}
+          {(st?.open ?? []).length < 3 && (npcGigs ?? []).length > 0 && <>
+            <p className="mt-4 text-xs font-black tracking-wide text-[var(--dim)]">🏘️ {T("街坊也在找人帮忙", "Neighbours need a hand too")}{prime ? T(" · 🔥 晚 8 点黄金档，工钱 ×1.5", " · 🔥 8 pm prime time, pay ×1.5") : ""}</p>
+            {npcGigs!.map((g) => (
+              <div key={g.id} className="mt-2 rounded-[14px] border-2 border-dashed border-[var(--line)] p-3">
+                <p className="text-sm font-black">{g.emoji} {g.title}</p>
+                <p className="text-xs text-[var(--dim)]">{g.who} · {g.pay} · {g.cost}</p>
+                <button type="button" disabled={g.done} onClick={() => onNpcGig?.(g.id)} className="mt-2 w-full rounded-full border-2 border-[var(--border)] py-1.5 text-xs font-black disabled:opacity-40">{g.done ? T("今天帮过了", "Done today") : T("帮这个忙", "Help out")}</button>
+              </div>
+            ))}
+          </>}
         </>}
         {tab === "mine" && <>
           <div className="mt-3 rounded-[14px] border-2 border-[var(--border)] p-3">

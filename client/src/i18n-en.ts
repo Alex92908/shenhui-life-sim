@@ -1,6 +1,18 @@
 /* Generated English strings for the DOM translator (see i18n.ts).
    EN_EXACT: whole-string matches. EN_TEMPLATES: {n} marks an interpolated value. */
 export const EN_EXACT: Record<string, string> = {
+"滨海观光巴士（示意）": "Bayfront sightseeing bus (illustrative)",
+"滨海巴士": "Bayfront bus",
+"东部海滨巴士（示意）": "East coast bus (illustrative)",
+"东部巴士": "East coast bus",
+"惠城老城公交（示意）": "Huicheng old-town bus (illustrative)",
+"老城公交": "Old-town bus",
+"大亚湾—惠东海滨巴士（示意）": "Daya Bay–Huidong coast bus (illustrative)",
+"海滨巴士": "Coast bus",
+"深圳湾公园·日出剧场": "Shenzhen Bay Park · Sunrise Theatre",
+"合江楼": "Hejiang Tower",
+"桥东": "Qiaodong",
+"霞涌": "Xiayong",
 "· 今天下雨，出门建议穿雨衣": "· raining today — wear a raincoat",
 "· 六天全做完领服务证书": "· finish all six days for a service certificate",
 "· 含站外接驳巴士": "· includes an out-of-station shuttle bus",

@@ -119,7 +119,7 @@ const MASSEUR: RoutineStep[] = [
 
 const KTV: RoutineStep[] = [
   { ...CLOCKIN(H(17, 30), H(19, 30)), zh: "晚班打卡", sub: "换上工服，检查包厢话筒和点歌屏", subEn: "Uniform on, test the mics and song screens" },
-  { id: "room", emoji: "🎤", zh: "包厢服务", en: "Look after a room", sub: "开房、送果盘、调音响、帮客人点歌", subEn: "Open up, fruit plates, sound, song requests", min: 45, energy: -5, mood: 1, pay: 0.12, xp: 1, hours: [H(18), H(24)], max: 4, core: true, scene: { set: "home", pose: "idle", bg: "🎤 🪩 🎶", prop: "🎤" } },
+  { id: "room", emoji: "🎤", zh: "包厢服务", en: "Look after a room", sub: "开房、送果盘、调音响、帮客人点歌", subEn: "Open up, fruit plates, sound, song requests", min: 45, energy: -5, mood: 1, pay: 0.12, xp: 1, hours: [H(18), H(24)], max: 4, core: true, scene: { set: "club", pose: "idle", bg: "🎤 🪩 🎶", prop: "🎤" } },
   { id: "sing", emoji: "🎶", zh: "陪唱暖场", en: "Warm up the room", sub: "客人不好意思开口，你先唱一首", subEn: "Shy guests — you sing the first song", min: 20, energy: -3, mood: 4, pay: 0.06, network: 1, hours: [H(19), H(24)], max: 3 },
   { id: "upsell", emoji: "🍻", zh: "推酒水套餐", en: "Upsell drinks", sub: "「再加一打啤酒送果盘哦」——有提成", subEn: "“A dozen more beers comes with fruit” — commission", min: 10, energy: -1, mood: 0, pay: 0.1, max: 3, risk: { p: 0.45, zh: "客人说喝够了", en: "They've had enough", mood: -1, payCut: 0 } },
   { id: "tips", emoji: "🧧", zh: "客人给小费", en: "Tips", sub: "唱嗨了的客人塞了个红包", subEn: "A happy room hands you a red packet", min: 5, energy: 0, mood: 5, pay: 0.15, hours: [H(21), H(24)], max: 1, risk: { p: 0.6, zh: "今晚的客人都很普通", en: "A quiet night — no tips", mood: 0, payCut: 0 } },
@@ -132,7 +132,7 @@ const KTV: RoutineStep[] = [
 const TEACHER: RoutineStep[] = [
   { ...CLOCKIN(H(7), H(8)), zh: "到校签到", sub: "七点半前到校，带早读", subEn: "In by 7:30 for morning reading" },
   { id: "reading", emoji: "📖", zh: "带早读", en: "Morning reading", sub: "教室里书声琅琅", subEn: "A classroom reading aloud", min: 30, energy: -3, mood: 2, hours: [H(7, 30), H(8, 30)], max: 1, core: true },
-  { id: "lesson", emoji: "🧑‍🏫", zh: "上课", en: "Teach a lesson", sub: "四十五分钟，讲到台下眼睛亮起来", subEn: "Forty-five minutes until the eyes light up", min: 45, energy: -6, mood: 2, pay: 0.12, xp: 1, hours: [H(8), H(17, 30)], max: 4, core: true, scene: { set: "office", pose: "idle", bg: "🏫 📚 ✏️", prop: "🧑‍🏫" } },
+  { id: "lesson", emoji: "🧑‍🏫", zh: "上课", en: "Teach a lesson", sub: "四十五分钟，讲到台下眼睛亮起来", subEn: "Forty-five minutes until the eyes light up", min: 45, energy: -6, mood: 2, pay: 0.12, xp: 1, hours: [H(8), H(17, 30)], max: 4, core: true, scene: { set: "classroom", pose: "idle", bg: "🏫 📚 ✏️", prop: "🧑‍🏫" } },
   { id: "mark", emoji: "📝", zh: "批改作业", en: "Mark homework", sub: "一摞作业本，红笔写到手酸", subEn: "A stack of exercise books and a red pen", min: 45, energy: -4, mood: -2, xp: 1, max: 2, core: true },
   { id: "meeting", emoji: "🗂️", zh: "教研会", en: "Teaching meeting", sub: "集体备课，讨论月考", subEn: "Plan lessons together, discuss the monthly exam", min: 40, energy: -3, mood: -1, xp: 1, network: 1, hours: [H(14), H(17)], max: 1 },
   { id: "qa", emoji: "🙋", zh: "课后答疑", en: "After-class questions", sub: "学生围着讲台问问题", subEn: "Students crowd the desk with questions", min: 30, energy: -3, mood: 4, network: 1, hours: [H(16), H(18, 30)], max: 1 },
@@ -145,7 +145,7 @@ const TEACHER: RoutineStep[] = [
 
 const STUDENT: RoutineStep[] = [
   { id: "reading", emoji: "📖", zh: "早读", en: "Morning reading", sub: "背单词、背课文", subEn: "Vocabulary and set texts", min: 30, energy: -2, mood: 0, skill: 0, xp: 1, hours: [H(7), H(9)], max: 1 },
-  { id: "class", emoji: "🎒", zh: "上课", en: "Go to class", sub: "坐前排认真听，偶尔偷偷看手机", subEn: "Front row, mostly listening", min: 45, energy: -4, mood: -1, xp: 1, hours: [H(8), H(17, 30)], max: 4, scene: { set: "office", pose: "sit", bg: "🏫 📚 ✏️", prop: "🎒" } },
+  { id: "class", emoji: "🎒", zh: "上课", en: "Go to class", sub: "坐前排认真听，偶尔偷偷看手机", subEn: "Front row, mostly listening", min: 45, energy: -4, mood: -1, xp: 1, hours: [H(8), H(17, 30)], max: 4, scene: { set: "classroom", pose: "sit", bg: "🏫 📚 ✏️", prop: "🎒" } },
   { id: "study", emoji: "📚", zh: "图书馆自习", en: "Self-study", sub: "抢到靠窗的位置，刷两套题", subEn: "Window seat, two practice papers", min: 60, energy: -5, mood: -1, skill: 1, xp: 1, hours: [H(8), H(22, 30)], max: 2 },
   { id: "exam", emoji: "🧾", zh: "小测验", en: "Quiz", sub: "临时抱佛脚的时候到了", subEn: "Time to see what stuck", min: 45, energy: -6, mood: 3, skill: 1, xp: 2, hours: [H(9), H(17)], max: 1, risk: { p: 0.3, zh: "考砸了，晚上得重新复习", en: "Flunked it — revision tonight", mood: -10, payCut: 0 } },
   { id: "club", emoji: "🎸", zh: "社团活动", en: "Club activity", sub: "吉他社、篮球队、辩论队，交到新朋友", subEn: "Guitar, basketball, debate — new friends", min: 60, energy: -4, mood: 8, network: 1, hours: [H(16), H(22)], max: 1 },
@@ -244,9 +244,9 @@ const CHEF: RoutineStep[] = [
 ];
 const NURSE: RoutineStep[] = [
   { ...CLOCKIN(H(7), H(8, 30)), zh: "早交班", sub: "听夜班交代每个床位的情况", subEn: "Night shift briefs you bed by bed" },
-  { id: "round", emoji: "🩺", zh: "查房量体征", en: "Ward round", sub: "量血压、测体温、问一句「今天怎么样」", subEn: "Blood pressure, temperature, “how are you today?”", min: 45, energy: -4, mood: 1, pay: 0.1, xp: 1, hours: [H(7, 30), H(18)], max: 3, core: true, scene: { set: "office", pose: "walk", bg: "🏥 🩺 🛏️", prop: "🩺" } },
+  { id: "round", emoji: "🩺", zh: "查房量体征", en: "Ward round", sub: "量血压、测体温、问一句「今天怎么样」", subEn: "Blood pressure, temperature, “how are you today?”", min: 45, energy: -4, mood: 1, pay: 0.1, xp: 1, hours: [H(7, 30), H(18)], max: 3, core: true, scene: { set: "clinic", pose: "walk", bg: "🏥 🩺 🛏️", prop: "🩺" } },
   { id: "jab", emoji: "💉", zh: "打针输液", en: "Injections & drips", sub: "一针见血，病人都夸你手稳", subEn: "First try every time — patients notice", min: 40, energy: -4, mood: 1, pay: 0.11, xp: 1, skill: 1, hours: [H(8), H(17)], max: 3, core: true, risk: { p: 0.1, zh: "病人血管太细，扎了两次，被投诉", en: "Tiny veins, two tries — a complaint", mood: -5, payCut: 0 } },
-  { id: "chart", emoji: "📝", zh: "写护理记录", en: "Write the charts", sub: "每个病人都要记，一个字都不能错", subEn: "Every patient, every detail, no mistakes", min: 30, energy: -3, mood: -1, pay: 0.06, max: 2, core: true, scene: { set: "office", pose: "type", bg: "🏥 💻 📋", prop: "📝" } },
+  { id: "chart", emoji: "📝", zh: "写护理记录", en: "Write the charts", sub: "每个病人都要记，一个字都不能错", subEn: "Every patient, every detail, no mistakes", min: 30, energy: -3, mood: -1, pay: 0.06, max: 2, core: true, scene: { set: "clinic", pose: "type", bg: "🏥 💻 📋", prop: "📝" } },
   { id: "bell", emoji: "🔔", zh: "响铃处理", en: "Answer the call bell", sub: "3 床要换药，7 床要喝水", subEn: "Bed 3 needs a dressing, bed 7 wants water", min: 15, energy: -2, mood: 0, network: 1, max: 3 },
   MEAL("医院食堂", "Hospital canteen", 15, [H(11, 30), H(13, 30)]),
   WATER, TOILET,
@@ -317,7 +317,7 @@ const TELLER: RoutineStep[] = [
 ];
 const PHARMACIST: RoutineStep[] = [
   { ...CLOCKIN(H(8), H(10)), zh: "穿白大褂上岗", sub: "核对效期、补货上架", subEn: "Check expiry dates, restock" },
-  { id: "advise", emoji: "💊", zh: "给顾客拿药讲用法", en: "Advise a customer", sub: "「一天三次，饭后吃，别和酒一起」", subEn: "“Three times a day after meals — no alcohol”", min: 30, energy: -3, mood: 1, pay: 0.1, xp: 1, skill: 0, hours: [H(8), H(22)], max: 5, core: true, scene: { set: "mall", pose: "idle", bg: "💊 🩺 🧴", prop: "💊" } },
+  { id: "advise", emoji: "💊", zh: "给顾客拿药讲用法", en: "Advise a customer", sub: "「一天三次，饭后吃，别和酒一起」", subEn: "“Three times a day after meals — no alcohol”", min: 30, energy: -3, mood: 1, pay: 0.1, xp: 1, skill: 0, hours: [H(8), H(22)], max: 5, core: true, scene: { set: "clinic", pose: "idle", bg: "💊 🩺 🧴", prop: "💊" } },
   { id: "bp", emoji: "🩺", zh: "免费量血压", en: "Free blood-pressure check", sub: "大爷每天都来量，顺便聊天", subEn: "The same uncle every day — mostly for the chat", min: 15, energy: -1, mood: 3, network: 1, max: 2 },
   { id: "stock", emoji: "📦", zh: "盘点药品", en: "Stock-take", sub: "处方药和非处方药分开清点", subEn: "Prescription and OTC counted separately", min: 40, energy: -4, mood: -1, pay: 0.06, max: 1, core: true },
   MEAL("外卖", "Takeaway", 20, [H(11, 30), H(14)]),

@@ -417,6 +417,10 @@ const envFlag = (k: string): string => { try { return String((globalThis as { pr
 const socialNeedsAccount = () => envFlag("SOCIAL_REQUIRES_ACCOUNT") !== "0";
 const NEED_ACCOUNT = "先绑定账号（右上角 👤 账号），才能私聊和组局——防骚扰、防小号";
 
+/* ---- 🎶 Livehouse ---- */
+const TRACK_MAX_BYTES = 6_000_000;
+const TRACK_BOOST_STARS = 300;
+const TRACK_VIEW = z.object({ id: z.number(), artist: z.string(), title: z.string(), durationSec: z.number(), chunks: z.number(), featured: z.boolean() });
 /* ---- 📢 广告牌 ---- */
 const BILLBOARD_STARS = 300;
 const BILLBOARD_DAYS = 7;
@@ -1468,6 +1472,114 @@ export const Actions = {
       if (!args.zh?.trim()) return { ok: false, error: "写点内容" };
       await db.insert(schema.announcements).values({ zh: args.zh.trim(), en: (args.en ?? "").trim() || args.zh.trim(), createdAt: new Date() });
       return { ok: true };
+    },
+  }),
+
+  /* ---- 🎶 Livehouse：音乐人投稿（分片上传），审核后全城同步轮播 ---- */
+  livehouseState: defineAction({
+    description: "The Livehouse rotation: approved tracks in play order (featured tracks appear twice), the server clock to sync on, and the caller's own submissions.",
+    request: z.object({ token: z.string().max(200).optional() }),
+    response: z.object({ now: z.number(), boostStars: z.number(), rotation: z.array(TRACK_VIEW), mine: z.array(TRACK_VIEW.extend({ status: z.string() })) }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const now = Date.now();
+      const rows = await db.select().from(schema.musicTracks).where(eq(schema.musicTracks.status, "approved")).orderBy(schema.musicTracks.id);
+      const view = (t: typeof schema.musicTracks.$inferSelect) => ({ id: t.id, artist: t.artist, title: t.title, durationSec: t.durationSec, chunks: t.chunks, featured: !!t.boostUntil && t.boostUntil.getTime() > now });
+      const rotation = rows.flatMap((t) => (view(t).featured ? [view(t), view(t)] : [view(t)]));
+      let mine: (ReturnType<typeof view> & { status: string })[] = [];
+      if (args.token) {
+        const acc = await sessionAccount(db, args.token);
+        if (acc) mine = (await db.select().from(schema.musicTracks).where(eq(schema.musicTracks.accountId, acc.id)).orderBy(desc(schema.musicTracks.id)).limit(10)).map((t) => ({ ...view(t), status: t.status }));
+      }
+      return { now, boostStars: TRACK_BOOST_STARS, rotation, mine };
+    },
+  }),
+
+  startTrack: defineAction({
+    description: "A musician starts submitting an original song (logged-in account, must confirm they own the rights). Returns the track id to upload chunks to. At most 3 submissions a day.",
+    request: z.object({ token: z.string().max(200), artist: z.string().trim().min(1).max(20), title: z.string().trim().min(1).max(30), mime: z.enum(["audio/mpeg", "audio/mp4", "audio/aac", "audio/ogg", "audio/x-m4a", "audio/wav"]), bytes: z.number().int().min(10_000).max(TRACK_MAX_BYTES), durationSec: z.number().int().min(30).max(480), chunks: z.number().int().min(1).max(60), rights: z.literal(true) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), trackId: z.number().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const acc = await sessionAccount(db, args.token);
+      if (!acc) return { ok: false, error: "先登录账号再投稿" };
+      const today = await db.select({ n: sql<number>`count(*)` }).from(schema.musicTracks).where(and(eq(schema.musicTracks.accountId, acc.id), gte(schema.musicTracks.createdAt, new Date(Date.now() - 86_400_000))));
+      if (Number(today[0]?.n ?? 0) >= 3) return { ok: false, error: "今天已经投了 3 首，明天再来" };
+      const [r] = await db.insert(schema.musicTracks).values({ accountId: acc.id, artist: cleanName(args.artist).slice(0, 20) || "音乐人", title: cleanText(args.title).slice(0, 30) || "无题", mime: args.mime, bytes: args.bytes, durationSec: args.durationSec, chunks: args.chunks, status: "uploading", createdAt: new Date() }).returning({ id: schema.musicTracks.id });
+      return { ok: true, trackId: r!.id };
+    },
+  }),
+
+  uploadChunk: defineAction({
+    description: "Uploads one base64 chunk (≤ 200 KB) of a song being submitted; the last call finishes the upload and sends the song for review.",
+    request: z.object({ token: z.string().max(200), trackId: z.number().int().positive(), idx: z.number().int().min(0).max(59), data: z.string().min(1).max(200_000), last: z.boolean().optional() }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const acc = await sessionAccount(db, args.token);
+      const [t] = await db.select().from(schema.musicTracks).where(eq(schema.musicTracks.id, args.trackId)).limit(1);
+      if (!acc || !t || t.accountId !== acc.id || t.status !== "uploading" || args.idx >= t.chunks) return { ok: false, error: "上传已失效，重新投稿" };
+      if (!/^[A-Za-z0-9+/=]+$/.test(args.data)) return { ok: false, error: "文件格式不对" };
+      await db.insert(schema.musicChunks).values({ trackId: t.id, idx: args.idx, data: args.data }).onConflictDoUpdate({ target: [schema.musicChunks.trackId, schema.musicChunks.idx], set: { data: args.data } });
+      if (args.last) {
+        const n = await db.select({ n: sql<number>`count(*)` }).from(schema.musicChunks).where(eq(schema.musicChunks.trackId, t.id));
+        if (Number(n[0]?.n ?? 0) !== t.chunks) return { ok: false, error: "有分片没传上，重新投稿" };
+        await db.update(schema.musicTracks).set({ status: "pending" }).where(eq(schema.musicTracks.id, t.id));
+      }
+      return { ok: true };
+    },
+  }),
+
+  trackChunk: defineAction({
+    description: "Downloads one chunk of a song: approved songs for anyone; pending ones only for their uploader or an admin (review).",
+    request: z.object({ trackId: z.number().int().positive(), idx: z.number().int().min(0).max(59), token: z.string().max(200).optional() }),
+    response: z.object({ ok: z.boolean(), data: z.string().optional(), mime: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const [t] = await db.select().from(schema.musicTracks).where(eq(schema.musicTracks.id, args.trackId)).limit(1);
+      if (!t) return { ok: false };
+      if (t.status !== "approved") {
+        const admin = args.token ? isAdmin(args.token) : false;
+        const acc = !admin && args.token ? await sessionAccount(db, args.token) : null;
+        if (!admin && (!acc || acc.id !== t.accountId)) return { ok: false };
+      }
+      const [c] = await db.select().from(schema.musicChunks).where(and(eq(schema.musicChunks.trackId, t.id), eq(schema.musicChunks.idx, args.idx))).limit(1);
+      return c ? { ok: true, data: c.data, mime: t.mime } : { ok: false };
+    },
+  }),
+
+  boostTrack: defineAction({
+    description: "Makes the caller's approved song this week's featured track for 300 ✨ — it plays twice as often in the Livehouse rotation for 7 days.",
+    request: z.object({ token: z.string().max(200), trackId: z.number().int().positive() }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const acc = await sessionAccount(db, args.token);
+      const [t] = await db.select().from(schema.musicTracks).where(eq(schema.musicTracks.id, args.trackId)).limit(1);
+      if (!acc || !t || t.accountId !== acc.id) return { ok: false, error: "不是你的歌" };
+      if (t.status !== "approved") return { ok: false, error: "审核通过后才能设为主打" };
+      const now = Date.now();
+      const ok = await bookStars(db, acc.id, -TRACK_BOOST_STARS, "track-boost", `${t.id}:${Math.floor(now / 60_000)}`);
+      if (!ok) return { ok: false, error: `✨ 不够（需要 ${TRACK_BOOST_STARS}）` };
+      const base = t.boostUntil && t.boostUntil.getTime() > now ? t.boostUntil.getTime() : now;
+      await db.update(schema.musicTracks).set({ boostUntil: new Date(base + 7 * 86_400_000) }).where(eq(schema.musicTracks.id, t.id));
+      return { ok: true };
+    },
+  }),
+
+  moderateTrack: defineAction({
+    description: "Admin: lists songs waiting for review, or approves / rejects one. Requires the ADMIN_TOKEN.",
+    request: z.object({ token: z.string().max(200), trackId: z.number().int().positive().optional(), approve: z.boolean().optional() }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), pending: z.array(z.object({ id: z.number(), artist: z.string(), title: z.string(), durationSec: z.number(), chunks: z.number(), mime: z.string(), at: z.string() })).optional() }),
+    async handler(ctx, args) {
+      if (!isAdmin(args.token)) return { ok: false, error: "口令不对" };
+      const db = ctx.db<typeof schema>();
+      if (args.trackId && args.approve !== undefined) {
+        await db.update(schema.musicTracks).set({ status: args.approve ? "approved" : "rejected" }).where(eq(schema.musicTracks.id, args.trackId));
+        if (!args.approve) await db.delete(schema.musicChunks).where(eq(schema.musicChunks.trackId, args.trackId));
+      }
+      const rows = await db.select().from(schema.musicTracks).where(eq(schema.musicTracks.status, "pending")).orderBy(schema.musicTracks.id).limit(30);
+      return { ok: true, pending: rows.map((t) => ({ id: t.id, artist: t.artist, title: t.title, durationSec: t.durationSec, chunks: t.chunks, mime: t.mime, at: t.createdAt.toISOString() })) };
     },
   }),
 

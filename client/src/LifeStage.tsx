@@ -14,8 +14,8 @@ import { SCENE_PHOTOS } from "./experience";
 import * as THREE from "three";
 import { makePostFx, type PostFx } from "./postfx";
 
-export type LifeSet = "station" | "metro" | "train" | "bus" | "taxi" | "drive" | "concourse" | "platform" | "office" | "restaurant" | "market" | "mall" | "kitchen" | "bedroom" | "bathroom" | "gym" | "park" | "home" | "cruise" | "wheel" | "aquarium" | "turtle" | "coaster" | "safari" | "hike" | "beach" | "cablecar";
-export type LifePose = "walk" | "idle" | "sit" | "drive" | "type" | "cook" | "eat" | "sleep" | "wash" | "lift" | "stretch";
+export type LifeSet = "flat" | "station" | "metro" | "train" | "bus" | "taxi" | "drive" | "concourse" | "platform" | "office" | "restaurant" | "market" | "mall" | "kitchen" | "bedroom" | "bathroom" | "gym" | "park" | "home" | "cruise" | "wheel" | "aquarium" | "turtle" | "coaster" | "safari" | "hike" | "beach" | "cablecar" | "club" | "clinic" | "classroom";
+export type LifePose = "walk" | "idle" | "sit" | "drive" | "type" | "cook" | "eat" | "sleep" | "wash" | "lift" | "stretch" | "talk" | "dance" | "sing";
 
 interface Props {
   setKind: LifeSet;
@@ -26,7 +26,26 @@ interface Props {
   emoji: string;
   /** Currency symbol drawn on the taxi meter — HK$ in Hong Kong, ¥ elsewhere. */
   cur?: string;
+  /** "flat": which rung of the housing ladder the home is (0 urban village … 3 Nanshan) */
+  tier?: number;
+  /** "flat": furniture the player bought and where they put it (slot index into FURN_SLOTS) */
+  furn?: { id: string; slot: number; color: number }[];
+  /** "flat": wall colour from the chosen decoration style */
+  wall?: number;
+  /** someone who walks up and talks with the player (shop clerk, doctor, friend) */
+  partner?: { shirt: number; pants: number };
 }
+
+/** where furniture can go in the 3D home: x, z, facing — kept clear of the spot the player stands on */
+export const FURN_SLOTS: { x: number; z: number; ry: number; zh: string; en: string }[] = [
+  { x: -2.7, z: -0.6, ry: 0.45, zh: "左中", en: "Middle left" },
+  { x: 2.8, z: -0.6, ry: -0.45, zh: "右中", en: "Middle right" },
+  { x: -3.6, z: -2.4, ry: 0.2, zh: "左后角", en: "Back left" },
+  { x: 3.7, z: -2.4, ry: -0.2, zh: "右后角", en: "Back right" },
+  { x: 1.9, z: -2.7, ry: 0, zh: "靠后墙", en: "Back wall" },
+  { x: -2.2, z: 1.3, ry: 0.6, zh: "左前", en: "Front left" },
+  { x: 2.3, z: 1.3, ry: -0.6, zh: "右前", en: "Front right" },
+];
 
 /* ---------------- canvas texture helpers ---------------- */
 
@@ -115,6 +134,28 @@ function floorTex(kind: "wood" | "tile" | "concrete" | "carriage" | "grass"): TH
   return tex;
 }
 
+/** a city skyline through floor-to-ceiling glass: towers with lit windows, the Spring Bamboo tower */
+function skylineTex(night: boolean): THREE.CanvasTexture {
+  return canvasTex(1024, 384, (g, w, h) => {
+    const grad = g.createLinearGradient(0, 0, 0, h);
+    if (night) { grad.addColorStop(0, "#0b1530"); grad.addColorStop(0.7, "#27406e"); grad.addColorStop(1, "#c46a3a"); }
+    else { grad.addColorStop(0, "#8cc4ec"); grad.addColorStop(1, "#f3d9b0"); }
+    g.fillStyle = grad; g.fillRect(0, 0, w, h);
+    let seed = 7; const rnd = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
+    for (let x = 0; x < w; ) {
+      const bw = 30 + rnd() * 60, bh = 80 + rnd() * 220;
+      g.fillStyle = night ? "#121c33" : "#7d8ea3"; g.fillRect(x, h - bh, bw, bh);
+      for (let yy = h - bh + 8; yy < h - 6; yy += 12) for (let xx = x + 5; xx < x + bw - 6; xx += 10) {
+        if (rnd() < (night ? 0.55 : 0.25)) { g.fillStyle = night ? (rnd() < 0.8 ? "#ffd27a" : "#9fd3ff") : "#c9d8e6"; g.fillRect(xx, yy, 5, 6); }
+      }
+      x += bw + 4;
+    }
+    // the Spring Bamboo tower: a tall tapering silhouette with a lit crown
+    g.fillStyle = night ? "#0e1729" : "#6d7f96";
+    g.beginPath(); g.moveTo(w * 0.62, h); g.lineTo(w * 0.635, h * 0.08); g.lineTo(w * 0.665, h * 0.08); g.lineTo(w * 0.68, h); g.fill();
+    if (night) { g.fillStyle = "#ffffff"; g.fillRect(w * 0.645, h * 0.1, 6, h * 0.8); }
+  });
+}
 function skyTex(night: boolean): THREE.CanvasTexture {
   return canvasTex(256, 256, (g) => {
     const grad = g.createLinearGradient(0, 0, 0, 256);
@@ -341,7 +382,7 @@ export function LifeStage3D(p: Props) {
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
-    const { setKind, pose, shirt, pants, night, emoji, cur } = propsRef.current;
+    const { setKind, pose, shirt, pants, night, emoji, cur, tier, furn, wall, partner } = propsRef.current;
     // Same WebGL guard as the main map: a refused context degrades to the
     // emoji fallback below instead of crashing the animation overlay.
     let renderer: THREE.WebGLRenderer;
@@ -362,7 +403,7 @@ export function LifeStage3D(p: Props) {
     mount.appendChild(renderer.domElement);
     renderer.domElement.style.cssText = "position:absolute;inset:0;width:100%;height:100%;display:block;";
 
-    const indoor = setKind === "office" || setKind === "kitchen" || setKind === "bathroom" || setKind === "bedroom" || setKind === "home" || setKind === "restaurant" || setKind === "gym" || setKind === "concourse" || setKind === "platform";
+    const indoor = setKind === "flat" || setKind === "office" || setKind === "kitchen" || setKind === "bathroom" || setKind === "bedroom" || setKind === "home" || setKind === "restaurant" || setKind === "gym" || setKind === "concourse" || setKind === "platform" || setKind === "club" || setKind === "clinic" || setKind === "classroom";
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(night ? 0x1d3454 : indoor ? 0xf7e3bd : 0xffd9a0);
     scene.fog = new THREE.Fog(scene.background as THREE.Color, 17, 32);
@@ -427,6 +468,9 @@ export function LifeStage3D(p: Props) {
     /* traffic-light heads whose lamps the frame loop cycles red→green */
     const tlights: { red: THREE.MeshStandardMaterial; yel: THREE.MeshStandardMaterial; grn: THREE.MeshStandardMaterial; off: number }[] = [];
     const swayers: { g: THREE.Group; ph: number }[] = [];
+    const spinners: THREE.Object3D[] = [];
+    const dancers: { f: Figure; ph: number; y: number }[] = [];
+    const clubLights: { l: THREE.PointLight; ph: number }[] = [];
     const motes: { sp: THREE.Sprite; ph: number }[] = [];
     const codeTexs: THREE.CanvasTexture[] = [];
     const scrollTexs: THREE.CanvasTexture[] = [];
@@ -461,7 +505,8 @@ export function LifeStage3D(p: Props) {
     scene.add(floor);
 
     /* ---- room shell for indoor sets: two-tone walls, wainscot, window, lamp ---- */
-    const roomShell = (wallColor: number, wainsColor: number, opts: { windowX?: number; windowW?: number; clock?: boolean } = {}) => {
+    const roomShell = (wallColor0: number, wainsColor: number, opts: { windowX?: number; windowW?: number; clock?: boolean } = {}) => {
+      const wallColor = setKind === "flat" && wall !== undefined ? wall : wallColor0;
       box(22, 8, 0.3, wallColor, 0, 4, -3.75, 1);
       box(22, 1.05, 0.34, wainsColor, 0, 0.53, -3.73, 0.7);
       box(22, 0.09, 0.36, 0x4a3a28, 0, 1.1, -3.72, 0.6);
@@ -938,6 +983,117 @@ export function LifeStage3D(p: Props) {
       box(0.28, 0.08, 0.14, 0x65a30d, 2.55, 1.06, 0.62, 0.8);
       addSteam(2.55, 1.12, 0.62);
       box(3.6, 0.025, 0.85, 0xb3552e, -0.5, 0.015, -1.15, 1);
+    } else if (setKind === "flat") {
+      // home by housing rung: 0 城中村握手楼 · 1 合租单间 · 2 小区一房 · 3 南山大平层
+      const tr = Math.max(0, Math.min(3, tier ?? 1));
+      if (tr === 0) {
+        roomShell(0xcfc8b6, 0x86806f);
+        // the "window": an arm's length from the next building's wall
+        box(1.3, 1.2, 0.1, 0xdedede, 2.8, 2.6, -3.56, 0.6);
+        box(1.1, 1.0, 0.05, 0x8d877b, 2.8, 2.6, -3.5, 0.95);
+        box(0.06, 1.0, 0.06, 0x6b6b6b, 2.8, 2.6, -3.46, 0.5, { metalness: 0.5 }); // burglar bars
+        // exposed pipes and a wire along the wall
+        for (const px of [-6.6, -6.35]) { const pipe = cyl(0.07, 0.07, 8, 0x8a8f94, px, 4, -3.4, 0.35, { metalness: 0.6 }); pipe.castShadow = false; }
+        box(9, 0.04, 0.04, 0x222222, -2.2, 3.4, -3.5, 0.6);
+        // metal bunk bed with two thin mattresses
+        for (const bx of [-4.6, -2.4]) for (const bz of [-3.2, -1.7]) cyl(0.05, 0.05, 2.6, 0x7a8590, bx, 1.3, bz, 0.4, { metalness: 0.6 });
+        for (const by of [0.55, 1.95]) { box(2.3, 0.08, 1.6, 0x7a8590, -3.5, by, -2.45, 0.4, { metalness: 0.5 }); box(2.1, 0.14, 1.45, 0xdad3c4, -3.5, by + 0.11, -2.45, 0.95); }
+        box(0.7, 0.12, 0.4, 0x8a6f9e, -4.1, 0.75, -2.9, 0.95); // pillow
+        // a single bare bulb on a cord
+        cyl(0.01, 0.01, 1.6, 0x222222, 0.6, 4.6, -1.2, 0.6);
+        const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 10), mat(0xfff1c4, 0.3, { emissive: 0xffd27a, emissiveIntensity: 2.4 }));
+        bulb.position.set(0.6, 3.75, -1.2); scene.add(bulb);
+        addGlow(0.6, 3.75, -1.2, 2.6, 0xffd27a, 0.7);
+        // clothes rack, plastic stool, instant noodles, e-bike battery charging
+        box(0.04, 1.8, 0.04, 0x9aa3ab, 1.6, 0.9, -2.6, 0.5); box(0.04, 1.8, 0.04, 0x9aa3ab, 3.4, 0.9, -2.6, 0.5); box(1.85, 0.04, 0.04, 0x9aa3ab, 2.5, 1.8, -2.6, 0.5);
+        for (const [cx, col] of [[1.9, 0x3b82f6], [2.4, 0xf59e0b], [2.9, 0x10b981]] as const) box(0.38, 0.75, 0.05, col, cx, 1.35, -2.6, 0.95);
+        cyl(0.24, 0.2, 0.42, 0xd94a3a, 0.2, 0.21, 0.4, 0.6);
+        cyl(0.13, 0.11, 0.16, 0xf2c14e, 0.2, 0.5, 0.4, 0.7);
+        box(0.42, 0.28, 0.2, 0x1f2937, 4.6, 0.14, -3.2, 0.6);
+        const led = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), mat(0xff3030, 0.3, { emissive: 0xff2020, emissiveIntensity: 3 }));
+        led.position.set(4.6, 0.3, -3.08); scene.add(led);
+      } else if (tr === 1) {
+        roomShell(0xf1e6d2, 0xb89a72, { windowX: 3.6, windowW: 1.5 });
+        // single bed, a desk with a glowing laptop, a suitcase, a door to the shared hall
+        box(2.3, 0.4, 1.3, 0x9c7a52, -3.6, 0.2, -2.9, 0.8); box(2.2, 0.2, 1.2, 0xf6efe0, -3.6, 0.5, -2.9, 0.95); box(2.2, 0.12, 0.75, 0x7ea6c9, -3.6, 0.62, -2.6, 0.95);
+        box(1.6, 0.06, 0.7, 0xb08a5c, 0.6, 0.95, -3.2, 0.7); for (const lx of [-0.1, 1.3]) box(0.06, 0.92, 0.06, 0x8a6a44, lx, 0.46, -3.2, 0.7);
+        box(0.6, 0.03, 0.42, 0x2b2b2b, 0.6, 1.0, -3.2, 0.4);
+        const scr = box(0.6, 0.4, 0.03, 0x111827, 0.6, 1.21, -3.4, 0.3, { emissive: 0x4f8cff, emissiveIntensity: night ? 1.6 : 0.6 }); scr.castShadow = false;
+        addGlow(0.6, 1.2, -3.2, 1.5, 0x8fb8ff, night ? 0.6 : 0.25);
+        box(0.6, 0.85, 0.32, 0x2563eb, 5.2, 0.43, -2.9, 0.5);
+        box(1.1, 2.4, 0.08, 0x8a6a44, -6.4, 1.2, -1.2, 0.8);
+      } else if (tr === 2) {
+        roomShell(0xf5ead6, 0xc9a877, { windowX: 2.6, windowW: 2.6 });
+        // living room: sofa, TV glow, coffee table, rug, plants, picture
+        box(3.0, 0.5, 1.0, 0x6b8f71, -2.6, 0.45, -2.6, 0.9); box(3.0, 0.7, 0.25, 0x5f8065, -2.6, 0.95, -3.05, 0.9);
+        for (const ax of [-4.05, -1.15]) box(0.25, 0.6, 1.0, 0x5f8065, ax, 0.6, -2.6, 0.9);
+        const tv = box(2.0, 1.1, 0.06, 0x0b0f19, 2.4, 1.6, 2.6, 0.3, { emissive: 0x3060c0, emissiveIntensity: night ? 1.2 : 0.4 }); tv.rotation.y = Math.PI; tv.castShadow = false;
+        box(1.4, 0.06, 0.7, 0xb08a5c, -2.6, 0.45, -1.2, 0.6);
+        const rug2 = cyl(1.6, 1.6, 0.02, 0xd9a05b, -2.4, 0.012, -1.4, 1, {}, 24); rug2.castShadow = false;
+        cyl(0.24, 0.19, 0.32, 0xb0653a, 5.4, 0.16, -3.0, 0.8);
+        const leaves = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 7), mat(0x4d9b5f, 1, { flatShading: true })); leaves.position.set(5.4, 0.75, -3.0); scene.add(leaves);
+        addPicture(-2.6, 2.6, 1.4, 0.9, night ? 0x33507c : 0x9fc8e8);
+      } else {
+        roomShell(0xefe9df, 0xd8cfc0);
+        // floor-to-ceiling glass onto the Nanshan skyline
+        plane(13.5, 5.6, skylineTex(night), -0.4, 3.0, -3.48);
+        for (let mx = -6.8; mx <= 6.0; mx += 2.7) box(0.07, 5.8, 0.08, 0x2b2b2b, mx, 3.0, -3.42, 0.4, { metalness: 0.7 });
+        box(13.6, 0.08, 0.1, 0x2b2b2b, -0.4, 0.22, -3.42, 0.4, { metalness: 0.7 });
+        addGlow(-0.4, 3.2, -3.0, 8, night ? 0xffc98a : 0xfff2c8, night ? 0.35 : 0.25);
+        // L-shaped sofa, marble island, pendant lights, long rug, a big plant
+        box(4.2, 0.45, 1.1, 0xe7e2d8, -3.0, 0.4, -1.6, 0.9); box(1.1, 0.45, 2.4, 0xe7e2d8, -5.55, 0.4, -0.95, 0.9);
+        box(4.2, 0.6, 0.25, 0xddd6c9, -3.0, 0.85, -2.1, 0.9);
+        box(2.8, 0.95, 1.0, 0xf2f0ec, 3.4, 0.48, -0.6, 0.25, { metalness: 0.1 }); box(2.9, 0.06, 1.1, 0x1f2937, 3.4, 0.98, -0.6, 0.3);
+        for (const lx of [2.6, 3.4, 4.2]) { cyl(0.01, 0.01, 2.0, 0x222222, lx, 4.2, -0.6, 0.6); const shade = cyl(0.16, 0.22, 0.24, 0xc8a46a, lx, 3.1, -0.6, 0.4, { metalness: 0.6, emissive: 0xffc873, emissiveIntensity: night ? 1.6 : 0.4 }); shade.castShadow = false; addGlow(lx, 3.0, -0.6, 1.4, 0xffc98a, night ? 0.6 : 0.25); }
+        const rug3 = box(5.5, 0.02, 2.6, 0x9ca3af, -3.0, 0.012, -0.4, 1); rug3.castShadow = false;
+        cyl(0.32, 0.26, 0.55, 0x2b2b2b, 6.2, 0.28, -2.8, 0.6);
+        const tree = new THREE.Mesh(new THREE.SphereGeometry(0.8, 9, 8), mat(0x3f8a54, 1, { flatShading: true })); tree.position.set(6.2, 1.5, -2.8); scene.add(tree);
+      }
+
+      // the player's own furniture, wherever they put it (see below)
+      for (const it of furn ?? []) {
+        const sl = FURN_SLOTS[it.slot]; if (!sl) continue;
+        const g = new THREE.Group(); g.position.set(sl.x, 0, sl.z); g.rotation.y = sl.ry; scene.add(g);
+        const gb = (w: number, h: number, d: number, c: number, x: number, y: number, z: number, rough = 0.8, extra: Partial<THREE.MeshStandardMaterialParameters> = {}) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(c, rough, extra)); m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; g.add(m); return m; };
+        const gc = (r: number, h: number, c: number, x: number, y: number, z: number) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 18), mat(c, 0.6)); m.position.set(x, y, z); m.castShadow = true; g.add(m); return m; };
+        const c = it.color; const dark = new THREE.Color(c).multiplyScalar(0.8).getHex();
+        const kind = it.id.split("-")[0];
+        if (kind === "sofa") {
+          const tat = it.id === "sofa-tatami";
+          gb(2.4, tat ? 0.25 : 0.45, 1.0, c, 0, tat ? 0.13 : 0.35, 0); gb(2.4, tat ? 0.5 : 0.7, 0.25, dark, 0, tat ? 0.4 : 0.85, -0.42);
+          if (!tat) { gb(0.22, 0.55, 1.0, dark, -1.2, 0.55, 0); gb(0.22, 0.55, 1.0, dark, 1.2, 0.55, 0); }
+          gb(0.5, 0.35, 0.15, 0xf5b942, -0.6, tat ? 0.4 : 0.75, -0.25, 0.95); gb(0.5, 0.35, 0.15, 0x7ea6c9, 0.6, tat ? 0.4 : 0.75, -0.25, 0.95);
+          if (it.id === "sofa-leather") { gb(1.0, 0.45, 1.6, c, 1.7, 0.35, 0.3); }
+        } else if (kind === "table") {
+          if (it.id === "table-oak") { gc(0.6, 0.06, c, 0, 0.45, 0); gc(0.06, 0.42, dark, 0, 0.22, 0); }
+          else { gb(1.3, 0.08, 0.8, c, 0, 0.42, 0, 0.2, { metalness: 0.1 }); for (const [lx, lz] of [[-0.55, -0.32], [0.55, -0.32], [-0.55, 0.32], [0.55, 0.32]]) gb(0.06, 0.4, 0.06, 0x2b2b2b, lx!, 0.2, lz!, 0.4); }
+          gb(0.2, 0.08, 0.14, 0xffffff, 0.15, 0.5, 0.05, 0.4);
+        } else if (it.id === "tv-cabinet") {
+          gb(2.2, 0.45, 0.45, c, 0, 0.23, 0); const tv = gb(1.7, 0.95, 0.06, 0x0b0f19, 0, 1.0, -0.12, 0.3, { emissive: 0x3060c0, emissiveIntensity: night ? 1.2 : 0.4 }); tv.castShadow = false;
+        } else if (it.id === "bed-double") {
+          gb(2.0, 0.35, 2.3, c, 0, 0.2, 0); gb(1.9, 0.22, 2.2, 0xf6efe0, 0, 0.47, 0.02, 0.95); gb(2.0, 0.9, 0.12, dark, 0, 0.6, -1.12);
+          gb(0.7, 0.14, 0.4, 0xffffff, -0.45, 0.65, -0.8, 0.95); gb(0.7, 0.14, 0.4, 0xffffff, 0.45, 0.65, -0.8, 0.95); gb(1.9, 0.08, 1.2, 0x7ea6c9, 0, 0.6, 0.45, 0.95);
+        } else if (it.id === "wardrobe") {
+          gb(1.8, 2.3, 0.65, c, 0, 1.15, 0); for (const dx of [-0.3, 0.3]) gb(0.03, 2.1, 0.02, dark, dx, 1.15, 0.33); for (const dx of [-0.42, 0.18, 0.42]) gb(0.04, 0.25, 0.04, 0xd4af37, dx, 1.2, 0.36, 0.3, { metalness: 0.7 });
+        } else if (it.id === "desk") {
+          gb(1.5, 0.06, 0.7, c, 0, 0.92, 0); for (const lx of [-0.7, 0.7]) gb(0.05, 0.9, 0.6, dark, lx, 0.45, 0);
+          const scr = gb(0.8, 0.45, 0.04, 0x111827, 0, 1.3, -0.2, 0.3, { emissive: 0x4f8cff, emissiveIntensity: night ? 1.5 : 0.5 }); scr.castShadow = false; gb(0.05, 0.25, 0.05, 0x2b2b2b, 0, 1.05, -0.2);
+          gb(0.55, 0.06, 0.55, 0x2b2b2b, 0, 0.55, 0.6); gb(0.55, 0.6, 0.06, 0x2b2b2b, 0, 0.9, 0.85);
+        } else if (it.id === "fridge") {
+          gb(0.85, 1.9, 0.75, c, 0, 0.95, 0, 0.3, { metalness: 0.4 }); gb(0.02, 1.8, 0.02, 0x9ca3af, 0, 0.95, 0.38); gb(0.04, 0.5, 0.04, 0x6b7280, -0.12, 1.3, 0.4); gb(0.04, 0.5, 0.04, 0x6b7280, 0.12, 1.3, 0.4);
+        } else if (it.id === "kitchen-cabinet") {
+          gb(2.6, 0.9, 0.7, c, 0, 0.45, 0); gb(2.7, 0.06, 0.75, 0xf1f5f9, 0, 0.93, 0, 0.3); gc(0.15, 0.03, 0x1f2937, -0.6, 0.97, 0); gc(0.15, 0.03, 0x1f2937, -0.2, 0.97, 0);
+          gb(0.6, 0.06, 0.45, 0x9ca3af, 0.7, 0.96, 0, 0.2, { metalness: 0.7 }); gb(2.6, 0.7, 0.4, dark, 0, 2.2, -0.15);
+        } else if (it.id === "dining-table") {
+          gb(1.5, 0.07, 0.9, c, 0, 0.78, 0); for (const [lx, lz] of [[-0.65, -0.35], [0.65, -0.35], [-0.65, 0.35], [0.65, 0.35]]) gb(0.06, 0.76, 0.06, dark, lx!, 0.38, lz!);
+          for (const cz of [-0.75, 0.75]) for (const cx of [-0.4, 0.4]) { gb(0.4, 0.05, 0.4, dark, cx, 0.46, cz); gb(0.4, 0.45, 0.05, dark, cx, 0.7, cz + (cz > 0 ? 0.18 : -0.18)); }
+          gc(0.14, 0.04, 0xffffff, -0.3, 0.84, 0); gc(0.14, 0.04, 0xffffff, 0.3, 0.84, 0);
+        } else if (it.id === "washer") {
+          gb(0.75, 0.85, 0.7, c, 0, 0.43, 0, 0.4); const door = gc(0.24, 0.05, 0x334155, 0, 0.45, 0.36); door.rotation.x = Math.PI / 2;
+        } else if (it.id === "bathtub") {
+          gb(1.8, 0.6, 0.85, c, 0, 0.3, 0, 0.2); gb(1.6, 0.05, 0.65, 0x7dd3fc, 0, 0.55, 0, 0.1, { transparent: true, opacity: 0.8 });
+        } else { gb(0.8, 0.8, 0.8, c, 0, 0.4, 0); }
+      }
     } else if (setKind === "bedroom") {
       roomShell(0xf3e6cf, 0xc9a877, { windowX: 3.9, windowW: 1.9 });
       // detail pass: glowing bedside lamp, a woven rug, slippers by the bed
@@ -1191,6 +1347,96 @@ export function LifeStage3D(p: Props) {
       cyl(0.05, 0.04, 0.3, 0x7dd3fc, -1.5, 0.15, 0.9, 0.4);
       box(1.5, 0.95, 0.06, 0x1f2937, 3.3, 2.6, -3.56, 0.6);
       plane(1.42, 0.88, boardTex("#1f2937", [{ t: "自律 · 坚持", s: 46, c: "#f5b942" }, { t: "NO PAIN NO GAIN", s: 24, c: "#e2e8f0", bold: false }]), 3.3, 2.6, -3.52);
+    } else if (setKind === "club") {
+      // Livehouse / 夜店: dark room, stage with a band, a spinning mirror
+      // ball, coloured lights sweeping, a crowd bouncing to the beat
+      scene.background = new THREE.Color(0x0d0818);
+      scene.fog = new THREE.Fog(0x0d0818, 12, 26);
+      hemi.intensity = 0.18; sun.intensity = 0.25; warm.intensity = 3;
+      box(22, 8, 0.3, 0x15102a, 0, 4, -3.75, 1);
+      box(0.3, 8, 12, 0x15102a, -7.2, 4, 0, 1);
+      box(7.5, 0.45, 2.4, 0x23233a, 0.6, 0.23, -2.5, 0.6);
+      box(7.5, 0.05, 0.08, 0xff3ea5, 0.6, 0.47, -1.3, 0.3, { emissive: 0xff3ea5, emissiveIntensity: 2 });
+      box(7.2, 1.0, 0.1, 0x0b0b14, 0.6, 3.6, -3.55, 0.5);
+      plane(7.0, 0.9, boardTex("#0b0b14", [{ t: "LIVEHOUSE · 今晚原创专场", s: 48, c: "#f472b6" }]), 0.6, 3.6, -3.49);
+      // speakers
+      for (const sx of [-3.4, 4.6]) { box(0.9, 1.9, 0.8, 0x111118, sx, 1.4, -2.7, 0.5); cyl(0.26, 0.26, 0.05, 0x2b2b38, sx, 1.75, -2.28, 0.4).rotation.x = Math.PI / 2; cyl(0.17, 0.17, 0.05, 0x2b2b38, sx, 1.1, -2.28, 0.4).rotation.x = Math.PI / 2; }
+      // band: singer at the mic, guitarist, drummer behind a kit
+      cyl(0.02, 0.02, 1.4, 0x9ca3af, 0.6, 1.15, -1.75, 0.3, { metalness: 0.8 });
+      const singer = extraFigure(0.6, 0.47, -2.1, 0, 0xf472b6, 0x1f1f2e);
+      singer.armR.rotation.x = -1.2;
+      dancers.push({ f: singer, ph: 0.3, y: 0.47 });
+      const guitar = extraFigure(-1.6, 0.47, -2.3, 0.4, 0x38bdf8, 0x1f1f2e);
+      guitar.armL.rotation.x = -0.9; guitar.armR.rotation.x = -0.6;
+      box(0.9, 0.28, 0.08, 0xb45309, -1.5, 1.35, -2.0, 0.5).rotation.z = 0.5;
+      dancers.push({ f: guitar, ph: 1.2, y: 0.47 });
+      cyl(0.4, 0.4, 0.4, 0xe11d48, 2.8, 0.75, -2.9, 0.4);
+      cyl(0.28, 0.28, 0.25, 0xe5e7eb, 2.2, 0.85, -2.6, 0.4);
+      cyl(0.3, 0.3, 0.03, 0xfacc15, 3.4, 1.35, -2.6, 0.3, { metalness: 0.9 });
+      extraFigure(2.8, 0.47, -3.3, 0, 0x22c55e, 0x1f1f2e, true);
+      // mirror ball
+      const ball = new THREE.Mesh(new THREE.IcosahedronGeometry(0.42, 1), mat(0xffffff, 0.15, { metalness: 1, flatShading: true, emissive: 0x9ca3af, emissiveIntensity: 0.3 }));
+      ball.position.set(0.6, 4.4, 0.2); scene.add(ball); spinners.push(ball);
+      addGlow(0.6, 4.4, 0.2, 1.6, 0xffffff, 0.35);
+      // colour lights that sweep and pulse
+      for (const [i, c] of [0xff2d95, 0x22d3ee, 0xa855f7, 0xfacc15].entries()) {
+        const pl = new THREE.PointLight(c, 14, 9, 1.6);
+        pl.position.set(-3 + i * 2.6, 3.4, -0.5);
+        scene.add(pl); clubLights.push({ l: pl, ph: i * 1.6 });
+        addGlow(-3 + i * 2.6, 3.4, -0.5, 1.1, c, 0.55);
+      }
+      // the crowd, backs to camera, bouncing
+      const crowdCols = [0x3b82f6, 0xf59e0b, 0x10b981, 0xef4444, 0x8b5cf6, 0xe5e7eb, 0x06b6d4];
+      for (let i = 0; i < 7; i++) {
+        const left = i < 4, k = left ? i : i - 4; const cx = left ? -5.6 + k * 0.75 : 3.5 + k * 0.9, cz = -0.7 + (k % 2) * 0.7;
+        const f = extraFigure(cx, 0, cz, left ? Math.PI * 0.8 : -Math.PI * 0.8, crowdCols[i]!, 0x1f2937);
+        if (i % 3 === 0) { f.armL.rotation.x = -2.6; f.armR.rotation.x = -2.6; }
+        dancers.push({ f, ph: i * 0.7, y: 0 });
+      }
+      // bar on the side
+      box(0.8, 1.1, 3.2, 0x2a1a3a, -6.2, 0.55, 0.2, 0.5);
+      box(0.9, 0.06, 3.3, 0x0ea5e9, -6.2, 1.13, 0.2, 0.2, { emissive: 0x0ea5e9, emissiveIntensity: 1.4 });
+    } else if (setKind === "clinic") {
+      // 社区医院 / 诊所: waiting chairs, a queue screen, the doctor's desk
+      roomShell(0xeef6f7, 0x9cc9cf, { windowX: 4.4, windowW: 1.8 });
+      box(2.6, 0.95, 0.06, 0x0f3d47, -2.4, 2.6, -3.55, 0.5);
+      plane(2.5, 0.88, boardTex("#0f3d47", [{ t: "请 A027 号到 3 诊室", s: 44, c: "#5eead4" }, { t: "候诊 12 人 · 预计 25 分钟", s: 30, c: "#e2e8f0", bold: false }]), -2.4, 2.6, -3.51);
+      box(1.0, 1.0, 0.08, 0xffffff, 1.6, 2.7, -3.55, 0.6);
+      box(0.6, 0.16, 0.09, 0xdc2626, 1.6, 2.7, -3.5, 0.5); box(0.16, 0.6, 0.09, 0xdc2626, 1.6, 2.7, -3.5, 0.5);
+      // row of waiting chairs with patients
+      for (let i = 0; i < 4; i++) {
+        const x = -4.6 + i * 0.85;
+        box(0.7, 0.08, 0.6, 0x60a5fa, x, 0.5, -1.2, 0.5); box(0.7, 0.6, 0.07, 0x60a5fa, x, 0.82, -1.5, 0.5);
+        if (i !== 2) { const pt = extraFigure(x, -0.42, -1.05, 0, [0xf59e0b, 0x10b981, 0, 0xa855f7][i]!, 0x374151, true); if (i === 0) pt.armR.rotation.x = -1.2; }
+      }
+      // doctor's desk, monitor, doctor in a white coat
+      box(2.2, 0.08, 1.0, 0xe5e7eb, 2.6, 0.9, -1.6, 0.4);
+      box(0.08, 0.86, 0.9, 0xd1d5db, 1.6, 0.45, -1.6, 0.5); box(0.08, 0.86, 0.9, 0xd1d5db, 3.6, 0.45, -1.6, 0.5);
+      box(0.7, 0.45, 0.05, 0x111827, 2.9, 1.25, -1.9, 0.4, { emissive: 0x38bdf8, emissiveIntensity: 0.4 });
+      extraFigure(2.9, -0.42, -2.55, 0, 0xffffff, 0x1e3a8a, true);
+      // bed with a curtain
+      box(2.0, 0.55, 0.9, 0xf8fafc, 5.5, 0.4, -0.6, 0.6);
+      box(0.06, 2.4, 2.0, 0xa7f3d0, 4.3, 1.4, -0.6, 0.9, { transparent: true, opacity: 0.75 });
+      cyl(0.22, 0.18, 0.5, 0x9ca3af, -6.2, 0.25, -2.6, 0.5);
+      addGlow(0, 3.9, -1, 2.2, 0xe0f2fe, 0.4);
+    } else if (setKind === "classroom") {
+      // 夜校 / 培训班: blackboard, rows of desks, a teacher mid-lesson
+      roomShell(0xf3efe2, 0x7b9e87, { windowX: 4.6, windowW: 2.0 });
+      box(4.6, 1.7, 0.08, 0x1f3a2c, -1.2, 2.4, -3.55, 0.8);
+      plane(4.4, 1.55, boardTex("#1f3a2c", [{ t: "第 7 课 · 职场英语 / Python 入门", s: 34, c: "#f8fafc" }, { t: "print(\"Hello, 湾区\")", s: 38, c: "#fde68a", bold: false }, { t: "考证冲刺：还有 23 天", s: 30, c: "#fca5a5", bold: false }], 640, 256), -1.2, 2.4, -3.5);
+      box(4.8, 0.08, 0.14, 0x8a6f4d, -1.2, 1.5, -3.48, 0.6);
+      const teacher = extraFigure(1.7, 0, -2.8, 0.4, 0x7c3aed, 0x374151);
+      teacher.armR.rotation.x = -2.1;
+      box(1.4, 0.9, 0.7, 0x8a6f4d, 2.9, 0.45, -2.6, 0.7);
+      for (let r = 0; r < 2; r++) for (let c = 0; c < 4; c++) {
+        const x = -4.4 + c * 1.9, z = -0.9 + r * 1.5;
+        box(1.2, 0.07, 0.6, 0xd6b98c, x, 0.82, z, 0.7);
+        box(0.06, 0.8, 0.5, 0x6b7280, x - 0.55, 0.4, z, 0.5); box(0.06, 0.8, 0.5, 0x6b7280, x + 0.55, 0.4, z, 0.5);
+        box(0.3, 0.03, 0.22, 0xffffff, x - 0.2, 0.87, z, 0.9);
+        if ((r * 4 + c) % 3 !== 1) { const st = extraFigure(x, -0.42, z + 0.55, Math.PI, [0x3b82f6, 0xef4444, 0x10b981, 0xf59e0b, 0x06b6d4][(r * 4 + c) % 5]!, 0x1f2937, true); st.armL.rotation.x = -1.2; st.armR.rotation.x = -1.1; }
+      }
+      cyl(0.32, 0.32, 0.05, 0xffffff, -5.8, 3.2, -3.55, 0.5).rotation.x = Math.PI / 2;
+      addGlow(-1.2, 4.0, -1, 2.4, 0xfff7e0, 0.35);
     } else if (setKind === "park") {
       box(18, 0.8, 0.5, 0x3d7a44, 0, 0.4, -3.6, 1);
       box(11.5, 0.03, 1.15, 0xd9c9a8, 0, 0.015, 0.35, 1);
@@ -1360,6 +1606,11 @@ export function LifeStage3D(p: Props) {
       cyl(0.26, 0.2, 0.36, 0xb0653a, 5.9, 0.18, -2.85, 0.8);
       const fol3 = new THREE.Mesh(new THREE.SphereGeometry(0.45, 8, 7), mat(0x4d9b5f, 1, { flatShading: true }));
       fol3.position.set(5.9, 0.72, -2.85); fol3.castShadow = true; scene.add(fol3);
+    }
+    let talker: Figure | null = null;
+    if (partner) {
+      talker = extraFigure(1.05, 0, 0.6, -Math.PI / 2, partner.shirt, partner.pants);
+      bobbers.splice(bobbers.findIndex((b) => b.g === talker!.g), 1);
     }
     if (setKind === "cruise") {
       // 东江夜游: a lantern-lit sightseeing boat gliding at night — the far
@@ -1801,6 +2052,25 @@ export function LifeStage3D(p: Props) {
         A.armR.rotation.x = -1.9 - rub;
         A.head.rotation.x = 0.14 + Math.sin(t * 3.5) * 0.03;
         A.head.position.y = 1.86 + Math.sin(t * 3.5) * 0.02;
+      } else if (pose === "talk") {
+        A.g.position.set(-0.25, 0, 0.6);
+        A.g.rotation.y = Math.PI / 2 * 0.75;
+        A.armL.rotation.x = -0.35 + Math.sin(t * 3.3 + 1) * 0.25;
+        A.head.rotation.x = Math.sin(t * 2.4) * 0.05;
+        A.head.rotation.y = Math.sin(t * 0.8) * 0.1;
+      } else if (pose === "sing") {
+        // on the stage, mic in hand, swaying to the beat
+        A.g.position.set(0.6, 0.47 + Math.abs(Math.sin(t * 3.2)) * 0.04, -1.55);
+        A.g.rotation.y = Math.sin(t * 1.6) * 0.25;
+        A.armR.rotation.x = -2.0 + Math.sin(t * 3.2) * 0.12; A.armR.rotation.z = -0.35;
+        A.armL.rotation.x = -0.6 - Math.max(0, Math.sin(t * 1.1)) * 1.6; A.armL.rotation.z = 0.3;
+        A.head.rotation.x = -0.12 + Math.sin(t * 3.2) * 0.05;
+      } else if (pose === "dance") {
+        const b = Math.abs(Math.sin(t * 6.4));
+        A.g.position.set(0, b * 0.14, 0.55);
+        A.g.rotation.y = Math.PI + Math.sin(t * 1.6) * 0.5;
+        A.armL.rotation.x = -2.5 + Math.sin(t * 6.4) * 0.3; A.armR.rotation.x = -2.5 - Math.sin(t * 6.4) * 0.3;
+        A.legL.rotation.x = Math.sin(t * 6.4) * 0.25; A.legR.rotation.x = -Math.sin(t * 6.4) * 0.25;
       } else if (pose === "lift") {
         A.g.position.set(0.3, 0, 0.2);
         const liftPh = (Math.sin(t * 1.9) + 1) / 2;
@@ -1882,6 +2152,17 @@ export function LifeStage3D(p: Props) {
         (st.m.material as THREE.MeshStandardMaterial).emissiveIntensity = 0.5 + Math.max(0, 1 - Math.abs(rel) / st.hw) * 0.9;
       }
       for (const sw of swayers) sw.g.rotation.z = Math.sin(t * 1.3 + sw.ph) * 0.05;
+      for (const sp of spinners) sp.rotation.y = t * 0.8;
+      if (talker) {
+        // walks in from the right, then talks with their hands
+        const u = clamp01(t / 1.1);
+        talker.g.position.x = 3.2 - easeInOut(u) * 2.15;
+        const sw = u < 1 ? Math.sin(t * 9) * 0.5 : 0;
+        talker.legL.rotation.x = sw; talker.legR.rotation.x = -sw;
+        if (u >= 1) { talker.armR.rotation.x = -0.9 + Math.sin(t * 4.2) * 0.35; talker.armR.rotation.z = Math.sin(t * 2.1) * 0.2; talker.head.rotation.x = Math.sin(t * 3.1) * 0.06; talker.armL.rotation.x = -0.3; }
+      }
+      for (const d of dancers) { const b = Math.abs(Math.sin(t * 6.4 + d.ph)); d.f.g.position.y = d.y + b * 0.12; d.f.g.rotation.z = Math.sin(t * 3.2 + d.ph) * 0.06; }
+      for (const cl of clubLights) { cl.l.intensity = 6 + Math.max(0, Math.sin(t * 3.2 + cl.ph)) * 22; cl.l.position.x += Math.sin(t * 0.9 + cl.ph) * 0.02; }
       for (const mo of motes) {
         mo.sp.position.y += Math.sin(t * 0.6 + mo.ph) * 0.0009;
         mo.sp.position.x = (mo.sp.userData.x as number) + Math.sin(t * 0.25 + mo.ph) * 0.3;

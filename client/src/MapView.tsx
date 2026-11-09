@@ -23,6 +23,8 @@ import { ROADS as REAL_ROADS } from "./roads";
 const TERRAIN: Record<CityKey, typeof THK> = { sz: TSZ, hz: THZ, hk: THK };
 import { CITIES, LOC_EN, getLocations, resolveLoc, areaLocId, placesForCity, billboardSpots, PLACE_KINDS, stationLocId, metroLinesForCity, modeById, npcsForCity, outfitOf, type CityKey, type Loc, type LocType, type Npc, type TransportModeId } from "./data";
 import { makePostFx, type PostFx } from "./postfx";
+import { getLang } from "./i18n";
+const tt = (zh: string, en: string) => (getLang() === "zh" ? zh : en);
 
 export interface RemotePlayer {
   id: string;
@@ -39,6 +41,11 @@ interface Props {
   lite?: boolean;
   /** A/B map mode: "city" frames the whole city (A); "follow" keeps the camera close on you with the minimap always on (B) */
   mapMode?: "city" | "follow";
+  /** the searched place: a label that always stays, a light pillar on the map, "go" and "✕" on the label */
+  pinLocId?: string | null;
+  onPinClear?: () => void;
+  /** 观景时刻: the camera flies low over a spot at sunset / night (null = normal map) */
+  scenic?: { x: number; z: number; phase: number; az: number; pol: number; dist: number; path?: [number, number][]; durMs: number; nonce: number } | null;
   onMapMode?: (m: "city" | "follow") => void;
   selfEmoji: string;
   selfColor: number;
@@ -46,6 +53,8 @@ interface Props {
   remotePlayers: RemotePlayer[];
   /** 📢 rented billboards by slot (0–2), shown at the city's billboard spots */
   billboards?: { slot: number; text: string; emoji: string; owner: string }[];
+  /** extra buttons shown first in the bottom-right control row (sound) */
+  extraControls?: ReactNode;
   selfOutfitId?: string;
   travelModeId?: string;
   npcMoodEmoji?: Record<string, string>;
@@ -399,6 +408,8 @@ interface Chip {
   place?: boolean;
   /** billboard slot (0–2): always shown while rented, outside the label caps */
   ad?: number;
+  /** the searched place's pinned label */
+  pin?: boolean;
   /** A neighbourhood / town name over the filler blocks and woods. */
   area?: "big" | "small";
   /** The small English subtitle line under a place name, if any. */
@@ -464,6 +475,12 @@ export function MapView(p: Props) {
   /* a spot picked on the minimap stays the camera's centre (no drifting back to
      the player) until the player sets off on a new trip */
   const anchorRef = useRef<{ x: number; z: number } | null>(null);
+  /* the searched place, pinned until the next search or ✕ */
+  const pinRef = useRef<{ id: string; x: number; z: number; name: string } | null>(null);
+  useEffect(() => {
+    const l = p.pinLocId ? resolveLoc(p.cityKey, p.pinLocId) : undefined;
+    pinRef.current = l && p.pinLocId ? { id: p.pinLocId, x: l.x, z: l.z, name: document.documentElement.lang === "en" ? (LOC_EN[l.name] ?? l.name) : l.name } : null;
+  }, [p.pinLocId, p.cityKey]);
   /* B mode: the camera rides close behind you (about a third of the whole-city distance) */
   const FOLLOW_K = 0.34;
   const followRef = useRef(p.mapMode === "follow");
@@ -479,6 +496,24 @@ export function MapView(p: Props) {
     if (p.mapMode === "follow") setMiniOpen(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.mapMode]);
+  /* scenic moment: take over the camera and the sky, hide the labels; give everything back afterwards */
+  const scenicRef = useRef<(NonNullable<Props["scenic"]> & { at: number }) | null>(null);
+  useEffect(() => {
+    const sc = p.scenic;
+    if (sc) {
+      scenicRef.current = { ...sc, at: performance.now() };
+      jumpToPhase(sc.phase);
+      setCine(true);
+      if (labelsRef.current) { labelsRef.current.style.transition = "opacity .8s"; labelsRef.current.style.opacity = "0"; }
+    } else if (scenicRef.current) {
+      scenicRef.current = null;
+      backToRealTime();
+      camRef.current.az = 0; camRef.current.pol = CAM_POL;
+      autoFitRef.current = true; camRef.current.dist = baseDist();
+      if (labelsRef.current) labelsRef.current.style.opacity = "1";
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.scenic?.nonce]);
   /* LOL-style minimap: a live 2D thumbnail of the whole miniature, drawn
      on a small canvas from the SAME actor refs the 3D scene animates, so
      the player dot, NPC dots, remote players and the destination marker
@@ -1993,6 +2028,30 @@ export function MapView(p: Props) {
       chips.push({ el: d, kind: "road", place: true, w: 0, h: 0, lastText: "", visible: true, clampDx: 0, clampDy: 0, getPos: () => ({ x: pl.x, y: LAND + 1.0, z: pl.z }) });
     }
 
+    /* ---- 📍 the searched place: a label that always shows + a light pillar ---- */
+    {
+      const d = document.createElement("div");
+      d.style.cssText = "position:absolute;left:0;top:0;pointer-events:auto;display:none;align-items:center;gap:4px;font:900 12px 'Noto Sans SC',sans-serif;padding:4px 5px 4px 10px;border-radius:999px;color:#fff;background:#e63a1f;border:2px solid #fff;box-shadow:0 3px 12px rgba(0,0,0,.4);white-space:nowrap;z-index:3;";
+      const nameEl = document.createElement("span");
+      const goEl = document.createElement("button"); goEl.type = "button";
+      goEl.style.cssText = "border:0;border-radius:999px;background:#fff;color:#e63a1f;font:900 11px 'Noto Sans SC',sans-serif;padding:2px 8px;cursor:pointer;";
+      goEl.textContent = document.documentElement.lang === "en" ? "Go →" : "去这里 →";
+      goEl.addEventListener("click", (e) => { e.stopPropagation(); const pin = pinRef.current; if (pin) propsRef.current.onSelect(pin.id); });
+      const xEl = document.createElement("button"); xEl.type = "button";
+      xEl.style.cssText = "border:0;border-radius:999px;background:rgba(0,0,0,.25);color:#fff;font:900 11px sans-serif;width:20px;height:20px;cursor:pointer;";
+      xEl.textContent = "✕"; xEl.setAttribute("aria-label", "取消标记");
+      xEl.addEventListener("click", (e) => { e.stopPropagation(); propsRef.current.onPinClear?.(); });
+      d.append(nameEl, goEl, xEl);
+      labels.appendChild(d);
+      chips.push({ el: d as HTMLDivElement, kind: "road", pin: true, w: 0, h: 0, lastText: "", visible: false, clampDx: 0, clampDy: 0, getPos: () => ({ x: pinRef.current?.x ?? 0, y: LAND + 3.4, z: pinRef.current?.z ?? 0 }) });
+      (d as HTMLDivElement & { nameEl?: HTMLSpanElement }).nameEl = nameEl;
+    }
+    const pinBeam = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 9, 18, 1, true), new THREE.MeshBasicMaterial({ color: 0xff3b30, transparent: true, opacity: 0.32, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+    const pinRing = new THREE.Mesh(new THREE.RingGeometry(0.55, 0.8, 36), new THREE.MeshBasicMaterial({ color: 0xff3b30, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false }));
+    pinRing.rotation.x = -Math.PI / 2;
+    pinBeam.visible = pinRing.visible = false;
+    scene.add(pinBeam, pinRing);
+
     /* ---- 📢 billboards: one chip per spot, filled from props each pass ---- */
     billboardSpots(cityKey).forEach((spot, slot) => {
       const d = mkChip("", "");
@@ -2841,7 +2900,7 @@ export function MapView(p: Props) {
           if (moving && Math.hypot(a.x - trailLast.x, a.z - trailLast.z) > 0.7) pushTrail(a.x, a.z);
         }
         const badge = (view.userData as { badge?: THREE.Sprite }).badge;
-        if (badge) { const k = 2.1 * (1 + Math.sin(tSec * 3) * 0.06); badge.scale.set(k, k, 1); }
+        if (badge) { const k = 2.1 * (1 + Math.sin(tSec * 3) * 0.06); badge.scale.set(k, k, 1); badge.visible = !scenicRef.current; }
         const ring = (view.userData as { ring?: THREE.Mesh }).ring;
         if (ring) {
           const s = 1 + Math.sin(tSec * 3) * 0.12;
@@ -2885,7 +2944,7 @@ export function MapView(p: Props) {
       // very slowly when the user has not touched it for a while
       const self = actorsRef.current.get("self");
       const cam = camRef.current;
-      if (self) {
+      if (self && !scenicRef.current) {
         const look = lookRef.current;
         const anchor = anchorRef.current;
         if (anchor && !(look && performance.now() < look.until)) {
@@ -2941,10 +3000,24 @@ export function MapView(p: Props) {
         cam.pol += (1.47 - cam.pol) * Math.min(1, dt * 3);
         cam.distCur += (9.5 - cam.distCur) * Math.min(1, dt * 3);
       }
+      const sc = scenicRef.current;
+      if (sc) {
+        const t = Math.min(1, (performance.now() - sc.at) / sc.durMs);
+        let sx2 = sc.x, sz2 = sc.z;
+        if (sc.path && sc.path.length > 1) {
+          const f = t * (sc.path.length - 1); const i = Math.min(sc.path.length - 2, Math.floor(f)); const u = f - i;
+          sx2 = sc.path[i]![0] + (sc.path[i + 1]![0] - sc.path[i]![0]) * u; sz2 = sc.path[i]![1] + (sc.path[i + 1]![1] - sc.path[i]![1]) * u;
+        }
+        const k = Math.min(1, dt * 1.4);
+        cam.tx += (sx2 - cam.tx) * k; cam.tz += (sz2 - cam.tz) * k;
+        cam.az += (sc.az + t * 0.45 - cam.az) * k; // a slow, steady pan across the view
+        cam.pol += (sc.pol - cam.pol) * k;
+        cam.dist = sc.dist; cam.distCur += (sc.dist - cam.distCur) * k;
+      }
       const distNow = cam.distCur;
       const azNow = cam.az + cutEase * 0.5;
       // portrait screens look more steeply down: the whole-city view used to be half sky and sea
-      const polNow = !streetRef.current && mount.clientWidth / Math.max(1, mount.clientHeight) < 0.8 ? Math.min(cam.pol, 0.42) : cam.pol;
+      const polNow = !streetRef.current && !scenicRef.current && mount.clientWidth / Math.max(1, mount.clientHeight) < 0.8 ? Math.min(cam.pol, 0.42) : cam.pol;
       const cx = cam.tx + Math.sin(azNow) * Math.sin(polNow) * distNow;
       const cy = Math.cos(polNow) * distNow + 2;
       const cz = cam.tz + Math.cos(azNow) * Math.sin(polNow) * distNow;
@@ -3036,6 +3109,15 @@ export function MapView(p: Props) {
             continue;
           }
           prio = (chip.area === "big" ? 9.1 : 9.6) + dCam / 40;
+        } else if (chip.pin) {
+          const pin = pinRef.current;
+          if (!pin || scenicRef.current) { if (chip.visible) { chip.visible = false; chip.el.style.display = "none"; } continue; }
+          const nameEl = (chip.el as HTMLDivElement & { nameEl?: HTMLSpanElement }).nameEl;
+          const t = `📍 ${pin.name}`;
+          if (nameEl && nameEl.textContent !== t) { nameEl.textContent = t; chip.w = 0; }
+          if (chip.w === 0) { chip.el.style.display = "flex"; chip.w = chip.el.offsetWidth; chip.h = chip.el.offsetHeight; }
+          cands.push({ chip, sx, sy, prio: -1, near: true });
+          continue;
         } else if (chip.ad !== undefined) {
           const ad = propsRef.current.billboards?.find((b) => b.slot === chip.ad);
           if (!ad) { if (chip.visible) { chip.visible = false; chip.el.style.display = "none"; } continue; }
@@ -3097,7 +3179,7 @@ export function MapView(p: Props) {
             c.chip.el.style.display = "none";
             continue;
           }
-          const kk = c.chip.place ? "place" : c.chip.area ? "area" : c.chip.station ? "station" : c.chip.kind === "road" && !c.chip.metro && c.chip.ad === undefined ? "road" : null;
+          const kk = c.chip.place ? "place" : c.chip.area ? "area" : c.chip.station ? "station" : c.chip.kind === "road" && !c.chip.metro && c.chip.ad === undefined && !c.chip.pin ? "road" : null;
           if (kk && !c.near && kindShown[kk] >= kindCap[kk]) {
             c.chip.visible = false;
             c.chip.el.style.display = "none";
@@ -3131,7 +3213,7 @@ export function MapView(p: Props) {
           if (c.chip.kind === "loc") locShown++;
           if (kk) kindShown[kk]++;
           c.chip.visible = true;
-          c.chip.el.style.display = "";
+          c.chip.el.style.display = c.chip.pin ? "flex" : "";
           c.chip.el.style.transform = `translate(-50%,-100%) translate(${ax.toFixed(1)}px,${ay.toFixed(1)}px)`;
           if (c.chip.kind === "loc") {
             const pos = c.chip.getPos();
@@ -3141,6 +3223,15 @@ export function MapView(p: Props) {
         }
       }
 
+      {
+        const pin = pinRef.current;
+        pinBeam.visible = pinRing.visible = !!pin && !scenicRef.current;
+        if (pin) {
+          pinBeam.position.set(pin.x, LAND + 4.5, pin.z);
+          pinRing.position.set(pin.x, LAND + 0.08, pin.z);
+          const k = 1 + Math.sin(performance.now() / 260) * 0.18; pinRing.scale.set(k, k, k);
+        }
+      }
       if (fx) fx.render();
       else renderer.render(scene, camera);
     };
@@ -3350,27 +3441,25 @@ export function MapView(p: Props) {
       {cine && (
         <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-[5]" style={{ background: "radial-gradient(ellipse 118% 96% at 50% 42%, transparent 62%, rgba(5,10,18,0.34) 100%), linear-gradient(to bottom, rgba(5,10,18,0.16), transparent 13%, transparent 88%, rgba(5,10,18,0.2))" }} />
       )}
-      <div className="absolute bottom-3 right-3 z-10 flex max-w-[calc(100%-24px)] flex-wrap justify-end gap-1.5 compact-dock">
-        <button type="button" aria-label={viewMenu ? "收起视角和时间按钮" : "更多：时间、镜头、标签"} aria-expanded={viewMenu} onClick={() => setViewMenu((v) => !v)} className={`compact-only h-9 w-9 place-items-center justify-center rounded-full border text-base shadow ${viewMenu ? "border-[var(--accent)] bg-[#14202b]/95 text-white" : "border-black/40 bg-[#fffdf8]/95"}`}>🎛️</button>
-        <button type="button" aria-label="跳到白天" onClick={() => jumpToPhase(0.32)} className={`grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow${viewMenu ? "" : " compact-hide"}`}>☀️</button>
-        <button type="button" aria-label="跳到黄昏" onClick={() => jumpToPhase(0.74)} className={`grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow${viewMenu ? "" : " compact-hide"}`}>🌇</button>
-        <button type="button" aria-label="跳到夜晚" onClick={() => jumpToPhase(0.93)} className={`grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow${viewMenu ? "" : " compact-hide"}`}>🌙</button>
-        <button type="button" aria-label="回到真实时间：天色按深圳/惠州当地此刻走" onClick={backToRealTime} className={`grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow${viewMenu ? "" : " compact-hide"}`}>🕐</button>
-        <button type="button" aria-label={demo ? "停止延时演示" : "延时演示：一昼夜30秒，看昼夜光影全程"} aria-pressed={demo} onClick={toggleDemo} className={`grid h-9 w-9 place-items-center rounded-full border text-base shadow ${demo ? "border-[var(--accent)] bg-[#14202b]/95" : "border-black/40 bg-[#fffdf8]/95"}${viewMenu ? "" : " compact-hide"}`}>🎥</button>
-        <button type="button" aria-label={streetCam ? "回到全景视角" : "街景视角：贴到街面上，站在街道里看车流、红绿灯和行人"} aria-pressed={streetCam} onClick={toggleStreetCam} className={`grid h-9 w-9 place-items-center rounded-full border text-base shadow ${streetCam ? "border-[var(--accent)] bg-[#14202b]/95" : "border-black/40 bg-[#fffdf8]/95"}${viewMenu ? "" : " compact-hide"}`}>🚶</button>
-        <button type="button" aria-label={cine ? "关闭电影镜头" : "开启电影镜头"} aria-pressed={cine} onClick={() => setCine((c) => !c)} className={`grid h-9 w-9 place-items-center rounded-full border text-base shadow ${cine ? "border-[var(--accent)] bg-[#14202b]/95" : "border-black/40 bg-[#fffdf8]/95"}${viewMenu ? "" : " compact-hide"}`}>🎬</button>
-        <span className={`grid h-9 min-w-9 place-items-center rounded-full border border-black/40 bg-[#14202b]/90 px-2 text-[11px] font-black text-white shadow${viewMenu ? "" : " compact-hide"}`} aria-label={`当前缩放 ${zoomPct}%`} title="当前缩放比例（⌂ 回到 100%）">{zoomPct}%</span>
-        <button type="button" aria-label="放大地图" onClick={() => zoomBy(0.78)} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">＋</button>
-        <button type="button" aria-label="缩小地图" onClick={() => zoomBy(1.28)} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">－</button>
-        <button type="button" aria-label="标签密度" title={labelDensity === "few" ? "标签：精简（点一下切换）" : labelDensity === "normal" ? "标签：标准（点一下切换）" : "标签：全部（点一下切换）"} onClick={cycleLabels} className={`grid h-9 min-w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 px-2 text-[11px] font-black text-[#14202b] shadow${viewMenu ? "" : " compact-hide"}`}>🏷️{labelDensity === "few" ? "简" : labelDensity === "normal" ? "标" : "全"}</button>
-        <button type="button" aria-label={p.mapMode === "follow" ? "切换到全城视角" : "切换到跟随视角"} title={p.mapMode === "follow" ? "现在：跟随视角（镜头跟着你，小地图看全城）。点一下换成一眼看全城" : "现在：全城视角。点一下换成跟随视角（镜头跟着你，小地图看全城）"} onClick={() => p.onMapMode?.(p.mapMode === "follow" ? "city" : "follow")} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">{p.mapMode === "follow" ? "🗺️" : "🎯"}</button>
-        <button type="button" aria-label="重置视角" onClick={resetCam} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">⌂</button>
+      <div className={`absolute bottom-3 right-3 z-10 flex max-w-[calc(100%-24px)] flex-wrap justify-end gap-1.5 compact-dock${p.scenic ? " hidden" : ""}`}>
+        {p.extraControls}
+        <button type="button" aria-label={viewMenu ? "收起视角和时间按钮" : "更多：时间、镜头、标签"} aria-expanded={viewMenu} data-tip={viewMenu ? tt("收起", "Collapse") : tt("更多按钮", "More buttons")} onClick={() => setViewMenu((v) => !v)} className={`tipbtn compact-only h-9 w-9 place-items-center justify-center rounded-full border text-base shadow ${viewMenu ? "border-[var(--accent)] bg-[#14202b]/95 text-white" : "border-black/40 bg-[#fffdf8]/95"}`}>🎛️</button>
+        <button type="button" aria-label="跳到白天" data-tip={tt("跳到白天", "Jump to day")} onClick={() => jumpToPhase(0.32)} className={`tipbtn grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow${viewMenu ? "" : " compact-hide"}`}>☀️</button>
+        <button type="button" aria-label="跳到黄昏" data-tip={tt("跳到黄昏", "Jump to dusk")} onClick={() => jumpToPhase(0.74)} className={`tipbtn grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow${viewMenu ? "" : " compact-hide"}`}>🌇</button>
+        <button type="button" aria-label="跳到夜晚" data-tip={tt("跳到夜晚", "Jump to night")} onClick={() => jumpToPhase(0.93)} className={`tipbtn grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow${viewMenu ? "" : " compact-hide"}`}>🌙</button>
+        <button type="button" aria-label="回到真实时间：天色按深圳/惠州当地此刻走" data-tip={tt("回到真实时间", "Back to real time")} onClick={backToRealTime} className={`tipbtn grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow${viewMenu ? "" : " compact-hide"}`}>🕐</button>
+        <button type="button" aria-label={demo ? "停止延时演示" : "延时演示：一昼夜30秒，看昼夜光影全程"} aria-pressed={demo} data-tip={demo ? tt("停止延时演示", "Stop time-lapse") : tt("延时演示：一昼夜 30 秒", "Time-lapse: a day in 30 s")} onClick={toggleDemo} className={`tipbtn grid h-9 w-9 place-items-center rounded-full border text-base shadow ${demo ? "border-[var(--accent)] bg-[#14202b]/95" : "border-black/40 bg-[#fffdf8]/95"}${viewMenu ? "" : " compact-hide"}`}>🎥</button>
+        <button type="button" aria-label={streetCam ? "回到全景视角" : "街景视角：贴到街面上，站在街道里看车流、红绿灯和行人"} aria-pressed={streetCam} data-tip={streetCam ? tt("回到全景", "Back to overview") : tt("街景视角：贴到街面", "Street view")} onClick={toggleStreetCam} className={`tipbtn grid h-9 w-9 place-items-center rounded-full border text-base shadow ${streetCam ? "border-[var(--accent)] bg-[#14202b]/95" : "border-black/40 bg-[#fffdf8]/95"}${viewMenu ? "" : " compact-hide"}`}>🚶</button>
+        <button type="button" aria-label={cine ? "关闭电影镜头" : "开启电影镜头"} aria-pressed={cine} data-tip={cine ? tt("关闭电影镜头", "Cinematic off") : tt("电影镜头", "Cinematic camera")} onClick={() => setCine((c) => !c)} className={`tipbtn grid h-9 w-9 place-items-center rounded-full border text-base shadow ${cine ? "border-[var(--accent)] bg-[#14202b]/95" : "border-black/40 bg-[#fffdf8]/95"}${viewMenu ? "" : " compact-hide"}`}>🎬</button>
+        <span tabIndex={0} className={`tipbtn grid h-9 min-w-9 place-items-center rounded-full border border-black/40 bg-[#14202b]/90 px-2 text-[11px] font-black text-white shadow${viewMenu ? "" : " compact-hide"}`} aria-label={`当前缩放 ${zoomPct}%`} data-tip={tt("拖动旋转 · 滚轮或双指缩放", "Drag to rotate · scroll or pinch to zoom")} title="当前缩放比例（⌂ 回到 100%）">{zoomPct}%</span>
+        <button type="button" aria-label="放大地图" data-tip={tt("放大", "Zoom in")} onClick={() => zoomBy(0.78)} className="tipbtn grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">＋</button>
+        <button type="button" aria-label="缩小地图" data-tip={tt("缩小", "Zoom out")} onClick={() => zoomBy(1.28)} className="tipbtn grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">－</button>
+        <button type="button" aria-label="标签密度" title={labelDensity === "few" ? "标签：精简（点一下切换）" : labelDensity === "normal" ? "标签：标准（点一下切换）" : "标签：全部（点一下切换）"} data-tip={labelDensity === "few" ? tt("标签：精简", "Labels: few") : labelDensity === "normal" ? tt("标签：标准", "Labels: standard") : tt("标签：全部", "Labels: all")} onClick={cycleLabels} className={`tipbtn tip-r grid h-9 min-w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 px-2 text-[11px] font-black text-[#14202b] shadow${viewMenu ? "" : " compact-hide"}`}>🏷️{labelDensity === "few" ? "简" : labelDensity === "normal" ? "标" : "全"}</button>
+        <button type="button" aria-label={p.mapMode === "follow" ? "切换到全城视角" : "切换到跟随视角"} title={p.mapMode === "follow" ? "现在：跟随视角（镜头跟着你，小地图看全城）。点一下换成一眼看全城" : "现在：全城视角。点一下换成跟随视角（镜头跟着你，小地图看全城）"} data-tip={p.mapMode === "follow" ? tt("跟随视角 → 看全城", "Follow view → whole city") : tt("全城视角 → 跟着我", "City view → follow me")} onClick={() => p.onMapMode?.(p.mapMode === "follow" ? "city" : "follow")} className="tipbtn tip-r grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">{p.mapMode === "follow" ? "🗺️" : "🎯"}</button>
+        <button type="button" aria-label="重置视角" data-tip={tt("重置视角", "Reset view")} onClick={resetCam} className="tipbtn tip-r grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">⌂</button>
       </div>
-      <p className="pointer-events-none absolute left-3 top-3 z-10 rounded-full bg-[#0b1622]/70 px-3 py-1.5 text-[11px] font-bold text-white/90 compact-hide">
-        拖动旋转 · 滚轮/＋－缩放（右下角显示比例） · 点建筑或标签前往 · 左下小地图看全城、点它定位镜头 · 天色按当地真实时间、云雨按真实天气走 · 右下 ☀️🌇🌙 预览时间 · 🕐 回到真实时间 · 🎥 延时演示 · 🎬 电影镜头 · 🚶 街景视角贴到街面：看车流等红灯、行人过马路、NPC 打招呼
-      </p>
       {/* LOL-style minimap: whole-city thumbnail, live-linked to the big map */}
-      <div className="mini-dock absolute bottom-3 left-3 z-10">
+      <div className={`mini-dock absolute bottom-3 left-3 z-10${p.scenic ? " hidden" : ""}`}>
         {miniOpen ? (
           <div className="mini-card relative w-[176px] overflow-hidden rounded-[12px] border border-black/50 bg-[#0b1622]/85 shadow-xl sm:w-[220px]">
             <button type="button" aria-label="收起小地图" onClick={() => setMiniOpen(false)} className="compact-only absolute right-1 top-1 z-10 h-6 w-6 place-items-center justify-center rounded-full bg-black/55 text-[11px] font-black text-white">✕</button>
