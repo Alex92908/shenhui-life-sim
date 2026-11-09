@@ -39,6 +39,8 @@ interface Props {
   lite?: boolean;
   /** A/B map mode: "city" frames the whole city (A); "follow" keeps the camera close on you with the minimap always on (B) */
   mapMode?: "city" | "follow";
+  /** 观景时刻: the camera flies low over a spot at sunset / night (null = normal map) */
+  scenic?: { x: number; z: number; phase: number; az: number; pol: number; dist: number; path?: [number, number][]; durMs: number; nonce: number } | null;
   onMapMode?: (m: "city" | "follow") => void;
   selfEmoji: string;
   selfColor: number;
@@ -479,6 +481,24 @@ export function MapView(p: Props) {
     if (p.mapMode === "follow") setMiniOpen(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.mapMode]);
+  /* scenic moment: take over the camera and the sky, hide the labels; give everything back afterwards */
+  const scenicRef = useRef<(NonNullable<Props["scenic"]> & { at: number }) | null>(null);
+  useEffect(() => {
+    const sc = p.scenic;
+    if (sc) {
+      scenicRef.current = { ...sc, at: performance.now() };
+      jumpToPhase(sc.phase);
+      setCine(true);
+      if (labelsRef.current) { labelsRef.current.style.transition = "opacity .8s"; labelsRef.current.style.opacity = "0"; }
+    } else if (scenicRef.current) {
+      scenicRef.current = null;
+      backToRealTime();
+      camRef.current.az = 0; camRef.current.pol = CAM_POL;
+      autoFitRef.current = true; camRef.current.dist = baseDist();
+      if (labelsRef.current) labelsRef.current.style.opacity = "1";
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.scenic?.nonce]);
   /* LOL-style minimap: a live 2D thumbnail of the whole miniature, drawn
      on a small canvas from the SAME actor refs the 3D scene animates, so
      the player dot, NPC dots, remote players and the destination marker
@@ -2841,7 +2861,7 @@ export function MapView(p: Props) {
           if (moving && Math.hypot(a.x - trailLast.x, a.z - trailLast.z) > 0.7) pushTrail(a.x, a.z);
         }
         const badge = (view.userData as { badge?: THREE.Sprite }).badge;
-        if (badge) { const k = 2.1 * (1 + Math.sin(tSec * 3) * 0.06); badge.scale.set(k, k, 1); }
+        if (badge) { const k = 2.1 * (1 + Math.sin(tSec * 3) * 0.06); badge.scale.set(k, k, 1); badge.visible = !scenicRef.current; }
         const ring = (view.userData as { ring?: THREE.Mesh }).ring;
         if (ring) {
           const s = 1 + Math.sin(tSec * 3) * 0.12;
@@ -2885,7 +2905,7 @@ export function MapView(p: Props) {
       // very slowly when the user has not touched it for a while
       const self = actorsRef.current.get("self");
       const cam = camRef.current;
-      if (self) {
+      if (self && !scenicRef.current) {
         const look = lookRef.current;
         const anchor = anchorRef.current;
         if (anchor && !(look && performance.now() < look.until)) {
@@ -2941,10 +2961,24 @@ export function MapView(p: Props) {
         cam.pol += (1.47 - cam.pol) * Math.min(1, dt * 3);
         cam.distCur += (9.5 - cam.distCur) * Math.min(1, dt * 3);
       }
+      const sc = scenicRef.current;
+      if (sc) {
+        const t = Math.min(1, (performance.now() - sc.at) / sc.durMs);
+        let sx2 = sc.x, sz2 = sc.z;
+        if (sc.path && sc.path.length > 1) {
+          const f = t * (sc.path.length - 1); const i = Math.min(sc.path.length - 2, Math.floor(f)); const u = f - i;
+          sx2 = sc.path[i]![0] + (sc.path[i + 1]![0] - sc.path[i]![0]) * u; sz2 = sc.path[i]![1] + (sc.path[i + 1]![1] - sc.path[i]![1]) * u;
+        }
+        const k = Math.min(1, dt * 1.4);
+        cam.tx += (sx2 - cam.tx) * k; cam.tz += (sz2 - cam.tz) * k;
+        cam.az += (sc.az + t * 0.45 - cam.az) * k; // a slow, steady pan across the view
+        cam.pol += (sc.pol - cam.pol) * k;
+        cam.dist = sc.dist; cam.distCur += (sc.dist - cam.distCur) * k;
+      }
       const distNow = cam.distCur;
       const azNow = cam.az + cutEase * 0.5;
       // portrait screens look more steeply down: the whole-city view used to be half sky and sea
-      const polNow = !streetRef.current && mount.clientWidth / Math.max(1, mount.clientHeight) < 0.8 ? Math.min(cam.pol, 0.42) : cam.pol;
+      const polNow = !streetRef.current && !scenicRef.current && mount.clientWidth / Math.max(1, mount.clientHeight) < 0.8 ? Math.min(cam.pol, 0.42) : cam.pol;
       const cx = cam.tx + Math.sin(azNow) * Math.sin(polNow) * distNow;
       const cy = Math.cos(polNow) * distNow + 2;
       const cz = cam.tz + Math.cos(azNow) * Math.sin(polNow) * distNow;
@@ -3350,7 +3384,7 @@ export function MapView(p: Props) {
       {cine && (
         <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-[5]" style={{ background: "radial-gradient(ellipse 118% 96% at 50% 42%, transparent 62%, rgba(5,10,18,0.34) 100%), linear-gradient(to bottom, rgba(5,10,18,0.16), transparent 13%, transparent 88%, rgba(5,10,18,0.2))" }} />
       )}
-      <div className="absolute bottom-3 right-3 z-10 flex max-w-[calc(100%-24px)] flex-wrap justify-end gap-1.5 compact-dock">
+      <div className={`absolute bottom-3 right-3 z-10 flex max-w-[calc(100%-24px)] flex-wrap justify-end gap-1.5 compact-dock${p.scenic ? " hidden" : ""}`}>
         <button type="button" aria-label={viewMenu ? "收起视角和时间按钮" : "更多：时间、镜头、标签"} aria-expanded={viewMenu} onClick={() => setViewMenu((v) => !v)} className={`compact-only h-9 w-9 place-items-center justify-center rounded-full border text-base shadow ${viewMenu ? "border-[var(--accent)] bg-[#14202b]/95 text-white" : "border-black/40 bg-[#fffdf8]/95"}`}>🎛️</button>
         <button type="button" aria-label="跳到白天" onClick={() => jumpToPhase(0.32)} className={`grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow${viewMenu ? "" : " compact-hide"}`}>☀️</button>
         <button type="button" aria-label="跳到黄昏" onClick={() => jumpToPhase(0.74)} className={`grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow${viewMenu ? "" : " compact-hide"}`}>🌇</button>
@@ -3366,11 +3400,11 @@ export function MapView(p: Props) {
         <button type="button" aria-label={p.mapMode === "follow" ? "切换到全城视角" : "切换到跟随视角"} title={p.mapMode === "follow" ? "现在：跟随视角（镜头跟着你，小地图看全城）。点一下换成一眼看全城" : "现在：全城视角。点一下换成跟随视角（镜头跟着你，小地图看全城）"} onClick={() => p.onMapMode?.(p.mapMode === "follow" ? "city" : "follow")} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">{p.mapMode === "follow" ? "🗺️" : "🎯"}</button>
         <button type="button" aria-label="重置视角" onClick={resetCam} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">⌂</button>
       </div>
-      <p className="pointer-events-none absolute left-3 top-3 z-10 rounded-full bg-[#0b1622]/70 px-3 py-1.5 text-[11px] font-bold text-white/90 compact-hide">
+      <p className={`pointer-events-none absolute left-3 top-3 z-10 rounded-full bg-[#0b1622]/70 px-3 py-1.5 text-[11px] font-bold text-white/90 compact-hide${p.scenic ? " hidden" : ""}`}>
         拖动旋转 · 滚轮/＋－缩放（右下角显示比例） · 点建筑或标签前往 · 左下小地图看全城、点它定位镜头 · 天色按当地真实时间、云雨按真实天气走 · 右下 ☀️🌇🌙 预览时间 · 🕐 回到真实时间 · 🎥 延时演示 · 🎬 电影镜头 · 🚶 街景视角贴到街面：看车流等红灯、行人过马路、NPC 打招呼
       </p>
       {/* LOL-style minimap: whole-city thumbnail, live-linked to the big map */}
-      <div className="mini-dock absolute bottom-3 left-3 z-10">
+      <div className={`mini-dock absolute bottom-3 left-3 z-10${p.scenic ? " hidden" : ""}`}>
         {miniOpen ? (
           <div className="mini-card relative w-[176px] overflow-hidden rounded-[12px] border border-black/50 bg-[#0b1622]/85 shadow-xl sm:w-[220px]">
             <button type="button" aria-label="收起小地图" onClick={() => setMiniOpen(false)} className="compact-only absolute right-1 top-1 z-10 h-6 w-6 place-items-center justify-center rounded-full bg-black/55 text-[11px] font-black text-white">✕</button>

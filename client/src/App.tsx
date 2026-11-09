@@ -29,6 +29,8 @@ generateDailyPosts, authorReply, chatReply, greetLine, hashStr, memOf, relLabel,
 type ChatAction, type MemMap, type NpcPost, type PlayerNews,
 } from "./npc";
 import { MapView } from "./MapView";
+import { setSound, soundWanted, wakeSound, setScene, sfx, type SoundScene } from "./sound";
+import { momentsAt, inBest, seawardAz, SCENIC_MOMENTS, type ScenicMoment } from "./scenic";
 import { drawOrigin, originById, tierOfIden, tierNow, TIERS, climbVerdict, randomNick, ORIGINS, type Origin } from "./origin";
 import { MetroMapModal } from "./MetroMap";
 import { PlacesMapModal } from "./PlacesMap";
@@ -90,6 +92,8 @@ const RW_LABEL: Record<RealWeather["kind"], string> = { clear: "晴", partly: "�
 
 interface GameState {
 cityKey: CityKey;
+/** the game day a pain-point event already took its mood toll */
+moodHitDay?: number;
 /** 转行: the game day of the last job switch (one every three days) */
 switchDay?: number;
 /** real-player roommate (rent split in half) and the committee rent cut, kept in the save so the Saturday rent is right even before the server answers */
@@ -681,8 +685,21 @@ const [fold, setFold] = useState<"hud" | "apec" | "intro" | null>(null);
    （状态 / Summit / 深圳/惠州）, freeing more of the map; tapping a rail
    button brings its bar back. All shown by default. */
 const [barsHidden, setBarsHidden] = useState(false);
+/* 观景时刻: the running scenic moment (camera flies in, sky turns to sunset / night) */
+const [scenicMoment, setScenicMoment] = useState<{ m: ScenicMoment; at: number; nonce: number } | null>(null);
+const [scenicLine, setScenicLine] = useState(0);
 /* phones: the status card shows the essentials; the rest folds behind “⋯ More” */
 const [hudMore, setHudMore] = useState(false);
+/* 🔊 sound: off until the player turns it on (browsers and WeChat need a tap first) */
+const [soundIsOn, setSoundIsOn] = useState(soundWanted);
+const toggleSound = () => { const next = !soundIsOn; setSoundIsOn(next); setSound(next); track("sound", { on: next }); };
+useEffect(() => {
+  const wake = () => wakeSound();
+  const tap = (e: Event) => { if ((e.target as HTMLElement | null)?.closest?.("button")) sfx("click"); };
+  window.addEventListener("pointerdown", wake);
+  window.addEventListener("click", tap, true);
+  return () => { window.removeEventListener("pointerdown", wake); window.removeEventListener("click", tap, true); };
+}, []);
 /* map mode A/B: each device starts in "city" (A, see the whole city) or "follow" (B, camera on you + minimap) at random; players can switch */
 const [mapMode, setMapModeState] = useState<"city" | "follow">(() => {
   try {
@@ -779,6 +796,7 @@ lines.forEach((t, i) => window.setTimeout(() => pushDanmakuRef.current(t), i * 3
 const [floaters, setFloaters] = useState<{ id: number; text: string; tone: "gold" | "green" | "red" | "blue" }[]>([]);
 const floatIdRef = useRef(0);
 const floatReward = (text: string, tone: "gold" | "green" | "red" | "blue" = "gold") => {
+if (tone === "gold") sfx("coin");
 const id = ++floatIdRef.current;
 setFloaters((arr) => [...arr.slice(-4), { id, text, tone }]);
 window.setTimeout(() => setFloaters((arr) => arr.filter((f) => f.id !== id)), 2000);
@@ -1028,7 +1046,7 @@ if (phase !== "game" || !gs) return;
 if (dailyShownRef.current !== gs.day) {
 dailyShownRef.current = gs.day;
 /* a brand-new player sees the map first — the daily-tasks sheet waits for their next day */
-if (justStartedRef.current) justStartedRef.current = false; else setDailyOpen(true);
+if (justStartedRef.current) justStartedRef.current = false; else if (!scenicMoment) setDailyOpen(true);
 const posts = (gs.npcFeed ?? []).slice(0, 2);
 posts.forEach((p, i) => window.setTimeout(() => pushDanmakuRef.current(`${p.author}：${p.text}`), 1200 + i * 900));
 }
@@ -1240,9 +1258,11 @@ setCarriageLog(`🚌 ${st?.name ?? ""}站到了。两个站在城里两头，不
 } else {
 setCarriageLog(`🔁 ${st?.name ?? ""}站到了，这里要换乘 ${nextLine?.name ?? "下一条线"}。下车，跟着站台的换乘指示牌走到对面站台，点「换乘上车」继续。`);
 }
+sfx("chime");
 return { ...c, stopIdx: nextIdx, awaitingTransfer: true };
 }
 setCarriageLog(nextIdx >= c.route.stations.length - 1 ? `🔔 ${st?.name ?? ""}站到了，这就是你的目的地，点「下车出站」下车。先下后上，别挡门。` : `📢 列车运行前方是 ${st?.name ?? ""} 站。${c.crowdLevel >= 2 && nextIdx % 2 === 0 ? "这一站上来不少人，车厢更挤了，你往里挪了挪。" : "有乘客上下车，车厢轻轻晃了一下。"}`);
+sfx("chime");
 return { ...c, stopIdx: nextIdx };
 });
 /* each hop lasts as long as the real distance to the next station needs */
@@ -1343,7 +1363,7 @@ perks: strArr(g.perks).filter((id) => perkById(id)),
 license: num(g.license, 0), licDay: num(g.licDay, 0), carDay: num(g.carDay, 0), carOwned: g.carOwned === true,
 hangover: g.hangover === true, record: num(g.record, 0),
 romance: g.romance && typeof g.romance === "object" && !Array.isArray(g.romance) ? Object.fromEntries(Object.entries(g.romance as Record<string, unknown>).filter(([k, v]) => NPCS.some((n) => n.name === k) && typeof v === "number")) as Record<string, number> : {},
-cohabit: g.cohabit === true, switchDay: typeof g.switchDay === "number" ? Math.round(g.switchDay) : undefined, roommate: typeof g.roommate === "string" && g.roommate.length < 40 ? g.roommate : undefined, rentPolicy: typeof g.rentPolicy === "number" && g.rentPolicy >= 0.9 && g.rentPolicy <= 1 ? g.rentPolicy : undefined, origin: typeof g.origin === "string" && g.origin.length < 40 ? g.origin : undefined, startTier: typeof g.startTier === "number" && g.startTier >= 0 && g.startTier <= 3 ? Math.round(g.startTier) : undefined, loc: typeof g.loc === "string" && g.loc.length < 120 ? g.loc : undefined, routine: g.routine && typeof g.routine === "object" && !Array.isArray(g.routine) ? (g.routine as RoutineDay) : undefined, actCount: num(g.actCount, 0), partyPlays: num(g.partyPlays, 0),
+cohabit: g.cohabit === true, moodHitDay: typeof g.moodHitDay === "number" ? Math.round(g.moodHitDay) : undefined, switchDay: typeof g.switchDay === "number" ? Math.round(g.switchDay) : undefined, roommate: typeof g.roommate === "string" && g.roommate.length < 40 ? g.roommate : undefined, rentPolicy: typeof g.rentPolicy === "number" && g.rentPolicy >= 0.9 && g.rentPolicy <= 1 ? g.rentPolicy : undefined, origin: typeof g.origin === "string" && g.origin.length < 40 ? g.origin : undefined, startTier: typeof g.startTier === "number" && g.startTier >= 0 && g.startTier <= 3 ? Math.round(g.startTier) : undefined, loc: typeof g.loc === "string" && g.loc.length < 120 ? g.loc : undefined, routine: g.routine && typeof g.routine === "object" && !Array.isArray(g.routine) ? (g.routine as RoutineDay) : undefined, actCount: num(g.actCount, 0), partyPlays: num(g.partyPlays, 0),
 };
 return { profile: { playerId: prof.playerId, name: prof.name }, gs };
 };
@@ -1397,7 +1417,7 @@ const hopMs = (route: MetroRoute, idx: number): number => {
   const a = route.stations[idx], b = route.stations[idx + 1];
   if (!a || !b) return 900;
   const rail = route.legs.some((l) => RAIL_LINE_IDS.includes(l.line.id));
-  return clamp((Math.hypot(b.x - a.x, b.z - a.z) / (rail ? 12 : 7)) * 1000, 450, 3000);
+  return clamp((Math.hypot(b.x - a.x, b.z - a.z) / (rail ? 12 : 7)) * 1000 * (!rail && evRef.current.metroSlow ? 2 : 1), 450, 6000);
 };
 const startMetroRide = (fromLocId: string, toLocId: string, routeOverride?: MetroRoute) => {
 const s0 = gsRef.current; if (!s0) return;
@@ -1688,10 +1708,23 @@ useEffect(() => {
 if (phase === "game") updMeta((m) => { touchStreak(m); });
 // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [phase]);
+/* background music follows the moment: club venues, scenic moments, rain, night or day */
+const [musicTick, setMusicTick] = useState(0);
+useEffect(() => { const id = window.setInterval(() => setMusicTick((n) => n + 1), 60_000); return () => window.clearInterval(id); }, []);
+useEffect(() => {
+  if (phase !== "game") { setScene("off"); return; }
+  const here = getLocations(gs?.cityKey ?? "sz").find((l) => l.id === currentLoc);
+  const tn = nowMin();
+  const sc: SoundScene = scenicMoment ? "scenic" : here?.type === "social" && !walking ? "club" : nowRainy ? "rain" : tn >= 19 * 60 || tn < 6 * 60 ? "night" : "day";
+  setScene(sc);
+// eslint-disable-next-line react-hooks/exhaustive-deps
+}, [phase, currentLoc, walking, nowRainy, musicTick, soundIsOn, scenicMoment]);
 /* 今日城市事件：新的一天播报一次，并记进「见过的事件」 */
 useEffect(() => {
 if (phase !== "game") return;
 if (!metaRef.current.eventsSeen.includes(todayEvent.id)) updMeta((m) => { m.eventsSeen = [...m.eventsSeen, todayEvent.id]; });
+/* a pain-point day (回南天…) hits the mood once per game day */
+if (todayEvent.moodHit && gsRef.current && gsRef.current.moodHitDay !== gsRef.current.day) mutate((x) => { x.mood = clamp(x.mood + (todayEvent.moodHit ?? 0), 0, 100); x.moodHitDay = x.day; });
 showToast(`${todayEvent.emoji} 今日城市事件「${todayEvent.name}」：${todayEvent.desc}`);
 // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [phase, todayEvent.id, todayEvent.desc]);
@@ -1961,6 +1994,42 @@ useEffect(() => {
   else if (o.stage === "toDest" && currentLoc === o.dest) mutate((x) => { x.routine = { ...rd, order: { ...o, stage: "atDoor" } }; });
 // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [currentLoc]);
+/* ---------- 观景时刻 ---------- */
+const startScenic = (id: string) => {
+  const m = SCENIC_MOMENTS.find((x) => x.id === id); const g = gsRef.current;
+  if (!m || !g || scenicMoment) return;
+  const here = locById(currentLocRef.current);
+  setAsideOpen(false); setNavOpen(false); setDailyOpen(false);
+  setScenicLine(0);
+  setScenicMoment({ m, at: Date.now(), nonce: Date.now() });
+  track("scenic_start", { id: m.id, best: inBest(m, nowMin()) });
+  void here;
+};
+const finishScenic = () => {
+  const cur = scenicMoment; if (!cur) return;
+  setScenicMoment(null);
+  const g = gsRef.current; if (!g) return;
+  const best = inBest(cur.m, nowMin());
+  const watchedEnough = Date.now() - cur.at > cur.m.durMs * 0.6;
+  if (!watchedEnough) return;
+  const key = `${g.cityKey}:scenic:${cur.m.id}`;
+  const first = !(g.visitedScenic ?? []).includes(key);
+  const gain = (best ? 20 : 12) + (first ? 4 : 0);
+  mutate((x) => { x.mood = clamp(x.mood + gain, 0, 100); if (first) x.visitedScenic = [...(x.visitedScenic ?? []), key]; });
+  floatReward(`${en ? "mood" : "心情"} +${gain}`, "green");
+  sfx("arrive");
+  showToast(en ? `${cur.m.emoji} ${cur.m.en}${best ? " — at the perfect time" : ""}. Mood +${gain}.` : `${cur.m.emoji} ${cur.m.zh}${best ? "，赶上了最好的时候" : ""}。心情 +${gain}。`);
+  track("scenic_done", { id: cur.m.id, best, first });
+};
+useEffect(() => {
+  if (!scenicMoment) return;
+  const n = scenicMoment.m.lines.length;
+  const step = scenicMoment.m.durMs / n;
+  const ids = scenicMoment.m.lines.map((_, i) => window.setTimeout(() => setScenicLine(i), i * step));
+  const end = window.setTimeout(() => finishScenic(), scenicMoment.m.durMs + 600);
+  return () => { ids.forEach((t) => window.clearTimeout(t)); window.clearTimeout(end); };
+// eslint-disable-next-line react-hooks/exhaustive-deps
+}, [scenicMoment?.nonce]);
 /* ---------- 转行 / 考证：换一份工作 ---------- */
 /** what a new job asks of you: skill points for the skilled trades, start-up money for a business */
 const RETRAIN_NEED: Record<string, { skill?: number; cash?: number }> = { coder: { skill: 5 }, nurse: { skill: 4 }, teacher: { skill: 4 }, chef: { skill: 2 }, coach: { skill: 1 }, barber: { skill: 1 }, masseur: { skill: 1 }, boss: { cash: 8000 } };
@@ -2228,10 +2297,12 @@ msg = `${f.name}下肚，能量 +${f.energy}，心情 +${fm}${ev.eatMul ? `（�
 break;
 }
 case "wash":
+if (evRef.current.noWater) { msg = `🚱 今天${evRef.current.name}，水龙头拧开只有嘶嘶声。下楼买瓶水凑合吧。`; break; }
 s.energy += 6; s.mood += 6;
 msg = "洗漱整理了一番，神清气爽，能量 +6，心情 +6。";
 break;
 case "cook": {
+if (evRef.current.noWater) { msg = `🚱 今天${evRef.current.name}，做不了饭——出去吃，或者叫个外卖。`; break; }
 if (s.groceries <= 0) { msg = "冰箱空了，先去买菜（夜市/市场/商场都有买菜）再回来做饭。"; break; }
 s.groceries -= 1; s.energy += 34; s.mood += 9; s.mealCount += 1;
 msg = "自己做了一顿饭：洗菜、切菜、下锅，热气腾腾端上桌。能量 +34，心情 +9。";
@@ -3297,6 +3368,7 @@ playLifeAnim("shopping");
     const acts = co ? [...companyActions(co, s), ...(loc.type === "work" ? [] : baseActionsFor(loc, s))] : baseActionsFor(loc, s);
     const ev = todayEvent;
     acts.unshift(...routineActs(loc, s));
+    for (const m of momentsAt(s.cityKey, loc.id)) acts.unshift({ kind: `__scenic-${m.id}`, emoji: m.emoji, title: en ? m.en : m.zh, desc: `${en ? m.hintEn : m.hint}${inBest(m, nowMin()) ? (en ? " · ✨ perfect time right now" : " · ✨ 现在正是最好的时候") : ""}`, cost: en ? `mood +${inBest(m, nowMin()) ? 20 : 12} · free` : `心情 +${inBest(m, nowMin()) ? 20 : 12} · 免费` });
     if (loc.type === "learn") acts.push({ kind: "__retrain", emoji: "🎓", title: en ? "Retrain / get certified" : "转行培训 / 考证", desc: en ? "Switch to another job: pay the course fee, have the skill it needs." : "换一份工作：交培训费，技能够就能转。外卖员也能考成护士。", cost: en ? "course fee" : "培训费" });
     const tn = nowMin();
     for (const r of CROSS_ROUTES) {
@@ -4125,7 +4197,7 @@ return (
     floating translucent panel that collapses vertically into a slim
     strip on the right edge — never fully hidden, always one tap away. */}
 <section className="relative h-[calc(100dvh-61px)] min-h-[300px] w-full overflow-hidden">
-<div className="float-bars absolute left-3 top-[60px] z-20 w-[min(720px,calc(100vw-24px))]">
+<div className={`float-bars absolute left-3 top-[60px] z-20 w-[min(720px,calc(100vw-24px))]${scenicMoment ? " hidden" : ""}`}>
 {/* ONE merged card (was three stacked bars: status / Summit / city intro).
     Row 1 = core stats; row 2 = slim Summit strip + three fold tabs that
     open a single detail panel at a time. The whole card folds into the
@@ -4145,6 +4217,7 @@ return (
 <span className="flex items-center gap-1 text-xs font-bold">⚡<span className="h-2 w-10 overflow-hidden rounded-full bg-[var(--surface2)]"><span className="block h-full bg-amber-500 transition-all" style={{ width: `${s.energy}%` }} /></span>{Math.round(s.energy)}</span>
 <span className="flex items-center gap-1 text-xs font-bold">😊<span className="h-2 w-10 overflow-hidden rounded-full bg-[var(--surface2)]"><span className="block h-full bg-emerald-500 transition-all" style={{ width: `${s.mood}%` }} /></span>{Math.round(s.mood)}</span>
 <span className="chip" title="游戏时间就是北京时间：每个自然月是一个赛季，第 N 天 = 本月 N 号；做事有真实冷却；地铁、商场、景区按真实营业时间开关">{`🕘 ${clockStr(nowMin())}`}</span>
+<button type="button" onClick={toggleSound} aria-pressed={soundIsOn} className="chip" title={soundIsOn ? (en ? "Sound on — tap to mute" : "声音已开，点一下静音") : (en ? "Sound off — tap for music and effects" : "声音已关，点一下开启音乐和音效")}>{soundIsOn ? "🔊" : "🔇"}</button>
 {s.busyUntil && Date.now() < s.busyUntil ? <span className="chip border-[var(--accent)] text-[var(--accent)]">{`⏳ ${s.busyWhat ?? "忙"} ${countdown(s.busyUntil - Date.now())}`}</span> : null}
 <button type="button" onClick={() => setPartyOpen(true)} className={`chip ${parties.some((pt) => pt.status === "open") ? "border-[var(--accent)] text-[var(--accent)]" : ""}${hudMore ? "" : " compact-hide"}`} title={en ? "Parties in this city: join other players" : "同城组局：和真人一起玩"}>🎉 {en ? "Parties" : "组局"} {parties.filter((pt) => pt.status === "open").length}</button>
 <button type="button" onClick={() => { setHubOpen(true); track("hub_open"); }} className="chip border-[var(--text)] bg-[var(--text)] text-[var(--bg)]" title={en ? "Everything you can do right now, nearest first" : "现在能做的所有事，按远近排"}>🧭 {en ? "What can I do?" : "现在能干嘛"}</button>
@@ -4333,10 +4406,10 @@ return (
 );
 })()}
 </div>
-<MapView lite={lite} mapMode={mapMode} onMapMode={setMapMode} fill paused={!!lifeAnim} train={carriage ? { pts: carriage.route.stations.map((st) => [st.x, st.z] as [number, number]), idx: carriage.stopIdx, stepMs: hopMs(carriage.route, carriage.stopIdx), color: (carriage.route.legs[carriage.legIdx]?.line ?? carriage.route.line).color, rail: carriage.route.legs.some((l) => ["szhz-rail", "guangshen", "hz-intercity", "ganshen-rail", "guangshan-rail", "hsr-hk"].includes(l.line.id)), hold: rideEntry !== null || carriage.awaitingTransfer || carriage.stopIdx >= carriage.route.stations.length - 1 } : null} cityKey={s.cityKey} selfLocId={walking || carriage ? (tripTo ?? selectedLoc) : currentLoc} selfEmoji={iden.emoji} selfColor={iden.color} selfName={profile?.name ?? "我"} remotePlayers={remotePlayers} billboards={(billboardsQuery.data?.slots ?? []).flatMap((b) => (b.ad ? [{ slot: b.slot, text: b.ad.text, emoji: b.ad.emoji, owner: b.ad.owner }] : []))} selfOutfitId={s.outfit} travelModeId={tripMode ?? travelMode} selfEtaAt={tripEta ?? undefined} arrival={arrival} weatherKind={rwOk ? realWeather!.kind : "unknown"} npcMoodEmoji={Object.fromEntries(npcsForCity(s.cityKey).map((n) => [n.name, moodEmoji(memOf(s.npcMem ?? {}, n.name).mood)]))} apecDay={isApecWeek(s.day)} focusLocId={mapFocus?.locId} focusX={mapFocus?.x} focusZ={mapFocus?.z} focusNonce={mapFocus?.nonce} destLocId={selectedLoc} onSelect={walkTo} onPickActor={pickActor} navOverlay={(
+<MapView lite={lite} scenic={scenicMoment ? (() => { const m = scenicMoment.m; const l = locById(currentLoc); /* look out past the spot (over the water for sea views), from a little above the rooftops */ const az = m.faceSea && !m.path ? seawardAz(s.cityKey, l.x, l.z, m.az) : m.az; const ox = -Math.sin(az) * m.dist * 0.75, oz = -Math.cos(az) * m.dist * 0.75; return { x: (m.path ? m.path[0]![0] : l.x) + ox, z: (m.path ? m.path[0]![1] : l.z) + oz, phase: m.phase, az, pol: m.path ? Math.min(m.pol, 1.08) : 0.9, dist: m.path ? m.dist : m.dist * 2.1, path: m.path, durMs: m.durMs, nonce: scenicMoment.nonce }; })() : null} mapMode={mapMode} onMapMode={setMapMode} fill paused={!!lifeAnim} train={carriage ? { pts: carriage.route.stations.map((st) => [st.x, st.z] as [number, number]), idx: carriage.stopIdx, stepMs: hopMs(carriage.route, carriage.stopIdx), color: (carriage.route.legs[carriage.legIdx]?.line ?? carriage.route.line).color, rail: carriage.route.legs.some((l) => ["szhz-rail", "guangshen", "hz-intercity", "ganshen-rail", "guangshan-rail", "hsr-hk"].includes(l.line.id)), hold: rideEntry !== null || carriage.awaitingTransfer || carriage.stopIdx >= carriage.route.stations.length - 1 } : null} cityKey={s.cityKey} selfLocId={walking || carriage ? (tripTo ?? selectedLoc) : currentLoc} selfEmoji={iden.emoji} selfColor={iden.color} selfName={profile?.name ?? "我"} remotePlayers={remotePlayers} billboards={(billboardsQuery.data?.slots ?? []).flatMap((b) => (b.ad ? [{ slot: b.slot, text: b.ad.text, emoji: b.ad.emoji, owner: b.ad.owner }] : []))} selfOutfitId={s.outfit} travelModeId={tripMode ?? travelMode} selfEtaAt={tripEta ?? undefined} arrival={arrival} weatherKind={rwOk ? realWeather!.kind : "unknown"} npcMoodEmoji={Object.fromEntries(npcsForCity(s.cityKey).map((n) => [n.name, moodEmoji(memOf(s.npcMem ?? {}, n.name).mood)]))} apecDay={isApecWeek(s.day)} focusLocId={mapFocus?.locId} focusX={mapFocus?.x} focusZ={mapFocus?.z} focusNonce={mapFocus?.nonce} destLocId={selectedLoc} onSelect={walkTo} onPickActor={pickActor} navOverlay={(
 <>
 {/* 弹幕层：联机动态 / 聊天 / 街坊发言飘过地图上半区 */}
-{danmakuOn && (
+{danmakuOn && !scenicMoment && (
 <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-[14] overflow-hidden">
 {danmaku.map((d) => (
 <span key={d.id} className="danmaku-item" style={{ top: `${d.top}%`, animationDuration: `${d.dur}s`, color: d.color }}>{d.text}</span>
@@ -4350,7 +4423,7 @@ return (
 ))}
 </div>
 {/* 左侧中段控制簇：出行导航 + 弹幕开关（不在顶部，不挡地图中心） */}
-<div className="left-cluster absolute left-3 top-1/2 z-20 flex -translate-y-1/2 flex-col items-start gap-2">
+<div className={`left-cluster absolute left-3 top-1/2 z-20 flex -translate-y-1/2 flex-col items-start gap-2${scenicMoment ? " hidden" : ""}`}>
 <button type="button" aria-label={navOpen ? "收起地图上的出行导航" : "打开地图上的出行导航"} aria-expanded={navOpen} onClick={() => setNavOpen((o) => !o)} className="rounded-full border border-black/40 bg-[#14202b]/90 px-3.5 py-2 text-xs font-black text-white shadow-lg">
 🧭<span className="compact-hide"> {navOpen ? "收起导航" : `出行导航 · ${modesForCity(s.cityKey).find((m) => m.id === travelMode)?.emoji ?? ""} ${modesForCity(s.cityKey).find((m) => m.id === travelMode)?.name ?? ""}`}</span>
 </button>
@@ -4479,8 +4552,8 @@ return (
 {(() => { const g = guideForLocName(selLoc.name); if (!g) return null; return <ExperienceCard g={g} here={arrived} unlocked={(s.album ?? []).includes(g.key)} onCheckin={() => checkinGuide(g)} />; })()}
 <p className="mt-3.5 flex items-baseline justify-between gap-2"><span className="text-xs font-black tracking-wide">📍 在这里能做 · 常用操作</span><span className="text-[11px] font-bold text-[var(--dim)]">{arrived ? "点一下就行动" : "到了才能做"}</span></p>
 <div className="mt-2 grid gap-2">
-{actionsFor(selLoc, s).map((a) => { const own = a.kind.startsWith("__routine-") && (a.kind !== "__routine-wait" || routineRole(s.idenId) === "driver") || a.kind.startsWith("__rider-"); /* the rider's own steps don't depend on the shop's hours; a taxi passenger waves from anywhere, any hour */ const tb = timeBlock(a.kind, s) ?? (a.kind === "__sleep" || a.kind === "rest" || own ? null : venueClosed(selLoc)); return (
-<button key={a.kind + (a.arg ?? 0)} type="button" disabled={!arrived || a.disabled || !!tb} onClick={() => { if (a.kind === "__sleep") playLifeAnim("sleep", () => doSleep()); else if (a.kind.startsWith("__gocity-")) setCrossTo(a.kind.slice("__gocity-".length) as CityKey); else if (a.kind.startsWith("__routine-")) doRoutine(a.kind.slice("__routine-".length)); else if (a.kind === "__rider-go") riderGo(); else if (a.kind === "__retrain") setRetrainOpen(true); else if (a.kind === "__rider-cancel") { const g0 = gsRef.current; if (g0) { const rd0 = routineToday(g0); mutate((x) => { x.routine = { ...rd0, order: null }; x.money -= 2; x.mood = clamp(x.mood - 3, 0, 100); }); showToast(en ? "Order cancelled (−¥2)." : "这单取消了，平台扣了 ¥2。"); } } else if (a.kind.startsWith("__cross-")) { const r = CROSS_ROUTES.find((x) => x.id === a.kind.slice("__cross-".length)); if (r) takeRoute(r); } else doAction(a.kind, a.arg ?? 0); }} className="act-btn">
+{actionsFor(selLoc, s).map((a) => { const own = a.kind.startsWith("__routine-") && (a.kind !== "__routine-wait" || routineRole(s.idenId) === "driver") || a.kind.startsWith("__rider-") || a.kind.startsWith("__scenic-"); /* the rider's own steps don't depend on the shop's hours; a taxi passenger waves from anywhere, any hour */ const tb = timeBlock(a.kind, s) ?? (a.kind === "__sleep" || a.kind === "rest" || own ? null : venueClosed(selLoc)); return (
+<button key={a.kind + (a.arg ?? 0)} type="button" disabled={!arrived || a.disabled || !!tb} onClick={() => { if (a.kind === "__sleep") playLifeAnim("sleep", () => doSleep()); else if (a.kind.startsWith("__gocity-")) setCrossTo(a.kind.slice("__gocity-".length) as CityKey); else if (a.kind.startsWith("__routine-")) doRoutine(a.kind.slice("__routine-".length)); else if (a.kind === "__rider-go") riderGo(); else if (a.kind === "__retrain") setRetrainOpen(true); else if (a.kind.startsWith("__scenic-")) startScenic(a.kind.slice("__scenic-".length)); else if (a.kind === "__rider-cancel") { const g0 = gsRef.current; if (g0) { const rd0 = routineToday(g0); mutate((x) => { x.routine = { ...rd0, order: null }; x.money -= 2; x.mood = clamp(x.mood - 3, 0, 100); }); showToast(en ? "Order cancelled (−¥2)." : "这单取消了，平台扣了 ¥2。"); } } else if (a.kind.startsWith("__cross-")) { const r = CROSS_ROUTES.find((x) => x.id === a.kind.slice("__cross-".length)); if (r) takeRoute(r); } else doAction(a.kind, a.arg ?? 0); }} className="act-btn">
 <span className="flex items-center justify-between text-sm font-black"><span>{a.title}</span><span>{a.emoji}</span></span>
 <span className="mt-0.5 block text-xs leading-relaxed text-[var(--dim)]">{a.desc}</span>
 <span className="mt-1 block text-xs font-bold text-[var(--accent2)]">{a.cost}{a.kind !== "__sleep" && ` · ⏳ ${realMinLabel(actionMinutes(a.kind))}`}</span>
@@ -4898,7 +4971,7 @@ return (
     一条窄窄的竖条：五个页签只留图标竖排 + 「地区面板」竖排字，一直
     留在屏幕边上一眼能看到；点任意图标就展开回对应页签。地图始终
     全屏，不被面板挤占。 */}
-{!asideOpen && (
+{!asideOpen && !scenicMoment && (
 <div className="float-panel fixed right-0 top-1/2 z-40 flex -translate-y-1/2 flex-col items-center gap-0.5 rounded-l-[12px] border-2 border-r-0 border-[var(--border)] px-0.5 py-1.5 opacity-85 shadow-lg transition-opacity hover:opacity-100">
 <button type="button" aria-label={railOpen ? "收起侧栏" : "展开侧栏：状态、地点、集章、动态、聊天、排行、图鉴"} aria-expanded={railOpen} onClick={() => setRailOpen((o) => !o)} className="compact-only h-8 w-8 place-items-center justify-center rounded-[10px] text-[15px] font-black">{railOpen ? "✕" : "☰"}</button>
 {/* 状态卡的开关也收在这条竖条上（原来是左边单独一个「状态」竖钮） */}
@@ -5302,6 +5375,16 @@ return (
 {committeeOpen && phase === "game" && profile && <CommitteeModal en={en} playerId={profile.playerId} city={s.cityKey} cityName={en ? trText(CITIES[s.cityKey].name) : CITIES[s.cityKey].name} st={committeeQuery.data} onClose={() => setCommitteeOpen(false)} toast={showToast} refresh={() => void committeeQuery.refetch()} openAccount={() => { setCommitteeOpen(false); setAccountOpen(true); }} />}
 {adsOpen && phase === "game" && profile && <BillboardModal en={en} token={accountToken()} playerName={profile.name} city={s.cityKey} spots={billboardSpots(s.cityKey).map((l) => (en ? trText(l.name) : l.name))} st={billboardsQuery.data} onClose={() => setAdsOpen(false)} toast={showToast} refresh={() => void billboardsQuery.refetch()} openAccount={() => { setAdsOpen(false); setAccountOpen(true); }} openStore={() => { setAdsOpen(false); setStoreOpen(true); }} />}
 {gigsOpen && phase === "game" && profile && <GigsModal en={en} playerId={profile.playerId} city={s.cityKey} money={s.money} st={gigsQuery.data} onClose={() => setGigsOpen(false)} toast={showToast} refresh={() => void gigsQuery.refetch()} onHeld={(n) => mutate((x) => { x.money -= n; })} onDeliver={() => { const g = gsRef.current; if (!g || g.energy < 8) { showToast(en ? "Too tired to deliver — rest first." : "太累了，先休息一下再交付。"); return false; } mutate((x) => { x.energy -= 8; }); return true; }} openAccount={() => { setGigsOpen(false); setAccountOpen(true); }} />}
+{scenicMoment && phase === "game" && (() => { const m = scenicMoment.m; const ln = m.lines[Math.min(scenicLine, m.lines.length - 1)]!; return (
+<div className="pointer-events-none fixed inset-0 z-[70]" role="dialog" aria-label={en ? m.en : m.zh}>
+<div className="absolute inset-x-0 top-0 h-[9vh] bg-black/85" />
+<div className="absolute inset-x-0 bottom-0 h-[16vh] bg-black/85" />
+<div className="absolute inset-x-0 bottom-[3vh] flex flex-col items-center px-5 text-center text-white">
+<p className="text-[11px] font-black tracking-[0.25em] text-white/70">{m.emoji} {en ? m.en : m.zh}{inBest(m, nowMin()) ? (en ? " · perfect time" : " · 最佳时刻") : ""}</p>
+<p key={scenicLine} className="rise mt-1.5 max-w-xl font-display text-lg font-black leading-snug sm:text-xl">{en ? ln[1] : ln[0]}</p>
+</div>
+<button type="button" onClick={finishScenic} className="pointer-events-auto absolute right-3 top-[calc(9vh+10px)] rounded-full bg-black/55 px-3 py-1.5 text-xs font-black text-white">✕ {en ? "End" : "结束"}</button>
+</div> ); })()}
 {retrainOpen && phase === "game" && (
 <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={en ? "Retrain" : "转行培训"}>
 <div className="rise max-h-[88vh] w-full max-w-md overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] p-4">

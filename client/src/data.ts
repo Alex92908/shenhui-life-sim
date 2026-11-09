@@ -1189,6 +1189,8 @@ export const METRO_LINES: MetroLine[] = [
   { id: "tml", name: "屯马线", short: "屯马线", color: 0x9a3820, colorCss: "#9A3820", city: "hk", stations: [S("屯门",-8.97,1.89,"tuenmun"),S("兆康",-10.31,-2.57),S("天水围",-7.11,-7.20),S("朗屏",-4.87,-6.99),S("元朗",-5.25,-6.60,"yuenlong"),S("锦上路",-0.50,-5.39),S("荃湾西",4.86,2.83),S("美孚",7.47,6.10),S("南昌",8.50,6.55),S("红磡",15.26,9.87),S("土瓜湾",15.69,7.79),S("宋皇台",15.70,6.85),S("启德",16.32,6.73),S("钻石山",16.09,5.69),S("大围",12.77,2.14),S("车公庙",13.67,1.96),S("沙田围",14.69,1.72),S("第一城",15.67,1.02),S("乌溪沙",20.31,-4.69)] },
   { id: "tcl", name: "东涌线", short: "东涌线", color: 0xf7943e, colorCss: "#F7943E", city: "hk", stations: [S("香港",10.46,15.44,"central"),S("九龙",8.68,9.63,"westkowloon"),S("奥运",9.19,7.22),S("南昌",8.50,6.55),S("青衣",4.59,3.84),S("欣澳",-4.47,7.34),S("东涌",-13.99,13.47,"tungchung")] },
   { id: "aex", name: "机场快线", short: "机场快线", color: 0x00888e, colorCss: "#00888E", city: "hk", stations: [S("香港",10.46,15.44,"central"),S("九龙",8.68,9.63,"westkowloon"),S("青衣",4.59,3.84),S("机场",-17.69,9.97,"airport-hk"),S("博览馆",-14.47,8.58)] },
+  /* 叮叮电车：港岛北岸的双层电车，1904 年至今，HK$3 坐到底。站名和港岛线同名的站可以互相换乘 */
+  { id: "tram-hk", name: "香港电车（叮叮）", short: "叮叮车", color: 0x0f7b3e, colorCss: "#0F7B3E", city: "hk", stations: [S("坚尼地城",5.78,13.99),S("西营盘",5.79,13.75),S("上环",6.88,14.65,"sheungwan"),S("中环",10.46,15.44,"central"),S("金钟",10.65,16.55),S("湾仔",14.86,16.35),S("铜锣湾",16.19,18.31),S("天后",18.07,16.67),S("北角",17.89,12.85,"chunyeung"),S("太古",18.15,13.37),S("筲箕湾",19.45,14.05)] },
   { id: "drl", name: "迪士尼线", short: "迪士尼线", color: 0xf173ac, colorCss: "#F173AC", city: "hk", stations: [S("欣澳",-4.47,7.34),S("迪士尼",-3.05,9.69,"disney")] },
 ];
 export function metroLinesForCity(cityKey: CityKey): MetroLine[] {
@@ -1208,7 +1210,7 @@ export const SHUTTLE_LINKS: [string, string][] = [["惠州北", "惠州南站"],
 /** Relative time cost per map unit for each line: express / rail lines
  * cover ground much faster than an all-stops metro (11号线 runs at
  * 120 km/h vs 80 km/h; intercity / high-speed rail faster still). */
-const LINE_SPEED: Record<string, number> = { "11": 0.6, "14": 0.7, tram1: 1.6, tram2: 1.6, apm: 1.3, guangshen: 0.45, "szhz-rail": 0.3, "ganshen-rail": 0.3, "guangshan-rail": 0.3, "hz-intercity": 0.5 };
+const LINE_SPEED: Record<string, number> = { "11": 0.6, "14": 0.7, tram1: 1.6, tram2: 1.6, "tram-hk": 2.2, apm: 1.3, guangshen: 0.45, "szhz-rail": 0.3, "ganshen-rail": 0.3, "guangshan-rail": 0.3, "hz-intercity": 0.5 };
 /** Cost of changing lines (walk between platforms + wait), in map units —
  * roughly 8–10 minutes, so the router never ping-pongs between lines to
  * shave a little distance off a schematic that is not to scale. */

@@ -155,6 +155,8 @@ export interface CityEvent {
   /** Effects the game applies today. */
   metroFree?: boolean; mallMul?: number; eatMul?: number; eatMood?: number; payMul?: number;
   funMood?: number; beachClosed?: boolean; taxiMul?: number;
+  /** 本地痛点: a one-off mood hit for the day, no running water at home, slow metro */
+  moodHit?: number; noWater?: boolean; metroSlow?: boolean;
   /** 大厂开放日: this company's bar drops (skill -1, xp -4). */
   openDay?: string;
   /** 地铁站快闪: stamping this station today gives a bonus. */
@@ -167,6 +169,9 @@ const EVENTS: Omit<CityEvent, "openDay" | "flashStation">[] = [
   { id: "foodfest", emoji: "🍢", name: "夜市美食节", desc: "吃东西 7 折，心情额外 +5。", eatMul: 0.7, eatMood: 5 },
   { id: "bonus", emoji: "💰", name: "发奖金日", desc: "今天上班、加班工资 ×1.3。", payMul: 1.3 },
   { id: "concert", emoji: "🎶", name: "公园音乐会", desc: "公园、景点、海边玩一次，心情额外 +8。", funMood: 8 },
+  { id: "humid", emoji: "💦", name: "回南天", desc: "墙在冒汗、地板湿滑、衣服晾三天不干——整个人都黏糊糊的，心情 -4。下馆子、逛商场能躲一躲。", moodHit: -4 },
+  { id: "nowater", emoji: "🚱", name: "城中村停水", desc: "片区管道检修，今天家里停水：在家做不了饭、洗不了漱，只能下楼买水、出去吃。", noWater: true },
+  { id: "metrofault", emoji: "🚦", name: "地铁信号故障", desc: "早高峰信号故障，地铁晚点：今天坐地铁慢一倍，打车的人多了，加价 30%。", metroSlow: true, taxiMul: 1.3 },
   { id: "openday", emoji: "🏢", name: "大厂开放日", desc: "" },
   { id: "flash", emoji: "🎤", name: "地铁站快闪", desc: "" },
 ];
@@ -183,6 +188,9 @@ export function dailyEvent(cityKey: CityKey, gameDay: number, companies: { id: s
   // and the free-ride day is for the intercity rail
   if (cityKey === "hz" && base.id === "flash") base = EVENTS[3]!;
   if (cityKey === "hz" && base.id === "greenday") return { ...base, desc: "今天坐城轨全程免费。" };
+  if (cityKey === "hk" && base.id === "nowater") return { ...base, name: "劏房停水", desc: "大厦水管维修，今天劏房停水：在家做不了饭、洗不了漱，只能落街买水、出去食。" };
+  if (cityKey === "hk" && base.id === "metrofault") return { ...base, name: "港铁信号故障", desc: "港铁信号故障，列车延误：今天坐港铁慢一倍，的士加价 30%。" };
+  if (cityKey === "hz" && base.id === "metrofault") return { ...base, name: "城轨晚点", desc: "城轨设备故障晚点：今天坐城轨慢一倍，打车加价 30%。" };
   if (base.id === "openday") {
     const pool = companies.filter((c) => c.id !== "startup" && (c.city ?? "sz") === cityKey);
     if (pool.length === 0) return { ...EVENTS[2]!, };
