@@ -14,7 +14,7 @@ import { SCENE_PHOTOS } from "./experience";
 import * as THREE from "three";
 import { makePostFx, type PostFx } from "./postfx";
 
-export type LifeSet = "flat" | "station" | "metro" | "train" | "bus" | "taxi" | "drive" | "concourse" | "platform" | "office" | "restaurant" | "market" | "mall" | "kitchen" | "bedroom" | "bathroom" | "gym" | "park" | "home" | "cruise" | "wheel" | "aquarium" | "turtle" | "coaster" | "safari" | "hike" | "beach" | "cablecar";
+export type LifeSet = "flat" | "station" | "metro" | "train" | "bus" | "taxi" | "drive" | "concourse" | "platform" | "office" | "restaurant" | "market" | "mall" | "kitchen" | "bedroom" | "bathroom" | "gym" | "park" | "home" | "cruise" | "wheel" | "aquarium" | "turtle" | "coaster" | "safari" | "hike" | "beach" | "cablecar" | "club" | "clinic" | "classroom";
 export type LifePose = "walk" | "idle" | "sit" | "drive" | "type" | "cook" | "eat" | "sleep" | "wash" | "lift" | "stretch";
 
 interface Props {
@@ -386,7 +386,7 @@ export function LifeStage3D(p: Props) {
     mount.appendChild(renderer.domElement);
     renderer.domElement.style.cssText = "position:absolute;inset:0;width:100%;height:100%;display:block;";
 
-    const indoor = setKind === "flat" || setKind === "office" || setKind === "kitchen" || setKind === "bathroom" || setKind === "bedroom" || setKind === "home" || setKind === "restaurant" || setKind === "gym" || setKind === "concourse" || setKind === "platform";
+    const indoor = setKind === "flat" || setKind === "office" || setKind === "kitchen" || setKind === "bathroom" || setKind === "bedroom" || setKind === "home" || setKind === "restaurant" || setKind === "gym" || setKind === "concourse" || setKind === "platform" || setKind === "club" || setKind === "clinic" || setKind === "classroom";
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(night ? 0x1d3454 : indoor ? 0xf7e3bd : 0xffd9a0);
     scene.fog = new THREE.Fog(scene.background as THREE.Color, 17, 32);
@@ -451,6 +451,9 @@ export function LifeStage3D(p: Props) {
     /* traffic-light heads whose lamps the frame loop cycles red→green */
     const tlights: { red: THREE.MeshStandardMaterial; yel: THREE.MeshStandardMaterial; grn: THREE.MeshStandardMaterial; off: number }[] = [];
     const swayers: { g: THREE.Group; ph: number }[] = [];
+    const spinners: THREE.Object3D[] = [];
+    const dancers: { f: Figure; ph: number; y: number }[] = [];
+    const clubLights: { l: THREE.PointLight; ph: number }[] = [];
     const motes: { sp: THREE.Sprite; ph: number }[] = [];
     const codeTexs: THREE.CanvasTexture[] = [];
     const scrollTexs: THREE.CanvasTexture[] = [];
@@ -1281,6 +1284,96 @@ export function LifeStage3D(p: Props) {
       cyl(0.05, 0.04, 0.3, 0x7dd3fc, -1.5, 0.15, 0.9, 0.4);
       box(1.5, 0.95, 0.06, 0x1f2937, 3.3, 2.6, -3.56, 0.6);
       plane(1.42, 0.88, boardTex("#1f2937", [{ t: "自律 · 坚持", s: 46, c: "#f5b942" }, { t: "NO PAIN NO GAIN", s: 24, c: "#e2e8f0", bold: false }]), 3.3, 2.6, -3.52);
+    } else if (setKind === "club") {
+      // Livehouse / 夜店: dark room, stage with a band, a spinning mirror
+      // ball, coloured lights sweeping, a crowd bouncing to the beat
+      scene.background = new THREE.Color(0x0d0818);
+      scene.fog = new THREE.Fog(0x0d0818, 12, 26);
+      hemi.intensity = 0.18; sun.intensity = 0.25; warm.intensity = 3;
+      box(22, 8, 0.3, 0x15102a, 0, 4, -3.75, 1);
+      box(0.3, 8, 12, 0x15102a, -7.2, 4, 0, 1);
+      box(7.5, 0.45, 2.4, 0x23233a, 0.6, 0.23, -2.5, 0.6);
+      box(7.5, 0.05, 0.08, 0xff3ea5, 0.6, 0.47, -1.3, 0.3, { emissive: 0xff3ea5, emissiveIntensity: 2 });
+      box(7.2, 1.0, 0.1, 0x0b0b14, 0.6, 3.6, -3.55, 0.5);
+      plane(7.0, 0.9, boardTex("#0b0b14", [{ t: "LIVEHOUSE · 今晚原创专场", s: 48, c: "#f472b6" }]), 0.6, 3.6, -3.49);
+      // speakers
+      for (const sx of [-3.4, 4.6]) { box(0.9, 1.9, 0.8, 0x111118, sx, 1.4, -2.7, 0.5); cyl(0.26, 0.26, 0.05, 0x2b2b38, sx, 1.75, -2.28, 0.4).rotation.x = Math.PI / 2; cyl(0.17, 0.17, 0.05, 0x2b2b38, sx, 1.1, -2.28, 0.4).rotation.x = Math.PI / 2; }
+      // band: singer at the mic, guitarist, drummer behind a kit
+      cyl(0.02, 0.02, 1.4, 0x9ca3af, 0.6, 1.15, -1.75, 0.3, { metalness: 0.8 });
+      const singer = extraFigure(0.6, 0.47, -2.1, 0, 0xf472b6, 0x1f1f2e);
+      singer.armR.rotation.x = -1.2;
+      dancers.push({ f: singer, ph: 0.3, y: 0.47 });
+      const guitar = extraFigure(-1.6, 0.47, -2.3, 0.4, 0x38bdf8, 0x1f1f2e);
+      guitar.armL.rotation.x = -0.9; guitar.armR.rotation.x = -0.6;
+      box(0.9, 0.28, 0.08, 0xb45309, -1.5, 1.35, -2.0, 0.5).rotation.z = 0.5;
+      dancers.push({ f: guitar, ph: 1.2, y: 0.47 });
+      cyl(0.4, 0.4, 0.4, 0xe11d48, 2.8, 0.75, -2.9, 0.4);
+      cyl(0.28, 0.28, 0.25, 0xe5e7eb, 2.2, 0.85, -2.6, 0.4);
+      cyl(0.3, 0.3, 0.03, 0xfacc15, 3.4, 1.35, -2.6, 0.3, { metalness: 0.9 });
+      extraFigure(2.8, 0.47, -3.3, 0, 0x22c55e, 0x1f1f2e, true);
+      // mirror ball
+      const ball = new THREE.Mesh(new THREE.IcosahedronGeometry(0.42, 1), mat(0xffffff, 0.15, { metalness: 1, flatShading: true, emissive: 0x9ca3af, emissiveIntensity: 0.3 }));
+      ball.position.set(0.6, 4.4, 0.2); scene.add(ball); spinners.push(ball);
+      addGlow(0.6, 4.4, 0.2, 1.6, 0xffffff, 0.35);
+      // colour lights that sweep and pulse
+      for (const [i, c] of [0xff2d95, 0x22d3ee, 0xa855f7, 0xfacc15].entries()) {
+        const pl = new THREE.PointLight(c, 14, 9, 1.6);
+        pl.position.set(-3 + i * 2.6, 3.4, -0.5);
+        scene.add(pl); clubLights.push({ l: pl, ph: i * 1.6 });
+        addGlow(-3 + i * 2.6, 3.4, -0.5, 1.1, c, 0.55);
+      }
+      // the crowd, backs to camera, bouncing
+      const crowdCols = [0x3b82f6, 0xf59e0b, 0x10b981, 0xef4444, 0x8b5cf6, 0xe5e7eb, 0x06b6d4];
+      for (let i = 0; i < 7; i++) {
+        const left = i < 4, k = left ? i : i - 4; const cx = left ? -5.6 + k * 0.75 : 3.5 + k * 0.9, cz = -0.7 + (k % 2) * 0.7;
+        const f = extraFigure(cx, 0, cz, left ? Math.PI * 0.8 : -Math.PI * 0.8, crowdCols[i]!, 0x1f2937);
+        if (i % 3 === 0) { f.armL.rotation.x = -2.6; f.armR.rotation.x = -2.6; }
+        dancers.push({ f, ph: i * 0.7, y: 0 });
+      }
+      // bar on the side
+      box(0.8, 1.1, 3.2, 0x2a1a3a, -6.2, 0.55, 0.2, 0.5);
+      box(0.9, 0.06, 3.3, 0x0ea5e9, -6.2, 1.13, 0.2, 0.2, { emissive: 0x0ea5e9, emissiveIntensity: 1.4 });
+    } else if (setKind === "clinic") {
+      // 社区医院 / 诊所: waiting chairs, a queue screen, the doctor's desk
+      roomShell(0xeef6f7, 0x9cc9cf, { windowX: 4.4, windowW: 1.8 });
+      box(2.6, 0.95, 0.06, 0x0f3d47, -2.4, 2.6, -3.55, 0.5);
+      plane(2.5, 0.88, boardTex("#0f3d47", [{ t: "请 A027 号到 3 诊室", s: 44, c: "#5eead4" }, { t: "候诊 12 人 · 预计 25 分钟", s: 30, c: "#e2e8f0", bold: false }]), -2.4, 2.6, -3.51);
+      box(1.0, 1.0, 0.08, 0xffffff, 1.6, 2.7, -3.55, 0.6);
+      box(0.6, 0.16, 0.09, 0xdc2626, 1.6, 2.7, -3.5, 0.5); box(0.16, 0.6, 0.09, 0xdc2626, 1.6, 2.7, -3.5, 0.5);
+      // row of waiting chairs with patients
+      for (let i = 0; i < 4; i++) {
+        const x = -4.6 + i * 0.85;
+        box(0.7, 0.08, 0.6, 0x60a5fa, x, 0.5, -1.2, 0.5); box(0.7, 0.6, 0.07, 0x60a5fa, x, 0.82, -1.5, 0.5);
+        if (i !== 2) { const pt = extraFigure(x, -0.42, -1.05, 0, [0xf59e0b, 0x10b981, 0, 0xa855f7][i]!, 0x374151, true); if (i === 0) pt.armR.rotation.x = -1.2; }
+      }
+      // doctor's desk, monitor, doctor in a white coat
+      box(2.2, 0.08, 1.0, 0xe5e7eb, 2.6, 0.9, -1.6, 0.4);
+      box(0.08, 0.86, 0.9, 0xd1d5db, 1.6, 0.45, -1.6, 0.5); box(0.08, 0.86, 0.9, 0xd1d5db, 3.6, 0.45, -1.6, 0.5);
+      box(0.7, 0.45, 0.05, 0x111827, 2.9, 1.25, -1.9, 0.4, { emissive: 0x38bdf8, emissiveIntensity: 0.4 });
+      extraFigure(2.9, -0.42, -2.55, 0, 0xffffff, 0x1e3a8a, true);
+      // bed with a curtain
+      box(2.0, 0.55, 0.9, 0xf8fafc, 5.5, 0.4, -0.6, 0.6);
+      box(0.06, 2.4, 2.0, 0xa7f3d0, 4.3, 1.4, -0.6, 0.9, { transparent: true, opacity: 0.75 });
+      cyl(0.22, 0.18, 0.5, 0x9ca3af, -6.2, 0.25, -2.6, 0.5);
+      addGlow(0, 3.9, -1, 2.2, 0xe0f2fe, 0.4);
+    } else if (setKind === "classroom") {
+      // 夜校 / 培训班: blackboard, rows of desks, a teacher mid-lesson
+      roomShell(0xf3efe2, 0x7b9e87, { windowX: 4.6, windowW: 2.0 });
+      box(4.6, 1.7, 0.08, 0x1f3a2c, -1.2, 2.4, -3.55, 0.8);
+      plane(4.4, 1.55, boardTex("#1f3a2c", [{ t: "第 7 课 · 职场英语 / Python 入门", s: 34, c: "#f8fafc" }, { t: "print(\"Hello, 湾区\")", s: 38, c: "#fde68a", bold: false }, { t: "考证冲刺：还有 23 天", s: 30, c: "#fca5a5", bold: false }], 640, 256), -1.2, 2.4, -3.5);
+      box(4.8, 0.08, 0.14, 0x8a6f4d, -1.2, 1.5, -3.48, 0.6);
+      const teacher = extraFigure(1.7, 0, -2.8, 0.4, 0x7c3aed, 0x374151);
+      teacher.armR.rotation.x = -2.1;
+      box(1.4, 0.9, 0.7, 0x8a6f4d, 2.9, 0.45, -2.6, 0.7);
+      for (let r = 0; r < 2; r++) for (let c = 0; c < 4; c++) {
+        const x = -4.4 + c * 1.9, z = -0.9 + r * 1.5;
+        box(1.2, 0.07, 0.6, 0xd6b98c, x, 0.82, z, 0.7);
+        box(0.06, 0.8, 0.5, 0x6b7280, x - 0.55, 0.4, z, 0.5); box(0.06, 0.8, 0.5, 0x6b7280, x + 0.55, 0.4, z, 0.5);
+        box(0.3, 0.03, 0.22, 0xffffff, x - 0.2, 0.87, z, 0.9);
+        if ((r * 4 + c) % 3 !== 1) { const st = extraFigure(x, -0.42, z + 0.55, Math.PI, [0x3b82f6, 0xef4444, 0x10b981, 0xf59e0b, 0x06b6d4][(r * 4 + c) % 5]!, 0x1f2937, true); st.armL.rotation.x = -1.2; st.armR.rotation.x = -1.1; }
+      }
+      cyl(0.32, 0.32, 0.05, 0xffffff, -5.8, 3.2, -3.55, 0.5).rotation.x = Math.PI / 2;
+      addGlow(-1.2, 4.0, -1, 2.4, 0xfff7e0, 0.35);
     } else if (setKind === "park") {
       box(18, 0.8, 0.5, 0x3d7a44, 0, 0.4, -3.6, 1);
       box(11.5, 0.03, 1.15, 0xd9c9a8, 0, 0.015, 0.35, 1);
@@ -1972,6 +2065,9 @@ export function LifeStage3D(p: Props) {
         (st.m.material as THREE.MeshStandardMaterial).emissiveIntensity = 0.5 + Math.max(0, 1 - Math.abs(rel) / st.hw) * 0.9;
       }
       for (const sw of swayers) sw.g.rotation.z = Math.sin(t * 1.3 + sw.ph) * 0.05;
+      for (const sp of spinners) sp.rotation.y = t * 0.8;
+      for (const d of dancers) { const b = Math.abs(Math.sin(t * 6.4 + d.ph)); d.f.g.position.y = d.y + b * 0.12; d.f.g.rotation.z = Math.sin(t * 3.2 + d.ph) * 0.06; }
+      for (const cl of clubLights) { cl.l.intensity = 6 + Math.max(0, Math.sin(t * 3.2 + cl.ph)) * 22; cl.l.position.x += Math.sin(t * 0.9 + cl.ph) * 0.02; }
       for (const mo of motes) {
         mo.sp.position.y += Math.sin(t * 0.6 + mo.ph) * 0.0009;
         mo.sp.position.x = (mo.sp.userData.x as number) + Math.sin(t * 0.25 + mo.ph) * 0.3;
