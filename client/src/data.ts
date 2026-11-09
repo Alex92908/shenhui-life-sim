@@ -1,4 +1,4 @@
-// Static game data for 深惠人生模拟电脑高配版.
+// Static game data for 湾区人生.
 // Locations / identities / careers / foods ported from the previous edition;
 // ZhuyaHome style templates, furniture and material prices are ZhuyaHome's
 // real catalog data. Summit venues follow a fictional 湾区国际峰会 (no real event) in
@@ -117,6 +117,15 @@ export const IDENTITIES: Identity[] = [
   { id: "vendor", emoji: "🍢", name: "摆摊小贩", desc: "夜市出摊卖烤串，自己当老板，就是得躲着城管。", money: 1300, pay: 240, rentMul: 0.8, mood: 80, energyBonus: 2, color: 0xea580c },
   { id: "builder", emoji: "👷", name: "建筑工人", desc: "绑钢筋、搬砖、浇混凝土——深圳的每栋楼都有你的汗。日结工资高，身体最累。", money: 1200, pay: 320, rentMul: 0.7, mood: 70, energyBonus: 8, color: 0xca8a04 },
   { id: "coach", emoji: "🏋️", name: "健身教练", desc: "身材就是招牌，私教课和卖卡是收入大头。", money: 2000, pay: 260, rentMul: 1, mood: 82, energyBonus: 5, color: 0x16a34a },
+  { id: "teller", emoji: "🏦", name: "银行柜员", desc: "坐柜台、点钞、推理财，一分钱的差错都不能有。", money: 2400, pay: 250, rentMul: 1.0, mood: 74, energyBonus: 0, color: 0x0f766e },
+  { id: "pharmacist", emoji: "💊", name: "药店店员", desc: "给街坊拿药讲用法，大爷每天来量血压。", money: 1700, pay: 210, rentMul: 0.9, mood: 78, energyBonus: 0, color: 0x10b981 },
+  { id: "stationstaff", emoji: "🚇", name: "地铁站务员", desc: "早高峰在闸机口喊到嗓子哑，全城最熟悉地铁的人。", money: 1600, pay: 220, rentMul: 0.9, mood: 74, energyBonus: 3, color: 0x0369a1 },
+  { id: "netcafe", emoji: "🖥️", name: "网吧网管", desc: "修机器、送泡面、劝未成年人回家，夜班到深夜。", money: 1100, pay: 180, rentMul: 0.75, mood: 80, energyBonus: -2, color: 0x6366f1 },
+  { id: "barista", emoji: "☕", name: "咖啡师", desc: "早高峰一排外卖单，闲下来才有空练拉花。", money: 1500, pay: 200, rentMul: 0.9, mood: 82, energyBonus: 0, color: 0x92400e },
+  { id: "nails", emoji: "💅", name: "美甲师", desc: "一坐两小时，作品发出去就有回头客。", money: 1500, pay: 230, rentMul: 0.9, mood: 80, energyBonus: 0, color: 0xdb2777 },
+  { id: "petgroomer", emoji: "🐶", name: "宠物美容师", desc: "给狗洗澡剪毛，被柯基甩一身水是日常。", money: 1400, pay: 210, rentMul: 0.9, mood: 86, energyBonus: 2, color: 0xf59e0b },
+  { id: "frontdesk", emoji: "🛎️", name: "酒店前台", desc: "办入住、处理投诉，外国客人会记住你推荐的早茶店。", money: 1600, pay: 210, rentMul: 0.9, mood: 76, energyBonus: 0, color: 0x7c3aed },
+  { id: "guide", emoji: "🚩", name: "景区导游", desc: "举着小旗讲同一个故事八遍，还要讲得像第一次。", money: 1500, pay: 240, rentMul: 0.9, mood: 78, energyBonus: 2, color: 0xea580c },
   { id: "boss", emoji: "💼", name: "小老板", desc: "开了家小公司，谈下一单就是大钱，谈黄了也得发工资。", money: 12000, pay: 400, rentMul: 1.6, mood: 70, energyBonus: -3, color: 0x1f2937 },
 ];
 
@@ -1394,6 +1403,12 @@ export function allMetroDestinations(cityKey: CityKey, fromLocId: string): { loc
 /** Locations in this city that are themselves a rail station (some station
     carries their locId). These are the only points the BFS router can start
     or end at — every other place reaches the network through one of them. */
+/** the three billboard spots of a city: its busiest malls, stations and markets */
+export function billboardSpots(cityKey: CityKey): Loc[] {
+  const ls = getLocations(cityKey);
+  const pick = (t: LocType) => ls.filter((l) => l.type === t);
+  return [...pick("mall").slice(0, 1), ...pick("transit").slice(0, 1), ...pick("market").slice(0, 1), ...pick("food"), ...pick("mall").slice(1)].slice(0, 3);
+}
 export function stationLocIds(cityKey: CityKey): string[] {
   const cityLocIds = new Set(getLocations(cityKey).map((l) => l.id));
   const out = new Set<string>();

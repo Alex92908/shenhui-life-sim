@@ -21,7 +21,7 @@ import * as THK from "./terrain-hk";
 import { ROADS as REAL_ROADS } from "./roads";
 /* Real land / inland water / bridges / rivers per city (tools/terrain/gen_terrain.py). */
 const TERRAIN: Record<CityKey, typeof THK> = { sz: TSZ, hz: THZ, hk: THK };
-import { CITIES, LOC_EN, getLocations, resolveLoc, areaLocId, placesForCity, PLACE_KINDS, stationLocId, metroLinesForCity, modeById, npcsForCity, outfitOf, type CityKey, type Loc, type LocType, type Npc, type TransportModeId } from "./data";
+import { CITIES, LOC_EN, getLocations, resolveLoc, areaLocId, placesForCity, billboardSpots, PLACE_KINDS, stationLocId, metroLinesForCity, modeById, npcsForCity, outfitOf, type CityKey, type Loc, type LocType, type Npc, type TransportModeId } from "./data";
 import { makePostFx, type PostFx } from "./postfx";
 
 export interface RemotePlayer {
@@ -37,10 +37,15 @@ interface Props {
   selfLocId: string;
   /** 省电画质（手机 / 低配）：1x 像素、无阴影、无后期、树更少。只在建图时读取。 */
   lite?: boolean;
+  /** A/B map mode: "city" frames the whole city (A); "follow" keeps the camera close on you with the minimap always on (B) */
+  mapMode?: "city" | "follow";
+  onMapMode?: (m: "city" | "follow") => void;
   selfEmoji: string;
   selfColor: number;
   selfName: string;
   remotePlayers: RemotePlayer[];
+  /** 📢 rented billboards by slot (0–2), shown at the city's billboard spots */
+  billboards?: { slot: number; text: string; emoji: string; owner: string }[];
   selfOutfitId?: string;
   travelModeId?: string;
   npcMoodEmoji?: Record<string, string>;
@@ -392,6 +397,8 @@ interface Chip {
   station?: boolean;
   /** A real place (park, mall, museum …) — shown only when zoomed in. */
   place?: boolean;
+  /** billboard slot (0–2): always shown while rented, outside the label caps */
+  ad?: number;
   /** A neighbourhood / town name over the filler blocks and woods. */
   area?: "big" | "small";
   /** The small English subtitle line under a place name, if any. */
@@ -436,7 +443,7 @@ export function MapView(p: Props) {
   type LabelDensity = "few" | "normal" | "all";
   const [labelDensity, setLabelDensity] = useState<LabelDensity>(() => {
     try { const v = localStorage.getItem("shhr-labels"); if (v === "few" || v === "normal" || v === "all") return v; } catch { /* default */ }
-    return "normal";
+    return typeof window !== "undefined" && (window.innerWidth < 640 || window.innerHeight < 500) ? "few" : "normal"; // a phone screen fits far fewer names
   });
   const labelDensityRef = useRef(labelDensity);
   labelDensityRef.current = labelDensity;
@@ -457,13 +464,27 @@ export function MapView(p: Props) {
   /* a spot picked on the minimap stays the camera's centre (no drifting back to
      the player) until the player sets off on a new trip */
   const anchorRef = useRef<{ x: number; z: number } | null>(null);
+  /* B mode: the camera rides close behind you (about a third of the whole-city distance) */
+  const FOLLOW_K = 0.34;
+  const followRef = useRef(p.mapMode === "follow");
+  followRef.current = p.mapMode === "follow";
+  const baseDist = () => Math.max(16, (fitDistRef.current || 46) * (followRef.current ? FOLLOW_K : 1));
   useEffect(() => { anchorRef.current = null; }, [p.selfLocId]);
+  useEffect(() => {
+    // switching A ↔ B re-frames at that mode's distance; B always shows the minimap
+    anchorRef.current = null;
+    autoFitRef.current = true;
+    camRef.current.dist = baseDist();
+    setZoomPct(Math.round(((fitDistRef.current || 46) / camRef.current.dist) * 100));
+    if (p.mapMode === "follow") setMiniOpen(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.mapMode]);
   /* LOL-style minimap: a live 2D thumbnail of the whole miniature, drawn
      on a small canvas from the SAME actor refs the 3D scene animates, so
      the player dot, NPC dots, remote players and the destination marker
      move exactly when the big map moves. Clicking it points the main
      camera at that spot through the same lookRef channel search uses. */
-  const [miniOpen, setMiniOpen] = useState(true);
+  const [miniOpen, setMiniOpen] = useState(() => typeof window === "undefined" || (window.innerWidth >= 640 && window.innerHeight >= 500)); // phones and landscape phones: the map first, the minimap on request
   const miniCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   /* Day-cycle phase control: jumped instantly via the ☀️/🌇/🌙 buttons,
@@ -501,6 +522,8 @@ export function MapView(p: Props) {
   }
   const rateRef = useRef(REAL_RATE);
   const [demo, setDemo] = useState(false);
+  /* compact screens: the time-of-day / camera / label buttons live behind one 🎛️ button */
+  const [viewMenu, setViewMenu] = useState(false);
   const demoRef = useRef(false);
   const currentPhase = (): number => {
     const pr = phaseRef.current!;
@@ -669,10 +692,17 @@ export function MapView(p: Props) {
       setGlFailed(true);
       return;
     }
-    // 1.5x cap: on Retina (dpr 2) the full post chain at 2x is 4x the pixels
-    // of 1x — the single biggest per-frame GPU cost. 1.5x stays crisp.
     const lite = !!propsRef.current.lite;
-    renderer.setPixelRatio(lite ? 1 : Math.min(1.5, window.devicePixelRatio || 1));
+    /* Adaptive resolution: start sharp — a phone at its native density (up to
+       3×), a desktop at up to 2× — then watch the frame rate and step down
+       (3× → 2× → 1.5× → 1×) when the device can't keep up, or back up once
+       when it runs smoothly. Text and labels are HTML and always native. */
+    const dpr = window.devicePixelRatio || 1;
+    const phoneLike = lite || window.innerWidth < 768 || (typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches);
+    const prTop = Math.min(phoneLike ? 3 : 2, dpr);
+    const prLadder = [prTop, 2, 1.5, 1].filter((v, i, a) => v <= prTop && a.indexOf(v) === i);
+    let prIdx = 0;
+    renderer.setPixelRatio(prLadder[0]!);
     renderer.shadowMap.enabled = !lite;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -817,7 +847,27 @@ export function MapView(p: Props) {
       const shapes = TERRAIN[cityKey].ACROSS.map((poly) => { const sh = toShape2(poly[0]!); for (const hole of poly.slice(1)) sh.holes.push(toShape2(hole)); return sh; });
       const g2 = new THREE.ExtrudeGeometry(shapes, { depth: LAND * 0.8, bevelEnabled: false });
       g2.rotateX(-Math.PI / 2);
-      const across = new THREE.Mesh(g2, new THREE.MeshStandardMaterial({ color: 0x8b8f87, roughness: 1 }));
+      /* only a band of the neighbour shows: solid within ~2 units of the shared
+         border, fading out by ~5 — the border reads clearly without a big grey
+         block filling the screen (portrait phones see far to the south). The
+         fade is per pixel (distance to sampled border points), so big
+         triangles don't smear it. */
+      const ownPts: [number, number][] = [];
+      for (const poly of TERRAIN[cityKey].LAND) { const ring = poly[0] ?? []; const step = Math.max(1, Math.floor(ring.length / 600)); for (let i = 0; i < ring.length; i += step) ownPts.push(ring[i]!); }
+      const acrossPts: [number, number][] = [];
+      for (const poly of TERRAIN[cityKey].ACROSS) { const ring = poly[0] ?? []; const step = Math.max(1, Math.floor(ring.length / 600)); for (let i = 0; i < ring.length; i += step) acrossPts.push(ring[i]!); }
+      let border = ownPts.filter(([x, z]) => acrossPts.some(([ax, az]) => (ax - x) ** 2 + (az - z) ** 2 < 2.25));
+      if (border.length === 0) border = ownPts;
+      const N = 64;
+      const pick: THREE.Vector2[] = [];
+      for (let i = 0; i < N; i++) { const p = border[Math.floor((i * border.length) / N)] ?? border[0]!; pick.push(new THREE.Vector2(p[0], p[1])); }
+      const acrossMat = new THREE.MeshStandardMaterial({ color: 0x8b8f87, roughness: 1 });
+      acrossMat.onBeforeCompile = (sh) => {
+        sh.uniforms.uBorder = { value: pick };
+        sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nvarying vec2 vXZ;").replace("#include <begin_vertex>", "#include <begin_vertex>\nvXZ = (modelMatrix * vec4(transformed, 1.0)).xz;");
+        sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec2 vXZ;\nuniform vec2 uBorder[64];").replace("#include <dithering_fragment>", "#include <dithering_fragment>\nfloat bd = 1e9; for (int i = 0; i < 64; i++) { bd = min(bd, distance(vXZ, uBorder[i])); }\nfloat fade = 1.0 - smoothstep(3.0, 7.0, bd); float nz = fract(sin(dot(floor(gl_FragCoord.xy), vec2(12.9898, 78.233))) * 43758.5453); if (fade < nz) discard;");
+      };
+      const across = new THREE.Mesh(g2, acrossMat);
       across.receiveShadow = true;
       scene.add(across);
     }
@@ -1943,6 +1993,13 @@ export function MapView(p: Props) {
       chips.push({ el: d, kind: "road", place: true, w: 0, h: 0, lastText: "", visible: true, clampDx: 0, clampDy: 0, getPos: () => ({ x: pl.x, y: LAND + 1.0, z: pl.z }) });
     }
 
+    /* ---- 📢 billboards: one chip per spot, filled from props each pass ---- */
+    billboardSpots(cityKey).forEach((spot, slot) => {
+      const d = mkChip("", "");
+      d.style.cssText += "pointer-events:none;font:900 11px 'Noto Sans SC',sans-serif;padding:3px 9px;border-radius:6px;color:#fff;background:linear-gradient(135deg,#e63a1f,#f59e0b);border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.35);display:none;";
+      chips.push({ el: d, kind: "road", ad: slot, w: 0, h: 0, lastText: "", visible: false, clampDx: 0, clampDy: 0, getPos: () => ({ x: spot.x, y: LAND + 4.2, z: spot.z }) });
+    });
+
     /* ---- actors (3D) ---- */
     const actorViews = new Map<string, THREE.Group>();
     const actorChips = new Map<string, Chip>();
@@ -2287,8 +2344,8 @@ export function MapView(p: Props) {
       // all re-fit the city to the frame while auto-fit is armed.
       fitDistRef.current = fitDistForAspect(w / h, propsRef.current.cityKey);
       if (autoFitRef.current) {
-        camRef.current.dist = fitDistRef.current;
-        setZoomPct(100);
+        camRef.current.dist = baseDist();
+        setZoomPct(Math.round((fitDistRef.current / camRef.current.dist) * 100));
       }
     };
     resize();
@@ -2323,13 +2380,33 @@ export function MapView(p: Props) {
     let last = performance.now();
     const clockStart = performance.now();
 
+    // adaptive resolution bookkeeping (see prLadder above)
+    let prFrames = 0, prTime = 0, prWindows = 0, prSmooth = 0, prChanges = 0;
+    const applyPixelRatio = () => {
+      const pr = prLadder[prIdx]!;
+      renderer.setPixelRatio(pr);
+      fx?.setPixelRatio(pr);
+      resize();
+      prChanges += 1;
+    };
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
       if (propsRef.current.paused) {
         last = now;
         return;
       }
-      const dt = Math.min(0.05, (now - last) / 1000);
+      const rawDt = (now - last) / 1000;
+      if (!document.hidden && rawDt < 1) { prFrames += 1; prTime += rawDt; }
+      if (prTime >= 2.5 && prChanges < 3) {
+        const fps = prFrames / prTime;
+        prFrames = 0; prTime = 0; prWindows += 1;
+        if (prWindows > 1) { // the first window is loading noise
+          if (fps < 32 && prIdx < prLadder.length - 1) { prIdx += 1; prSmooth = 0; prWindows = 0; applyPixelRatio(); }
+          else if (fps >= 57 && prIdx > 0) { prSmooth += 1; if (prSmooth >= 3) { prIdx -= 1; prSmooth = 0; prWindows = 0; applyPixelRatio(); } }
+          else prSmooth = 0;
+        }
+      }
+      const dt = Math.min(0.05, rawDt);
       last = now;
       const tSec = (now - clockStart) / 1000;
 
@@ -2836,7 +2913,7 @@ export function MapView(p: Props) {
           // so following never stalls at the map's edge districts.
           const movingNow = self.blend > 0.25;
           const fitD = fitDistRef.current || 46;
-          const centerW = movingNow ? 0 : THREE.MathUtils.clamp((cam.distCur - fitD * 0.7) / (fitD * 0.3), 0, 1); // at the overview distance the city frame is the picture
+          const centerW = movingNow || followRef.current ? 0 : THREE.MathUtils.clamp((cam.distCur - fitD * 0.7) / (fitD * 0.3), 0, 1); // at the overview distance the city frame is the picture
           const fr = frameOf(propsRef.current.cityKey);
           const fx = (self.x + leadX) * (1 - centerW) + fr.cx * centerW;
           const fz = (self.z + leadZ) * (1 - centerW) + (fr.cz - fr.h * 0.08) * centerW; // a touch north: the tilted view shows more foreground
@@ -2866,9 +2943,11 @@ export function MapView(p: Props) {
       }
       const distNow = cam.distCur;
       const azNow = cam.az + cutEase * 0.5;
-      const cx = cam.tx + Math.sin(azNow) * Math.sin(cam.pol) * distNow;
-      const cy = Math.cos(cam.pol) * distNow + 2;
-      const cz = cam.tz + Math.cos(azNow) * Math.sin(cam.pol) * distNow;
+      // portrait screens look more steeply down: the whole-city view used to be half sky and sea
+      const polNow = !streetRef.current && mount.clientWidth / Math.max(1, mount.clientHeight) < 0.8 ? Math.min(cam.pol, 0.42) : cam.pol;
+      const cx = cam.tx + Math.sin(azNow) * Math.sin(polNow) * distNow;
+      const cy = Math.cos(polNow) * distNow + 2;
+      const cz = cam.tz + Math.cos(azNow) * Math.sin(polNow) * distNow;
       camera.position.set(cx, Math.max(4, cy), cz);
       camera.lookAt(cam.tx, LAND, cam.tz);
       const targetFov = cineRef.current && self ? 42 + self.blend * 2.5 : 42;
@@ -2895,12 +2974,15 @@ export function MapView(p: Props) {
       const density = labelDensityRef.current;
       const english = document.documentElement.lang === "en";
       // how many place labels may show at once (zoomed out it is the city view)
-      const locCap = density === "all" ? 999 : overview ? (density === "few" ? 8 : 22) : density === "few" ? 14 : 60;
+      // a phone shows a fraction of a desktop's map area, so it gets a fraction of the labels
+      const scr = Math.max(0.35, Math.min(1, (w * h) / (1100 * 650)));
+      const locCap = density === "all" ? 999 : Math.max(3, Math.round((overview ? (density === "few" ? 6 : 12) : density === "few" ? 10 : 24) * scr));
       let locShown = 0;
       /* separate budgets so place pins, neighbourhood names and stations never
          swamp the view (zoomed in they used to fill every gap) */
-      const kindCap = density === "all" ? { place: 999, area: 999, station: 999 } : density === "few" ? { place: 4, area: 4, station: 3 } : { place: 10, area: 8, station: 6 };
-      const kindShown = { place: 0, area: 0, station: 0 };
+      const kc = (n: number) => Math.max(2, Math.round(n * scr));
+      const kindCap = density === "all" ? { place: 999, area: 999, station: 999, road: 999 } : density === "few" ? { place: kc(3), area: kc(3), station: kc(2), road: 1 } : { place: kc(5), area: kc(4), station: kc(4), road: kc(3) };
+      const kindShown = { place: 0, area: 0, station: 0, road: 0 };
       const cands: { chip: Chip; sx: number; sy: number; prio: number; near: boolean }[] = [];
       let measured = 0;
       for (const chip of chips) {
@@ -2954,6 +3036,12 @@ export function MapView(p: Props) {
             continue;
           }
           prio = (chip.area === "big" ? 9.1 : 9.6) + dCam / 40;
+        } else if (chip.ad !== undefined) {
+          const ad = propsRef.current.billboards?.find((b) => b.slot === chip.ad);
+          if (!ad) { if (chip.visible) { chip.visible = false; chip.el.style.display = "none"; } continue; }
+          const t = `📢 ${ad.emoji} ${ad.text}`;
+          if (chip.el.textContent !== t) { chip.el.textContent = t; chip.el.title = `${ad.owner} · 广告 / Ad`; chip.w = 0; }
+          prio = 1.5;
         } else if (chip.station || chip.place) {
           if (!near && (overview || dCam > (chip.place ? 11 : 12))) {
             chip.visible = false;
@@ -2987,7 +3075,11 @@ export function MapView(p: Props) {
         const txt = chip.el.textContent ?? "";
         if (chip.w === 0 || (chip.kind === "actor" && txt !== chip.lastText)) {
           // measuring a label forces a layout: only a few per pass, so moving across the map doesn't stutter
-          if (measured >= 8 && !chip.self && chip.kind !== "loc") continue;
+          if (measured >= 8 && !chip.self && chip.kind !== "loc") {
+            // not measured yet: keep it hidden until its turn, or the first seconds after loading show every label at once
+            if (chip.visible) { chip.visible = false; chip.el.style.display = "none"; }
+            continue;
+          }
           measured++;
           chip.el.style.display = "";
           chip.w = chip.el.offsetWidth;
@@ -3005,7 +3097,7 @@ export function MapView(p: Props) {
             c.chip.el.style.display = "none";
             continue;
           }
-          const kk = c.chip.place ? "place" : c.chip.area ? "area" : c.chip.station ? "station" : null;
+          const kk = c.chip.place ? "place" : c.chip.area ? "area" : c.chip.station ? "station" : c.chip.kind === "road" && !c.chip.metro && c.chip.ad === undefined ? "road" : null;
           if (kk && !c.near && kindShown[kk] >= kindCap[kk]) {
             c.chip.visible = false;
             c.chip.el.style.display = "none";
@@ -3090,8 +3182,8 @@ export function MapView(p: Props) {
     camRef.current.az = 0; // north up: the long cities (Shenzhen strip, Hong Kong, Huizhou) fill the screen side to side
     camRef.current.pol = CAM_POL;
     autoFitRef.current = true;
-    camRef.current.dist = fitDistRef.current;
-    setZoomPct(100);
+    camRef.current.dist = baseDist();
+    setZoomPct(Math.round((fitDistRef.current / camRef.current.dist) * 100));
   };
   const toggleStreetCam = () => {
     const next = !streetRef.current;
@@ -3123,10 +3215,10 @@ export function MapView(p: Props) {
       const locs = getLocations(cityKey);
       // sea, then the landmass deck (schematic, same bounds as the 3D one)
       const sea = g.createLinearGradient(0, 0, 0, H);
-      sea.addColorStop(0, "#0d2c4c"); sea.addColorStop(1, "#14507e");
+      sea.addColorStop(0, "#9fd3f0"); sea.addColorStop(1, "#6fb6e3");
       g.fillStyle = sea; g.fillRect(0, 0, W, H);
-      g.fillStyle = "#476a4d";
-      g.strokeStyle = "rgba(255,255,255,0.35)"; g.lineWidth = 2;
+      g.fillStyle = "#eef0e2";
+      g.strokeStyle = "#8fb3c9"; g.lineWidth = 2;
       if (TERRAIN[cityKey].LAND.length) {
         // the real islands and peninsulas, same polygons as the 3D land
         for (const poly of TERRAIN[cityKey].LAND) {
@@ -3134,26 +3226,33 @@ export function MapView(p: Props) {
           for (const ring of poly) ring.forEach(([x, z], i) => (i ? g.lineTo(px(x), py(z)) : g.moveTo(px(x), py(z))));
           g.fill("evenodd"); g.stroke();
         }
-        g.fillStyle = "#3a4a44";
+        g.fillStyle = "#c9cdc4";
         for (const poly of TERRAIN[cityKey].ACROSS) {
           g.beginPath();
           for (const ring of poly) ring.forEach(([x, z], i) => (i ? g.lineTo(px(x), py(z)) : g.moveTo(px(x), py(z))));
           g.fill("evenodd");
         }
-        g.fillStyle = "#476a4d";
+        g.fillStyle = "#eef0e2";
       } else {
         const lx = px(-38), ly = py(-24), lw = px(38) - lx, lh = py(14) - ly;
         g.beginPath(); g.rect(lx, ly, lw, lh); g.fill(); g.stroke();
       }
       // road corridors
-      g.strokeStyle = "rgba(255,240,200,0.4)"; g.lineCap = "round";
+      g.strokeStyle = "rgba(255,255,255,0.95)"; g.lineCap = "round";
       for (const r of ROADS[cityKey]) {
         g.lineWidth = Math.max(1.4, Math.min(4, r.w * sx * 0.55));
         g.beginPath(); g.moveTo(px(r.x1), py(r.z1)); g.lineTo(px(r.x2), py(r.z2)); g.stroke();
       }
-      // every location as a faint dot
-      g.fillStyle = "rgba(255,233,184,0.75)";
-      for (const l of locs) { g.beginPath(); g.arc(px(l.x), py(l.z), 3, 0, Math.PI * 2); g.fill(); }
+      // the real metro / rail lines in their own colours: the minimap reads like a transit map
+      g.lineJoin = "round";
+      for (const line of metroLinesForCity(cityKey)) {
+        if (line.stations.length < 2) continue;
+        g.strokeStyle = line.colorCss; g.lineWidth = 3;
+        g.beginPath(); line.stations.forEach((st, i) => (i ? g.lineTo(px(st.x), py(st.z)) : g.moveTo(px(st.x), py(st.z)))); g.stroke();
+      }
+      // every location as a small dot
+      g.fillStyle = "rgba(60,70,80,0.55)";
+      for (const l of locs) { g.beginPath(); g.arc(px(l.x), py(l.z), 2.6, 0, Math.PI * 2); g.fill(); }
       const actors = actorsRef.current;
       const self = actors.get("self");
       // destination: pulsing red target while it differs from where you stand
@@ -3167,7 +3266,7 @@ export function MapView(p: Props) {
       }
       // camera view centre: a dashed ring showing where the big map looks
       const cam = camRef.current;
-      g.strokeStyle = "rgba(255,255,255,0.55)"; g.lineWidth = 1.6; g.setLineDash([5, 4]);
+      g.strokeStyle = "rgba(20,32,43,0.55)"; g.lineWidth = 1.8; g.setLineDash([5, 4]);
       g.beginPath(); g.arc(px(cam.tx), py(cam.tz), Math.max(8, cam.distCur * 0.3 * sx), 0, Math.PI * 2); g.stroke();
       g.setLineDash([]);
       // NPCs + remote players (live positions, straight from the actor set)
@@ -3213,7 +3312,8 @@ export function MapView(p: Props) {
     // lookRef channel wins over follow for a few seconds) — it locates,
     // it does not start walking the player there.
     lookRef.current = { x: wx, z: wz, until: performance.now() + 5000 };
-    anchorRef.current = { x: wx, z: wz };
+    // whole-city mode keeps the picked spot until the next trip; follow mode glances there, then comes back to you
+    if (!followRef.current) anchorRef.current = { x: wx, z: wz };
   };
 
   if (glFailed) {
@@ -3250,28 +3350,31 @@ export function MapView(p: Props) {
       {cine && (
         <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-[5]" style={{ background: "radial-gradient(ellipse 118% 96% at 50% 42%, transparent 62%, rgba(5,10,18,0.34) 100%), linear-gradient(to bottom, rgba(5,10,18,0.16), transparent 13%, transparent 88%, rgba(5,10,18,0.2))" }} />
       )}
-      <div className="absolute bottom-3 right-3 z-10 flex max-w-[calc(100%-24px)] flex-wrap justify-end gap-1.5">
-        <button type="button" aria-label="跳到白天" onClick={() => jumpToPhase(0.32)} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow">☀️</button>
-        <button type="button" aria-label="跳到黄昏" onClick={() => jumpToPhase(0.74)} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow">🌇</button>
-        <button type="button" aria-label="跳到夜晚" onClick={() => jumpToPhase(0.93)} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow">🌙</button>
-        <button type="button" aria-label="回到真实时间：天色按深圳/惠州当地此刻走" onClick={backToRealTime} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow">🕐</button>
-        <button type="button" aria-label={demo ? "停止延时演示" : "延时演示：一昼夜30秒，看昼夜光影全程"} aria-pressed={demo} onClick={toggleDemo} className={`grid h-9 w-9 place-items-center rounded-full border text-base shadow ${demo ? "border-[var(--accent)] bg-[#14202b]/95" : "border-black/40 bg-[#fffdf8]/95"}`}>🎥</button>
-        <button type="button" aria-label={streetCam ? "回到全景视角" : "街景视角：贴到街面上，站在街道里看车流、红绿灯和行人"} aria-pressed={streetCam} onClick={toggleStreetCam} className={`grid h-9 w-9 place-items-center rounded-full border text-base shadow ${streetCam ? "border-[var(--accent)] bg-[#14202b]/95" : "border-black/40 bg-[#fffdf8]/95"}`}>🚶</button>
-        <button type="button" aria-label={cine ? "关闭电影镜头" : "开启电影镜头"} aria-pressed={cine} onClick={() => setCine((c) => !c)} className={`grid h-9 w-9 place-items-center rounded-full border text-base shadow ${cine ? "border-[var(--accent)] bg-[#14202b]/95" : "border-black/40 bg-[#fffdf8]/95"}`}>🎬</button>
-        <span className="grid h-9 min-w-9 place-items-center rounded-full border border-black/40 bg-[#14202b]/90 px-2 text-[11px] font-black text-white shadow" aria-label={`当前缩放 ${zoomPct}%`} title="当前缩放比例（⌂ 回到 100%）">{zoomPct}%</span>
+      <div className="absolute bottom-3 right-3 z-10 flex max-w-[calc(100%-24px)] flex-wrap justify-end gap-1.5 compact-dock">
+        <button type="button" aria-label={viewMenu ? "收起视角和时间按钮" : "更多：时间、镜头、标签"} aria-expanded={viewMenu} onClick={() => setViewMenu((v) => !v)} className={`compact-only h-9 w-9 place-items-center justify-center rounded-full border text-base shadow ${viewMenu ? "border-[var(--accent)] bg-[#14202b]/95 text-white" : "border-black/40 bg-[#fffdf8]/95"}`}>🎛️</button>
+        <button type="button" aria-label="跳到白天" onClick={() => jumpToPhase(0.32)} className={`grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow${viewMenu ? "" : " compact-hide"}`}>☀️</button>
+        <button type="button" aria-label="跳到黄昏" onClick={() => jumpToPhase(0.74)} className={`grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow${viewMenu ? "" : " compact-hide"}`}>🌇</button>
+        <button type="button" aria-label="跳到夜晚" onClick={() => jumpToPhase(0.93)} className={`grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow${viewMenu ? "" : " compact-hide"}`}>🌙</button>
+        <button type="button" aria-label="回到真实时间：天色按深圳/惠州当地此刻走" onClick={backToRealTime} className={`grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow${viewMenu ? "" : " compact-hide"}`}>🕐</button>
+        <button type="button" aria-label={demo ? "停止延时演示" : "延时演示：一昼夜30秒，看昼夜光影全程"} aria-pressed={demo} onClick={toggleDemo} className={`grid h-9 w-9 place-items-center rounded-full border text-base shadow ${demo ? "border-[var(--accent)] bg-[#14202b]/95" : "border-black/40 bg-[#fffdf8]/95"}${viewMenu ? "" : " compact-hide"}`}>🎥</button>
+        <button type="button" aria-label={streetCam ? "回到全景视角" : "街景视角：贴到街面上，站在街道里看车流、红绿灯和行人"} aria-pressed={streetCam} onClick={toggleStreetCam} className={`grid h-9 w-9 place-items-center rounded-full border text-base shadow ${streetCam ? "border-[var(--accent)] bg-[#14202b]/95" : "border-black/40 bg-[#fffdf8]/95"}${viewMenu ? "" : " compact-hide"}`}>🚶</button>
+        <button type="button" aria-label={cine ? "关闭电影镜头" : "开启电影镜头"} aria-pressed={cine} onClick={() => setCine((c) => !c)} className={`grid h-9 w-9 place-items-center rounded-full border text-base shadow ${cine ? "border-[var(--accent)] bg-[#14202b]/95" : "border-black/40 bg-[#fffdf8]/95"}${viewMenu ? "" : " compact-hide"}`}>🎬</button>
+        <span className={`grid h-9 min-w-9 place-items-center rounded-full border border-black/40 bg-[#14202b]/90 px-2 text-[11px] font-black text-white shadow${viewMenu ? "" : " compact-hide"}`} aria-label={`当前缩放 ${zoomPct}%`} title="当前缩放比例（⌂ 回到 100%）">{zoomPct}%</span>
         <button type="button" aria-label="放大地图" onClick={() => zoomBy(0.78)} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">＋</button>
         <button type="button" aria-label="缩小地图" onClick={() => zoomBy(1.28)} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">－</button>
-        <button type="button" aria-label="标签密度" title={labelDensity === "few" ? "标签：精简（点一下切换）" : labelDensity === "normal" ? "标签：标准（点一下切换）" : "标签：全部（点一下切换）"} onClick={cycleLabels} className="grid h-9 min-w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 px-2 text-[11px] font-black text-[#14202b] shadow">🏷️{labelDensity === "few" ? "简" : labelDensity === "normal" ? "标" : "全"}</button>
+        <button type="button" aria-label="标签密度" title={labelDensity === "few" ? "标签：精简（点一下切换）" : labelDensity === "normal" ? "标签：标准（点一下切换）" : "标签：全部（点一下切换）"} onClick={cycleLabels} className={`grid h-9 min-w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 px-2 text-[11px] font-black text-[#14202b] shadow${viewMenu ? "" : " compact-hide"}`}>🏷️{labelDensity === "few" ? "简" : labelDensity === "normal" ? "标" : "全"}</button>
+        <button type="button" aria-label={p.mapMode === "follow" ? "切换到全城视角" : "切换到跟随视角"} title={p.mapMode === "follow" ? "现在：跟随视角（镜头跟着你，小地图看全城）。点一下换成一眼看全城" : "现在：全城视角。点一下换成跟随视角（镜头跟着你，小地图看全城）"} onClick={() => p.onMapMode?.(p.mapMode === "follow" ? "city" : "follow")} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">{p.mapMode === "follow" ? "🗺️" : "🎯"}</button>
         <button type="button" aria-label="重置视角" onClick={resetCam} className="grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">⌂</button>
       </div>
-      <p className="pointer-events-none absolute left-3 top-3 z-10 rounded-full bg-[#0b1622]/70 px-3 py-1.5 text-[11px] font-bold text-white/90">
+      <p className="pointer-events-none absolute left-3 top-3 z-10 rounded-full bg-[#0b1622]/70 px-3 py-1.5 text-[11px] font-bold text-white/90 compact-hide">
         拖动旋转 · 滚轮/＋－缩放（右下角显示比例） · 点建筑或标签前往 · 左下小地图看全城、点它定位镜头 · 天色按当地真实时间、云雨按真实天气走 · 右下 ☀️🌇🌙 预览时间 · 🕐 回到真实时间 · 🎥 延时演示 · 🎬 电影镜头 · 🚶 街景视角贴到街面：看车流等红灯、行人过马路、NPC 打招呼
       </p>
       {/* LOL-style minimap: whole-city thumbnail, live-linked to the big map */}
-      <div className="absolute bottom-3 left-3 z-10">
+      <div className="mini-dock absolute bottom-3 left-3 z-10">
         {miniOpen ? (
-          <div className="overflow-hidden rounded-[12px] border border-black/50 bg-[#0b1622]/85 shadow-xl">
-            <div className="flex items-center gap-1 px-2 py-1">
+          <div className="mini-card relative w-[176px] overflow-hidden rounded-[12px] border border-black/50 bg-[#0b1622]/85 shadow-xl sm:w-[220px]">
+            <button type="button" aria-label="收起小地图" onClick={() => setMiniOpen(false)} className="compact-only absolute right-1 top-1 z-10 h-6 w-6 place-items-center justify-center rounded-full bg-black/55 text-[11px] font-black text-white">✕</button>
+            <div className="compact-hide flex items-center gap-1 px-2 py-1">
               <span className="min-w-0 flex-1 truncate text-[11px] font-black text-white/90">🗺️ 小地图 · {CITIES[p.cityKey].name}全城</span>
               <button type="button" aria-label="收起小地图" onClick={() => setMiniOpen(false)} className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-black text-white/85 transition hover:bg-white/20">收起 ▾</button>
             </div>
@@ -3282,12 +3385,12 @@ export function MapView(p: Props) {
               onClick={onMiniClick}
               role="img"
               aria-label="全城小地图：白色大圆点是你，彩色小点是NPC和在线玩家，红色靶心是目的地，虚线圈是大地图镜头位置；点击小地图任意位置，大地图镜头会定位过去"
-              className="block h-[97px] w-[176px] cursor-crosshair sm:h-[121px] sm:w-[220px]"
+              className="mini-canvas block h-[97px] w-[176px] cursor-crosshair sm:h-[121px] sm:w-[220px]"
             />
-            <p className="px-2 py-1 text-[10px] font-bold leading-tight text-white/70">⚪ 你 · 🟡 NPC/玩家 · 🔴 目的地 · 点图定位镜头</p>
+            <p className="compact-hide px-2 py-1 text-[10px] font-bold leading-tight text-white/70">⚪ 你 · 🟡 NPC/玩家 · 🔴 目的地 · 点图定位镜头</p>
           </div>
         ) : (
-          <button type="button" aria-label="展开小地图" onClick={() => setMiniOpen(true)} className="rounded-full border border-black/50 bg-[#0b1622]/85 px-3.5 py-2 text-xs font-black text-white shadow-xl transition hover:bg-[#0b1622]">🗺️ 小地图 ▸</button>
+          <button type="button" aria-label="展开小地图" onClick={() => setMiniOpen(true)} className="rounded-full border border-black/50 bg-[#0b1622]/85 px-3.5 py-2 text-xs font-black text-white shadow-xl transition hover:bg-[#0b1622]">🗺️<span className="compact-hide"> 小地图 ▸</span></button>
         )}
       </div>
       {p.navOverlay}

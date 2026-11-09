@@ -114,13 +114,13 @@ const sendCode = async (provider: "email" | "phone", to: string, code: string) =
   if (provider === "phone" && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && (process.env.TWILIO_FROM || process.env.TWILIO_MESSAGING_SERVICE_SID)) {
     // overseas SMS through Twilio (Chinese mainland numbers need a local provider through LOGIN_CODE_WEBHOOK)
     const sid = process.env.TWILIO_ACCOUNT_SID;
-    const body = new URLSearchParams({ To: to, Body: `【深惠人生】验证码 ${code}，10 分钟内有效。Your Shenhui Life code is ${code}.`, ...(process.env.TWILIO_MESSAGING_SERVICE_SID ? { MessagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID } : { From: process.env.TWILIO_FROM! }) });
+    const body = new URLSearchParams({ To: to, Body: `【湾区人生】验证码 ${code}，10 分钟内有效。Your Bay Area Life code is ${code}.`, ...(process.env.TWILIO_MESSAGING_SERVICE_SID ? { MessagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID } : { From: process.env.TWILIO_FROM! }) });
     const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, { method: "POST", headers: { authorization: `Basic ${Buffer.from(`${sid}:${process.env.TWILIO_AUTH_TOKEN}`).toString("base64")}`, "content-type": "application/x-www-form-urlencoded" }, body });
     if (!r.ok) throw new Error(`twilio ${r.status}`);
     return;
   }
   if (provider === "email" && process.env.RESEND_API_KEY) {
-    const r = await fetch("https://api.resend.com/emails", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${process.env.RESEND_API_KEY}` }, body: JSON.stringify({ from: process.env.LOGIN_FROM ?? "深惠人生 <login@example.com>", to: [to], subject: `深惠人生登录验证码 ${code}`, text: `你的验证码是 ${code}，10 分钟内有效。不是你本人操作请忽略。\nYour login code is ${code} (valid for 10 minutes).` }) });
+    const r = await fetch("https://api.resend.com/emails", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${process.env.RESEND_API_KEY}` }, body: JSON.stringify({ from: process.env.LOGIN_FROM ?? "湾区人生 <login@example.com>", to: [to], subject: `湾区人生登录验证码 ${code}`, text: `你的验证码是 ${code}，10 分钟内有效。不是你本人操作请忽略。\nYour login code is ${code} (valid for 10 minutes).` }) });
     if (!r.ok) throw new Error(`resend ${r.status}`);
     return;
   }
@@ -263,5 +263,5 @@ createServer((req, res) => {
   else if (req.method === "GET" || req.method === "HEAD") serveStatic(req, res);
   else send(res, 405, { ok: false, error: "method not allowed" });
 }).listen(PORT, HOST, () => {
-  console.log(`深惠人生模拟 standalone server → http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}  (db: ${DB_PATH})`);
+  console.log(`湾区人生 standalone server → http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}  (db: ${DB_PATH})`);
 });

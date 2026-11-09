@@ -1,5 +1,5 @@
 // 上线运营 + 真人关系：🆕 更新公告与意见箱、🤝 合租 / 结拜 / 情侣、🏛️ 业委会选举。
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { api, type ApiResponse } from "./api";
 
 export type Bond = ApiResponse<typeof api, "getBonds">["bonds"][number];
@@ -52,7 +52,7 @@ export const UPDATES: { date: string; zh: string[]; en: string[] }[] = [
 ];
 export const LATEST_UPDATE = UPDATES[0]!.date;
 
-export function UpdatesModal({ en, playerId, city, onClose, toast }: { en: boolean; playerId: string; city: "sz" | "hz" | "hk"; onClose: () => void; toast: (m: string) => void }) {
+export function UpdatesModal({ en, playerId, city, news, onClose, toast }: { en: boolean; playerId: string; city: "sz" | "hz" | "hk"; news: { id: number; zh: string; en: string; at: string }[]; onClose: () => void; toast: (m: string) => void }) {
   const T = (zh: string, e: string) => (en ? e : zh);
   const [kind, setKind] = useState<"bug" | "idea" | "other">("idea");
   const [body, setBody] = useState("");
@@ -66,9 +66,15 @@ export function UpdatesModal({ en, playerId, city, onClose, toast }: { en: boole
     setBusy(false);
   };
   return (
-    <div className="fixed inset-0 z-[68] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={T("更新公告", "What's new")}>
+    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={T("更新公告", "What's new")}>
       <div className="rise max-h-[88vh] w-full max-w-md overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] p-4">
         <p className="flex items-center justify-between"><span className="font-display text-xl font-black">🆕 {T("更新公告", "What's new")}</span><button type="button" onClick={onClose} className="rounded-full border px-3 py-1 text-xs font-black">✕</button></p>
+        {news.map((n) => (
+          <div key={`n${n.id}`} className="mt-3 rounded-[12px] border-2 border-[var(--accent)] p-2.5">
+            <p className="text-xs font-black text-[var(--accent)]">📣 {new Date(n.at).toLocaleDateString(en ? "en-GB" : "zh-CN", { timeZone: "Asia/Shanghai", month: "short", day: "numeric" })}</p>
+            <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed">{en ? n.en : n.zh}</p>
+          </div>
+        ))}
         {UPDATES.map((u) => (
           <div key={u.date} className="mt-3">
             <p className="text-xs font-black text-[var(--accent)]">{u.date}</p>
@@ -104,7 +110,7 @@ export function BondsModal({ en, playerId, bonds, onClose, toast, refresh, openC
   const active = bonds.filter((b) => b.status === "active");
   const sent = bonds.filter((b) => b.status === "pending" && b.mine);
   return (
-    <div className="fixed inset-0 z-[68] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={T("我的关系", "My people")}>
+    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={T("我的关系", "My people")}>
       <div className="rise max-h-[88vh] w-full max-w-md overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] p-4">
         <p className="flex items-center justify-between"><span className="font-display text-xl font-black">🤝 {T("我的关系", "My people")}</span><button type="button" onClick={onClose} className="rounded-full border px-3 py-1 text-xs font-black">✕</button></p>
         <p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">{T("和真人玩家合租（房租各付一半）、结拜、在一起。点地图上玩家的名字 → 名片里发出邀请；只能邀请一起组过局、或者互相聊过天的人。", "Share a flat with a real player (half rent each), become sworn siblings, get together. Tap a player's name on the map → their card to invite; only people you've partied or chatted with.")}</p>
@@ -154,7 +160,7 @@ export function CommitteeModal({ en, playerId, city, cityName, st, onClose, toas
   const ends = st ? new Date(st.endsAt) : null;
   const left = ends ? Math.max(0, Math.ceil((ends.getTime() - Date.now()) / 86_400_000)) : 0;
   return (
-    <div className="fixed inset-0 z-[68] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={T("业委会选举", "Estate committee")}>
+    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={T("业委会选举", "Estate committee")}>
       <div className="rise max-h-[88vh] w-full max-w-md overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] p-4">
         <p className="flex items-center justify-between"><span className="font-display text-xl font-black">🏛️ {T(`${cityName}业委会`, `${cityName} estate committee`)}</span><button type="button" onClick={onClose} className="rounded-full border px-3 py-1 text-xs font-black">✕</button></p>
         <div className="mt-3 rounded-[14px] border-2 border-[var(--gold)] bg-[#fdf6da] p-3 text-[#5c4a00]">
@@ -183,6 +189,130 @@ export function CommitteeModal({ en, playerId, city, cityName, st, onClose, toas
           </div>
           <button type="button" onClick={() => void run()} className="mt-2 w-full rounded-full bg-[var(--text)] py-2.5 text-sm font-black text-[var(--bg)]">{st?.running ? T("更新承诺", "Update pledge") : T("报名参选", "Sign up")}</button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---- 💼 零工：真人雇真人，工钱托管；有纠纷交给同城陪审团 ---- */
+export type GigsState = ApiResponse<typeof api, "getGigs">;
+type Gig = GigsState["mine"][number];
+const GIG_IDEAS: [string, string][] = [["帮我排队买网红奶茶", "Queue for the viral bubble tea"], ["帮忙搬家搬两箱书", "Help move two boxes of books"], ["代送一份文件去福田", "Deliver a document across town"], ["陪练粤语口语", "Cantonese conversation practice"], ["帮我修电脑", "Fix my computer"], ["夜市摊位帮忙一晚", "Help at my night-market stall"]];
+const STATUS: Record<string, [string, string]> = { open: ["等人接", "Waiting"], taken: ["干活中", "In progress"], delivered: ["已交付，待确认", "Delivered — awaiting OK"], disputed: ["陪审中", "With the jury"], paid: ["已付款", "Paid"], refunded: ["已退回", "Refunded"] };
+export function GigsModal({ en, playerId, city, money, st, onClose, toast, refresh, onHeld, onDeliver, openAccount }: { en: boolean; playerId: string; city: "sz" | "hz" | "hk"; money: number; st: GigsState | undefined; onClose: () => void; toast: (m: string) => void; refresh: () => void; onHeld: (n: number) => void; onDeliver: () => boolean; openAccount: () => void }) {
+  const T = (zh: string, e: string) => (en ? e : zh);
+  const [tab, setTab] = useState<"find" | "mine" | "jury">("find");
+  const [title, setTitle] = useState("");
+  const [pay, setPay] = useState(120);
+  const [reason, setReason] = useState("");
+  const err = (e?: string) => { toast(e ?? T("操作失败", "Couldn't do that")); if (e?.includes("账号")) openAccount(); };
+  const post = async () => {
+    try { const r = await api.postGig({ playerId, city, title: title.trim(), pay }); if (r.ok) { onHeld(r.held ?? pay); setTitle(""); toast(T(`发出去了！¥${pay} 由平台托管，干完活才付。`, `Posted! ¥${pay} is held until the job's done.`)); setTab("mine"); } else err(r.error); } catch { toast(T("网络不太好", "Network hiccup")); }
+    refresh();
+  };
+  const act = async (g: Gig, a: "take" | "deliver" | "confirm" | "dispute" | "cancel") => {
+    if (a === "deliver" && !onDeliver()) return;
+    try { const r = await api.gigAction({ playerId, gigId: g.id, act: a, reason: a === "dispute" ? reason : undefined }); if (r.ok) toast(({ take: T("接了！去干活，2 分钟后可以交付。", "Taken! Do the job — you can deliver in 2 minutes."), deliver: T("交付了，等老板确认（2 小时内不确认自动付款）。", "Delivered — the employer has 2 hours to confirm, then it pays automatically."), confirm: T("付款了，对方会收到工钱。", "Paid — the worker gets the money."), dispute: T("投诉已提交，同城玩家 24 小时内投票裁决。", "Complaint filed — the city's players vote within 24 hours."), cancel: T("撤回了，工钱退回你的钱包。", "Withdrawn — the pay comes back to you.") } as Record<string, string>)[a]!); else err(r.error); } catch { toast(T("网络不太好", "Network hiccup")); }
+    refresh();
+  };
+  const vote = async (g: Gig, side: "worker" | "employer") => {
+    try { const r = await api.juryVote({ playerId, gigId: g.id, side }); if (r.ok) toast(T("投票了，结案后按多数执行。", "Voted — the majority decides when it closes.")); else err(r.error); } catch { toast(T("网络不太好", "Network hiccup")); }
+    refresh();
+  };
+  const left = (iso: string | null) => { if (!iso) return ""; const m = Math.max(0, Math.round((new Date(iso).getTime() - Date.now()) / 60_000)); return m >= 60 ? T(`${Math.floor(m / 60)} 小时 ${m % 60} 分`, `${Math.floor(m / 60)}h ${m % 60}m`) : T(`${m} 分钟`, `${m} min`); };
+  const card = (g: Gig, body: ReactNode) => (
+    <div key={g.id} className="mt-2 rounded-[14px] border-2 border-[var(--line)] p-3">
+      <p className="flex items-start gap-2"><span className="min-w-0 flex-1 text-sm font-black">{g.title}</span><span className="shrink-0 font-black text-[var(--accent)]">¥{g.pay}</span></p>
+      <p className="text-xs text-[var(--dim)]">{g.employer.emoji} {g.employer.name}{g.worker ? ` → ${g.worker.emoji} ${g.worker.name}` : ""} · {en ? STATUS[g.status]?.[1] : STATUS[g.status]?.[0]}</p>
+      {body}
+    </div>
+  );
+  const juryN = st?.jury.length ?? 0;
+  return (
+    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={T("零工", "Gigs")}>
+      <div className="rise max-h-[88vh] w-full max-w-md overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] p-4">
+        <p className="flex items-center justify-between"><span className="font-display text-xl font-black">💼 {T("零工 · 真人雇真人", "Gigs · real players hiring real players")}</span><button type="button" onClick={onClose} className="rounded-full border px-3 py-1 text-xs font-black">✕</button></p>
+        <p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">{T("发活的人先把工钱交给平台托管；接活的人干完交付，老板确认就付款（2 小时不确认自动付）。觉得没干好可以投诉，由同城玩家当陪审团投票。", "The employer's pay is held by the game; the worker delivers, the employer confirms (or it pays out after 2 hours). Unhappy? Complain, and the city's players vote as a jury.")}</p>
+        <div className="mt-3 grid grid-cols-3 gap-1.5">
+          {([["find", T("接活", "Find work")], ["mine", T("我的活", "My gigs")], ["jury", `${T("陪审", "Jury")}${juryN ? ` ${juryN}` : ""}`]] as const).map(([k, l]) => <button key={k} type="button" aria-pressed={tab === k} onClick={() => setTab(k)} className={`rounded-full border-2 py-1.5 text-xs font-black ${tab === k ? "border-[var(--border)] bg-[var(--text)] text-[var(--bg)]" : "border-[var(--line)]"}`}>{l}</button>)}
+        </div>
+        {tab === "find" && <>
+          {(st?.open ?? []).length === 0 && <p className="mt-3 text-xs text-[var(--dim)]">{T("城里暂时没人发活。你也可以在「我的活」里发一个。", "No gigs in town right now. Post one under “My gigs”.")}</p>}
+          {(st?.open ?? []).map((g) => card(g, <button type="button" onClick={() => void act(g, "take")} className="mt-2 w-full rounded-full bg-[var(--accent)] py-2 text-sm font-black text-white">{T("接这个活", "Take it")}</button>))}
+        </>}
+        {tab === "mine" && <>
+          <div className="mt-3 rounded-[14px] border-2 border-[var(--border)] p-3">
+            <p className="text-sm font-black">{T("发一个活", "Post a gig")}</p>
+            <div className="mt-1.5 flex flex-wrap gap-1">{GIG_IDEAS.map(([zh, e]) => <button key={zh} type="button" onClick={() => setTitle(en ? e : zh)} className="chip text-[11px]">{en ? e : zh}</button>)}</div>
+            <input value={title} onChange={(e) => setTitle(e.target.value.slice(0, 30))} placeholder={T("要别人帮你做什么？", "What do you need done?")} aria-label={T("活的内容", "Gig")} className="mt-2 w-full rounded-full border-2 border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm" />
+            <label className="mt-2 flex items-center gap-2 text-xs font-bold">{T("工钱", "Pay")} <input type="range" min={30} max={500} step={10} value={pay} onChange={(e) => setPay(Number(e.target.value))} className="flex-1" /> <span className="w-12 text-right font-black">¥{pay}</span></label>
+            <button type="button" disabled={title.trim().length < 2 || money < pay} onClick={() => void post()} className="mt-2 w-full rounded-full bg-[var(--text)] py-2 text-sm font-black text-[var(--bg)] disabled:opacity-40">{money < pay ? T("存款不够", "Not enough savings") : T(`托管 ¥${pay} 并发布`, `Hold ¥${pay} and post`)}</button>
+          </div>
+          {(st?.mine ?? []).map((g) => card(g, <>
+            {g.role === "worker" && g.status === "taken" && <button type="button" disabled={!!g.canDeliverAt && new Date(g.canDeliverAt).getTime() > Date.now()} onClick={() => void act(g, "deliver")} className="mt-2 w-full rounded-full bg-[var(--accent)] py-2 text-sm font-black text-white disabled:opacity-40">{g.canDeliverAt && new Date(g.canDeliverAt).getTime() > Date.now() ? T(`干活中… ${left(g.canDeliverAt)}后可交付`, `Working… deliver in ${left(g.canDeliverAt)}`) : T("交付（能量 -8）", "Deliver (energy -8)")}</button>}
+            {g.role === "employer" && g.status === "open" && <button type="button" onClick={() => void act(g, "cancel")} className="mt-2 w-full rounded-full border-2 border-[var(--line)] py-2 text-xs font-black">{T("撤回，退回工钱", "Withdraw — get the pay back")}</button>}
+            {g.role === "employer" && g.status === "delivered" && <div className="mt-2 grid gap-1.5">
+              <button type="button" onClick={() => void act(g, "confirm")} className="rounded-full bg-[var(--accent)] py-2 text-sm font-black text-white">{T("满意，付款", "Happy — pay")}</button>
+              <input value={reason} onChange={(e) => setReason(e.target.value.slice(0, 80))} placeholder={T("不满意？写一句理由", "Not happy? Say why")} aria-label={T("投诉理由", "Complaint")} className="rounded-full border-2 border-[var(--line)] bg-[var(--bg)] px-3 py-1.5 text-xs" />
+              <button type="button" onClick={() => void act(g, "dispute")} className="rounded-full border-2 border-[var(--line)] py-1.5 text-xs font-black">{T(`投诉，交给陪审团（${left(g.dueAt)}内）`, `Complain to the jury (within ${left(g.dueAt)})`)}</button>
+            </div>}
+            {g.status === "delivered" && g.role === "worker" && <p className="mt-1 text-xs text-[var(--dim)]">{T(`${left(g.dueAt)}后自动付款`, `Pays out automatically in ${left(g.dueAt)}`)}</p>}
+            {g.status === "disputed" && <p className="mt-1 text-xs text-[var(--dim)]">{T(`理由：${g.reason ?? ""} · 陪审 ${g.votes.worker}:${g.votes.employer}（工人:老板），${left(g.dueAt)}后结案`, `Reason: ${g.reason ?? ""} · jury ${g.votes.worker}:${g.votes.employer} (worker:employer), closes in ${left(g.dueAt)}`)}</p>}
+          </>))}
+        </>}
+        {tab === "jury" && <>
+          {juryN === 0 && <p className="mt-3 text-xs text-[var(--dim)]">{T("城里暂时没有纠纷。", "No disputes in town right now.")}</p>}
+          {(st?.jury ?? []).map((g) => card(g, <>
+            <p className="mt-1 text-xs">{T(`老板的投诉：「${g.reason ?? ""}」`, `The employer's complaint: “${g.reason ?? ""}”`)}</p>
+            <div className="mt-2 grid grid-cols-2 gap-1.5">
+              <button type="button" aria-pressed={g.myVote === "worker"} onClick={() => void vote(g, "worker")} className={`rounded-full border-2 py-1.5 text-xs font-black ${g.myVote === "worker" ? "border-[var(--accent)] text-[var(--accent)]" : "border-[var(--line)]"}`}>{T(`该付工钱（${g.votes.worker}）`, `Pay the worker (${g.votes.worker})`)}</button>
+              <button type="button" aria-pressed={g.myVote === "employer"} onClick={() => void vote(g, "employer")} className={`rounded-full border-2 py-1.5 text-xs font-black ${g.myVote === "employer" ? "border-[var(--accent)] text-[var(--accent)]" : "border-[var(--line)]"}`}>{T(`退钱给老板（${g.votes.employer}）`, `Refund the employer (${g.votes.employer})`)}</button>
+            </div>
+            <p className="mt-1 text-[11px] text-[var(--dim)]">{T(`${left(g.dueAt)}后结案，平票算工人赢`, `Closes in ${left(g.dueAt)} — a tie goes to the worker`)}</p>
+          </>))}
+        </>}
+      </div>
+    </div>
+  );
+}
+
+/* ---- 📢 地图广告牌：每城三块，✨ 租一周 ---- */
+export type BillboardState = ApiResponse<typeof api, "getBillboards">;
+const AD_EMOJI = ["📢", "🍜", "☕", "🛍️", "💕", "🎉", "🏠", "💼", "🎮", "🐶"];
+export function BillboardModal({ en, token, playerName, city, spots, st, onClose, toast, refresh, openAccount, openStore }: { en: boolean; token: string; playerName: string; city: "sz" | "hz" | "hk"; spots: string[]; st: BillboardState | undefined; onClose: () => void; toast: (m: string) => void; refresh: () => void; openAccount: () => void; openStore: () => void }) {
+  const T = (zh: string, e: string) => (en ? e : zh);
+  const [slot, setSlot] = useState<number | null>(null);
+  const [text, setText] = useState("");
+  const [emoji, setEmoji] = useState("📢");
+  const buy = async () => {
+    if (slot === null) return;
+    if (!token) { openAccount(); return; }
+    try {
+      const r = await api.buyBillboard({ token, playerName, city, slot, text: text.trim(), emoji });
+      if (r.ok) { toast(T("广告牌挂上了！全城玩家地图上都看得到，挂 7 天。", "Your billboard is up — everyone in town sees it for 7 days.")); setSlot(null); setText(""); }
+      else { toast(r.error ?? T("没租成", "Couldn't rent it")); if (r.error?.includes("✨")) openStore(); if (r.error?.includes("登录")) openAccount(); }
+    } catch { toast(T("网络不太好", "Network hiccup")); }
+    refresh();
+  };
+  return (
+    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={T("地图广告牌", "Map billboards")}>
+      <div className="rise max-h-[88vh] w-full max-w-md overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] p-4">
+        <p className="flex items-center justify-between"><span className="font-display text-xl font-black">📢 {T("地图广告牌", "Map billboards")}</span><button type="button" onClick={onClose} className="rounded-full border px-3 py-1 text-xs font-black">✕</button></p>
+        <p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">{T(`全城最显眼的三个位置，挂在地图上所有玩家都看得到：表白、找室友、给自己的摊位打广告都行。${st?.price ?? 300} ✨ 一周。本地商家想投放，联系运营。`, `The three most visible spots in town, seen by every player on the map — a confession, looking for a roommate, an ad for your stall. ${st?.price ?? 300} ✨ a week. Local businesses: contact the team.`)}</p>
+        {(st?.slots ?? []).map((sl) => (
+          <button key={sl.slot} type="button" disabled={!!sl.ad} onClick={() => setSlot(sl.slot)} className={`mt-2 block w-full rounded-[14px] border-2 p-3 text-left disabled:opacity-90 ${slot === sl.slot ? "border-[var(--accent)]" : "border-[var(--line)]"}`}>
+            <span className="block text-xs font-black text-[var(--dim)]">📍 {spots[sl.slot] ?? `#${sl.slot + 1}`}</span>
+            {sl.ad ? <span className="block text-sm font-black">{sl.ad.emoji} {sl.ad.text} <span className="text-xs font-bold text-[var(--dim)]">· {sl.ad.owner} · {T(`${Math.max(0, Math.ceil((new Date(sl.ad.endsAt).getTime() - Date.now()) / 86_400_000))} 天后空出`, `free in ${Math.max(0, Math.ceil((new Date(sl.ad.endsAt).getTime() - Date.now()) / 86_400_000))} days`)}</span></span> : <span className="block text-sm font-black text-[var(--accent)]">{T("空着 · 点这里租", "Free · tap to rent")}</span>}
+          </button>
+        ))}
+        {slot !== null && (
+          <div className="mt-3 rounded-[14px] border-2 border-[var(--border)] p-3">
+            <div className="flex flex-wrap gap-1">{AD_EMOJI.map((e) => <button key={e} type="button" aria-pressed={emoji === e} onClick={() => setEmoji(e)} className={`rounded-full border-2 px-2 py-0.5 text-base ${emoji === e ? "border-[var(--accent)]" : "border-transparent"}`}>{e}</button>)}</div>
+            <input value={text} onChange={(e) => setText(e.target.value.slice(0, 20))} placeholder={T("写 20 个字以内，比如：南山找室友！", "Up to 20 characters, e.g. Roommate wanted in Nanshan!")} aria-label={T("广告内容", "Billboard text")} className="mt-2 w-full rounded-full border-2 border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm" />
+            <p className="mt-2 rounded-[10px] bg-[var(--surface2)] px-3 py-1.5 text-center text-sm font-black">📢 {emoji} {text || T("预览", "Preview")}</p>
+            <button type="button" disabled={text.trim().length < 2} onClick={() => void buy()} className="mt-2 w-full rounded-full bg-[var(--accent)] py-2.5 text-sm font-black text-white disabled:opacity-40">{token ? T(`用 ${st?.price ?? 300} ✨ 挂 7 天`, `Rent for 7 days · ${st?.price ?? 300} ✨`) : T("先登录账号", "Log in first")}</button>
+          </div>
+        )}
       </div>
     </div>
   );

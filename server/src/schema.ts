@@ -1,4 +1,4 @@
-// Drizzle schema for 深惠人生模拟多人联机版.
+// Drizzle schema for 湾区人生.
 //
 // players: one row per person who has entered the shared city. Presence is
 // derived from lastSeen (a player counts as online for ~90s after their last
@@ -338,3 +338,50 @@ export const committeeVotes = sqliteTable("committee_votes", {
   candidateId: text("candidate_id").notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
 }, (t) => [primaryKey({ columns: [t.week, t.city, t.voterId] })]);
+
+/* ---- 零工 + 纠纷陪审 (0014) ---- */
+// a real player posts a paid job (the pay is held by the server), another takes and delivers it;
+// the employer confirms (or it pays out after 2 h); a dispute goes to a 24 h jury of the city's players
+export const gigs = sqliteTable("gigs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  city: text("city").notNull(),
+  employerId: text("employer_id").notNull(),
+  workerId: text("worker_id"),
+  title: text("title").notNull(),
+  pay: integer("pay").notNull(),
+  status: text("status").notNull().default("open"), // open | taken | delivered | disputed | paid | refunded
+  reason: text("reason"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  takenAt: integer("taken_at", { mode: "timestamp_ms" }),
+  deliveredAt: integer("delivered_at", { mode: "timestamp_ms" }),
+  dueAt: integer("due_at", { mode: "timestamp_ms" }), // auto-pay time (delivered) or jury end (disputed)
+  workerClaimed: integer("worker_claimed").notNull().default(0),
+  employerClaimed: integer("employer_claimed").notNull().default(0),
+});
+export const gigVotes = sqliteTable("gig_votes", {
+  gigId: integer("gig_id").notNull(),
+  voterId: text("voter_id").notNull(),
+  side: text("side").notNull(), // worker | employer
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+}, (t) => [primaryKey({ columns: [t.gigId, t.voterId] })]);
+
+/* ---- 地图广告牌 + 运营公告 (0015) ---- */
+// three billboard slots per city, rented for 7 days with ✨ (or placed by an operator for a local business)
+export const billboards = sqliteTable("billboards", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  city: text("city").notNull(),
+  slot: integer("slot").notNull(),
+  accountId: text("account_id"),
+  owner: text("owner").notNull(), // shown name: the player, or the business an operator placed
+  text: text("text").notNull(),
+  emoji: text("emoji").notNull(),
+  endsAt: integer("ends_at", { mode: "timestamp_ms" }).notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+// update notes the operator posts from the admin page (no deploy needed)
+export const announcements = sqliteTable("announcements", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  zh: text("zh").notNull(),
+  en: text("en").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});

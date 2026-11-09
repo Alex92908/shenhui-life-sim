@@ -2745,8 +2745,8 @@ export const EN_TEMPLATES: [string, string][] = [
 "Ambulance 120 · Police 110{0}"
 ],
 [
-"我在《深惠人生模拟》里过到第 {0} 天，存款 ¥{1}，集了 {2} 个地铁站章。来一起过日子：",
-"I'm on day {0} of Shenzhen–Huizhou Life Sim with ¥{1} saved and {2} metro stamps. Come live it with me:"
+"我在《湾区人生》里过到第 {0} 天，存款 ¥{1}，集了 {2} 个地铁站章。来一起过日子：",
+"I'm on day {0} of Bay Area Life with ¥{1} saved and {2} metro stamps. Come live it with me:"
 ],
 [
 "户型图：{0}，客厅、卧室、厨房、卫生间四间，已摆 {1} 件家具，食材 {2} 份",

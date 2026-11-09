@@ -82,6 +82,8 @@ const GradeShader = {
 export interface PostFx {
   render: () => void;
   setSize: (w: number, h: number) => void;
+  /** follow the renderer when adaptive resolution changes its pixel ratio */
+  setPixelRatio: (pr: number) => void;
   dispose: () => void;
 }
 
@@ -109,6 +111,7 @@ export function makePostFx(
         composer.setSize(w, h);
         if (gu.uAspect) gu.uAspect.value = w / Math.max(1, h);
       },
+      setPixelRatio: (pr: number) => composer.setPixelRatio(pr),
       dispose: () => composer.dispose(),
     };
   } catch {
