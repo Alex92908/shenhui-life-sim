@@ -276,3 +276,35 @@ body {
 .tipbtn:hover::after,.tipbtn:focus-visible::after,.tipbtn:active::after{opacity:1;transform:translateX(-50%) translateY(0)}
 .tipbtn.tip-r:hover::after,.tipbtn.tip-r:focus-visible::after,.tipbtn.tip-r:active::after{transform:translateY(0)}
 @media (hover:none){.tipbtn:hover::after{opacity:0}.tipbtn:active::after{opacity:1}}
+
+/* ---- HUD (game / iOS style): resource pills, icon pills with labels, menu ---- */
+.res-pill{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:4px 10px 4px 7px;white-space:nowrap}
+.icon-pill{position:relative;display:inline-flex;flex-direction:column;align-items:center;justify-content:center;min-width:44px;height:44px;border-radius:14px;font-size:18px;line-height:1;transition:background .15s}
+.icon-pill:hover{background:var(--surface2)}
+.icon-pill-label{margin-top:3px;font-size:10px;font-weight:800;color:var(--dim)}
+.red-dot{position:absolute;top:5px;right:8px;width:8px;height:8px;border-radius:999px;background:#ef4444;box-shadow:0 0 0 2px var(--bg)}
+.red-dot.static{position:static;box-shadow:none}
+.menu-pop{border-radius:16px;border:1px solid var(--line);background:color-mix(in srgb,var(--surface) 94%,transparent);backdrop-filter:blur(18px);box-shadow:0 12px 32px rgba(0,0,0,.18)}
+.menu-item{display:flex;width:100%;align-items:center;gap:8px;border-radius:10px;padding:9px 10px;text-align:left;font-size:13px;font-weight:700}
+.menu-item:hover{background:var(--surface2)}
+@media (max-width:639px){.res-pill{padding:3px 7px 3px 5px;gap:3px}.icon-pill{min-width:38px;height:40px;font-size:16px}}
+
+/* left feature column: icon + label, always visible (games keep these on screen so nobody forgets them) */
+.rail-btn{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;width:52px;height:52px;border-radius:16px;background:rgba(12,22,34,.78);color:#fff;border:1px solid rgba(255,255,255,.14);backdrop-filter:blur(12px);box-shadow:0 4px 14px rgba(0,0,0,.22);transition:transform .12s,background .15s}
+.rail-btn:hover{background:rgba(12,22,34,.92)}
+.rail-btn:active{transform:scale(.94)}
+.rail-btn.rail-hot{background:var(--accent);border-color:transparent}
+.rail-label{margin-top:4px;font-size:10px;font-weight:800;line-height:1;opacity:.92;white-space:nowrap}
+.rail-btn .red-dot{top:4px;right:5px;box-shadow:0 0 0 2px rgba(12,22,34,.9)}
+@media (max-width:639px),(max-height:500px){.rail-btn{width:46px;height:46px;border-radius:14px}.feature-rail{gap:5px}}
+@media (max-height:500px){.feature-rail{max-height:calc(100% - 24px);overflow-y:auto;scrollbar-width:none}}
+
+/* bottom place card (Apple Maps style sheet peek) */
+.place-card{bottom:58px !important;border-radius:20px;border:1px solid var(--line);background:color-mix(in srgb,var(--surface) 92%,transparent);backdrop-filter:blur(18px);box-shadow:0 10px 30px rgba(0,0,0,.22);padding:10px 12px}
+.pc-btn{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-radius:999px;border:1px solid var(--line);background:var(--surface);padding:8px 10px;font-size:12px;font-weight:900}
+.pc-btn:hover{border-color:var(--border)}
+.pc-primary{background:var(--text);color:var(--bg);border-color:transparent}
+@media (max-width:639px),(max-height:500px){.place-card{bottom:62px !important;width:calc(100% - 120px)}}
+.tipbtn.tip-b::after{bottom:auto;top:calc(100% + 8px)}
+@media (max-width:639px){.icon-pill-label{display:none}.icon-pill{min-width:34px;height:36px;font-size:18px}.icon-pill .red-dot{top:3px;right:3px}.menu-item.compact-only{display:flex !important}}
+@media (max-width:639px),(max-height:500px){.place-card{bottom:128px !important}}
