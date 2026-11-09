@@ -1439,7 +1439,8 @@ if (!gsRef.current || walking || carriage) return;
 const s0 = gsRef.current;
 setSelectedLoc(locId);
 setAsideTab("place");
-autoOpenAside();
+/* on a phone (or a landscape phone) the panel would cover the map and the ride: open it only when you're not setting off */
+if (!(window.innerWidth < 640 || window.innerHeight < 500) || locId === currentLocRef.current) autoOpenAside();
 if (locId === currentLocRef.current) return;
 let mode = modeOverride ?? travelMode;
 {
@@ -5082,6 +5083,21 @@ return (
 </span>
 ))}
 </div>
+{/* get off / change / get off early: right under the stations, no scrolling on a phone */}
+<div className="px-4 pt-3">
+{rideEntry !== null ? (
+<button type="button" disabled className="w-full rounded-full bg-[var(--accent)] py-3.5 text-sm font-black text-white disabled:opacity-40">🚶 正在进站：安检 → 等车 → 上车，一步都不少</button>
+) : c.awaitingTransfer ? (
+<button type="button" onClick={doTransfer} className="w-full rounded-full bg-[var(--accent)] py-3.5 text-sm font-black text-white">{c.route.shuttleFrom.includes(curStation?.name ?? "") ? `🚌 在${curStation?.name}下车 · 坐接驳巴士到${nextStation?.name ?? "对面站"}换乘 ${(c.route.legs[c.legIdx + 1]?.line.short) ?? "下一条线"}` : `🔁 在${curStation?.name}换乘上车 → ${(c.route.legs[c.legIdx + 1]?.line.name) ?? "下一条线"}`}</button>
+) : (
+<>
+<button type="button" disabled={!arrivedC} onClick={() => finishMetroRide()} className="w-full rounded-full bg-[var(--accent)] py-3.5 text-sm font-black text-white disabled:opacity-40">{arrivedC ? `🔔 到站了，下车出站 → ${locById(c.toLoc).name}（票 ${Y}${c.route.fare}）` : `行驶中… 还有 ${total - 1 - c.stopIdx} 站（自动报站中）`}</button>
+{!arrivedC && c.stopIdx > 0 && curStation && (
+<button type="button" onClick={() => finishMetroRide(c.stopIdx)} className="mt-2 w-full rounded-full border-2 border-[var(--border)] bg-[var(--surface)] py-2.5 text-sm font-black">🚪 就在「{curStation.name}」下车（票 {Y}{partialFare(c.route, c.stopIdx)}）</button>
+)}
+</>
+)}
+</div>
 {/* the ride, acted out: concourse → security → platform → carriage */}
 <div className="mx-4 mt-3 overflow-hidden rounded-[16px] border-2 border-[var(--line)]">
 <div className="relative h-52">
@@ -5111,18 +5127,6 @@ return (
 <button type="button" aria-label="听报站看路线" onClick={() => setCarriageLog(`🗺️ 路线图亮着灯：你在 ${curStation?.name}，还要坐 ${total - 1 - c.stopIdx} 站到 ${locById(c.toLoc).name}。${nextStation ? `下一站 ${nextStation.name}。` : ""}`)} className="act-btn"><span className="text-sm font-black">🗺️ 看路线图/听报站</span><span className="block text-xs text-[var(--dim)]">确认还有几站，别坐过站</span></button>
 </div>)}
 <div className="px-4 pb-4">
-{rideEntry !== null ? (
-<button type="button" disabled className="w-full rounded-full bg-[var(--accent)] py-3.5 text-sm font-black text-white disabled:opacity-40">🚶 正在进站：安检 → 等车 → 上车，一步都不少</button>
-) : c.awaitingTransfer ? (
-<button type="button" onClick={doTransfer} className="w-full rounded-full bg-[var(--accent)] py-3.5 text-sm font-black text-white">{c.route.shuttleFrom.includes(curStation?.name ?? "") ? `🚌 在${curStation?.name}下车 · 坐接驳巴士到${nextStation?.name ?? "对面站"}换乘 ${(c.route.legs[c.legIdx + 1]?.line.short) ?? "下一条线"}` : `🔁 在${curStation?.name}换乘上车 → ${(c.route.legs[c.legIdx + 1]?.line.name) ?? "下一条线"}`}</button>
-) : (
-<>
-<button type="button" disabled={!arrivedC} onClick={() => finishMetroRide()} className="w-full rounded-full bg-[var(--accent)] py-3.5 text-sm font-black text-white disabled:opacity-40">{arrivedC ? `🔔 到站了，下车出站 → ${locById(c.toLoc).name}（票 ${Y}${c.route.fare}）` : `行驶中… 还有 ${total - 1 - c.stopIdx} 站（自动报站中）`}</button>
-{!arrivedC && c.stopIdx > 0 && curStation && (
-<button type="button" onClick={() => finishMetroRide(c.stopIdx)} className="mt-2 w-full rounded-full border-2 border-[var(--border)] bg-[var(--surface)] py-2.5 text-sm font-black">🚪 就在「{curStation.name}」下车（票 {Y}{partialFare(c.route, c.stopIdx)}）</button>
-)}
-</>
-)}
 <p className="mt-2 text-center text-[11px] text-[var(--dim)]">{s.cityKey === "hz" ? "真实城轨/高铁乘车体验" : s.cityKey === "hk" ? "真实港铁乘车体验" : "真实深圳地铁体验"}：屏蔽门、先下后上、换乘站广播、早高峰挤车厢。车停稳时可以随时在本站下车，按实际坐的里程扣费。</p>
 </div>
 </div>
