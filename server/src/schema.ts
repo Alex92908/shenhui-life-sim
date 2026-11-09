@@ -44,6 +44,8 @@ export const players = sqliteTable("players", {
   earnBudget: integer("earn_budget").notNull().default(60000),
   budgetAt: integer("budget_at", { mode: "timestamp_ms" }),
   cosmetic: text("cosmetic"),
+  // 运营 (0017): chat / DMs / posts blocked until this time (a temporary mute, lighter than a ban)
+  mutedUntil: integer("muted_until", { mode: "timestamp_ms" }),
   // 公开编号 (0006): sha256(id) prefix. The id itself is the player's
   // private key and is never sent to other clients; everything shown to
   // others (chat, online list, boards, gifts, invite links) uses pub.
@@ -405,3 +407,21 @@ export const musicChunks = sqliteTable("music_chunks", {
   idx: integer("idx").notNull(),
   data: text("data").notNull(), // base64
 }, (t) => [primaryKey({ columns: [t.trackId, t.idx] })]);
+
+/* 运营后台 (0017): staff tokens with a role (the ADMIN_TOKEN env value is always the owner), and an audit log of every admin action */
+export const adminUsers = sqliteTable("admin_users", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  tokenHash: text("token_hash").notNull().unique(),
+  role: text("role").notNull().default("ops"), // owner | ops | moderator
+  disabled: integer("disabled").notNull().default(0),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+export const adminAudit = sqliteTable("admin_audit", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  admin: text("admin").notNull(),
+  action: text("action").notNull(),
+  target: text("target"),
+  detail: text("detail"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});

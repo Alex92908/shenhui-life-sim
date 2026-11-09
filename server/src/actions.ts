@@ -307,6 +307,25 @@ const BANNED_MSG = "你的账号因违反社区规则被限制了社交功能";
 /** Admin token from the server environment (unset = admin actions disabled). */
 const adminToken = (): string => { try { return String((globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.ADMIN_TOKEN ?? ""); } catch { return ""; } };
 const isAdmin = (t: string) => { const want = adminToken(); return want.length >= 12 && t === want; };
+/** Who is this admin token? The ADMIN_TOKEN env value is the owner; staff tokens (admin_users) carry a role. */
+type AdminRole = "owner" | "ops" | "moderator";
+async function adminWho(db: ReturnType<Ctx["db"]>, token: string): Promise<{ name: string; role: AdminRole } | null> {
+  if (!token) return null;
+  if (isAdmin(token)) return { name: "owner", role: "owner" };
+  if (token.length < 16) return null;
+  const [u] = await (db as any).select().from(schema.adminUsers).where(eq(schema.adminUsers.tokenHash, createHash("sha256").update("shhr-admin:" + token).digest("hex"))).limit(1);
+  return u && !u.disabled ? { name: u.name, role: u.role as AdminRole } : null;
+}
+/** ok when the token belongs to an admin whose role is in `roles` (owner always passes) */
+async function adminOk(db: ReturnType<Ctx["db"]>, token: string, roles: AdminRole[] = ["ops", "moderator"]) {
+  const w = await adminWho(db, token);
+  return w && (w.role === "owner" || roles.includes(w.role)) ? w : null;
+}
+async function audit(db: ReturnType<Ctx["db"]>, who: { name: string } | null, action: string, target: string | null, detail: string) {
+  try { await (db as any).insert(schema.adminAudit).values({ admin: who?.name ?? "?", action, target, detail: detail.slice(0, 400), createdAt: new Date() }); } catch { /* audit never blocks the action */ }
+}
+const MUTED_MSG = "你被管理员临时禁言了，到期后自动恢复";
+const isMuted = (p: { mutedUntil?: Date | null }) => !!p.mutedUntil && p.mutedUntil.getTime() > Date.now();
 
 /* ---- 防薅羊毛：设备、网络、活跃天数、延迟发放的邀请奖励 ---- */
 const IP_SALT = "shhr-ip-v1";
@@ -890,6 +909,7 @@ export const Actions = {
       const [me] = await db.select().from(schema.players).where(eq(schema.players.id, args.playerId)).limit(1);
       if (!me) return { ok: false, error: "先进城再组局" };
       if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
       if (socialNeedsAccount() && !me.accountId) return { ok: false, error: NEED_ACCOUNT };
       const recent = await db.select({ n: sql<number>`count(*)` }).from(schema.parties).where(and(eq(schema.parties.hostId, me.id), gte(schema.parties.createdAt, new Date(Date.now() - 3600_000))));
       if (Number(recent[0]?.n ?? 0) >= 12) return { ok: false, error: "组局太频繁了，歇一会儿" };
@@ -912,6 +932,7 @@ export const Actions = {
       const [p] = await db.select().from(schema.parties).where(eq(schema.parties.id, args.partyId)).limit(1);
       if (!me || !p) return { ok: false, error: "这个局不存在了" };
       if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
       if (socialNeedsAccount() && !me.accountId) return { ok: false, error: NEED_ACCOUNT };
       if (p.status !== "open") return { ok: false, error: "这个局已经开始或散了" };
       const members = parseMembers(p.members);
@@ -1009,6 +1030,7 @@ export const Actions = {
       if (!me || !to) return { ok: false, error: "对方不存在" };
       if (me.id === to.id) return { ok: false, error: "不能私聊自己" };
       if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
       if (socialNeedsAccount() && !me.accountId) return { ok: false, error: NEED_ACCOUNT };
       /* 陌生人私聊的规矩：对方回复之前最多发 3 条；新账号 24 小时内只能私聊一起组过局、或先找你说话的人 */
       const theyWrote = await db.select({ n: sql<number>`count(*)` }).from(schema.messages).where(and(eq(schema.messages.fromId, to.id), eq(schema.messages.toId, me.id)));
@@ -1110,6 +1132,7 @@ export const Actions = {
       const [me] = await db.select().from(schema.players).where(eq(schema.players.id, args.playerId)).limit(1);
       if (!me) return { ok: false, error: "先进游戏再提意见" };
       if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
       const today = await db.select({ n: sql<number>`count(*)` }).from(schema.feedback).where(and(eq(schema.feedback.playerId, me.id), gte(schema.feedback.createdAt, new Date(Date.now() - 24 * 3600_000))));
       if (Number(today[0]?.n ?? 0) >= 8) return { ok: false, error: "今天已经提了很多条了，谢谢！明天再来" };
       await db.insert(schema.feedback).values({ playerId: me.id, kind: args.kind, body: cleanText(args.body).slice(0, 600), city: args.city ?? me.cityKey, createdAt: new Date() });
@@ -1149,6 +1172,7 @@ export const Actions = {
       if (!me || !to) return { ok: false, error: "对方不存在" };
       if (me.id === to.id) return { ok: false, error: "不能和自己结对" };
       if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
       if (socialNeedsAccount() && !me.accountId) return { ok: false, error: NEED_ACCOUNT };
       const [bl] = await db.select().from(schema.blocks).where(and(eq(schema.blocks.a, to.id), eq(schema.blocks.b, me.id))).limit(1);
       if (bl) return { ok: false, error: "对方不接收你的邀请" };
@@ -1240,6 +1264,7 @@ export const Actions = {
       const [me] = await db.select().from(schema.players).where(eq(schema.players.id, args.playerId)).limit(1);
       if (!me) return { ok: false, error: "先进游戏" };
       if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
       if (socialNeedsAccount() && !me.accountId) return { ok: false, error: "先绑定账号（右上角 👤 账号），才能参选——防小号刷票" };
       if (me.cityKey !== args.city) return { ok: false, error: "只能在你住的城市参选" };
       const week = bjWeek();
@@ -1259,6 +1284,7 @@ export const Actions = {
       const [cand] = await db.select().from(schema.players).where(eq(schema.players.pub, args.candidateId)).limit(1);
       if (!me || !cand) return { ok: false, error: "候选人不存在" };
       if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
       if (socialNeedsAccount() && !me.accountId) return { ok: false, error: "先绑定账号（右上角 👤 账号），才能投票——一人一票" };
       if (me.id === cand.id) return { ok: false, error: "不能投给自己" };
       if (me.cityKey !== args.city) return { ok: false, error: "只能给你住的城市投票" };
@@ -1304,6 +1330,7 @@ export const Actions = {
       const [me] = await db.select().from(schema.players).where(eq(schema.players.id, args.playerId)).limit(1);
       if (!me) return { ok: false, error: "先进游戏" };
       if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
       if (socialNeedsAccount() && !me.accountId) return { ok: false, error: "先绑定账号（右上角 👤 账号），才能雇人——工钱要托管在服务器" };
       if (me.cityKey !== args.city) return { ok: false, error: "只能在你所在的城市发活" };
       if (me.money < args.pay) return { ok: false, error: "存款不够付这份工钱" };
@@ -1328,6 +1355,7 @@ export const Actions = {
       const [me] = await db.select().from(schema.players).where(eq(schema.players.id, args.playerId)).limit(1);
       if (!g || !me) return { ok: false, error: "这个活不存在了" };
       if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
       const now = new Date();
       if (args.act === "take") {
         if (g.status !== "open") return { ok: false, error: "这个活已经被人接了" };
@@ -1440,7 +1468,7 @@ export const Actions = {
     request: z.object({ token: z.string().max(200), city: z.enum(["sz", "hz", "hk"]), slot: z.number().int().min(0).max(2), owner: z.string().trim().max(20), text: z.string().trim().max(20), emoji: z.string().max(8), days: z.number().int().min(0).max(60) }),
     response: z.object({ ok: z.boolean(), error: z.string().optional() }),
     async handler(ctx, args) {
-      if (!isAdmin(args.token)) return { ok: false, error: "口令不对" };
+      if (!(await adminOk(ctx.db<typeof schema>(), args.token))) return { ok: false, error: "口令不对" };
       const db = ctx.db<typeof schema>();
       const now = Date.now();
       await db.update(schema.billboards).set({ endsAt: new Date(now) }).where(and(eq(schema.billboards.city, args.city), eq(schema.billboards.slot, args.slot), sql`${schema.billboards.endsAt} > ${now}`));
@@ -1466,7 +1494,7 @@ export const Actions = {
     request: z.object({ token: z.string().max(200), zh: z.string().trim().max(400).optional(), en: z.string().trim().max(400).optional(), deleteId: z.number().int().positive().optional() }),
     response: z.object({ ok: z.boolean(), error: z.string().optional() }),
     async handler(ctx, args) {
-      if (!isAdmin(args.token)) return { ok: false, error: "口令不对" };
+      if (!(await adminOk(ctx.db<typeof schema>(), args.token))) return { ok: false, error: "口令不对" };
       const db = ctx.db<typeof schema>();
       if (args.deleteId) { await db.delete(schema.announcements).where(eq(schema.announcements.id, args.deleteId)); return { ok: true }; }
       if (!args.zh?.trim()) return { ok: false, error: "写点内容" };
@@ -1539,7 +1567,7 @@ export const Actions = {
       const [t] = await db.select().from(schema.musicTracks).where(eq(schema.musicTracks.id, args.trackId)).limit(1);
       if (!t) return { ok: false };
       if (t.status !== "approved") {
-        const admin = args.token ? isAdmin(args.token) : false;
+        const admin = args.token ? !!(await adminOk(db, args.token)) : false;
         const acc = !admin && args.token ? await sessionAccount(db, args.token) : null;
         if (!admin && (!acc || acc.id !== t.accountId)) return { ok: false };
       }
@@ -1572,7 +1600,7 @@ export const Actions = {
     request: z.object({ token: z.string().max(200), trackId: z.number().int().positive().optional(), approve: z.boolean().optional() }),
     response: z.object({ ok: z.boolean(), error: z.string().optional(), pending: z.array(z.object({ id: z.number(), artist: z.string(), title: z.string(), durationSec: z.number(), chunks: z.number(), mime: z.string(), at: z.string() })).optional() }),
     async handler(ctx, args) {
-      if (!isAdmin(args.token)) return { ok: false, error: "口令不对" };
+      if (!(await adminOk(ctx.db<typeof schema>(), args.token))) return { ok: false, error: "口令不对" };
       const db = ctx.db<typeof schema>();
       if (args.trackId && args.approve !== undefined) {
         await db.update(schema.musicTracks).set({ status: args.approve ? "approved" : "rejected" }).where(eq(schema.musicTracks.id, args.trackId));
@@ -1985,7 +2013,7 @@ export const Actions = {
     request: z.object({ token: z.string().max(200) }),
     response: z.object({ ok: z.boolean(), error: z.string().optional(), data: z.any().optional() }),
     async handler(ctx, args) {
-      if (!isAdmin(args.token)) return { ok: false, error: adminToken() ? "口令不对" : "服务器没有设置 ADMIN_TOKEN（至少 12 位），后台未开启" };
+      if (!(await adminOk(ctx.db<typeof schema>(), args.token))) return { ok: false, error: adminToken() ? "口令不对" : "服务器没有设置 ADMIN_TOKEN（至少 12 位），后台未开启" };
       const db = ctx.db<typeof schema>();
       const totalPlayers = Number((await db.select({ n: sql<number>`count(*)` }).from(schema.players))[0]?.n ?? 0);
       const banned = Number((await db.select({ n: sql<number>`count(*)` }).from(schema.players).where(eq(schema.players.banned, 1)))[0]?.n ?? 0);
@@ -2043,12 +2071,127 @@ export const Actions = {
     },
   }),
 
+  /* ---- 运营后台：玩家管理、管理员团队、操作日志 ---- */
+  adminPlayers: defineAction({
+    description: "Admin: search players by nickname, public id, or the email / phone they signed in with.",
+    request: z.object({ token: z.string().max(200), q: z.string().max(80) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), players: z.array(z.object({ pub: z.string(), name: z.string(), emoji: z.string(), city: z.string(), money: z.number(), banned: z.boolean(), muted: z.boolean(), suspect: z.boolean(), account: z.boolean(), lastSeen: z.string() })).optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      if (!(await adminOk(db, args.token))) return { ok: false, error: "口令不对" };
+      const q = args.q.trim();
+      let rows: (typeof schema.players.$inferSelect)[] = [];
+      if (!q) rows = await db.select().from(schema.players).orderBy(desc(schema.players.lastSeen)).limit(30);
+      else {
+        const byId = await db.select().from(schema.identities).where(sql`${schema.identities.subject} like ${"%" + q + "%"}`).limit(10);
+        const accIds = byId.map((r) => r.accountId);
+        rows = await db.select().from(schema.players).where(sql`${schema.players.name} like ${"%" + q + "%"} or ${schema.players.pub} like ${q + "%"}${accIds.length ? sql` or ${schema.players.accountId} in (${sql.join(accIds.map((a) => sql`${a}`), sql`, `)})` : sql``}`).orderBy(desc(schema.players.lastSeen)).limit(30);
+      }
+      return { ok: true, players: rows.map((p) => ({ pub: p.pub ?? pubOf(p.id), name: p.name, emoji: p.emoji, city: p.cityKey, money: p.money, banned: !!p.banned, muted: isMuted(p), suspect: !!p.suspect, account: !!p.accountId, lastSeen: p.lastSeen.toISOString() })) };
+    },
+  }),
+
+  adminPlayer: defineAction({
+    description: "Admin: one player's full record — balances, login methods (masked), money ledger, ✨ ledger, orders, reports against them, recent chat.",
+    request: z.object({ token: z.string().max(200), pub: z.string().max(64) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), data: z.any().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      if (!(await adminOk(db, args.token))) return { ok: false, error: "口令不对" };
+      const [p] = await db.select().from(schema.players).where(eq(schema.players.pub, args.pub)).limit(1);
+      if (!p) return { ok: false, error: "找不到这个玩家" };
+      const ids = p.accountId ? await db.select().from(schema.identities).where(eq(schema.identities.accountId, p.accountId)) : [];
+      const [acc] = p.accountId ? await db.select().from(schema.accounts).where(eq(schema.accounts.id, p.accountId)).limit(1) : [];
+      const stars = p.accountId ? await starBalance(db, p.accountId) : 0;
+      const ledger = await db.select().from(schema.ledger).where(eq(schema.ledger.playerId, p.id)).orderBy(desc(schema.ledger.id)).limit(20);
+      const starRows = p.accountId ? await db.select().from(schema.starLedger).where(eq(schema.starLedger.accountId, p.accountId)).orderBy(desc(schema.starLedger.id)).limit(15) : [];
+      const orders = p.accountId ? await db.select().from(schema.orders).where(eq(schema.orders.accountId, p.accountId)).orderBy(desc(schema.orders.createdAt)).limit(15) : [];
+      const reports = await db.select().from(schema.reports).where(eq(schema.reports.targetId, p.id)).orderBy(desc(schema.reports.id)).limit(10);
+      const chat = await db.select().from(schema.chatMessages).where(eq(schema.chatMessages.playerId, p.id)).orderBy(desc(schema.chatMessages.id)).limit(15);
+      return { ok: true, data: {
+        pub: p.pub, name: p.name, emoji: p.emoji, city: p.cityKey, day: p.gameDay, money: p.money, season: p.season, banned: !!p.banned, mutedUntil: p.mutedUntil?.toISOString() ?? null, suspect: !!p.suspect, activeDays: p.activeDays, createdAt: p.createdAt.toISOString(), lastSeen: p.lastSeen.toISOString(),
+        account: acc ? { status: acc.status, createdAt: acc.createdAt.toISOString(), logins: ids.map((i) => `${i.provider === "email" ? "📧" : "📱"} ${maskSubject(i.provider, i.subject)}`) } : null,
+        stars,
+        ledger: ledger.map((l) => ({ kind: l.kind, amount: l.amount, balance: l.balance, note: l.note, at: l.createdAt.toISOString() })),
+        starLedger: starRows.map((l) => ({ reason: l.reason, amount: l.amount, balance: l.balance, at: l.createdAt.toISOString() })),
+        orders: orders.map((o) => ({ id: o.id, product: o.product, amount: o.amount, currency: o.currency, status: o.status, at: o.createdAt.toISOString() })),
+        reports: reports.map((r) => ({ reason: r.reason, status: r.status, at: r.createdAt.toISOString() })),
+        chat: chat.map((c) => ({ body: c.body, at: c.createdAt.toISOString() })),
+      } };
+    },
+  }),
+
+  adminPlayerAct: defineAction({
+    description: "Admin: act on one player — ban / unban, mute for N hours / unmute, force a new nickname, compensate season money or ✨, clear the cheat flag. Every action goes to the audit log.",
+    request: z.object({ token: z.string().max(200), pub: z.string().max(64), act: z.enum(["ban", "unban", "mute", "unmute", "rename", "money", "stars", "clearSuspect"]), hours: z.number().int().min(1).max(24 * 30).optional(), name: z.string().max(20).optional(), amount: z.number().int().min(-100000).max(100000).optional(), note: z.string().max(120).optional() }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const money = args.act === "money" || args.act === "stars";
+      const who = await adminOk(db, args.token, money ? ["ops"] : ["ops", "moderator"]);
+      if (!who) return { ok: false, error: money ? "补偿需要「运营」或「主账号」权限" : "口令不对" };
+      const [p] = await db.select().from(schema.players).where(eq(schema.players.pub, args.pub)).limit(1);
+      if (!p) return { ok: false, error: "找不到这个玩家" };
+      const note = (args.note ?? "").trim();
+      if (args.act === "ban" || args.act === "unban") await db.update(schema.players).set({ banned: args.act === "ban" ? 1 : 0 }).where(eq(schema.players.id, p.id));
+      else if (args.act === "mute") await db.update(schema.players).set({ mutedUntil: new Date(Date.now() + (args.hours ?? 24) * 3600_000) }).where(eq(schema.players.id, p.id));
+      else if (args.act === "unmute") await db.update(schema.players).set({ mutedUntil: null }).where(eq(schema.players.id, p.id));
+      else if (args.act === "rename") { const nm = cleanName(args.name ?? "") || "湾区居民"; await db.update(schema.players).set({ name: nm }).where(eq(schema.players.id, p.id)); }
+      else if (args.act === "clearSuspect") await db.update(schema.players).set({ suspect: 0 }).where(eq(schema.players.id, p.id));
+      else if (args.act === "money") { if (!args.amount) return { ok: false, error: "填一个金额" }; await creditMoney(db, p.id, args.amount, `补偿：${note || "运营发放"}（${who.name}）`); }
+      else if (args.act === "stars") {
+        if (!args.amount) return { ok: false, error: "填一个数量" };
+        if (!p.accountId) return { ok: false, error: "这个玩家没绑定账号，✨ 记在账号上，发不了" };
+        await bookStars(db, p.accountId, args.amount, "grant", `admin:${randomUUID()}`, true);
+      }
+      await audit(db, who, `player:${args.act}`, `${p.name} (${p.pub})`, [args.hours ? `${args.hours} 小时` : "", args.name ? `改名为 ${args.name}` : "", args.amount ? `数额 ${args.amount}` : "", note].filter(Boolean).join(" · "));
+      dropWorldCache(); ctx.invalidateQueries();
+      return { ok: true };
+    },
+  }),
+
+  adminTeam: defineAction({
+    description: "Admin (owner only): list staff, add a staff member with a role (returns their token once), disable one.",
+    request: z.object({ token: z.string().max(200), op: z.enum(["list", "add", "disable", "enable"]), name: z.string().max(30).optional(), role: z.enum(["ops", "moderator"]).optional(), id: z.number().int().optional() }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), me: z.object({ name: z.string(), role: z.string() }).optional(), staff: z.array(z.object({ id: z.number(), name: z.string(), role: z.string(), disabled: z.boolean(), createdAt: z.string() })).optional(), newToken: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const who = await adminWho(db, args.token);
+      if (!who) return { ok: false, error: "口令不对" };
+      if (args.op !== "list" && who.role !== "owner") return { ok: false, error: "只有主账号（ADMIN_TOKEN）能管理团队" };
+      let newToken: string | undefined;
+      if (args.op === "add") {
+        const name = (args.name ?? "").trim(); if (!name) return { ok: false, error: "填一个名字" };
+        newToken = randomBytes(18).toString("base64url");
+        await db.insert(schema.adminUsers).values({ name, tokenHash: createHash("sha256").update("shhr-admin:" + newToken).digest("hex"), role: args.role ?? "moderator", createdAt: new Date() });
+        await audit(db, who, "team:add", name, args.role ?? "moderator");
+      } else if ((args.op === "disable" || args.op === "enable") && args.id !== undefined) {
+        await db.update(schema.adminUsers).set({ disabled: args.op === "disable" ? 1 : 0 }).where(eq(schema.adminUsers.id, args.id));
+        await audit(db, who, `team:${args.op}`, `#${args.id}`, "");
+      }
+      const staff = who.role === "owner" ? await db.select().from(schema.adminUsers).orderBy(desc(schema.adminUsers.id)) : [];
+      return { ok: true, me: who, staff: staff.map((u) => ({ id: u.id, name: u.name, role: u.role, disabled: !!u.disabled, createdAt: u.createdAt.toISOString() })), newToken };
+    },
+  }),
+
+  adminAuditLog: defineAction({
+    description: "Admin (owner / ops): the last 150 admin actions — who did what to whom, when.",
+    request: z.object({ token: z.string().max(200) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), rows: z.array(z.object({ admin: z.string(), action: z.string(), target: z.string().nullable(), detail: z.string().nullable(), at: z.string() })).optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      if (!(await adminOk(db, args.token, ["ops"]))) return { ok: false, error: "需要「运营」或「主账号」权限" };
+      const rows = await db.select().from(schema.adminAudit).orderBy(desc(schema.adminAudit.id)).limit(150);
+      return { ok: true, rows: rows.map((r) => ({ admin: r.admin, action: r.action, target: r.target, detail: r.detail, at: r.createdAt.toISOString() })) };
+    },
+  }),
+
   adminModerate: defineAction({
     description: "Admin: resolve a report (dismiss / ban the reported player) or ban / unban a player by public id. Requires the ADMIN_TOKEN.",
     request: z.object({ token: z.string().max(200), reportId: z.number().int().optional(), targetPub: z.string().max(64).optional(), action: z.enum(["dismiss", "ban", "unban"]) }),
     response: z.object({ ok: z.boolean(), error: z.string().optional() }),
     async handler(ctx, args) {
-      if (!isAdmin(args.token)) return { ok: false, error: "口令不对" };
+      if (!(await adminOk(ctx.db<typeof schema>(), args.token))) return { ok: false, error: "口令不对" };
       const db = ctx.db<typeof schema>();
       let targetId: string | null = null;
       if (args.reportId !== undefined) {
@@ -2066,6 +2209,7 @@ export const Actions = {
         if (ban) await db.update(schema.reports).set({ status: "actioned", resolvedAt: new Date() }).where(and(eq(schema.reports.targetId, targetId), eq(schema.reports.status, "open")));
         dropWorldCache(); ctx.invalidateQueries();
       }
+      await audit(db, await adminWho(db, args.token), `report:${args.action}`, args.targetPub ?? (args.reportId !== undefined ? `report#${args.reportId}` : null), "");
       return { ok: true };
     },
   }),
@@ -2209,6 +2353,7 @@ export const Actions = {
       const me = rows[0];
       if (!me) throw new Error("player not registered");
       if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
       /* 限流：同一个人 2.5 秒内只能说一句、1 分钟最多 8 句、1 分钟内不能重复同一句 */
       const recent = await db
         .select()
@@ -2251,7 +2396,7 @@ export const Actions = {
         .limit(1);
       const me = rows[0];
       if (!me) throw new Error("player not registered");
-      if (me.banned) return { ok: true };
+      if (me.banned || isMuted(me)) return { ok: true };
       const lastHour = await db
         .select({ n: sql<number>`count(*)` })
         .from(schema.feedEvents)

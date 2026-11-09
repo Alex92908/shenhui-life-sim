@@ -34,7 +34,7 @@ export function AdminPage() {
   const [input, setInput] = useState("");
   const [data, setData] = useState<Overview | null>(null);
   const [err, setErr] = useState("");
-  const [tab, setTab] = useState<"reports" | "numbers" | "chat" | "errors" | "risk" | "economy" | "feedback" | "ops">("reports");
+  const [tab, setTab] = useState<"reports" | "numbers" | "chat" | "errors" | "risk" | "economy" | "feedback" | "ops" | "players" | "team" | "audit">("reports");
   const [banPub, setBanPub] = useState("");
   const load = async (tok = token) => {
     if (!tok) return;
@@ -54,7 +54,7 @@ export function AdminPage() {
     <div className="grid min-h-screen place-items-center bg-[var(--bg)] p-6 text-[var(--text)]">
       <form className="w-full max-w-sm rounded-[18px] border-2 border-[var(--border)] bg-[var(--surface)] p-5" onSubmit={(e) => { e.preventDefault(); try { sessionStorage.setItem(KEY, input); } catch { /* ignore */ } setToken(input); }}>
         <p className="font-display text-xl font-black">🛠️ 运营后台</p>
-        <p className="mt-1 text-xs text-[var(--dim)]">输入服务器环境变量 ADMIN_TOKEN 的值。口令只存在这个标签页里。</p>
+        <p className="mt-1 text-xs text-[var(--dim)]">主账号输入服务器环境变量 ADMIN_TOKEN；团队成员输入主账号发给你的口令。口令只存在这个标签页里。</p>
         <input type="password" value={input} onChange={(e) => setInput(e.target.value)} aria-label="管理员口令" className="mt-3 w-full rounded-full border-2 border-[var(--border)] bg-[var(--bg)] px-4 py-2" />
         <button type="submit" className="mt-3 w-full rounded-full bg-[var(--text)] py-2.5 font-black text-[var(--bg)]">进入</button>
       </form>
@@ -81,9 +81,12 @@ export function AdminPage() {
             ))}
           </div>
           <div className="mt-3 flex flex-wrap gap-1.5">
-            {([["reports", `举报（${data.reports.length}）`], ["ops", "📣 公告 / 📢 广告牌"], ["feedback", `意见箱（${data.feedback?.length ?? 0}）`], ["risk", "风险 / 薅羊毛"], ["economy", "经济 / 订单"], ["numbers", "数据"], ["chat", "最近公开聊天"], ["errors", `报错（${data.errors.length}）`]] as const).map(([k, l]) => <button key={k} type="button" onClick={() => setTab(k)} className={`rounded-full border-2 px-3 py-1 text-xs font-black ${tab === k ? "bg-[var(--text)] text-[var(--bg)]" : ""}`}>{l}</button>)}
+            {([["players", "👥 玩家"], ["reports", `举报（${data.reports.length}）`], ["ops", "📣 公告 / 📢 广告牌"], ["feedback", `意见箱（${data.feedback?.length ?? 0}）`], ["risk", "风险 / 薅羊毛"], ["economy", "经济 / 订单"], ["numbers", "数据"], ["chat", "最近公开聊天"], ["errors", `报错（${data.errors.length}）`], ["audit", "📜 操作日志"], ["team", "🔑 管理员"]] as const).map(([k, l]) => <button key={k} type="button" onClick={() => setTab(k)} className={`rounded-full border-2 px-3 py-1 text-xs font-black ${tab === k ? "bg-[var(--text)] text-[var(--bg)]" : ""}`}>{l}</button>)}
           </div>
 
+          {tab === "players" && <PlayersPanel token={token} />}
+          {tab === "team" && <TeamPanel token={token} />}
+          {tab === "audit" && <AuditPanel token={token} />}
           {tab === "ops" && <OpsPanel token={token} />}
           {tab === "feedback" && (
             <div className="mt-3 space-y-2">
@@ -256,6 +259,116 @@ function MusicReview({ token }: { token: string }) {
           <button type="button" onClick={() => void load(t.id, true)} className="rounded-full bg-[var(--text)] px-2.5 py-0.5 text-xs font-black text-[var(--bg)]">通过</button>
           <button type="button" onClick={() => void load(t.id, false)} className="rounded-full border px-2.5 py-0.5 text-xs">拒绝</button></p>
       ))}
+    </div>
+  );
+}
+
+/* ---- 玩家管理：搜索、详情、封号 / 禁言 / 改名 / 补偿 ---- */
+type PlayerRow = { pub: string; name: string; emoji: string; city: string; money: number; banned: boolean; muted: boolean; suspect: boolean; account: boolean; lastSeen: string };
+type PlayerDetail = { pub: string; name: string; emoji: string; city: string; day: number; money: number; season: string; banned: boolean; mutedUntil: string | null; suspect: boolean; activeDays: number; createdAt: string; lastSeen: string; account: { status: string; createdAt: string; logins: string[] } | null; stars: number; ledger: { kind: string; amount: number; balance: number; note: string | null; at: string }[]; starLedger: { reason: string; amount: number; balance: number; at: string }[]; orders: { id: string; product: string; amount: number; currency: string; status: string; at: string }[]; reports: { reason: string; status: string; at: string }[]; chat: { body: string; at: string }[] };
+const CITY: Record<string, string> = { sz: "深圳", hz: "惠州", hk: "香港" };
+function PlayersPanel({ token }: { token: string }) {
+  const [q, setQ] = useState("");
+  const [rows, setRows] = useState<PlayerRow[]>([]);
+  const [sel, setSel] = useState<PlayerDetail | null>(null);
+  const [msg, setMsg] = useState("");
+  const search = async (qq = q) => { const r = await api.adminPlayers({ token, q: qq }).catch(() => null); if (r?.ok) setRows(r.players ?? []); else setMsg(r?.error ?? "失败"); };
+  const open = async (pub: string) => { const r = await api.adminPlayer({ token, pub }).catch(() => null); if (r?.ok) setSel(r.data as PlayerDetail); else setMsg(r?.error ?? "失败"); };
+  useEffect(() => { void search(""); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const act = async (act: "ban" | "unban" | "mute" | "unmute" | "rename" | "money" | "stars" | "clearSuspect", extra: { hours?: number; name?: string; amount?: number; note?: string } = {}) => {
+    if (!sel) return;
+    const r = await api.adminPlayerAct({ token, pub: sel.pub, act, ...extra }).catch(() => null);
+    setMsg(r?.ok ? "✅ 已执行，已记入操作日志" : `❌ ${r?.error ?? "失败"}`);
+    void open(sel.pub); void search();
+  };
+  const ask = (label: string, def = "") => window.prompt(label, def);
+  return (
+    <div className="mt-3">
+      <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); void search(); }}>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="昵称 / 玩家编号 / 登录邮箱或手机号（留空看最近活跃）" className="min-w-0 flex-1 rounded-full border-2 border-[var(--border)] bg-[var(--bg)] px-4 py-2 text-sm" />
+        <button type="submit" className="rounded-full bg-[var(--text)] px-4 py-2 text-sm font-black text-[var(--bg)]">搜索</button>
+      </form>
+      {msg && <p className="mt-2 text-xs font-bold">{msg}</p>}
+      <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_1.3fr]">
+        <div className="grid content-start gap-1.5">
+          {rows.length === 0 && <p className="text-xs text-[var(--dim)]">没有结果。</p>}
+          {rows.map((p) => (
+            <button key={p.pub} type="button" onClick={() => void open(p.pub)} className={`flex items-center gap-2 rounded-[12px] border px-3 py-2 text-left ${sel?.pub === p.pub ? "border-[var(--text)]" : "border-[var(--line)]"} bg-[var(--surface)]`}>
+              <span className="text-xl">{p.emoji}</span>
+              <span className="min-w-0 flex-1"><span className="block truncate text-sm font-black">{p.name} {p.banned && <span className="text-[var(--accent)]">· 已封</span>}{p.muted && <span className="text-amber-600"> · 禁言</span>}{p.suspect && <span className="text-[var(--dim)]"> · 可疑</span>}</span><span className="block text-[11px] text-[var(--dim)]">{CITY[p.city] ?? p.city} · ¥{p.money} · {p.account ? "已绑账号" : "游客"} · {t(p.lastSeen)}</span></span>
+            </button>
+          ))}
+        </div>
+        {sel && (
+          <div className="rounded-[14px] border-2 border-[var(--border)] bg-[var(--surface)] p-3 text-sm">
+            <p className="font-display text-lg font-black">{sel.emoji} {sel.name} <span className="text-xs font-bold text-[var(--dim)]">#{sel.pub}</span></p>
+            <p className="mt-1 text-xs text-[var(--dim)]">{CITY[sel.city]} · 第 {sel.day} 天 · 赛季 {sel.season} · 活跃 {sel.activeDays} 天 · 注册 {t(sel.createdAt)} · 最近 {t(sel.lastSeen)}</p>
+            <p className="mt-1 text-xs">{sel.account ? `账号：${sel.account.status} · ${sel.account.logins.join("，") || "—"} · ✨ ${sel.stars}` : "游客（没绑定账号）"} · 存款 ¥{sel.money}{sel.banned ? " · 🚫 已封号" : ""}{sel.mutedUntil && new Date(sel.mutedUntil) > new Date() ? ` · 🔇 禁言到 ${t(sel.mutedUntil)}` : ""}{sel.suspect ? " · ⚠️ 可疑（不上榜）" : ""}</p>
+            <div className="mt-2 flex flex-wrap gap-1.5 text-xs font-black">
+              {sel.banned ? <button type="button" onClick={() => void act("unban")} className="rounded-full border-2 px-3 py-1">解封</button> : <button type="button" onClick={() => { if (window.confirm("确定封号？")) void act("ban", { note: ask("原因（写进日志）") ?? "" }); }} className="rounded-full bg-[var(--accent)] px-3 py-1 text-white">封号</button>}
+              {sel.mutedUntil && new Date(sel.mutedUntil) > new Date() ? <button type="button" onClick={() => void act("unmute")} className="rounded-full border-2 px-3 py-1">解除禁言</button> : <button type="button" onClick={() => { const h = Number(ask("禁言多少小时？", "24")); if (h > 0) void act("mute", { hours: Math.round(h), note: ask("原因") ?? "" }); }} className="rounded-full border-2 px-3 py-1">禁言</button>}
+              <button type="button" onClick={() => { const n = ask("新昵称（会过敏感词）", ""); if (n) void act("rename", { name: n }); }} className="rounded-full border-2 px-3 py-1">强制改名</button>
+              <button type="button" onClick={() => { const a = Number(ask("补偿游戏币（负数为扣回）", "500")); if (a) void act("money", { amount: Math.round(a), note: ask("原因（玩家看不到，写进日志）", "服务器故障补偿") ?? "" }); }} className="rounded-full border-2 px-3 py-1">补偿游戏币</button>
+              <button type="button" onClick={() => { const a = Number(ask("发放 ✨（负数为扣回）", "100")); if (a) void act("stars", { amount: Math.round(a), note: ask("原因", "客服补偿") ?? "" }); }} className="rounded-full border-2 px-3 py-1">发 ✨</button>
+              {sel.suspect && <button type="button" onClick={() => void act("clearSuspect")} className="rounded-full border-2 px-3 py-1">取消可疑标记</button>}
+            </div>
+            <Sect title="游戏币流水（最近 20 条）">{sel.ledger.map((l, i) => <p key={i}>{t(l.at)} · {l.kind} {l.amount > 0 ? "+" : ""}{l.amount} → ¥{l.balance}{l.note ? ` · ${l.note}` : ""}</p>)}</Sect>
+            <Sect title="✨ 流水">{sel.starLedger.map((l, i) => <p key={i}>{t(l.at)} · {l.reason} {l.amount > 0 ? "+" : ""}{l.amount} → {l.balance}</p>)}</Sect>
+            <Sect title="订单">{sel.orders.map((o) => <p key={o.id}>{t(o.at)} · {o.product} · {(o.amount / 100).toFixed(2)} {o.currency} · {o.status}</p>)}</Sect>
+            <Sect title="被举报">{sel.reports.map((r, i) => <p key={i}>{t(r.at)} · {REASON[r.reason] ?? r.reason} · {r.status}</p>)}</Sect>
+            <Sect title="最近聊天">{sel.chat.map((c, i) => <p key={i}>{t(c.at)} · {c.body}</p>)}</Sect>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+function Sect({ title, children }: { title: string; children: React.ReactNode }) {
+  const arr = Array.isArray(children) ? children : [children];
+  return <div className="mt-3"><p className="text-xs font-black text-[var(--dim)]">{title}</p><div className="mt-1 max-h-40 overflow-y-auto text-[11px] leading-relaxed">{arr.length ? children : <p className="text-[var(--dim)]">—</p>}</div></div>;
+}
+
+/* ---- 管理员团队：主账号发口令，分「运营」「客服/审核」两种角色 ---- */
+function TeamPanel({ token }: { token: string }) {
+  const [me, setMe] = useState<{ name: string; role: string } | null>(null);
+  const [staff, setStaff] = useState<{ id: number; name: string; role: string; disabled: boolean; createdAt: string }[]>([]);
+  const [name, setName] = useState(""); const [role, setRole] = useState<"ops" | "moderator">("moderator");
+  const [fresh, setFresh] = useState(""); const [err, setErr] = useState("");
+  const run = async (args: { op: "list" | "add" | "disable" | "enable"; name?: string; role?: "ops" | "moderator"; id?: number }) => {
+    const r = await api.adminTeam({ token, ...args }).catch(() => null);
+    if (!r?.ok) { setErr(r?.error ?? "失败"); return; }
+    setErr(""); setMe(r.me ?? null); setStaff(r.staff ?? []); if (r.newToken) setFresh(r.newToken);
+  };
+  useEffect(() => { void run({ op: "list" }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const ROLE: Record<string, string> = { owner: "主账号（全部权限）", ops: "运营（玩家、补偿、公告、广告牌、日志）", moderator: "客服 / 审核（举报、封号、禁言、改名、审歌）" };
+  return (
+    <div className="mt-3 text-sm">
+      {me && <p className="text-xs font-bold">你是：{me.name} · {ROLE[me.role] ?? me.role}</p>}
+      {err && <p className="mt-1 text-xs font-bold text-[var(--accent)]">{err}</p>}
+      {me?.role === "owner" && (<>
+        <form className="mt-3 flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); if (name.trim()) void run({ op: "add", name: name.trim(), role }); setName(""); }}>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="成员名字（如：小王 · 客服）" className="min-w-0 flex-1 rounded-full border-2 border-[var(--border)] bg-[var(--bg)] px-4 py-2" />
+          <select value={role} onChange={(e) => setRole(e.target.value as "ops" | "moderator")} className="rounded-full border-2 border-[var(--border)] bg-[var(--bg)] px-3 py-2"><option value="moderator">客服 / 审核</option><option value="ops">运营</option></select>
+          <button type="submit" className="rounded-full bg-[var(--text)] px-4 py-2 font-black text-[var(--bg)]">添加并生成口令</button>
+        </form>
+        {fresh && <p className="mt-2 rounded-[12px] border-2 border-[var(--gold)] bg-[#fdf6da] p-3 text-xs font-bold text-[#5c4a00]">新口令（只显示这一次，复制后私下发给对方）：<code className="ml-1 select-all break-all">{fresh}</code></p>}
+        <div className="mt-3 grid gap-1.5">{staff.map((u) => <div key={u.id} className="flex items-center gap-2 rounded-[12px] border border-[var(--line)] bg-[var(--surface)] px-3 py-2"><span className="flex-1"><b>{u.name}</b> · {ROLE[u.role] ?? u.role}{u.disabled ? " · 已停用" : ""}<span className="block text-[11px] text-[var(--dim)]">{t(u.createdAt)} 添加</span></span><button type="button" onClick={() => void run({ op: u.disabled ? "enable" : "disable", id: u.id })} className="rounded-full border-2 px-3 py-1 text-xs font-black">{u.disabled ? "恢复" : "停用"}</button></div>)}</div>
+        <p className="mt-3 text-[11px] text-[var(--dim)]">成员离职就点「停用」，他的口令立刻失效。主账号口令就是服务器的 ADMIN_TOKEN，不要发给别人。</p>
+      </>)}
+    </div>
+  );
+}
+
+/* ---- 操作日志：谁、什么时候、对谁做了什么 ---- */
+function AuditPanel({ token }: { token: string }) {
+  const [rows, setRows] = useState<{ admin: string; action: string; target: string | null; detail: string | null; at: string }[]>([]);
+  const [err, setErr] = useState("");
+  useEffect(() => { void api.adminAuditLog({ token }).then((r) => { if (r.ok) setRows(r.rows ?? []); else setErr(r.error ?? "失败"); }).catch(() => setErr("连不上服务器")); }, [token]);
+  return (
+    <div className="mt-3 text-xs">
+      {err && <p className="font-bold text-[var(--accent)]">{err}</p>}
+      {rows.length === 0 && !err && <p className="text-[var(--dim)]">还没有操作记录。</p>}
+      <div className="grid gap-1">{rows.map((r, i) => <p key={i} className="rounded-[10px] border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5"><b>{t(r.at)}</b> · {r.admin} · {r.action}{r.target ? ` · ${r.target}` : ""}{r.detail ? ` · ${r.detail}` : ""}</p>)}</div>
     </div>
   );
 }
