@@ -214,6 +214,7 @@ function OpsPanel({ token }: { token: string }) {
         <button type="button" disabled={!zh.trim()} onClick={() => void post()} className="mt-2 rounded-full bg-[var(--text)] px-4 py-1.5 font-black text-[var(--bg)] disabled:opacity-40">发布</button>
         {items.map((n) => <p key={n.id} className="mt-2 flex items-start gap-2 text-xs"><span className="min-w-0 flex-1 whitespace-pre-wrap">{new Date(n.at).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })} · {n.zh}</span><button type="button" onClick={() => void post(n.id)} className="shrink-0 rounded-full border px-2 py-0.5">删除</button></p>)}
       </div>
+      <MusicReview token={token} />
       <div className="rounded-[14px] border-2 border-[var(--line)] p-3">
         <p className="font-black">📢 替本地商家挂广告牌（免 ✨）</p>
         <div className="mt-2 grid grid-cols-2 gap-2">
@@ -226,6 +227,35 @@ function OpsPanel({ token }: { token: string }) {
         </div>
         <button type="button" onClick={() => void placeAd()} className="mt-2 rounded-full bg-[var(--text)] px-4 py-1.5 font-black text-[var(--bg)]">挂上 / 撤下</button>
       </div>
+    </div>
+  );
+}
+
+/* 🎶 音乐人投稿审核：先听，再通过 / 拒绝（只放原创） */
+function MusicReview({ token }: { token: string }) {
+  type P = { id: number; artist: string; title: string; durationSec: number; chunks: number; mime: string; at: string };
+  const [list, setList] = useState<P[]>([]);
+  const [msg, setMsg] = useState("");
+  const load = async (trackId?: number, approve?: boolean) => { const r = await api.moderateTrack({ token, trackId, approve }).catch(() => null); if (r?.ok) setList(r.pending ?? []); else setMsg(r?.error ?? "加载失败"); };
+  useEffect(() => { void load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const listen = async (t: P) => {
+    setMsg(`正在加载《${t.title}》…`);
+    const parts: Uint8Array[] = [];
+    for (let i = 0; i < t.chunks; i++) { const r = await api.trackChunk({ trackId: t.id, idx: i, token }); if (!r.ok || !r.data) { setMsg("加载失败"); return; } const b = atob(r.data); const u = new Uint8Array(b.length); for (let k = 0; k < b.length; k++) u[k] = b.charCodeAt(k); parts.push(u); }
+    const a = new Audio(URL.createObjectURL(new Blob(parts as BlobPart[], { type: t.mime }))); void a.play(); setMsg(`正在播放《${t.title}》`);
+  };
+  return (
+    <div className="rounded-[14px] border-2 border-[var(--line)] p-3">
+      <p className="font-black">🎶 音乐人投稿审核（{list.length}）</p>
+      <p className="mt-1 text-xs text-[var(--dim)]">只通过原创、无版权纠纷、内容健康的歌。通过后进全城 Livehouse 轮播。</p>
+      {msg && <p className="mt-1 text-xs font-bold">{msg}</p>}
+      {list.length === 0 && <p className="mt-2 text-xs text-[var(--dim)]">没有待审核的歌。</p>}
+      {list.map((t) => (
+        <p key={t.id} className="mt-2 flex flex-wrap items-center gap-2 text-sm"><span className="min-w-0 flex-1">{t.title} — {t.artist} · {Math.floor(t.durationSec / 60)}:{String(t.durationSec % 60).padStart(2, "0")}</span>
+          <button type="button" onClick={() => void listen(t)} className="rounded-full border px-2.5 py-0.5 text-xs">▶ 试听</button>
+          <button type="button" onClick={() => void load(t.id, true)} className="rounded-full bg-[var(--text)] px-2.5 py-0.5 text-xs font-black text-[var(--bg)]">通过</button>
+          <button type="button" onClick={() => void load(t.id, false)} className="rounded-full border px-2.5 py-0.5 text-xs">拒绝</button></p>
+      ))}
     </div>
   );
 }

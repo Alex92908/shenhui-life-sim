@@ -14,7 +14,7 @@ import { SCENE_PHOTOS } from "./experience";
 import * as THREE from "three";
 import { makePostFx, type PostFx } from "./postfx";
 
-export type LifeSet = "station" | "metro" | "train" | "bus" | "taxi" | "drive" | "concourse" | "platform" | "office" | "restaurant" | "market" | "mall" | "kitchen" | "bedroom" | "bathroom" | "gym" | "park" | "home" | "cruise" | "wheel" | "aquarium" | "turtle" | "coaster" | "safari" | "hike" | "beach" | "cablecar";
+export type LifeSet = "flat" | "station" | "metro" | "train" | "bus" | "taxi" | "drive" | "concourse" | "platform" | "office" | "restaurant" | "market" | "mall" | "kitchen" | "bedroom" | "bathroom" | "gym" | "park" | "home" | "cruise" | "wheel" | "aquarium" | "turtle" | "coaster" | "safari" | "hike" | "beach" | "cablecar";
 export type LifePose = "walk" | "idle" | "sit" | "drive" | "type" | "cook" | "eat" | "sleep" | "wash" | "lift" | "stretch";
 
 interface Props {
@@ -26,6 +26,8 @@ interface Props {
   emoji: string;
   /** Currency symbol drawn on the taxi meter — HK$ in Hong Kong, ¥ elsewhere. */
   cur?: string;
+  /** "flat": which rung of the housing ladder the home is (0 urban village … 3 Nanshan) */
+  tier?: number;
 }
 
 /* ---------------- canvas texture helpers ---------------- */
@@ -115,6 +117,28 @@ function floorTex(kind: "wood" | "tile" | "concrete" | "carriage" | "grass"): TH
   return tex;
 }
 
+/** a city skyline through floor-to-ceiling glass: towers with lit windows, the Spring Bamboo tower */
+function skylineTex(night: boolean): THREE.CanvasTexture {
+  return canvasTex(1024, 384, (g, w, h) => {
+    const grad = g.createLinearGradient(0, 0, 0, h);
+    if (night) { grad.addColorStop(0, "#0b1530"); grad.addColorStop(0.7, "#27406e"); grad.addColorStop(1, "#c46a3a"); }
+    else { grad.addColorStop(0, "#8cc4ec"); grad.addColorStop(1, "#f3d9b0"); }
+    g.fillStyle = grad; g.fillRect(0, 0, w, h);
+    let seed = 7; const rnd = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
+    for (let x = 0; x < w; ) {
+      const bw = 30 + rnd() * 60, bh = 80 + rnd() * 220;
+      g.fillStyle = night ? "#121c33" : "#7d8ea3"; g.fillRect(x, h - bh, bw, bh);
+      for (let yy = h - bh + 8; yy < h - 6; yy += 12) for (let xx = x + 5; xx < x + bw - 6; xx += 10) {
+        if (rnd() < (night ? 0.55 : 0.25)) { g.fillStyle = night ? (rnd() < 0.8 ? "#ffd27a" : "#9fd3ff") : "#c9d8e6"; g.fillRect(xx, yy, 5, 6); }
+      }
+      x += bw + 4;
+    }
+    // the Spring Bamboo tower: a tall tapering silhouette with a lit crown
+    g.fillStyle = night ? "#0e1729" : "#6d7f96";
+    g.beginPath(); g.moveTo(w * 0.62, h); g.lineTo(w * 0.635, h * 0.08); g.lineTo(w * 0.665, h * 0.08); g.lineTo(w * 0.68, h); g.fill();
+    if (night) { g.fillStyle = "#ffffff"; g.fillRect(w * 0.645, h * 0.1, 6, h * 0.8); }
+  });
+}
 function skyTex(night: boolean): THREE.CanvasTexture {
   return canvasTex(256, 256, (g) => {
     const grad = g.createLinearGradient(0, 0, 0, 256);
@@ -341,7 +365,7 @@ export function LifeStage3D(p: Props) {
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
-    const { setKind, pose, shirt, pants, night, emoji, cur } = propsRef.current;
+    const { setKind, pose, shirt, pants, night, emoji, cur, tier } = propsRef.current;
     // Same WebGL guard as the main map: a refused context degrades to the
     // emoji fallback below instead of crashing the animation overlay.
     let renderer: THREE.WebGLRenderer;
@@ -362,7 +386,7 @@ export function LifeStage3D(p: Props) {
     mount.appendChild(renderer.domElement);
     renderer.domElement.style.cssText = "position:absolute;inset:0;width:100%;height:100%;display:block;";
 
-    const indoor = setKind === "office" || setKind === "kitchen" || setKind === "bathroom" || setKind === "bedroom" || setKind === "home" || setKind === "restaurant" || setKind === "gym" || setKind === "concourse" || setKind === "platform";
+    const indoor = setKind === "flat" || setKind === "office" || setKind === "kitchen" || setKind === "bathroom" || setKind === "bedroom" || setKind === "home" || setKind === "restaurant" || setKind === "gym" || setKind === "concourse" || setKind === "platform";
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(night ? 0x1d3454 : indoor ? 0xf7e3bd : 0xffd9a0);
     scene.fog = new THREE.Fog(scene.background as THREE.Color, 17, 32);
@@ -938,6 +962,72 @@ export function LifeStage3D(p: Props) {
       box(0.28, 0.08, 0.14, 0x65a30d, 2.55, 1.06, 0.62, 0.8);
       addSteam(2.55, 1.12, 0.62);
       box(3.6, 0.025, 0.85, 0xb3552e, -0.5, 0.015, -1.15, 1);
+    } else if (setKind === "flat") {
+      // home by housing rung: 0 城中村握手楼 · 1 合租单间 · 2 小区一房 · 3 南山大平层
+      const tr = Math.max(0, Math.min(3, tier ?? 1));
+      if (tr === 0) {
+        roomShell(0xcfc8b6, 0x86806f);
+        // the "window": an arm's length from the next building's wall
+        box(1.3, 1.2, 0.1, 0xdedede, 2.8, 2.6, -3.56, 0.6);
+        box(1.1, 1.0, 0.05, 0x8d877b, 2.8, 2.6, -3.5, 0.95);
+        box(0.06, 1.0, 0.06, 0x6b6b6b, 2.8, 2.6, -3.46, 0.5, { metalness: 0.5 }); // burglar bars
+        // exposed pipes and a wire along the wall
+        for (const px of [-6.6, -6.35]) { const pipe = cyl(0.07, 0.07, 8, 0x8a8f94, px, 4, -3.4, 0.35, { metalness: 0.6 }); pipe.castShadow = false; }
+        box(9, 0.04, 0.04, 0x222222, -2.2, 3.4, -3.5, 0.6);
+        // metal bunk bed with two thin mattresses
+        for (const bx of [-4.6, -2.4]) for (const bz of [-3.2, -1.7]) cyl(0.05, 0.05, 2.6, 0x7a8590, bx, 1.3, bz, 0.4, { metalness: 0.6 });
+        for (const by of [0.55, 1.95]) { box(2.3, 0.08, 1.6, 0x7a8590, -3.5, by, -2.45, 0.4, { metalness: 0.5 }); box(2.1, 0.14, 1.45, 0xdad3c4, -3.5, by + 0.11, -2.45, 0.95); }
+        box(0.7, 0.12, 0.4, 0x8a6f9e, -4.1, 0.75, -2.9, 0.95); // pillow
+        // a single bare bulb on a cord
+        cyl(0.01, 0.01, 1.6, 0x222222, 0.6, 4.6, -1.2, 0.6);
+        const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 10), mat(0xfff1c4, 0.3, { emissive: 0xffd27a, emissiveIntensity: 2.4 }));
+        bulb.position.set(0.6, 3.75, -1.2); scene.add(bulb);
+        addGlow(0.6, 3.75, -1.2, 2.6, 0xffd27a, 0.7);
+        // clothes rack, plastic stool, instant noodles, e-bike battery charging
+        box(0.04, 1.8, 0.04, 0x9aa3ab, 1.6, 0.9, -2.6, 0.5); box(0.04, 1.8, 0.04, 0x9aa3ab, 3.4, 0.9, -2.6, 0.5); box(1.85, 0.04, 0.04, 0x9aa3ab, 2.5, 1.8, -2.6, 0.5);
+        for (const [cx, col] of [[1.9, 0x3b82f6], [2.4, 0xf59e0b], [2.9, 0x10b981]] as const) box(0.38, 0.75, 0.05, col, cx, 1.35, -2.6, 0.95);
+        cyl(0.24, 0.2, 0.42, 0xd94a3a, 0.2, 0.21, 0.4, 0.6);
+        cyl(0.13, 0.11, 0.16, 0xf2c14e, 0.2, 0.5, 0.4, 0.7);
+        box(0.42, 0.28, 0.2, 0x1f2937, 4.6, 0.14, -3.2, 0.6);
+        const led = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), mat(0xff3030, 0.3, { emissive: 0xff2020, emissiveIntensity: 3 }));
+        led.position.set(4.6, 0.3, -3.08); scene.add(led);
+      } else if (tr === 1) {
+        roomShell(0xf1e6d2, 0xb89a72, { windowX: 3.6, windowW: 1.5 });
+        // single bed, a desk with a glowing laptop, a suitcase, a door to the shared hall
+        box(2.3, 0.4, 1.3, 0x9c7a52, -3.6, 0.2, -2.9, 0.8); box(2.2, 0.2, 1.2, 0xf6efe0, -3.6, 0.5, -2.9, 0.95); box(2.2, 0.12, 0.75, 0x7ea6c9, -3.6, 0.62, -2.6, 0.95);
+        box(1.6, 0.06, 0.7, 0xb08a5c, 0.6, 0.95, -3.2, 0.7); for (const lx of [-0.1, 1.3]) box(0.06, 0.92, 0.06, 0x8a6a44, lx, 0.46, -3.2, 0.7);
+        box(0.6, 0.03, 0.42, 0x2b2b2b, 0.6, 1.0, -3.2, 0.4);
+        const scr = box(0.6, 0.4, 0.03, 0x111827, 0.6, 1.21, -3.4, 0.3, { emissive: 0x4f8cff, emissiveIntensity: night ? 1.6 : 0.6 }); scr.castShadow = false;
+        addGlow(0.6, 1.2, -3.2, 1.5, 0x8fb8ff, night ? 0.6 : 0.25);
+        box(0.6, 0.85, 0.32, 0x2563eb, 5.2, 0.43, -2.9, 0.5);
+        box(1.1, 2.4, 0.08, 0x8a6a44, -6.4, 1.2, -1.2, 0.8);
+      } else if (tr === 2) {
+        roomShell(0xf5ead6, 0xc9a877, { windowX: 2.6, windowW: 2.6 });
+        // living room: sofa, TV glow, coffee table, rug, plants, picture
+        box(3.0, 0.5, 1.0, 0x6b8f71, -2.6, 0.45, -2.6, 0.9); box(3.0, 0.7, 0.25, 0x5f8065, -2.6, 0.95, -3.05, 0.9);
+        for (const ax of [-4.05, -1.15]) box(0.25, 0.6, 1.0, 0x5f8065, ax, 0.6, -2.6, 0.9);
+        const tv = box(2.0, 1.1, 0.06, 0x0b0f19, 2.4, 1.6, 2.6, 0.3, { emissive: 0x3060c0, emissiveIntensity: night ? 1.2 : 0.4 }); tv.rotation.y = Math.PI; tv.castShadow = false;
+        box(1.4, 0.06, 0.7, 0xb08a5c, -2.6, 0.45, -1.2, 0.6);
+        const rug2 = cyl(1.6, 1.6, 0.02, 0xd9a05b, -2.4, 0.012, -1.4, 1, {}, 24); rug2.castShadow = false;
+        cyl(0.24, 0.19, 0.32, 0xb0653a, 5.4, 0.16, -3.0, 0.8);
+        const leaves = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 7), mat(0x4d9b5f, 1, { flatShading: true })); leaves.position.set(5.4, 0.75, -3.0); scene.add(leaves);
+        addPicture(-2.6, 2.6, 1.4, 0.9, night ? 0x33507c : 0x9fc8e8);
+      } else {
+        roomShell(0xefe9df, 0xd8cfc0);
+        // floor-to-ceiling glass onto the Nanshan skyline
+        plane(13.5, 5.6, skylineTex(night), -0.4, 3.0, -3.48);
+        for (let mx = -6.8; mx <= 6.0; mx += 2.7) box(0.07, 5.8, 0.08, 0x2b2b2b, mx, 3.0, -3.42, 0.4, { metalness: 0.7 });
+        box(13.6, 0.08, 0.1, 0x2b2b2b, -0.4, 0.22, -3.42, 0.4, { metalness: 0.7 });
+        addGlow(-0.4, 3.2, -3.0, 8, night ? 0xffc98a : 0xfff2c8, night ? 0.35 : 0.25);
+        // L-shaped sofa, marble island, pendant lights, long rug, a big plant
+        box(4.2, 0.45, 1.1, 0xe7e2d8, -3.0, 0.4, -1.6, 0.9); box(1.1, 0.45, 2.4, 0xe7e2d8, -5.55, 0.4, -0.95, 0.9);
+        box(4.2, 0.6, 0.25, 0xddd6c9, -3.0, 0.85, -2.1, 0.9);
+        box(2.8, 0.95, 1.0, 0xf2f0ec, 3.4, 0.48, -0.6, 0.25, { metalness: 0.1 }); box(2.9, 0.06, 1.1, 0x1f2937, 3.4, 0.98, -0.6, 0.3);
+        for (const lx of [2.6, 3.4, 4.2]) { cyl(0.01, 0.01, 2.0, 0x222222, lx, 4.2, -0.6, 0.6); const shade = cyl(0.16, 0.22, 0.24, 0xc8a46a, lx, 3.1, -0.6, 0.4, { metalness: 0.6, emissive: 0xffc873, emissiveIntensity: night ? 1.6 : 0.4 }); shade.castShadow = false; addGlow(lx, 3.0, -0.6, 1.4, 0xffc98a, night ? 0.6 : 0.25); }
+        const rug3 = box(5.5, 0.02, 2.6, 0x9ca3af, -3.0, 0.012, -0.4, 1); rug3.castShadow = false;
+        cyl(0.32, 0.26, 0.55, 0x2b2b2b, 6.2, 0.28, -2.8, 0.6);
+        const tree = new THREE.Mesh(new THREE.SphereGeometry(0.8, 9, 8), mat(0x3f8a54, 1, { flatShading: true })); tree.position.set(6.2, 1.5, -2.8); scene.add(tree);
+      }
     } else if (setKind === "bedroom") {
       roomShell(0xf3e6cf, 0xc9a877, { windowX: 3.9, windowW: 1.9 });
       // detail pass: glowing bedside lamp, a woven rug, slippers by the bed

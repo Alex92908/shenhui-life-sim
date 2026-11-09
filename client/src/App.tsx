@@ -31,6 +31,7 @@ type ChatAction, type MemMap, type NpcPost, type PlayerNews,
 import { MapView } from "./MapView";
 import { setSound, soundWanted, wakeSound, setScene, sfx, type SoundScene } from "./sound";
 import { momentsAt, inBest, seawardAz, SCENIC_MOMENTS, type ScenicMoment } from "./scenic";
+import { LivehouseModal } from "./Livehouse";
 import { drawOrigin, originById, tierOfIden, tierNow, TIERS, climbVerdict, randomNick, ORIGINS, type Origin } from "./origin";
 import { MetroMapModal } from "./MetroMap";
 import { PlacesMapModal } from "./PlacesMap";
@@ -717,6 +718,8 @@ const setMapMode = (m: "city" | "follow") => {
   showToast(m === "follow" ? (en ? "🎯 Follow view: the camera stays with you; the minimap shows the whole city." : "🎯 跟随视角：镜头跟着你，小地图看全城。") : (en ? "🗺️ Whole-city view." : "🗺️ 全城视角：一眼看全城。"));
 };
 const [retrainOpen, setRetrainOpen] = useState(false);
+const [liveOpen, setLiveOpen] = useState(false);
+const [home3d, setHome3d] = useState(false);
 /* compact screens: the right-hand panel rail folds behind one ☰ button */
 const [railOpen, setRailOpen] = useState(false);
 /* Map fullscreen: the map shell becomes a fixed full-viewport stage
@@ -3368,6 +3371,7 @@ playLifeAnim("shopping");
     const acts = co ? [...companyActions(co, s), ...(loc.type === "work" ? [] : baseActionsFor(loc, s))] : baseActionsFor(loc, s);
     const ev = todayEvent;
     acts.unshift(...routineActs(loc, s));
+    if (loc.type === "social") acts.unshift({ kind: "__livehouse", emoji: "🎶", title: en ? "Into the Livehouse" : "进 Livehouse 听歌", desc: en ? "The whole city hears the same song at the same moment — independent musicians' originals" : "全城同步放同一首歌：独立音乐人的原创投稿，你也能投稿", cost: en ? "free" : "免费" });
     for (const m of momentsAt(s.cityKey, loc.id)) acts.unshift({ kind: `__scenic-${m.id}`, emoji: m.emoji, title: en ? m.en : m.zh, desc: `${en ? m.hintEn : m.hint}${inBest(m, nowMin()) ? (en ? " · ✨ perfect time right now" : " · ✨ 现在正是最好的时候") : ""}`, cost: en ? `mood +${inBest(m, nowMin()) ? 20 : 12} · free` : `心情 +${inBest(m, nowMin()) ? 20 : 12} · 免费` });
     if (loc.type === "learn") acts.push({ kind: "__retrain", emoji: "🎓", title: en ? "Retrain / get certified" : "转行培训 / 考证", desc: en ? "Switch to another job: pay the course fee, have the skill it needs." : "换一份工作：交培训费，技能够就能转。外卖员也能考成护士。", cost: en ? "course fee" : "培训费" });
     const tn = nowMin();
@@ -3529,6 +3533,7 @@ const renderHomePanel = (s: GameState) => (
 <div className="mt-4 border-t border-[var(--line)] pt-4">
 {(() => { const tpl = tplByName(s.homeStyle); const wall = hexCss(tpl?.wall ?? 0xefe9dc); const floor = hexCss(tpl?.floor ?? 0xb8a888); const atHome = currentLoc === "home"; return (
 <div className="mb-3">
+<button type="button" onClick={() => setHome3d(true)} className="mb-2 w-full rounded-full bg-[var(--text)] py-2.5 text-sm font-black text-[var(--bg)]">🏠 {en ? "My home · 3D" : "我的家 · 3D"} <span className="font-bold opacity-75">· {(() => { const T = TIERS[s.cityKey][tierAt(s)]!; return en ? T.en : T.zh; })()}</span></button>
 <div className="grid grid-cols-2 gap-2" role="img" aria-label={`户型图：${homeName(s)}，客厅、卧室、厨房、卫生间四间，已摆 ${s.furniture.length} 件家具，食材 ${s.groceries} 份`}>
 {HOME_ROOMS.map((room, ri) => {
 const ownedHere = s.furniture.flatMap((id) => { const f = furnById(id); return f && f.room === room.id ? [f] : []; });
@@ -4552,8 +4557,8 @@ return (
 {(() => { const g = guideForLocName(selLoc.name); if (!g) return null; return <ExperienceCard g={g} here={arrived} unlocked={(s.album ?? []).includes(g.key)} onCheckin={() => checkinGuide(g)} />; })()}
 <p className="mt-3.5 flex items-baseline justify-between gap-2"><span className="text-xs font-black tracking-wide">📍 在这里能做 · 常用操作</span><span className="text-[11px] font-bold text-[var(--dim)]">{arrived ? "点一下就行动" : "到了才能做"}</span></p>
 <div className="mt-2 grid gap-2">
-{actionsFor(selLoc, s).map((a) => { const own = a.kind.startsWith("__routine-") && (a.kind !== "__routine-wait" || routineRole(s.idenId) === "driver") || a.kind.startsWith("__rider-") || a.kind.startsWith("__scenic-"); /* the rider's own steps don't depend on the shop's hours; a taxi passenger waves from anywhere, any hour */ const tb = timeBlock(a.kind, s) ?? (a.kind === "__sleep" || a.kind === "rest" || own ? null : venueClosed(selLoc)); return (
-<button key={a.kind + (a.arg ?? 0)} type="button" disabled={!arrived || a.disabled || !!tb} onClick={() => { if (a.kind === "__sleep") playLifeAnim("sleep", () => doSleep()); else if (a.kind.startsWith("__gocity-")) setCrossTo(a.kind.slice("__gocity-".length) as CityKey); else if (a.kind.startsWith("__routine-")) doRoutine(a.kind.slice("__routine-".length)); else if (a.kind === "__rider-go") riderGo(); else if (a.kind === "__retrain") setRetrainOpen(true); else if (a.kind.startsWith("__scenic-")) startScenic(a.kind.slice("__scenic-".length)); else if (a.kind === "__rider-cancel") { const g0 = gsRef.current; if (g0) { const rd0 = routineToday(g0); mutate((x) => { x.routine = { ...rd0, order: null }; x.money -= 2; x.mood = clamp(x.mood - 3, 0, 100); }); showToast(en ? "Order cancelled (−¥2)." : "这单取消了，平台扣了 ¥2。"); } } else if (a.kind.startsWith("__cross-")) { const r = CROSS_ROUTES.find((x) => x.id === a.kind.slice("__cross-".length)); if (r) takeRoute(r); } else doAction(a.kind, a.arg ?? 0); }} className="act-btn">
+{actionsFor(selLoc, s).map((a) => { const own = a.kind.startsWith("__routine-") && (a.kind !== "__routine-wait" || routineRole(s.idenId) === "driver") || a.kind.startsWith("__rider-") || a.kind.startsWith("__scenic-") || a.kind === "__livehouse"; /* the rider's own steps don't depend on the shop's hours; a taxi passenger waves from anywhere, any hour */ const tb = timeBlock(a.kind, s) ?? (a.kind === "__sleep" || a.kind === "rest" || own ? null : venueClosed(selLoc)); return (
+<button key={a.kind + (a.arg ?? 0)} type="button" disabled={!arrived || a.disabled || !!tb} onClick={() => { if (a.kind === "__sleep") playLifeAnim("sleep", () => doSleep()); else if (a.kind.startsWith("__gocity-")) setCrossTo(a.kind.slice("__gocity-".length) as CityKey); else if (a.kind.startsWith("__routine-")) doRoutine(a.kind.slice("__routine-".length)); else if (a.kind === "__rider-go") riderGo(); else if (a.kind === "__retrain") setRetrainOpen(true); else if (a.kind.startsWith("__scenic-")) startScenic(a.kind.slice("__scenic-".length)); else if (a.kind === "__livehouse") setLiveOpen(true); else if (a.kind === "__rider-cancel") { const g0 = gsRef.current; if (g0) { const rd0 = routineToday(g0); mutate((x) => { x.routine = { ...rd0, order: null }; x.money -= 2; x.mood = clamp(x.mood - 3, 0, 100); }); showToast(en ? "Order cancelled (−¥2)." : "这单取消了，平台扣了 ¥2。"); } } else if (a.kind.startsWith("__cross-")) { const r = CROSS_ROUTES.find((x) => x.id === a.kind.slice("__cross-".length)); if (r) takeRoute(r); } else doAction(a.kind, a.arg ?? 0); }} className="act-btn">
 <span className="flex items-center justify-between text-sm font-black"><span>{a.title}</span><span>{a.emoji}</span></span>
 <span className="mt-0.5 block text-xs leading-relaxed text-[var(--dim)]">{a.desc}</span>
 <span className="mt-1 block text-xs font-bold text-[var(--accent2)]">{a.cost}{a.kind !== "__sleep" && ` · ⏳ ${realMinLabel(actionMinutes(a.kind))}`}</span>
@@ -5384,6 +5389,22 @@ return (
 <p key={scenicLine} className="rise mt-1.5 max-w-xl font-display text-lg font-black leading-snug sm:text-xl">{en ? ln[1] : ln[0]}</p>
 </div>
 <button type="button" onClick={finishScenic} className="pointer-events-auto absolute right-3 top-[calc(9vh+10px)] rounded-full bg-black/55 px-3 py-1.5 text-xs font-black text-white">✕ {en ? "End" : "结束"}</button>
+</div> ); })()}
+{liveOpen && phase === "game" && <LivehouseModal en={en} token={accountToken()} venue={en ? trText(locById(currentLoc).short) : locById(currentLoc).short} soundIsOn={soundIsOn} enableSound={() => { setSoundIsOn(true); setSound(true); }} onClose={() => setLiveOpen(false)} toast={showToast} openAccount={() => { setLiveOpen(false); setAccountOpen(true); }} openStore={() => { setLiveOpen(false); setStoreOpen(true); }} />}
+{home3d && phase === "game" && (() => { const t = tierAt(s); const T = TIERS[s.cityKey]; const tn = nowMin(); return (
+<div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/70 p-3 sm:items-center" role="dialog" aria-label={en ? "My home" : "我的家"}>
+<div className="rise w-full max-w-lg overflow-hidden rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)]">
+<div className="relative h-[46vh] min-h-[240px]">
+<LifeStage3D key={`flat-${t}`} setKind="flat" tier={t} pose="idle" shirt={outfitOf(s.outfit).shirt} pants={outfitOf(s.outfit).pants} night={tn >= 18 * 60 || tn < 6 * 60} emoji={iden.emoji} />
+<div className="cine-grade" />
+<button type="button" onClick={() => setHome3d(false)} className="absolute right-3 top-3 rounded-full bg-black/55 px-3 py-1 text-xs font-black text-white">✕</button>
+</div>
+<div className="p-4">
+<p className="font-display text-xl font-black">{T[t]!.emoji} {en ? T[t]!.en : T[t]!.zh}</p>
+<p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">{t < 3 ? (en ? `Reach the month's goal to move up to ${T[t + 1]!.en} — your home changes with you.` : `攒够本月目标就能搬进「${T[t + 1]!.zh}」——爬上去，家就跟着变。`) : (en ? "Top of the ladder. Don't slip." : "到顶了，别掉下来。")}</p>
+<div className="mt-2 flex items-end gap-1" aria-hidden>{T.map((x, i) => <div key={i} className={`flex-1 rounded-t-[6px] py-1 text-center text-[10px] font-black ${i === t ? "bg-[var(--accent)] text-white" : "bg-[var(--surface2)] text-[var(--dim)]"}`} style={{ paddingTop: 4 + i * 7 }}>{x.emoji}</div>)}</div>
+</div>
+</div>
 </div> ); })()}
 {retrainOpen && phase === "game" && (
 <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={en ? "Retrain" : "转行培训"}>

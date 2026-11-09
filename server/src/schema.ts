@@ -385,3 +385,23 @@ export const announcements = sqliteTable("announcements", {
   en: text("en").notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
 });
+
+/* ---- 🎶 Livehouse：音乐人投稿，审核后进全城同步轮播 (0016) ---- */
+export const musicTracks = sqliteTable("music_tracks", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  accountId: text("account_id").notNull(),
+  artist: text("artist").notNull(),
+  title: text("title").notNull(),
+  mime: text("mime").notNull(),
+  bytes: integer("bytes").notNull(),
+  durationSec: integer("duration_sec").notNull(),
+  chunks: integer("chunks").notNull(),
+  status: text("status").notNull().default("uploading"), // uploading | pending | approved | rejected
+  boostUntil: integer("boost_until", { mode: "timestamp_ms" }),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+export const musicChunks = sqliteTable("music_chunks", {
+  trackId: integer("track_id").notNull(),
+  idx: integer("idx").notNull(),
+  data: text("data").notNull(), // base64
+}, (t) => [primaryKey({ columns: [t.trackId, t.idx] })]);
