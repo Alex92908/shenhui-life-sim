@@ -4,7 +4,23 @@
    - 音乐人投稿的歌（Livehouse）用 <audio> 播放，和合成音乐互斥
    默认打开：浏览器和微信要求用户先点一下才能出声，所以第一次点屏幕时才响；玩家可以用 🔇 关掉（记住选择）。 */
 
-export type SoundScene = "day" | "night" | "rain" | "club" | "scenic" | "off";
+export type SoundScene = "day" | "night" | "rain" | "club" | "scenic" | "citypop" | "piano" | "off";
+/** the player's music choice: "auto" follows the moment (day / night / rain / club / scenic), anything else is fixed */
+export type MusicPick = "auto" | Exclude<SoundScene, "off">;
+export const MUSIC_PICKS: { id: MusicPick; emoji: string; zh: string; en: string }[] = [
+  { id: "auto", emoji: "✨", zh: "自动（跟着时间、天气、地点换）", en: "Auto (follows time, weather, place)" },
+  { id: "day", emoji: "☀️", zh: "白天 · 轻快", en: "Daytime · bright" },
+  { id: "night", emoji: "🌙", zh: "夜晚 · lo-fi", en: "Night · lo-fi" },
+  { id: "citypop", emoji: "🌆", zh: "城市流行 · City Pop", en: "City pop" },
+  { id: "piano", emoji: "🎹", zh: "钢琴 · 安静", en: "Piano · calm" },
+  { id: "rain", emoji: "🌧️", zh: "雨天 · 雨声", en: "Rainy · with rain" },
+  { id: "club", emoji: "🪩", zh: "夜店舞曲", en: "Club beat" },
+  { id: "scenic", emoji: "🌅", zh: "观景 · 宽广", en: "Scenic · wide" },
+];
+const PICK_KEY = "shhr-music";
+let pick: MusicPick = (() => { try { const v = localStorage.getItem(PICK_KEY) as MusicPick | null; return v && MUSIC_PICKS.some((m) => m.id === v) ? v : "auto"; } catch { return "auto"; } })();
+let wanted: SoundScene = "off";
+export function musicPick(): MusicPick { return pick; }
 export type Sfx = "click" | "coin" | "chime" | "arrive" | "fail";
 
 const KEY = "shhr-sound";
@@ -44,6 +60,8 @@ export function wakeSound() { if (soundWanted()) { const c = ensure(); if (c && 
 const NOTE = (n: number) => 440 * Math.pow(2, (n - 69) / 12);
 // chord roots (MIDI) and qualities per scene: four-bar loops
 const PROG: Record<Exclude<SoundScene, "off" | "club">, number[][]> = {
+  citypop: [[65, 69, 72, 76], [64, 67, 71, 74], [62, 65, 69, 72], [67, 71, 74, 77]], // Fmaj7 Em7 Dm7 G7 — 80s city pop
+  piano: [[60, 64, 67, 72], [55, 59, 62, 67], [57, 60, 64, 69], [53, 57, 60, 65]], // C G Am F — slow piano
   day: [[60, 64, 67, 71], [57, 60, 64, 67], [65, 69, 72, 76], [67, 71, 74, 77]], // Cmaj7 Am7 Fmaj7 G7
   night: [[57, 60, 64, 67], [53, 57, 60, 64], [55, 58, 62, 65], [52, 55, 59, 62]], // Am7 Fmaj7 Gm7 Em7 — lo-fi
   rain: [[50, 53, 57, 60], [55, 58, 62, 65], [48, 52, 55, 59], [53, 57, 60, 64]],
@@ -97,9 +115,27 @@ function tick() {
     return;
   }
   const prog = PROG[scene];
-  const beat = scene === "night" ? 0.85 : scene === "rain" ? 1.0 : 0.75;
+  const beat = scene === "night" ? 0.85 : scene === "rain" ? 1.0 : scene === "citypop" ? 0.5 : scene === "piano" ? 1.1 : 0.75;
+  if (scene === "citypop") {
+    // bouncing octave bass + offbeat hat under the chords
+    const ch0 = prog[Math.floor(step / 4) % prog.length]![0]!;
+    tone(NOTE(ch0 - 24), now, beat * 0.4, "triangle", 0.09, musicBus, 0.005);
+    tone(NOTE(ch0 - 12), now + beat / 2, beat * 0.35, "triangle", 0.06, musicBus, 0.005);
+    noiseHit(now + beat / 2, 0.04, 0.08, 8000);
+    if (step % 2 === 1) noiseHit(now, 0.08, 0.1, 2000);
+  }
   const chord = prog[Math.floor(step / 4) % prog.length]!;
-  if (step % 4 === 0) for (const n of chord) tone(NOTE(n - 12), now, beat * 4.4, scene === "night" ? "triangle" : "sine", 0.05, musicBus, 0.4);
+  if (scene === "piano") {
+    // arpeggiated chord, one note a beat, plus a soft bass on the bar
+    if (step % 4 === 0) tone(NOTE(chord[0]! - 24), now, beat * 4, "sine", 0.06, musicBus, 0.02);
+    const n = chord[step % 4]!;
+    tone(NOTE(n), now, beat * 2.2, "triangle", 0.07, musicBus, 0.005);
+    if (Math.random() < 0.35) tone(NOTE(n + 12), now + beat / 2, beat * 1.4, "sine", 0.035, musicBus, 0.005);
+    step += 1;
+    timer = window.setTimeout(tick, beat * 1000);
+    return;
+  }
+  if (step % 4 === 0) for (const n of chord) tone(NOTE(n - 12), now, beat * 4.4, scene === "night" ? "triangle" : "sine", 0.05, musicBus, scene === "citypop" ? 0.05 : 0.4);
   // a soft melody note most beats, from the chord's pentatonic
   if (Math.random() < (scene === "night" ? 0.55 : 0.7)) {
     const n = chord[0]! + 12 + PENTA[Math.floor(Math.random() * PENTA.length)]!;
@@ -132,9 +168,17 @@ function restartScene() {
 }
 /** which music fits right now: day / night / rain, or a scene (club, scenic moment) */
 export function setScene(next: SoundScene) {
-  if (next === scene) return;
-  scene = next;
+  wanted = next;
+  const eff = next === "off" ? "off" : pick === "auto" ? next : pick;
+  if (eff === scene) return;
+  scene = eff;
   restartScene();
+}
+/** the player picked a music style (or "auto"): remembered, applied right away */
+export function setMusicPick(p: MusicPick) {
+  pick = p;
+  try { localStorage.setItem(PICK_KEY, p); } catch { /* storage unavailable */ }
+  const w = wanted; scene = "off"; setScene(w);
 }
 
 /* ---- effects ---- */
