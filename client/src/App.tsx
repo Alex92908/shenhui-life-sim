@@ -41,7 +41,7 @@ import { LifeStage3D, FURN_SLOTS, type LifeSet, type LifePose } from "./LifeStag
 
 /* 店里的人物互动：点一下，店员 / 熟人走过来跟你说话，角色换动作；
    心情、人脉奖励每天每项一次，花钱的每次都花 */
-interface VenueTalk { id: string; emoji: string; zh: string; en: string; who: string; whoEn: string; say: string; sayEn: string; pose: LifePose; partner?: [number, number]; money?: number; mood?: number; energy?: number; network?: number; xp?: number }
+interface VenueTalk { open?: "live"; id: string; emoji: string; zh: string; en: string; who: string; whoEn: string; say: string; sayEn: string; pose: LifePose; partner?: [number, number]; money?: number; mood?: number; energy?: number; network?: number; xp?: number }
 const VENUE_TALK: Partial<Record<LifeSet, VenueTalk[]>> = {
   restaurant: [
     { id: "order", emoji: "🍚", zh: "点一份猪脚饭", en: "Order trotter rice", who: "老板娘", whoEn: "The owner", say: "「靓仔/靓女，加个卤蛋？今日猪脚好靓。」", sayEn: "“Add a braised egg? The trotters are lovely today.”", pose: "eat", partner: [0xf3ead8, 0x4a3226], money: -25, energy: 14, mood: 4 },
@@ -65,6 +65,8 @@ const VENUE_TALK: Partial<Record<LifeSet, VenueTalk[]>> = {
     { id: "spot", emoji: "🤝", zh: "帮别人保护一组", en: "Spot someone's set", who: "健身的小哥", whoEn: "A gym regular", say: "「谢了兄弟！下次我帮你。」", sayEn: "“Cheers! I'll spot you next time.”", pose: "talk", partner: [0x0ea5e9, 0x111827], mood: 4, network: 1 },
   ],
   club: [
+    { id: "sing", emoji: "🎤", zh: "上台点一首歌唱", en: "Get up and sing one", who: "台下的人", whoEn: "The crowd", say: "「再来一首！再来一首！」", sayEn: "“Encore! Encore!”", pose: "sing", money: -30, energy: -6, mood: 14 },
+    { id: "live", open: "live", emoji: "🎧", zh: "听全城正在放的原创歌", en: "Hear the original playing citywide", who: "DJ", whoEn: "The DJ", say: "「下一首，是我们城里音乐人自己写的。」", sayEn: "“Next up — a song by one of our own musicians.”", pose: "idle" },
     { id: "dance", emoji: "🕺", zh: "挤到台前跟着跳", en: "Dance up front", who: "主唱", whoEn: "The singer", say: "「深圳的朋友们，手举起来！」", sayEn: "“Shenzhen, hands up!”", pose: "dance", energy: -8, mood: 12 },
     { id: "drink", emoji: "🍹", zh: "吧台点一杯", en: "Get a drink at the bar", who: "调酒师", whoEn: "The bartender", say: "「今晚乐队是自己写歌的，第三首最好听。」", sayEn: "“The band write their own songs — the third one's the best.”", pose: "talk", partner: [0x0ea5e9, 0x111827], money: -68, mood: 8 },
     { id: "friend", emoji: "🙌", zh: "跟旁边的人聊乐队", en: "Talk to someone about the band", who: "旁边的乐迷", whoEn: "A fan next to you", say: "「我追了他们三年，从二十个人看到现在满场。」", sayEn: "“Followed them three years — from twenty people to a full house.”", pose: "talk", partner: [0xf59e0b, 0x1f2937], mood: 6, network: 2 },
@@ -837,15 +839,17 @@ const [scenicMoment, setScenicMoment] = useState<{ m: ScenicMoment; at: number; 
 const [scenicLine, setScenicLine] = useState(0);
 /* phones: the status card shows the essentials; the rest folds behind “⋯ More” */
 const [hudMore, setHudMore] = useState(false);
-/* 🔊 sound: off until the player turns it on (browsers and WeChat need a tap first) */
+/* 🔊 sound: on by default, starts on the first tap (browsers and WeChat need one); 🔇 turns it off and is remembered */
 const [soundIsOn, setSoundIsOn] = useState(soundWanted);
 const toggleSound = () => { const next = !soundIsOn; setSoundIsOn(next); setSound(next); track("sound", { on: next }); };
 useEffect(() => {
   const wake = () => wakeSound();
   const tap = (e: Event) => { if ((e.target as HTMLElement | null)?.closest?.("button")) sfx("click"); };
   window.addEventListener("pointerdown", wake);
+  window.addEventListener("touchend", wake);
+  window.addEventListener("click", wake);
   window.addEventListener("click", tap, true);
-  return () => { window.removeEventListener("pointerdown", wake); window.removeEventListener("click", tap, true); };
+  return () => { window.removeEventListener("pointerdown", wake); window.removeEventListener("touchend", wake); window.removeEventListener("click", wake); window.removeEventListener("click", tap, true); };
 }, []);
 /* map mode A/B: each device starts in "city" (A, see the whole city) or "follow" (B, camera on you + minimap) at random; players can switch */
 const [mapMode, setMapModeState] = useState<"city" | "follow">(() => {
@@ -1874,10 +1878,10 @@ useEffect(() => {
   if (phase !== "game") { setScene("off"); return; }
   const here = getLocations(gs?.cityKey ?? "sz").find((l) => l.id === currentLoc);
   const tn = nowMin();
-  const sc: SoundScene = scenicMoment ? "scenic" : here?.type === "social" && !walking ? "club" : nowRainy ? "rain" : tn >= 19 * 60 || tn < 6 * 60 ? "night" : "day";
+  const sc: SoundScene = scenicMoment ? "scenic" : venue3d?.set === "club" || (here?.type === "social" && !walking) ? "club" : nowRainy ? "rain" : tn >= 19 * 60 || tn < 6 * 60 ? "night" : "day";
   setScene(sc);
 // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [phase, currentLoc, walking, nowRainy, musicTick, soundIsOn, scenicMoment]);
+}, [phase, currentLoc, walking, nowRainy, musicTick, soundIsOn, scenicMoment, venue3d]);
 /* 今日城市事件：新的一天播报一次，并记进「见过的事件」 */
 useEffect(() => {
 if (phase !== "game") return;
@@ -5611,8 +5615,8 @@ return (
 </div>
 <div className="p-4"><p className="font-display text-xl font-black">{venue3d.name}</p><p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">{venue3d.line}</p>
 <div className="mt-3 grid gap-1.5">{(VENUE_TALK[venue3d.set] ?? []).map((v) => { const key = `${s.day}:${venue3d.set}:${v.id}`; const done = (s.venueFx ?? []).includes(key); const cost = -(v.money ?? 0); const fx = [cost > 0 ? fmt(-cost, s.cityKey) : "", v.energy ? `${en ? "energy" : "能量"} ${v.energy > 0 ? "+" : ""}${v.energy}` : "", !done && v.mood ? `${en ? "mood" : "心情"} +${v.mood}` : "", !done && v.network ? `${en ? "contacts" : "人脉"} +${v.network}` : "", !done && v.xp ? `${en ? "XP" : "经验"} +${v.xp}` : ""].filter(Boolean).join(" · "); return (
-<button key={v.id} type="button" disabled={s.money < cost} onClick={() => { mutate((x) => { x.money += v.money ?? 0; x.energy = clamp(x.energy + (v.energy ?? 0), 0, 100); if (!(x.venueFx ?? []).includes(key)) { x.mood = clamp(x.mood + (v.mood ?? 0), 0, 100); x.network += v.network ?? 0; x.xp += v.xp ?? 0; x.venueFx = [...(x.venueFx ?? []).filter((k) => k.startsWith(`${x.day}:`)), key]; } }); if (v.money) sfx("coin"); else sfx("click"); setVenueTalk(v); }} className={`flex items-center gap-2 rounded-[12px] border px-3 py-2 text-left ${venueTalk?.id === v.id ? "border-[var(--accent)]" : "border-[var(--line)]"} bg-[var(--bg)] disabled:opacity-40`}>
-<span className="text-xl">{v.emoji}</span><span className="min-w-0 flex-1"><span className="block text-[13px] font-black">{en ? v.en : v.zh}</span><span className="block text-[11px] text-[var(--dim)]">{fx || (en ? "done today" : "今天聊过了")}</span></span></button> ); })}</div>
+<button key={v.id} type="button" disabled={s.money < cost} onClick={() => { mutate((x) => { x.money += v.money ?? 0; x.energy = clamp(x.energy + (v.energy ?? 0), 0, 100); if (!(x.venueFx ?? []).includes(key)) { x.mood = clamp(x.mood + (v.mood ?? 0), 0, 100); x.network += v.network ?? 0; x.xp += v.xp ?? 0; x.venueFx = [...(x.venueFx ?? []).filter((k) => k.startsWith(`${x.day}:`)), key]; } }); if (v.money) sfx("coin"); else sfx("click"); if (!soundIsOn) { setSoundIsOn(true); setSound(true); } if (v.open === "live") { setVenue3d(null); setVenueTalk(null); setLiveOpen(true); return; } setVenueTalk(v); }} className={`flex items-center gap-2 rounded-[12px] border px-3 py-2 text-left ${venueTalk?.id === v.id ? "border-[var(--accent)]" : "border-[var(--line)]"} bg-[var(--bg)] disabled:opacity-40`}>
+<span className="text-xl">{v.emoji}</span><span className="min-w-0 flex-1"><span className="block text-[13px] font-black">{en ? v.en : v.zh}</span><span className="block text-[11px] text-[var(--dim)]">{v.open === "live" ? (en ? "Free · open the Livehouse and listen together" : "免费 · 打开 Livehouse 一起听") : fx || (en ? "done today" : "今天聊过了")}</span></span></button> ); })}</div>
 </div>
 </div>
 </div>

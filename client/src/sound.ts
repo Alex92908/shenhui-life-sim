@@ -2,7 +2,7 @@
    - 环境音乐：白天明亮、夜晚 lo-fi、雨天加雨声；夜店场景是四四拍舞曲
    - 音效：点按、进账、地铁开关门「叮咚」、到站
    - 音乐人投稿的歌（Livehouse）用 <audio> 播放，和合成音乐互斥
-   默认关闭：浏览器和微信都要求用户先点一下才能出声。 */
+   默认打开：浏览器和微信要求用户先点一下才能出声，所以第一次点屏幕时才响；玩家可以用 🔇 关掉（记住选择）。 */
 
 export type SoundScene = "day" | "night" | "rain" | "club" | "scenic" | "off";
 export type Sfx = "click" | "coin" | "chime" | "arrive" | "fail";
@@ -17,7 +17,7 @@ let step = 0;
 let rain: AudioBufferSourceNode | null = null;
 let track: HTMLAudioElement | null = null;
 
-export function soundWanted(): boolean { try { return localStorage.getItem(KEY) === "1"; } catch { return false; } }
+export function soundWanted(): boolean { try { return localStorage.getItem(KEY) !== "0"; } catch { return true; } }
 export function soundOn(): boolean { return !!ctx && ctx.state === "running" && soundWanted(); }
 
 function ensure(): AudioContext | null {

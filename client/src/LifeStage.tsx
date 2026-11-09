@@ -15,7 +15,7 @@ import * as THREE from "three";
 import { makePostFx, type PostFx } from "./postfx";
 
 export type LifeSet = "flat" | "station" | "metro" | "train" | "bus" | "taxi" | "drive" | "concourse" | "platform" | "office" | "restaurant" | "market" | "mall" | "kitchen" | "bedroom" | "bathroom" | "gym" | "park" | "home" | "cruise" | "wheel" | "aquarium" | "turtle" | "coaster" | "safari" | "hike" | "beach" | "cablecar" | "club" | "clinic" | "classroom";
-export type LifePose = "walk" | "idle" | "sit" | "drive" | "type" | "cook" | "eat" | "sleep" | "wash" | "lift" | "stretch" | "talk" | "dance";
+export type LifePose = "walk" | "idle" | "sit" | "drive" | "type" | "cook" | "eat" | "sleep" | "wash" | "lift" | "stretch" | "talk" | "dance" | "sing";
 
 interface Props {
   setKind: LifeSet;
@@ -2058,6 +2058,13 @@ export function LifeStage3D(p: Props) {
         A.armL.rotation.x = -0.35 + Math.sin(t * 3.3 + 1) * 0.25;
         A.head.rotation.x = Math.sin(t * 2.4) * 0.05;
         A.head.rotation.y = Math.sin(t * 0.8) * 0.1;
+      } else if (pose === "sing") {
+        // on the stage, mic in hand, swaying to the beat
+        A.g.position.set(0.6, 0.47 + Math.abs(Math.sin(t * 3.2)) * 0.04, -1.55);
+        A.g.rotation.y = Math.sin(t * 1.6) * 0.25;
+        A.armR.rotation.x = -2.0 + Math.sin(t * 3.2) * 0.12; A.armR.rotation.z = -0.35;
+        A.armL.rotation.x = -0.6 - Math.max(0, Math.sin(t * 1.1)) * 1.6; A.armL.rotation.z = 0.3;
+        A.head.rotation.x = -0.12 + Math.sin(t * 3.2) * 0.05;
       } else if (pose === "dance") {
         const b = Math.abs(Math.sin(t * 6.4));
         A.g.position.set(0, b * 0.14, 0.55);
