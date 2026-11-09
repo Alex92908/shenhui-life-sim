@@ -107,6 +107,16 @@ export const IDENTITIES: Identity[] = [
   { id: "ktv", emoji: "🎤", name: "KTV 包厢服务员", desc: "夜班到凌晨，送果盘调音响，嗓子好还能陪唱暖场。", money: 1300, pay: 250, rentMul: 0.9, mood: 72, energyBonus: -2, color: 0xd946ef },
   { id: "teacher", emoji: "🧑‍🏫", name: "老师", desc: "带早读、上课、批作业，寒暑假是最大的福利。", money: 3000, pay: 300, rentMul: 1, mood: 80, energyBonus: 0, color: 0x0ea5e9 },
   { id: "student", emoji: "🎓", name: "大学生", desc: "上课、自习、社团、兼职——钱少，但时间和可能性都多。", money: 800, pay: 80, rentMul: 0.6, mood: 88, energyBonus: 8, color: 0x22c55e },
+  { id: "guard", emoji: "💂", name: "保安", desc: "站岗、巡逻、看监控，整栋楼的人你都认识。", money: 1400, pay: 210, rentMul: 0.85, mood: 76, energyBonus: 3, color: 0x475569 },
+  { id: "cleaner", emoji: "🧹", name: "保洁阿姨", desc: "天不亮就上班，把整座商场擦得锃亮，没人注意你，但离不开你。", money: 1200, pay: 180, rentMul: 0.8, mood: 78, energyBonus: 2, color: 0x84cc16 },
+  { id: "courier", emoji: "📦", name: "快递员", desc: "每天几百个包裹，一栋楼一栋楼跑，派件越多挣越多。", money: 1500, pay: 290, rentMul: 0.9, mood: 72, energyBonus: 5, color: 0xf59e0b },
+  { id: "chef", emoji: "👨‍🍳", name: "厨师", desc: "午市晚市两场硬仗，一口锅撑起一家店。", money: 1800, pay: 300, rentMul: 0.9, mood: 74, energyBonus: 0, color: 0xdc2626 },
+  { id: "nurse", emoji: "👩‍⚕️", name: "护士", desc: "查房、打针、写记录，三班倒，病人记得你的好。", money: 2600, pay: 310, rentMul: 1, mood: 74, energyBonus: -2, color: 0x06b6d4 },
+  { id: "agent", emoji: "🔑", name: "房产中介", desc: "底薪很低，签一单顶一个月；带看十次，可能一单都没有。", money: 1600, pay: 200, rentMul: 0.95, mood: 72, energyBonus: 0, color: 0x2563eb },
+  { id: "streamer", emoji: "📱", name: "带货主播", desc: "「家人们三二一上链接！」——火了月入十万，不火喝西北风。", money: 1500, pay: 230, rentMul: 1, mood: 80, energyBonus: 0, color: 0xf43f5e },
+  { id: "vendor", emoji: "🍢", name: "摆摊小贩", desc: "夜市出摊卖烤串，自己当老板，就是得躲着城管。", money: 1300, pay: 240, rentMul: 0.8, mood: 80, energyBonus: 2, color: 0xea580c },
+  { id: "builder", emoji: "👷", name: "建筑工人", desc: "绑钢筋、搬砖、浇混凝土——深圳的每栋楼都有你的汗。日结工资高，身体最累。", money: 1200, pay: 320, rentMul: 0.7, mood: 70, energyBonus: 8, color: 0xca8a04 },
+  { id: "coach", emoji: "🏋️", name: "健身教练", desc: "身材就是招牌，私教课和卖卡是收入大头。", money: 2000, pay: 260, rentMul: 1, mood: 82, energyBonus: 5, color: 0x16a34a },
   { id: "boss", emoji: "💼", name: "小老板", desc: "开了家小公司，谈下一单就是大钱，谈黄了也得发工资。", money: 12000, pay: 400, rentMul: 1.6, mood: 70, energyBonus: -3, color: 0x1f2937 },
 ];
 

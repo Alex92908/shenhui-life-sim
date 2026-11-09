@@ -28,6 +28,7 @@ generateDailyPosts, authorReply, chatReply, greetLine, hashStr, memOf, relLabel,
 type ChatAction, type MemMap, type NpcPost, type PlayerNews,
 } from "./npc";
 import { MapView } from "./MapView";
+import { drawOrigin, originById, tierOfIden, tierNow, TIERS, climbVerdict, randomNick, ORIGINS, type Origin } from "./origin";
 import { MetroMapModal } from "./MetroMap";
 import { PlacesMapModal } from "./PlacesMap";
 import { LifeStage3D, type LifeSet, type LifePose } from "./LifeStage";
@@ -88,6 +89,9 @@ const RW_LABEL: Record<RealWeather["kind"], string> = { clear: "晴", partly: "�
 
 interface GameState {
 cityKey: CityKey;
+/** the origin drawn at the start (抽签投胎) and the housing rung it started on */
+origin?: string;
+startTier?: number;
 /** where you were standing when the game last saved (reopening puts you back there) */
 loc?: string;
 idenId: string;
@@ -662,7 +666,7 @@ const [agreed, setAgreed] = useState(() => { try { return localStorage.getItem("
 const setAgreedStored = (v: boolean) => { setAgreed(v); try { if (v) localStorage.setItem("shhr-legal", LEGAL_VERSION); else localStorage.removeItem("shhr-legal"); } catch { /* storage unavailable */ } };
 const [quiz, setQuiz] = useState<{ key: string; opts: string[]; picked: string | null } | null>(null);
 /* 📌 固定收起：钉住后地区面板不再自动弹出，只有点右侧竖条才展开 */
-const [asideOpen, setAsideOpen] = useState(() => { try { return localStorage.getItem("shhr-pin-aside") !== "1"; } catch { return true; } });
+const [asideOpen, setAsideOpen] = useState(() => { if (typeof window !== "undefined" && window.innerWidth < 640) return false; /* on a phone the panel covers the whole map: show the city first */ try { return localStorage.getItem("shhr-pin-aside") !== "1"; } catch { return true; } });
 /* Top-area compaction: status detail / Summit activity / city intro all
    start folded away behind one-line bars so the map stays the hero. */
 const [fold, setFold] = useState<"hud" | "apec" | "intro" | null>(null);
@@ -754,6 +758,7 @@ window.setTimeout(() => setFloaters((arr) => arr.filter((f) => f.id !== id)), 20
 };
 const [levelFx, setLevelFx] = useState<{ name: string; nonce: number } | null>(null);
 const [dailyOpen, setDailyOpen] = useState(false);
+const justStartedRef = useRef(false);
 const dailyShownRef = useRef(0);
 const [chatInput, setChatInput] = useState("");
 const [result, setResult] = useState<ReturnType<typeof computeResult> | null>(null);
@@ -794,6 +799,23 @@ const [storyOpen, setStoryOpen] = useState<string | null>(null);
 const [setupName, setSetupName] = useState("");
 const [setupCity, setSetupCity] = useState<CityKey>("sz");
 const [setupIden, setSetupIden] = useState(IDENTITIES[0]!.id);
+/* 抽签投胎: the drawn origin, the slot-machine flicker while drawing, rerolls left */
+const [drawn, setDrawn] = useState<Origin | null>(null);
+const [shuffle, setShuffle] = useState<Origin | null>(null);
+const [rerolls, setRerolls] = useState(2);
+const tierAt = (st: GameState) => tierNow(st.startTier ?? tierOfIden(st.idenId), st.money, st.goal, IDENTITIES.find((i) => i.id === st.idenId)?.money ?? 1500);
+const drawFate = () => {
+  if (shuffle) return;
+  if (drawn) { if (rerolls <= 0) return; setRerolls((n) => n - 1); }
+  const final = drawOrigin(Math.random, drawn?.id);
+  let k = 0;
+  const tick = () => {
+    k += 1;
+    if (k < 12) { setShuffle(ORIGINS[Math.floor(Math.random() * ORIGINS.length)]!); window.setTimeout(tick, 45 + k * 9); }
+    else { setShuffle(null); setDrawn(final); track("origin_draw", { origin: final.id, tier: final.tier }); }
+  };
+  tick();
+};
 const finishedSent = useRef(false);
 const toastTimer = useRef<number | null>(null);
 
@@ -904,7 +926,8 @@ useEffect(() => {
 if (phase !== "game" || !gs) return;
 if (dailyShownRef.current !== gs.day) {
 dailyShownRef.current = gs.day;
-setDailyOpen(true);
+/* a brand-new player sees the map first — the daily-tasks sheet waits for their next day */
+if (justStartedRef.current) justStartedRef.current = false; else setDailyOpen(true);
 const posts = (gs.npcFeed ?? []).slice(0, 2);
 posts.forEach((p, i) => window.setTimeout(() => pushDanmakuRef.current(`${p.author}：${p.text}`), 1200 + i * 900));
 }
@@ -1219,7 +1242,7 @@ perks: strArr(g.perks).filter((id) => perkById(id)),
 license: num(g.license, 0), licDay: num(g.licDay, 0), carDay: num(g.carDay, 0), carOwned: g.carOwned === true,
 hangover: g.hangover === true, record: num(g.record, 0),
 romance: g.romance && typeof g.romance === "object" && !Array.isArray(g.romance) ? Object.fromEntries(Object.entries(g.romance as Record<string, unknown>).filter(([k, v]) => NPCS.some((n) => n.name === k) && typeof v === "number")) as Record<string, number> : {},
-cohabit: g.cohabit === true, loc: typeof g.loc === "string" && g.loc.length < 120 ? g.loc : undefined, routine: g.routine && typeof g.routine === "object" && !Array.isArray(g.routine) ? (g.routine as RoutineDay) : undefined, actCount: num(g.actCount, 0), partyPlays: num(g.partyPlays, 0),
+cohabit: g.cohabit === true, origin: typeof g.origin === "string" && g.origin.length < 40 ? g.origin : undefined, startTier: typeof g.startTier === "number" && g.startTier >= 0 && g.startTier <= 3 ? Math.round(g.startTier) : undefined, loc: typeof g.loc === "string" && g.loc.length < 120 ? g.loc : undefined, routine: g.routine && typeof g.routine === "object" && !Array.isArray(g.routine) ? (g.routine as RoutineDay) : undefined, actCount: num(g.actCount, 0), partyPlays: num(g.partyPlays, 0),
 };
 return { profile: { playerId: prof.playerId, name: prof.name }, gs };
 };
@@ -1518,6 +1541,7 @@ career: (CAREERS[st.careerIdx] ?? CAREERS[0]!).name, company: employerHere(st)?.
 title: metaRef.current.title, stamps: metaRef.current.stamps.length, stampTotal: SZ_STATION_COUNT, places: metaRef.current.atlas.length,
 lines: metaRef.current.linesDone.length, achievements: metaRef.current.achievements.length, streak: metaRef.current.streak.count,
 event: `${evRef.current.emoji} ${evRef.current.name}`, link: inviteLink(myPubRef.current, prof.name, st.employer),
+climb: (() => { const T = TIERS[st.cityKey]; const t0 = st.startTier ?? tierOfIden(st.idenId); const t1 = tierAt(st); return { from: `${T[t0]!.emoji} ${T[t0]!.zh}`, to: `${T[t1]!.emoji} ${T[t1]!.zh}`, verdict: climbVerdict(t0, t1, false), origin: originById(st.origin)?.zh }; })(),
 });
 if (blob) setShareImg((old) => { if (old) URL.revokeObjectURL(old.url); return { url: URL.createObjectURL(blob), blob }; });
 };
@@ -1525,7 +1549,8 @@ const shareNative = async () => {
 const st = gsRef.current; const prof = profileRef.current;
 if (!st || !prof) return;
 const link = inviteLink(myPubRef.current, prof.name, st.employer);
-const text = `我在《深惠人生模拟》里过到第 ${Math.min(30, st.day)} 天，存款 ¥${Math.round(st.money).toLocaleString()}，集了 ${metaRef.current.stamps.length} 个地铁站章。来一起过日子：`;
+const T = TIERS[st.cityKey]; const t0 = st.startTier ?? tierOfIden(st.idenId); const t1 = tierAt(st); const og = originById(st.origin);
+const text = `我在《深惠人生模拟》${og ? `抽到的出身是「${og.zh}」，` : ""}从「${T[t0]!.zh}」开始，第 ${Math.min(30, st.day)} 天${t1 > t0 ? "已经爬到" : t1 < t0 ? "跌到了" : "还在"}「${T[t1]!.zh}」。30 天能搬进${T[3]!.zh}吗？你也来抽一签：`;
 try {
 const file = shareImg ? new File([shareImg.blob], "shenhui-life.png", { type: "image/png" }) : null;
 if (file && navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], text, url: link });
@@ -1699,7 +1724,8 @@ const doRoutine = (id: string) => {
   let order: RiderOrder | null | undefined = rd.order; let orders = rd.orders ?? 0;
   const hasClock = routineSteps(role).some((x) => x.id === "clockin");
   if (!isOrderRole(role)) {
-    if (!atJob(role, locById(currentLocRef.current), s0)) { const w = ROLE_META[role].where; showToast(en ? "Do this at your workplace." : w === "work" ? "这些要到公司 / 厂里做。" : `这些要到${(w as string[]).map((t) => ({ food: "餐厅", market: "市场", mall: "商场", social: "娱乐场所", learn: "学校 / 图书馆", lodging: "酒店", health: "医院" } as Record<string, string>)[t] ?? t).join("、")}做。`); return; }
+    if (!atJob(role, locById(currentLocRef.current), s0)) { const w = ROLE_META[role].where; { const TL: Record<string, [string, string]> = { food: ["餐厅", "a restaurant"], market: ["市场", "a market"], mall: ["商场", "a mall"], social: ["娱乐场所", "a nightlife spot"], learn: ["学校 / 图书馆", "a school"], lodging: ["酒店", "a hotel"], health: ["医院", "a hospital"], gym: ["健身房", "a gym"], transit: ["车站", "a station"], bank: ["银行", "a bank"], home: ["小区", "a housing estate"], scenic: ["景区", "a sight"], fun: ["游乐场所", "an attraction"] };
+      showToast(w === "work" ? (en ? "Do this at your workplace (a company or industrial park)." : "这些要到公司 / 厂里 / 工地做。") : en ? `Do this at ${(w as string[]).map((t) => TL[t]?.[1] ?? t).join(", ")}.` : `这些要到${(w as string[]).map((t) => TL[t]?.[0] ?? t).join("、")}做。`); } return; }
     if (hasClock && id !== "clockin" && !rd.done.clockin) { showToast(en ? "Clock in first." : "先打卡上班。"); return; }
     const lateAfter = (step.hours?.[0] ?? 9 * 60) + 90; // over 1.5 h after the start window opens counts as late
     if (id === "clockin" && tn > lateAfter) { late = true; mood -= 4; note = en ? "Late — attendance bonus gone." : "迟到了，全勤奖没了。"; }
@@ -2513,7 +2539,7 @@ addLog(`${text}`);
     },
   });
 
-  const startGame = (name: string, city: CityKey, idenId: string) => {
+  const startGame = (name: string, city: CityKey, idenId: string, originId?: string) => {
     const iden = IDENTITIES.find((i) => i.id === idenId) ?? IDENTITIES[0]!;
     const cityInfo = CITIES[city];
     let rent = Math.round((cityInfo.rentBase * iden.rentMul) / 10) * 10;
@@ -2554,6 +2580,8 @@ addLog(`${text}`);
     if (perks.includes("rent")) { state.rent = Math.round((state.rent * 0.9) / 10) * 10; state.baseRent = state.rent; }
     if (perks.includes("friends")) state.npcMem = Object.fromEntries(NPCS.map((n) => { const m0 = memOf(state.npcMem, n.name); return [n.name, { ...m0, rel: Math.max(15, m0.rel), talks: Math.max(1, m0.talks) }]; }));
     if (perks.length) state.log = [{ day: 1, text: `深漂档案传承：${perks.map((id) => perkById(id)!.name).join("、")}。` }, ...state.log];
+    { const og = originById(originId); state.origin = og?.id; state.startTier = og?.tier ?? tierOfIden(iden.id);
+      if (og) state.log = [{ day: state.day, text: `抽签投胎：${og.zh}。${og.line}从「${TIERS[city][og.tier]!.zh}」出发，30 天能爬到哪一层？` }, ...state.log]; }
     // Came in through a friend's invite link: welcome bonus + an intro
     // (内推) to the friend's company.
     if (invite && invite.fromId !== myPubRef.current) {
@@ -2561,10 +2589,11 @@ addLog(`${text}`);
       state.log = [{ day: 1, text: `${invite.from}邀请你来${cityInfo.name}${state.referrals?.length ? `，还帮你内推了${companyById(invite.co ?? undefined).short}` : ""}。` }, ...state.log];
     }
     finishedSent.current = false;
+    justStartedRef.current = true;
     profileRef.current = prof;
     setProfile(prof);
     setAnalyticsPlayer(prof.playerId);
-    track("run_start", { city, iden: iden.id, perks: perks.length, day: state.day });
+    track("run_start", { city, iden: iden.id, perks: perks.length, day: state.day, origin: originId ?? "picked" });
     setCurrentLoc("home");
     setSelectedLoc("home");
     gsRef.current = state;
@@ -3673,6 +3702,54 @@ return (
 <main className="mx-auto w-full max-w-2xl px-4 pb-10 pt-6 lg:max-w-5xl">
 <p className="text-xs font-black tracking-[0.2em] text-[var(--accent)]">真人联机 · 同一座城</p>
 <h1 className="font-display mt-2 text-4xl font-black leading-tight">在深圳、惠州和香港，<br />过完这个十一月</h1>
+{(() => {
+  const T = TIERS[setupCity];
+  const hook = en
+    ? (setupCity === "hk" ? "30 days. Can you get from a subdivided flat to the Mid-Levels?" : setupCity === "hz" ? "30 days. Can you get from an urban-village room to a sea-view flat?" : "30 days. Can you get from an urban-village room to a flat in Nanshan?")
+    : (setupCity === "hk" ? "30 天，你能从劏房搬上半山吗？" : setupCity === "hz" ? "30 天，你能从城中村住进海景房吗？" : "30 天，你能从城中村搬进南山吗？");
+  const card = shuffle ?? drawn;
+  const ci = card ? IDENTITIES.find((i) => i.id === card.iden) : null;
+  return (
+  <section className="mt-4 rounded-[20px] border-2 border-[var(--border)] bg-[var(--surface)] p-4 shadow-[5px_5px_0_var(--border)]" aria-label={en ? "Draw your origin" : "抽签投胎"}>
+    <p className="font-display text-2xl font-black leading-snug">{hook}</p>
+    <p className="mt-1 text-sm text-[var(--dim)]">{en ? "You don't choose who you are — you draw it. Most people start at the bottom. Where you end up is up to you." : "出身靠抽签：骑手、保安、厨师……还是深二代？大多数人从最底层开始，结局看你自己。"}</p>
+    <div className="mt-3 flex flex-wrap gap-1.5">
+      {(Object.keys(CITIES) as CityKey[]).map((k) => (
+        <button key={k} type="button" onClick={() => setSetupCity(k)} aria-pressed={setupCity === k} className={`rounded-full border-2 px-3 py-1 text-xs font-black ${setupCity === k ? "border-[var(--border)] bg-[var(--text)] text-[var(--bg)]" : "border-[var(--line)]"}`}>{CITIES[k].emoji} {en ? trText(CITIES[k].name) : CITIES[k].name}</button>
+      ))}
+    </div>
+    <div className="mt-3 flex items-end gap-1" aria-hidden>
+      {T.map((t, i) => (
+        <div key={i} className={`flex-1 rounded-t-[8px] px-1 pb-1 text-center text-[10px] font-black leading-tight ${card && card.tier === i ? "bg-[var(--accent)] text-white" : "bg-[var(--surface2)] text-[var(--dim)]"}`} style={{ paddingTop: 6 + i * 8 }}>{t.emoji}<br />{en ? t.en : t.zh}</div>
+      ))}
+    </div>
+    {card && ci ? (
+      <div className={`mt-3 flex items-start gap-3 rounded-[14px] border-2 p-3 ${shuffle ? "border-dashed border-[var(--line)] opacity-70" : "border-[var(--accent)]"}`} aria-live="polite">
+        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full text-3xl" style={{ background: hexCss(ci.color) + "2b" }}>{ci.emoji}</span>
+        <span className="min-w-0">
+          <span className="block text-base font-black">{en ? card.en : card.zh}</span>
+          <span className="block text-xs leading-relaxed text-[var(--dim)]">{en ? card.lineEn : card.line}</span>
+          {!shuffle && <span className="mt-0.5 block text-xs font-bold">{en ? `Start with ${fmt(ci.money)} · about ${fmt(ci.pay)} a day` : `开局 ${fmt(ci.money)} · 日薪约 ${fmt(ci.pay)}`}</span>}
+        </span>
+      </div>
+    ) : (
+      <p className="mt-3 rounded-[14px] border-2 border-dashed border-[var(--line)] p-4 text-center text-sm font-bold text-[var(--dim)]">{en ? "Who will you be? Tap to draw." : "你会投胎成谁？点下面抽一签。"}</p>
+    )}
+    <div className="mt-3 grid gap-2">
+      {drawn && !shuffle ? (
+        <>
+          <button type="button" onClick={() => { const nm = setupName.trim() || randomNick(); setSetupName(nm); setAgreedStored(true); startGame(nm, setupCity, drawn.iden, drawn.id); }} className="w-full rounded-full bg-[var(--accent)] py-4 text-base font-black text-white shadow-[5px_5px_0_var(--border)]">{en ? "This is me — move in →" : "就这个命，进城 →"}</button>
+          <button type="button" disabled={rerolls <= 0} onClick={drawFate} className="w-full rounded-full border-2 border-[var(--border)] py-2.5 text-sm font-black disabled:opacity-40">{rerolls > 0 ? (en ? `🎲 Not having it — draw again (${rerolls} left)` : `🎲 不服，再抽一次（还剩 ${rerolls} 次）`) : (en ? "No more redraws — fate has spoken" : "抽完了，认命吧")}</button>
+        </>
+      ) : (
+        <button type="button" onClick={drawFate} disabled={!!shuffle} className="w-full rounded-full bg-[var(--accent)] py-4 text-base font-black text-white shadow-[5px_5px_0_var(--border)] disabled:opacity-70">{shuffle ? (en ? "Drawing…" : "抽签中…") : (en ? "🎲 Draw your origin — start in 10 seconds" : "🎲 抽签投胎 · 10 秒开局")}</button>
+      )}
+      <input value={setupName} onChange={(e) => setSetupName(e.target.value.slice(0, 12))} placeholder={en ? "Nickname (optional — we'll make one up)" : "昵称（可不填，自动起一个）"} aria-label={en ? "Nickname" : "昵称"} className="w-full rounded-full border-2 border-[var(--line)] bg-[var(--bg)] px-4 py-2 text-sm font-bold outline-none" />
+      <p className="text-center text-[11px] leading-relaxed text-[var(--dim)]">{en ? <>Starting means you agree to the <button type="button" onClick={() => setLegalDoc("terms")} className="font-black underline">Terms</button> and <button type="button" onClick={() => setLegalDoc("privacy")} className="font-black underline">Privacy Policy</button>.</> : <>开始即表示同意<button type="button" onClick={() => setLegalDoc("terms")} className="font-black underline">《用户协议》</button>和<button type="button" onClick={() => setLegalDoc("privacy")} className="font-black underline">《隐私政策》</button>。</>}</p>
+    </div>
+  </section>
+  );
+})()}
 <p className="mt-3 text-sm leading-relaxed text-[var(--dim)]">
 30 天生活模拟：选一座城、一个身份，在 3D 地图上打工、升职、吃饭、装修、攒钱。这次是<b className="text-[var(--text)]">真的联机</b>——其他打开游戏的人会以真身出现在你的地图上，你们共享一个城市频道、一份动态墙和一张排行榜。三座城随时互通：坐高铁去惠州，过关去香港（罗湖、福田、深圳湾，或高铁直达西九龙站）。11 月 14–19 日是深圳湾区峰会周，三个真实会场等你打工。
 </p>
@@ -3692,7 +3769,9 @@ return (
 </div>
 )}
 
-<label htmlFor="nickname" className="mt-6 block text-sm font-black">先给自己起个城市昵称（别人会看到）</label>
+<details className="mt-6 rounded-[16px] border-2 border-[var(--line)] bg-[var(--surface)] px-4 py-3">
+<summary className="cursor-pointer text-sm font-black">{en ? "Or pick your own identity, city and perks (all options) ▾" : "或者自己挑身份、城市和传承（完整选项）▾"}</summary>
+<label htmlFor="nickname" className="mt-4 block text-sm font-black">先给自己起个城市昵称（别人会看到）</label>
 <input id="nickname" value={setupName} onChange={(e) => setSetupName(e.target.value.slice(0, 12))} placeholder="比如：阿深、湾区小陈" className="mt-2 w-full rounded-[12px] border-2 border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-base font-bold outline-none" />
 
 <p className="mt-6 text-sm font-black">选一座城</p>
@@ -3766,6 +3845,7 @@ m.legacy = { ...m.legacy, equipped: m.legacy.equipped.includes(pk.id) ? m.legacy
 <button type="button" disabled={!setupName.trim() || !agreed} onClick={() => startGame(setupName.trim(), setupCity, setupIden)} className="mt-6 w-full rounded-full bg-[var(--accent)] py-4 text-base font-black text-white shadow-[5px_5px_0_var(--border)] disabled:opacity-40">
 进城，开始过日子 →
 </button>
+</details>
 <p className="mt-3 text-center text-xs leading-relaxed text-[var(--dim)]">规则：跟着北京时间过日子，每个自然月是一个赛季，第 N 天就是本月 N 号；做事有真实冷却，地铁、商场、景区按真实营业时间；没上线的日子会自动模拟上班吃饭；每周六睡前交租，存款跌破 -¥500 会被房东请出门；第 30 天结束结算并登上全城排行榜。</p>
 </main>
 {legalModal()}
@@ -3790,6 +3870,13 @@ return (
 </div>
 <div className="p-5">
 <p className="text-sm leading-relaxed">{result.quote}</p>
+{(() => { const T = TIERS[s.cityKey]; const t0 = s.startTier ?? tierOfIden(s.idenId); const t1 = tierAt(s); const og = originById(s.origin); return (
+<div className="mt-4 rounded-[16px] border-2 border-[var(--border)] bg-[var(--surface2)] p-4">
+<p className="text-xs font-black tracking-[0.15em] text-[var(--accent)]">{en ? "YOUR CLIMB" : "阶层变化"}</p>
+<p className="font-display mt-1 text-2xl font-black">{T[t0]!.emoji} {en ? T[t0]!.en : T[t0]!.zh} → {T[t1]!.emoji} {en ? T[t1]!.en : T[t1]!.zh}</p>
+<p className="mt-1 text-sm font-bold">{climbVerdict(t0, t1, en)}{og ? (en ? ` · drawn origin: ${og.en}` : ` · 抽到的出身：${og.zh}`) : ""}</p>
+<div className="mt-2 flex items-end gap-1" aria-hidden>{T.map((t, i) => <div key={i} className={`flex-1 rounded-t-[6px] py-1 text-center text-[10px] font-black ${i === t1 ? "bg-[var(--accent)] text-white" : i === t0 ? "bg-[var(--text)] text-[var(--bg)]" : "bg-[var(--surface)] text-[var(--dim)]"}`} style={{ paddingTop: 4 + i * 7 }}>{t.emoji}</div>)}</div>
+</div> ); })()}
 <div className="mt-4 grid grid-cols-3 gap-2 text-center">
 {[
 ["最终存款", fmt(s.money)], ["存活天数", `${Math.min(s.day, seasonLen)} 天`], ["上班", `${s.workCount} 次`],
@@ -3921,6 +4008,7 @@ return (
 <button type="button" onClick={() => setAccountOpen(true)} className={`chip ${!loggedIn && s.day >= 2 ? "border-[var(--accent)] text-[var(--accent)]" : ""}`} title={en ? "Account: keep your progress, unlock DMs and parties" : "账号：保住进度，解锁私聊和组局"}>👤 {loggedIn ? (en ? "Account" : "账号") : (en ? "Sign in" : "绑定账号")}</button>
 <button type="button" onClick={() => setDmOpen(true)} className={`chip ${unreadDm ? "border-[var(--accent)] text-[var(--accent)]" : ""}`} title={en ? "Private messages" : "私信"}>💬 {en ? "DMs" : "私信"}{unreadDm ? ` ${unreadDm}` : ""}</button>
 <span className="chip" title={iden.name}>{iden.emoji} {career.name} ×{career.mul}</span>
+{(() => { const t0 = s.startTier ?? tierOfIden(s.idenId); const t1 = tierAt(s); const T = TIERS[s.cityKey]; const top = T[3]!; return <span className="chip" title={en ? `Started in ${T[t0]!.en}; your savings now put you in ${T[t1]!.en}. Reach the goal to move up.` : `出身：${T[t0]!.zh}；按现在的存款，你在「${T[t1]!.zh}」。攒够目标就能往上爬。`}>🪜 {T[t0]!.emoji}→{T[t1]!.emoji} {en ? T[t1]!.en : T[t1]!.zh}{t1 < 3 ? (en ? ` · aim: ${top.en}` : ` · 目标${top.zh}`) : ""}</span>; })()}
 {(() => { const co = employerHere(s); return co ? <span className="chip" title={co.culture}>{co.emoji} {co.short}</span> : null; })()}
 {meta.title && <span className="chip" style={{ borderColor: "var(--gold)", color: "var(--gold)" }}>🏅 {meta.title}</span>}
 {isSaturday(s.day) && <span className="chip text-[var(--accent)]">🏠 今天交租 {fmt(s.rent)}</span>}
