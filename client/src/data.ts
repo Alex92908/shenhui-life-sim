@@ -493,7 +493,7 @@ export interface Loc {
 const SZ_LOCS: Loc[] = [
   { id: "airport", type: "transit", emoji: "✈️", name: "宝安国际机场", short: "机场", desc: "T3 航站楼人流昼夜不停。机场摆渡、行李寄存、接机跑腿的单子多，峰会周外宾抵离高峰更缺人。", gigName: "机场摆渡 / 接机跑腿", x: -35.7, z: -5.3, color: 0x38bdf8, h: 1.8, w: 3.4 },
   { id: "apec-qianhai", type: "apec", emoji: "🏙️", name: "前海国际会议中心", short: "前海会议中心", desc: "湾区工商峰会（11 月 17–18 日）的举办地。各国企业高管云集，会务、接待、同传协助都缺人。", x: -28, z: 4.4, color: 0xb91c1c, h: 3, w: 3 },
-  { id: "happyvalley", type: "fun", emoji: "🎢", name: "欢乐谷", short: "欢乐谷", desc: "过山车的尖叫声隔着一条街都听得见。深漂的快乐老家，一张门票换一天不管不顾。", funName: "欢乐谷玩一整天", funCost: 120, funMood: 30, funDesc: "排最长的队，坐最快的过山车，下来腿软心飞", x: -12.6, z: 2.1, color: 0xe879f9, h: 2.5, w: 2.8 },
+  { id: "happyvalley", type: "fun", emoji: "🎢", name: "欢乐谷", short: "欢乐谷", desc: "过山车的尖叫声隔着一条街都听得见。深漂的快乐老家，一张门票换一天不管不顾。", funName: "欢乐谷玩一整天", funCost: 120, funMood: 30, funDesc: "排最长的队，坐最快的过山车，下来腿软心飞", x: -15.0, z: 1.75, color: 0xe879f9, h: 2.5, w: 2.8 },
   { id: "work", type: "work", emoji: "🏢", name: "科技园公司", short: "公司", desc: "南山科技园里一家几十人的创业公司，灯火通明到深夜。你在深圳的第一份工；想跳槽，就去各大厂总部面试。", x: -20.6, z: 0.4, color: 0x3b82f6, h: 4.9, w: 2.6 },
   /* 大厂总部：都能面试、拿 offer、跳槽过去上班（见 COMPANIES）。位置按真实地铁站摆放。 */
   { id: "co-tencent", type: "work", emoji: "🐧", name: "腾讯滨海大厦", short: "腾讯", desc: "后海的腾讯总部：两栋塔楼用三座空中连廊连在一起。", x: -25.6, z: 4.2, color: 0x2563eb, h: 4.9, w: 2.1 },
@@ -1439,8 +1439,11 @@ export function planRailTrip(cityKey: CityKey, fromLocId: string, toLocId: strin
       if (b.a.id === a.a.id) continue;
       const route = findMetroRoute(cityKey, b.a.id, a.a.id);
       if (!route) continue;
-      // Prefer short access walks; break walk-distance ties by fewer stops.
-      const score = b.d + a.d + route.stops;
+      // Rank by door-to-door time, in "one stop" units (~2.5 min): a map unit
+      // on foot is ~11 min (≈4 stops), and every transfer costs ~3 stops of
+      // walking the passage and waiting. Counting stops alone made an express
+      // line with a transfer beat the direct line (宝安 → 欢乐谷 via 11号线).
+      const score = (b.d + a.d) * 4 + route.stops + route.transferStations.length * 3;
       if (score < bestScore) {
         bestScore = score;
         best = { boardLoc: b.a.id, alightLoc: a.a.id, route, walkIn: b.d, walkOut: a.d };

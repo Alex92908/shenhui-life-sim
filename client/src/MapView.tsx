@@ -2705,6 +2705,12 @@ export function MapView(p: Props) {
             const rb = a.rideBlend ?? 0;
             const rm = a.rideMode ?? "bike";
             veh.visible = rb > 0.03;
+            // riding: the whole rig (vehicle + you) grows a touch so the car / bus / scooter reads on the map,
+            // and your badge floats above the roof instead of covering the vehicle
+            const grow = rm === "bike" ? 0.25 : 0.5;
+            view.scale.setScalar(1 + grow * rb);
+            const bdg = (view.userData as { badge?: THREE.Sprite }).badge;
+            if (bdg) bdg.position.y = 2.7 + (rm === "bus" ? 1.1 : 0.6) * rb;
             const limbs0 = (view.userData as { limbs?: ActorLimbs }).limbs;
             if (veh.visible && limbs0) {
               for (const child of veh.children) child.visible = child.name === `veh-${rm}`;
@@ -2740,6 +2746,7 @@ export function MapView(p: Props) {
               bodyG.position.y = 0;
               bodyG.scale.set(1, 1, 1);
               bodyG.visible = true;
+              view.scale.setScalar(1);
             }
           }
           // trail: new destination → fresh trail; moving → sample points

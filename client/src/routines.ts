@@ -108,9 +108,9 @@ const BARBER: RoutineStep[] = [
 
 const MASSEUR: RoutineStep[] = [
   { ...CLOCKIN(H(12), H(14)), zh: "上钟打卡", sub: "午后开工，一直做到深夜", subEn: "Starts after lunch, runs late" },
-  { id: "foot", emoji: "🦶", zh: "足疗", en: "Foot massage", sub: "泡脚、按穴位，客人舒服得睡着了", subEn: "Soak and pressure points — the client dozes off", min: 60, energy: -6, mood: 0, pay: 0.12, xp: 1, hours: [H(12), H(26)], max: 4, core: true, scene: { set: "home", pose: "sit", bg: "🛋️ 🦶 🕯️", prop: "🦶" } },
-  { id: "back", emoji: "💆", zh: "推拿", en: "Back massage", sub: "肩颈腰背，上班族的僵硬全在这里", subEn: "Neck and back — every office knot", min: 60, energy: -8, mood: 0, pay: 0.14, xp: 1, hours: [H(12), H(26)], max: 3, core: true },
-  { id: "tip", emoji: "🧧", zh: "老客点钟", en: "A regular asks for you", sub: "熟客专门点你，还给了小费", subEn: "A regular books you by name — and tips", min: 60, energy: -6, mood: 4, pay: 0.2, network: 1, hours: [H(18), H(26)], max: 1, risk: { p: 0.4, zh: "老客今天没来", en: "Your regular didn't show today", mood: -2, payCut: 0 } },
+  { id: "foot", emoji: "🦶", zh: "足疗", en: "Foot massage", sub: "泡脚、按穴位，客人舒服得睡着了", subEn: "Soak and pressure points — the client dozes off", min: 60, energy: -6, mood: 0, pay: 0.12, xp: 1, hours: [H(12), H(24)], max: 4, core: true, scene: { set: "home", pose: "sit", bg: "🛋️ 🦶 🕯️", prop: "🦶" } },
+  { id: "back", emoji: "💆", zh: "推拿", en: "Back massage", sub: "肩颈腰背，上班族的僵硬全在这里", subEn: "Neck and back — every office knot", min: 60, energy: -8, mood: 0, pay: 0.14, xp: 1, hours: [H(12), H(24)], max: 3, core: true },
+  { id: "tip", emoji: "🧧", zh: "老客点钟", en: "A regular asks for you", sub: "熟客专门点你，还给了小费", subEn: "A regular books you by name — and tips", min: 60, energy: -6, mood: 4, pay: 0.2, network: 1, hours: [H(18), H(24)], max: 1, risk: { p: 0.4, zh: "老客今天没来", en: "Your regular didn't show today", mood: -2, payCut: 0 } },
   MEAL("员工餐", "Staff meal", 0, [H(17), H(19, 30)]),
   { id: "rest", emoji: "🧘", zh: "休息拉伸", en: "Stretch your hands", sub: "按了一整天，手指和手腕都要歇", subEn: "Fingers and wrists need a break", min: 15, energy: 6, mood: 2, max: 3 },
   WATER, TOILET,
@@ -118,15 +118,15 @@ const MASSEUR: RoutineStep[] = [
 ];
 
 const KTV: RoutineStep[] = [
-  { ...CLOCKIN(H(18), H(20)), zh: "晚班打卡", sub: "换上工服，检查包厢话筒和点歌屏", subEn: "Uniform on, test the mics and song screens" },
-  { id: "room", emoji: "🎤", zh: "包厢服务", en: "Look after a room", sub: "开房、送果盘、调音响、帮客人点歌", subEn: "Open up, fruit plates, sound, song requests", min: 45, energy: -5, mood: 1, pay: 0.12, xp: 1, hours: [H(18), H(27)], max: 4, core: true, scene: { set: "home", pose: "idle", bg: "🎤 🪩 🎶", prop: "🎤" } },
-  { id: "sing", emoji: "🎶", zh: "陪唱暖场", en: "Warm up the room", sub: "客人不好意思开口，你先唱一首", subEn: "Shy guests — you sing the first song", min: 20, energy: -3, mood: 4, pay: 0.06, network: 1, hours: [H(19), H(27)], max: 3 },
+  { ...CLOCKIN(H(17, 30), H(19, 30)), zh: "晚班打卡", sub: "换上工服，检查包厢话筒和点歌屏", subEn: "Uniform on, test the mics and song screens" },
+  { id: "room", emoji: "🎤", zh: "包厢服务", en: "Look after a room", sub: "开房、送果盘、调音响、帮客人点歌", subEn: "Open up, fruit plates, sound, song requests", min: 45, energy: -5, mood: 1, pay: 0.12, xp: 1, hours: [H(18), H(24)], max: 4, core: true, scene: { set: "home", pose: "idle", bg: "🎤 🪩 🎶", prop: "🎤" } },
+  { id: "sing", emoji: "🎶", zh: "陪唱暖场", en: "Warm up the room", sub: "客人不好意思开口，你先唱一首", subEn: "Shy guests — you sing the first song", min: 20, energy: -3, mood: 4, pay: 0.06, network: 1, hours: [H(19), H(24)], max: 3 },
   { id: "upsell", emoji: "🍻", zh: "推酒水套餐", en: "Upsell drinks", sub: "「再加一打啤酒送果盘哦」——有提成", subEn: "“A dozen more beers comes with fruit” — commission", min: 10, energy: -1, mood: 0, pay: 0.1, max: 3, risk: { p: 0.45, zh: "客人说喝够了", en: "They've had enough", mood: -1, payCut: 0 } },
-  { id: "tips", emoji: "🧧", zh: "客人给小费", en: "Tips", sub: "唱嗨了的客人塞了个红包", subEn: "A happy room hands you a red packet", min: 5, energy: 0, mood: 5, pay: 0.15, hours: [H(22), H(27)], max: 1, risk: { p: 0.6, zh: "今晚的客人都很普通", en: "A quiet night — no tips", mood: 0, payCut: 0 } },
+  { id: "tips", emoji: "🧧", zh: "客人给小费", en: "Tips", sub: "唱嗨了的客人塞了个红包", subEn: "A happy room hands you a red packet", min: 5, energy: 0, mood: 5, pay: 0.15, hours: [H(21), H(24)], max: 1, risk: { p: 0.6, zh: "今晚的客人都很普通", en: "A quiet night — no tips", mood: 0, payCut: 0 } },
   { id: "clean", emoji: "🧽", zh: "收拾包厢", en: "Clean the rooms", sub: "满桌的空瓶和瓜子壳", subEn: "Empty bottles and seed shells everywhere", min: 20, energy: -4, mood: -1, max: 3, core: true },
-  MEAL("夜宵", "Late-night snack", 15, [H(22), H(26)]),
+  MEAL("夜宵", "Late-night snack", 15, [H(21, 30), H(24)]),
   WATER, TOILET,
-  CLOCKOUT(H(24)),
+  CLOCKOUT(H(23)), // the game day turns over at midnight, so the shift settles before it
 ];
 
 const TEACHER: RoutineStep[] = [
@@ -222,7 +222,14 @@ export function routineRole(identity: string): RoutineRole {
   const map: Record<string, RoutineRole> = { rider: "rider", coder: "coder", rich: "boss", flat: "flat", worker: "office", factory: "factory", waiter: "waiter", sales: "sales", boss: "boss", driver: "driver", teacher: "teacher", student: "student", barber: "barber", masseur: "masseur", ktv: "ktv" };
   return map[identity] ?? "office";
 }
-export function routineSteps(role: RoutineRole): RoutineStep[] { return STEPS[role]; }
+/* Clocking in stays possible until clock-out time: real players log in whenever
+   they can, so turning up late costs the attendance bonus (see doRoutine), it
+   never locks you out of the whole working day. */
+const STEPS_EFF = Object.fromEntries((Object.keys(STEPS) as RoutineRole[]).map((r) => {
+  const out = STEPS[r].find((x) => x.id === "clockout")?.hours?.[0];
+  return [r, STEPS[r].map((x) => (x.id === "clockin" && x.hours && out && out > x.hours[1] ? { ...x, hours: [x.hours[0], out] as [number, number] } : x))];
+})) as Record<RoutineRole, RoutineStep[]>;
+export function routineSteps(role: RoutineRole): RoutineStep[] { return STEPS_EFF[role]; }
 export const isOrderRole = (role: RoutineRole) => role === "rider" || role === "driver";
 /** work blocks for a full day's pay (paid at clock-out) */
 export const CORE_FOR_FULL_DAY = 5;

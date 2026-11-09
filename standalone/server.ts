@@ -10,6 +10,7 @@
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { createReadStream, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { brotliCompressSync, gzipSync, constants as zlibConstants } from "node:zlib";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { dirname, extname, join, normalize, resolve } from "node:path";
@@ -199,8 +200,39 @@ function serveStatic(req: IncomingMessage, res: ServerResponse) {
   let file = normalize(join(DIST, urlPath));
   if (!file.startsWith(DIST)) file = join(DIST, "index.html");
   if (!existsSync(file) || statSync(file).isDirectory()) file = join(DIST, "index.html");
-  res.writeHead(200, { "content-type": MIME[extname(file)] ?? "application/octet-stream" });
+  const ext = extname(file);
+  const type = MIME[ext] ?? "application/octet-stream";
+  // hashed build output (assets/index-AbC123.js) never changes: cache it for a year;
+  // index.html must always be fresh so a new build is picked up straight away
+  const hashed = /[\\/]assets[\\/].+-[A-Za-z0-9_-]{6,}\.[a-z0-9]+$/.test(file);
+  const cache = ext === ".html" ? "no-cache" : hashed ? "public, max-age=31536000, immutable" : "public, max-age=3600";
+  const ae = String(req.headers["accept-encoding"] ?? "");
+  const enc = COMPRESSIBLE.has(ext) ? (/\bbr\b/.test(ae) ? "br" : /\bgzip\b/.test(ae) ? "gzip" : null) : null;
+  if (enc) {
+    const body = compressedFile(file, enc);
+    res.writeHead(200, { "content-type": type, "content-encoding": enc, "content-length": body.length, "cache-control": cache, vary: "accept-encoding" });
+    res.end(body);
+    return;
+  }
+  res.writeHead(200, { "content-type": type, "cache-control": cache, vary: "accept-encoding" });
   createReadStream(file).pipe(res);
+}
+
+/* Text assets go out compressed (the game bundle is ~2.5 MB raw, ~0.7 MB with
+   Brotli). Each file is compressed once and kept in memory until it changes. */
+const COMPRESSIBLE = new Set([".js", ".css", ".html", ".json", ".svg", ".txt", ".glb", ".mjs", ".map"]);
+const zipCache = new Map<string, { mtime: number; br?: Buffer; gzip?: Buffer }>();
+function compressedFile(file: string, enc: "br" | "gzip"): Buffer {
+  const mtime = statSync(file).mtimeMs;
+  let c = zipCache.get(file);
+  if (!c || c.mtime !== mtime) { c = { mtime }; zipCache.set(file, c); }
+  if (!c[enc]) {
+    const raw = readFileSync(file);
+    c[enc] = enc === "br"
+      ? brotliCompressSync(raw, { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 9, [zlibConstants.BROTLI_PARAM_SIZE_HINT]: raw.length } })
+      : gzipSync(raw, { level: 9 });
+  }
+  return c[enc]!;
 }
 
 /* Per-IP throttle on /actions: a normal player sends well under one request
