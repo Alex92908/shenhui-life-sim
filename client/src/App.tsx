@@ -3738,7 +3738,7 @@ return (
     <div className="mt-3 grid gap-2">
       {drawn && !shuffle ? (
         <>
-          <button type="button" onClick={() => { const nm = setupName.trim() || randomNick(); setSetupName(nm); setAgreedStored(true); startGame(nm, setupCity, drawn.iden, drawn.id); }} className="w-full rounded-full bg-[var(--accent)] py-4 text-base font-black text-white shadow-[5px_5px_0_var(--border)]">{en ? "This is me — move in →" : "就这个命，进城 →"}</button>
+          <button type="button" onClick={() => { const nm = setupName.trim() || randomNick(setupCity); setSetupName(nm); setAgreedStored(true); startGame(nm, setupCity, drawn.iden, drawn.id); }} className="w-full rounded-full bg-[var(--accent)] py-4 text-base font-black text-white shadow-[5px_5px_0_var(--border)]">{en ? "This is me — move in →" : "就这个命，进城 →"}</button>
           <button type="button" disabled={rerolls <= 0} onClick={drawFate} className="w-full rounded-full border-2 border-[var(--border)] py-2.5 text-sm font-black disabled:opacity-40">{rerolls > 0 ? (en ? `🎲 Not having it — draw again (${rerolls} left)` : `🎲 不服，再抽一次（还剩 ${rerolls} 次）`) : (en ? "No more redraws — fate has spoken" : "抽完了，认命吧")}</button>
         </>
       ) : (

@@ -87,9 +87,14 @@ export function climbVerdict(from: number, to: number, en: boolean): string {
   return en ? "Holding on" : "稳住了";
 }
 
-const ADJ = ["湾区", "南山", "福田", "宝安", "龙华", "罗湖", "城中村", "科技园", "地铁", "深夜"];
+const ADJ: Record<CityKey, string[]> = {
+  sz: ["湾区", "南山", "福田", "宝安", "龙华", "罗湖", "城中村", "科技园", "地铁", "深夜"],
+  hz: ["惠州", "西湖", "东江", "惠阳", "大亚湾", "巽寮", "仲恺", "罗浮", "水东街", "海边"],
+  hk: ["港岛", "九龙", "旺角", "深水埗", "中环", "铜锣湾", "沙田", "叮叮", "维港", "茶记"],
+};
 const NOUN = ["小陈", "阿深", "打工人", "追梦人", "夜猫", "骑士", "小李", "阿强", "小美", "大刘"];
 /** a nickname so the one-tap start never stops to ask for one */
-export function randomNick(rand: () => number = Math.random): string {
-  return `${ADJ[Math.floor(rand() * ADJ.length)]}${NOUN[Math.floor(rand() * NOUN.length)]}${Math.floor(rand() * 90 + 10)}`;
+export function randomNick(city: CityKey = "sz", rand: () => number = Math.random): string {
+  const adj = ADJ[city];
+  return `${adj[Math.floor(rand() * adj.length)]}${NOUN[Math.floor(rand() * NOUN.length)]}${Math.floor(rand() * 90 + 10)}`;
 }

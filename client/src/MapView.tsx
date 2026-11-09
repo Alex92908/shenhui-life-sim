@@ -383,6 +383,8 @@ interface Chip {
   el: HTMLButtonElement | HTMLDivElement;
   getPos: () => { x: number; y: number; z: number };
   kind: "loc" | "road" | "actor";
+  /** a scripted neighbour (not a real player): name shows only near you */
+  npc?: boolean;
   locId?: string;
   self?: boolean;
   metro?: boolean;
@@ -611,7 +613,10 @@ export function MapView(p: Props) {
     for (const rp of p.remotePlayers) {
       upsert({ key: `p-${rp.id}`, name: rp.name, emoji: rp.emoji, color: rp.color, seed: hash(rp.id), heading: 0, phase: hash(rp.id) % 6, blend: 0, startLoc: rp.locId, shirt: rp.color, pants: 0x2e3440, accessory: "none", behavior: "wander", speed: 2.4 });
     }
-    npcsForCity(p.cityKey).forEach((n, i) => {
+    /* NPCs keep a quiet city company: each real player in town sends one neighbour home
+       (at least two stay), so the map belongs to real people as soon as they show up */
+    const cast = npcsForCity(p.cityKey);
+    cast.slice(0, Math.max(2, cast.length - p.remotePlayers.length)).forEach((n, i) => {
       const preferred = locs.filter((l) => n.preferTypes.includes(l.type));
       const pool = preferred.length > 0 ? preferred : locs;
       const loc = pool[(hash(n.name) + i) % pool.length];
@@ -2190,7 +2195,7 @@ export function MapView(p: Props) {
           chipEl.addEventListener("pointerdown", (e) => e.stopPropagation());
           chipEl.addEventListener("click", (e) => { e.stopPropagation(); propsRef.current.onPickActor?.(key.startsWith("npc-") ? { npc: key.slice(4) } : { player: key.slice(2) }); });
         }
-        actorChips.set(a.key, { el: chipEl, kind: "actor", self: !!a.isSelf, w: 0, h: 0, lastText: "", visible: true, clampDx: 0, clampDy: 0, getPos: () => ({ x: a.x, y: LAND + 3.6, z: a.z }) });
+        actorChips.set(a.key, { el: chipEl, kind: "actor", self: !!a.isSelf, npc: a.key.startsWith("npc-"), w: 0, h: 0, lastText: "", visible: true, clampDx: 0, clampDy: 0, getPos: () => ({ x: a.x, y: LAND + 3.6, z: a.z }) });
         chips.push(actorChips.get(a.key)!);
       }
       return v;
@@ -2926,7 +2931,11 @@ export function MapView(p: Props) {
         if (chip.kind === "actor") {
           if (chip.self) prio = 0;
           else {
-            if (!near && ((overview && dCam > 20) || (density !== "all" && dCam > (density === "few" ? 6 : 12)))) {
+            // neighbours (NPCs) are scenery until you're next to them: their names show only within a few
+            // steps of you (or under the cursor) — real players keep the wider rule below
+            const me = actorsRef.current.get("self");
+            const npcFar = chip.npc && (overview || !me || Math.hypot(pos.x - me.x, pos.z - me.z) > 5);
+            if (!near && (npcFar || (overview && dCam > 20) || (density !== "all" && dCam > (density === "few" ? 6 : 12)))) {
               chip.visible = false;
               chip.el.style.display = "none";
               continue;
