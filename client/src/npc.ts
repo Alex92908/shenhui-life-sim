@@ -324,7 +324,7 @@ export function generateDailyPosts(
   for (const item of news.slice(0, 2)) {
     const preferred = item.kind === "career" ? cityNpcs.find((n) => n.name === "阿琳") ?? cityNpcs.find((n) => n.name === "阿May")
       : item.kind === "apec" ? cityNpcs.find((n) => n.name === "Lisa")
-      : item.kind === "home" ? cityNpcs.find((n) => n.name === "林婶") ?? cityNpcs.find((n) => n.name === "肥妈") : undefined;
+      : item.kind === "home" ? cityNpcs.find((n) => n.name === "林婶") ?? cityNpcs.find((n) => n.name === "肥妈") ?? cityNpcs.find((n) => n.name === "陈伯") : undefined;
     const author = preferred && !used.has(preferred.name) ? preferred : byChat.find((n) => !used.has(n.name));
     if (author) addPost(author, "player", playerPost(item, personaOf(author), ctx.playerName, rng));
   }

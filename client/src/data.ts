@@ -107,6 +107,16 @@ export const IDENTITIES: Identity[] = [
   { id: "ktv", emoji: "🎤", name: "KTV 包厢服务员", desc: "夜班到凌晨，送果盘调音响，嗓子好还能陪唱暖场。", money: 1300, pay: 250, rentMul: 0.9, mood: 72, energyBonus: -2, color: 0xd946ef },
   { id: "teacher", emoji: "🧑‍🏫", name: "老师", desc: "带早读、上课、批作业，寒暑假是最大的福利。", money: 3000, pay: 300, rentMul: 1, mood: 80, energyBonus: 0, color: 0x0ea5e9 },
   { id: "student", emoji: "🎓", name: "大学生", desc: "上课、自习、社团、兼职——钱少，但时间和可能性都多。", money: 800, pay: 80, rentMul: 0.6, mood: 88, energyBonus: 8, color: 0x22c55e },
+  { id: "guard", emoji: "💂", name: "保安", desc: "站岗、巡逻、看监控，整栋楼的人你都认识。", money: 1400, pay: 210, rentMul: 0.85, mood: 76, energyBonus: 3, color: 0x475569 },
+  { id: "cleaner", emoji: "🧹", name: "保洁阿姨", desc: "天不亮就上班，把整座商场擦得锃亮，没人注意你，但离不开你。", money: 1200, pay: 180, rentMul: 0.8, mood: 78, energyBonus: 2, color: 0x84cc16 },
+  { id: "courier", emoji: "📦", name: "快递员", desc: "每天几百个包裹，一栋楼一栋楼跑，派件越多挣越多。", money: 1500, pay: 290, rentMul: 0.9, mood: 72, energyBonus: 5, color: 0xf59e0b },
+  { id: "chef", emoji: "👨‍🍳", name: "厨师", desc: "午市晚市两场硬仗，一口锅撑起一家店。", money: 1800, pay: 300, rentMul: 0.9, mood: 74, energyBonus: 0, color: 0xdc2626 },
+  { id: "nurse", emoji: "👩‍⚕️", name: "护士", desc: "查房、打针、写记录，三班倒，病人记得你的好。", money: 2600, pay: 310, rentMul: 1, mood: 74, energyBonus: -2, color: 0x06b6d4 },
+  { id: "agent", emoji: "🔑", name: "房产中介", desc: "底薪很低，签一单顶一个月；带看十次，可能一单都没有。", money: 1600, pay: 200, rentMul: 0.95, mood: 72, energyBonus: 0, color: 0x2563eb },
+  { id: "streamer", emoji: "📱", name: "带货主播", desc: "「家人们三二一上链接！」——火了月入十万，不火喝西北风。", money: 1500, pay: 230, rentMul: 1, mood: 80, energyBonus: 0, color: 0xf43f5e },
+  { id: "vendor", emoji: "🍢", name: "摆摊小贩", desc: "夜市出摊卖烤串，自己当老板，就是得躲着城管。", money: 1300, pay: 240, rentMul: 0.8, mood: 80, energyBonus: 2, color: 0xea580c },
+  { id: "builder", emoji: "👷", name: "建筑工人", desc: "绑钢筋、搬砖、浇混凝土——深圳的每栋楼都有你的汗。日结工资高，身体最累。", money: 1200, pay: 320, rentMul: 0.7, mood: 70, energyBonus: 8, color: 0xca8a04 },
+  { id: "coach", emoji: "🏋️", name: "健身教练", desc: "身材就是招牌，私教课和卖卡是收入大头。", money: 2000, pay: 260, rentMul: 1, mood: 82, energyBonus: 5, color: 0x16a34a },
   { id: "boss", emoji: "💼", name: "小老板", desc: "开了家小公司，谈下一单就是大钱，谈黄了也得发工资。", money: 12000, pay: 400, rentMul: 1.6, mood: 70, energyBonus: -3, color: 0x1f2937 },
 ];
 
@@ -207,17 +217,22 @@ export function npcsForCity(cityKey: CityKey): Npc[] {
   return NPCS.filter((n) => (n.cities ? n.cities.includes(cityKey) : cityKey !== "hk"));
 }
 export const NPCS: Npc[] = [
-  { name: "阿强", job: "外卖骑手", emoji: "🛵", color: 0xff8a00, line: "跑单路过，顺手帮你扶了下快倒的电动车。", outfit: "黄色骑手服 + 头盔，保温箱不离身", shirt: 0xf5b301, pants: 0x2e3440, accessory: "helmet", behavior: "commute", preferTypes: ["food", "transit"] },
-  { name: "小美", job: "南山白领", emoji: "💼", color: 0xec4899, line: "总在夜市碰到她，拼桌吃猪脚饭认识的。", outfit: "粉色衬衫 + 西装裤，挎通勤包", shirt: 0xec4899, pants: 0x3a3f4a, accessory: "bag", behavior: "commute", preferTypes: ["work", "food", "mall"] },
-  { name: "陈伯", job: "小区保安", emoji: "🧢", color: 0x64748b, line: "门岗陈伯，谁晚归他都记得，热心肠。", outfit: "藏青保安制服 + 大檐帽，腰间别着对讲机", shirt: 0x2c3e63, pants: 0x232a3a, accessory: "cap", behavior: "patrol", preferTypes: ["home", "mall"] },
-  { name: "Lisa", job: "峰会外宾联络员", emoji: "🌐", color: 0x8b5cf6, line: "峰会筹备组的外联，英语超好，常在各个会场出没。", outfit: "深色西装套装 + 丝巾，胸前挂工作证", shirt: 0x5b4a8a, pants: 0x2b2b33, accessory: "tie", behavior: "wander", preferTypes: ["apec", "lodging"] },
-  { name: "大芬姐", job: "夜市摊主", emoji: "🍢", color: 0xf59e0b, line: "烧烤摊老板娘，熟客永远多送一串。", outfit: "碎花围裙 + 袖套，头发利落地扎起来", shirt: 0xd97706, pants: 0x4a3226, accessory: "apron", behavior: "stay", preferTypes: ["food", "market"] },
-  { name: "子健", job: "职院学生", emoji: "🎒", color: 0x22c55e, line: "在图书馆夜校总坐你隔壁，一起备考。", outfit: "绿色连帽卫衣 + 双肩包", shirt: 0x22c55e, pants: 0x374151, accessory: "bag", behavior: "wander", preferTypes: ["learn", "gym"] },
-  { name: "王姨", job: "保洁阿姨", emoji: "🧹", color: 0x14b8a6, line: "写字楼和车站的保洁，拖把水桶是她的全套装备，地砖被她拖得能照人。", outfit: "橙色保洁马甲 + 胶手套", shirt: 0xe07b39, pants: 0x3f4a3a, accessory: "vest", behavior: "patrol", preferTypes: ["transit", "work", "mall"] },
-  { name: "老周", job: "地铁通勤族", emoji: "🚇", color: 0x78716c, line: "每天同一班地铁，灰西装、公文包、耳机，站台黄线后最稳的那个人。", outfit: "灰西装 + 领带，手提公文包", shirt: 0x6b7280, pants: 0x2f333a, accessory: "tie", behavior: "commute", preferTypes: ["transit", "work"] },
-  { name: "阿琳", job: "你的同事", emoji: "👩‍💻", color: 0x3b82f6, line: "工位在你隔壁，需求评审永远坐第一排，保温杯里泡着枸杞。", outfit: "白衬衫 + 工牌，头发扎成马尾", shirt: 0xdbe7f5, pants: 0x334155, accessory: "bag", behavior: "stay", preferTypes: ["work"] },
-  { name: "林婶", job: "隔壁邻居", emoji: "🏠", color: 0xe0658a, line: "住你隔壁，阳台上种满葱，晚饭点总能闻到她家煲汤的香气。", outfit: "家居碎花衫 + 拖鞋，买菜拎着布袋", shirt: 0xe0658a, pants: 0x6b4a5a, accessory: "none", behavior: "stay", preferTypes: ["home", "fun"] },
-  { name: "郭叔", job: "菜市场摊主", emoji: "🥬", color: 0x65a30d, line: "菜摊摆了二十年，称头从不缺斤少两，熟客来了先塞把葱。", outfit: "深绿围裙 + 草帽，手边一把杆秤", shirt: 0x7a9a4d, pants: 0x44403c, accessory: "apron", behavior: "stay", preferTypes: ["market", "food"] },
+  { name: "阿强", job: "外卖骑手", emoji: "🛵", color: 0xff8a00, line: "跑单路过，顺手帮你扶了下快倒的电动车。", outfit: "黄色骑手服 + 头盔，保温箱不离身", shirt: 0xf5b301, pants: 0x2e3440, accessory: "helmet", behavior: "commute", preferTypes: ["food", "transit"], cities: ["sz"] },
+  { name: "小美", job: "南山白领", emoji: "💼", color: 0xec4899, line: "总在夜市碰到她，拼桌吃猪脚饭认识的。", outfit: "粉色衬衫 + 西装裤，挎通勤包", shirt: 0xec4899, pants: 0x3a3f4a, accessory: "bag", behavior: "commute", preferTypes: ["work", "food", "mall"], cities: ["sz"] },
+  { name: "陈伯", job: "小区保安", emoji: "🧢", color: 0x64748b, line: "门岗陈伯，谁晚归他都记得，热心肠。", outfit: "藏青保安制服 + 大檐帽，腰间别着对讲机", shirt: 0x2c3e63, pants: 0x232a3a, accessory: "cap", behavior: "patrol", preferTypes: ["home", "mall"], cities: ["sz"] },
+  { name: "Lisa", job: "峰会外宾联络员", emoji: "🌐", color: 0x8b5cf6, line: "峰会筹备组的外联，英语超好，常在各个会场出没。", outfit: "深色西装套装 + 丝巾，胸前挂工作证", shirt: 0x5b4a8a, pants: 0x2b2b33, accessory: "tie", behavior: "wander", preferTypes: ["apec", "lodging"], cities: ["sz"] },
+  { name: "大芬姐", job: "夜市摊主", emoji: "🍢", color: 0xf59e0b, line: "烧烤摊老板娘，熟客永远多送一串。", outfit: "碎花围裙 + 袖套，头发利落地扎起来", shirt: 0xd97706, pants: 0x4a3226, accessory: "apron", behavior: "stay", preferTypes: ["food", "market"], cities: ["sz"] },
+  { name: "子健", job: "职院学生", emoji: "🎒", color: 0x22c55e, line: "在图书馆夜校总坐你隔壁，一起备考。", outfit: "绿色连帽卫衣 + 双肩包", shirt: 0x22c55e, pants: 0x374151, accessory: "bag", behavior: "wander", preferTypes: ["learn", "gym"], cities: ["sz"] },
+  { name: "王姨", job: "保洁阿姨", emoji: "🧹", color: 0x14b8a6, line: "写字楼和车站的保洁，拖把水桶是她的全套装备，地砖被她拖得能照人。", outfit: "橙色保洁马甲 + 胶手套", shirt: 0xe07b39, pants: 0x3f4a3a, accessory: "vest", behavior: "patrol", preferTypes: ["transit", "work", "mall"], cities: [] /* retired from the map: still quoted in guides and the street chatter */ },
+  { name: "老周", job: "地铁通勤族", emoji: "🚇", color: 0x78716c, line: "每天同一班地铁，灰西装、公文包、耳机，站台黄线后最稳的那个人。", outfit: "灰西装 + 领带，手提公文包", shirt: 0x6b7280, pants: 0x2f333a, accessory: "tie", behavior: "commute", preferTypes: ["transit", "work"], cities: [] /* retired from the map: still quoted in guides and the street chatter */ },
+  { name: "阿琳", job: "你的同事", emoji: "👩‍💻", color: 0x3b82f6, line: "工位在你隔壁，需求评审永远坐第一排，保温杯里泡着枸杞。", outfit: "白衬衫 + 工牌，头发扎成马尾", shirt: 0xdbe7f5, pants: 0x334155, accessory: "bag", behavior: "stay", preferTypes: ["work"], cities: ["sz"] },
+  { name: "林婶", job: "隔壁邻居", emoji: "🏠", color: 0xe0658a, line: "住你隔壁的惠州本地人，西湖边长大，晚饭点总能闻到她家煲的客家汤。", outfit: "家居碎花衫 + 拖鞋，买菜拎着布袋", shirt: 0xe0658a, pants: 0x6b4a5a, accessory: "none", behavior: "stay", preferTypes: ["home", "fun"], cities: ["hz"] },
+  { name: "郭叔", job: "菜市场摊主", emoji: "🥬", color: 0x65a30d, line: "东江边菜市场的菜摊摆了二十年，称头从不缺斤少两，熟客来了先塞把葱。", outfit: "深绿围裙 + 草帽，手边一把杆秤", shirt: 0x7a9a4d, pants: 0x44403c, accessory: "apron", behavior: "stay", preferTypes: ["market", "food"], cities: ["hz"] },
+  /* ---- 惠州街坊：东江、西湖、大亚湾边的本地人 ---- */
+  { name: "阿海", job: "大亚湾渔民", emoji: "🎣", color: 0x0369a1, line: "在澳头码头补了三十年渔网，休渔期就开船带游客出海看日出。", outfit: "褪色海魂衫 + 草帽，手上全是网绳勒的茧", shirt: 0x1e40af, pants: 0x334155, accessory: "cap", behavior: "stay", preferTypes: ["scenic", "market", "port"], cities: ["hz"] },
+  { name: "秀姐", job: "巽寮湾民宿老板娘", emoji: "🏡", color: 0xf472b6, line: "从广州辞职来海边开民宿，七间房，每间都是她自己刷的墙。", outfit: "亚麻长裙 + 遮阳帽，钥匙串叮当响", shirt: 0xf9a8d4, pants: 0x9ca3af, accessory: "bag", behavior: "stay", preferTypes: ["lodging", "scenic"], cities: ["hz"] },
+  { name: "小黄", job: "仲恺工厂老乡", emoji: "🔧", color: 0x64748b, line: "在仲恺的电视机厂上夜班，宿舍楼下的炒粉摊是他的食堂。", outfit: "蓝色厂服 + 工牌，耳机挂在脖子上", shirt: 0x3b82f6, pants: 0x1f2937, accessory: "none", behavior: "commute", preferTypes: ["work", "food", "transit"], cities: ["hz"] },
+  { name: "何伯", job: "西湖边下棋的阿伯", emoji: "♟️", color: 0x92400e, line: "每天下午在西湖边的石桌上摆棋局，谁赢了他请喝凉茶。", outfit: "白背心 + 蒲扇，口袋里揣着收音机", shirt: 0xf5f5f4, pants: 0x57534e, accessory: "none", behavior: "stay", preferTypes: ["scenic", "fun"], cities: ["hz"] },
   /* ---- 香港街坊：中英双语，讲的都是香港的真实故事 ---- */
   { name: "华哥", job: "茶餐厅伙计", emoji: "🧋", color: 0xd97706, line: "「唔该，一位？」华哥记性惊人，熟客未坐低已经冲好奶茶。He remembers every regular's order.", outfit: "白色围裙 + 毛巾搭肩，手写单不离手", shirt: 0xf5f0e6, pants: 0x2e3440, accessory: "apron", behavior: "stay", preferTypes: ["food"], cities: ["hk"] },
   { name: "阿May", job: "中环白领", emoji: "💼", color: 0x0ea5e9, line: "中环返工的阿May，lunch 永远快靓正，放工去兰桂坊松一松。Central pace: fast at work, faster at happy hour.", outfit: "深蓝西装 + 白波鞋（返工标配），手袋里有后备高跟鞋", shirt: 0x2f3e55, pants: 0x23272e, accessory: "bag", behavior: "commute", preferTypes: ["work", "social"], cities: ["hk"] },
@@ -493,7 +508,7 @@ export interface Loc {
 const SZ_LOCS: Loc[] = [
   { id: "airport", type: "transit", emoji: "✈️", name: "宝安国际机场", short: "机场", desc: "T3 航站楼人流昼夜不停。机场摆渡、行李寄存、接机跑腿的单子多，峰会周外宾抵离高峰更缺人。", gigName: "机场摆渡 / 接机跑腿", x: -35.7, z: -5.3, color: 0x38bdf8, h: 1.8, w: 3.4 },
   { id: "apec-qianhai", type: "apec", emoji: "🏙️", name: "前海国际会议中心", short: "前海会议中心", desc: "湾区工商峰会（11 月 17–18 日）的举办地。各国企业高管云集，会务、接待、同传协助都缺人。", x: -28, z: 4.4, color: 0xb91c1c, h: 3, w: 3 },
-  { id: "happyvalley", type: "fun", emoji: "🎢", name: "欢乐谷", short: "欢乐谷", desc: "过山车的尖叫声隔着一条街都听得见。深漂的快乐老家，一张门票换一天不管不顾。", funName: "欢乐谷玩一整天", funCost: 120, funMood: 30, funDesc: "排最长的队，坐最快的过山车，下来腿软心飞", x: -12.6, z: 2.1, color: 0xe879f9, h: 2.5, w: 2.8 },
+  { id: "happyvalley", type: "fun", emoji: "🎢", name: "欢乐谷", short: "欢乐谷", desc: "过山车的尖叫声隔着一条街都听得见。深漂的快乐老家，一张门票换一天不管不顾。", funName: "欢乐谷玩一整天", funCost: 120, funMood: 30, funDesc: "排最长的队，坐最快的过山车，下来腿软心飞", x: -15.0, z: 1.75, color: 0xe879f9, h: 2.5, w: 2.8 },
   { id: "work", type: "work", emoji: "🏢", name: "科技园公司", short: "公司", desc: "南山科技园里一家几十人的创业公司，灯火通明到深夜。你在深圳的第一份工；想跳槽，就去各大厂总部面试。", x: -20.6, z: 0.4, color: 0x3b82f6, h: 4.9, w: 2.6 },
   /* 大厂总部：都能面试、拿 offer、跳槽过去上班（见 COMPANIES）。位置按真实地铁站摆放。 */
   { id: "co-tencent", type: "work", emoji: "🐧", name: "腾讯滨海大厦", short: "腾讯", desc: "后海的腾讯总部：两栋塔楼用三座空中连廊连在一起。", x: -25.6, z: 4.2, color: 0x2563eb, h: 4.9, w: 2.1 },
@@ -1439,8 +1454,11 @@ export function planRailTrip(cityKey: CityKey, fromLocId: string, toLocId: strin
       if (b.a.id === a.a.id) continue;
       const route = findMetroRoute(cityKey, b.a.id, a.a.id);
       if (!route) continue;
-      // Prefer short access walks; break walk-distance ties by fewer stops.
-      const score = b.d + a.d + route.stops;
+      // Rank by door-to-door time, in "one stop" units (~2.5 min): a map unit
+      // on foot is ~11 min (≈4 stops), and every transfer costs ~3 stops of
+      // walking the passage and waiting. Counting stops alone made an express
+      // line with a transfer beat the direct line (宝安 → 欢乐谷 via 11号线).
+      const score = (b.d + a.d) * 4 + route.stops + route.transferStations.length * 3;
       if (score < bestScore) {
         bestScore = score;
         best = { boardLoc: b.a.id, alightLoc: a.a.id, route, walkIn: b.d, walkOut: a.d };

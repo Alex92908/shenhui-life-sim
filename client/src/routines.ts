@@ -2,7 +2,7 @@
 // 的士司机、外卖骑手、小老板、躺平青年……每一步按北京时间开放，花真实冷却时间，改能量 / 心情 / 钱 / 经验 / 技能 / 人脉；有的有风险。
 import type { LifePose, LifeSet } from "./LifeStage";
 
-export type RoutineRole = "office" | "coder" | "rider" | "driver" | "factory" | "waiter" | "sales" | "boss" | "teacher" | "student" | "barber" | "masseur" | "ktv" | "flat";
+export type RoutineRole = "office" | "coder" | "rider" | "driver" | "factory" | "waiter" | "sales" | "boss" | "teacher" | "student" | "barber" | "masseur" | "ktv" | "flat" | "guard" | "cleaner" | "courier" | "chef" | "nurse" | "agent" | "streamer" | "vendor" | "builder" | "coach";
 export interface RoutineStep {
   id: string; emoji: string; zh: string; en: string; sub: string; subEn: string;
   /** game minutes (real cooldown = 3 s per game minute) */
@@ -108,9 +108,9 @@ const BARBER: RoutineStep[] = [
 
 const MASSEUR: RoutineStep[] = [
   { ...CLOCKIN(H(12), H(14)), zh: "上钟打卡", sub: "午后开工，一直做到深夜", subEn: "Starts after lunch, runs late" },
-  { id: "foot", emoji: "🦶", zh: "足疗", en: "Foot massage", sub: "泡脚、按穴位，客人舒服得睡着了", subEn: "Soak and pressure points — the client dozes off", min: 60, energy: -6, mood: 0, pay: 0.12, xp: 1, hours: [H(12), H(26)], max: 4, core: true, scene: { set: "home", pose: "sit", bg: "🛋️ 🦶 🕯️", prop: "🦶" } },
-  { id: "back", emoji: "💆", zh: "推拿", en: "Back massage", sub: "肩颈腰背，上班族的僵硬全在这里", subEn: "Neck and back — every office knot", min: 60, energy: -8, mood: 0, pay: 0.14, xp: 1, hours: [H(12), H(26)], max: 3, core: true },
-  { id: "tip", emoji: "🧧", zh: "老客点钟", en: "A regular asks for you", sub: "熟客专门点你，还给了小费", subEn: "A regular books you by name — and tips", min: 60, energy: -6, mood: 4, pay: 0.2, network: 1, hours: [H(18), H(26)], max: 1, risk: { p: 0.4, zh: "老客今天没来", en: "Your regular didn't show today", mood: -2, payCut: 0 } },
+  { id: "foot", emoji: "🦶", zh: "足疗", en: "Foot massage", sub: "泡脚、按穴位，客人舒服得睡着了", subEn: "Soak and pressure points — the client dozes off", min: 60, energy: -6, mood: 0, pay: 0.12, xp: 1, hours: [H(12), H(24)], max: 4, core: true, scene: { set: "home", pose: "sit", bg: "🛋️ 🦶 🕯️", prop: "🦶" } },
+  { id: "back", emoji: "💆", zh: "推拿", en: "Back massage", sub: "肩颈腰背，上班族的僵硬全在这里", subEn: "Neck and back — every office knot", min: 60, energy: -8, mood: 0, pay: 0.14, xp: 1, hours: [H(12), H(24)], max: 3, core: true },
+  { id: "tip", emoji: "🧧", zh: "老客点钟", en: "A regular asks for you", sub: "熟客专门点你，还给了小费", subEn: "A regular books you by name — and tips", min: 60, energy: -6, mood: 4, pay: 0.2, network: 1, hours: [H(18), H(24)], max: 1, risk: { p: 0.4, zh: "老客今天没来", en: "Your regular didn't show today", mood: -2, payCut: 0 } },
   MEAL("员工餐", "Staff meal", 0, [H(17), H(19, 30)]),
   { id: "rest", emoji: "🧘", zh: "休息拉伸", en: "Stretch your hands", sub: "按了一整天，手指和手腕都要歇", subEn: "Fingers and wrists need a break", min: 15, energy: 6, mood: 2, max: 3 },
   WATER, TOILET,
@@ -118,15 +118,15 @@ const MASSEUR: RoutineStep[] = [
 ];
 
 const KTV: RoutineStep[] = [
-  { ...CLOCKIN(H(18), H(20)), zh: "晚班打卡", sub: "换上工服，检查包厢话筒和点歌屏", subEn: "Uniform on, test the mics and song screens" },
-  { id: "room", emoji: "🎤", zh: "包厢服务", en: "Look after a room", sub: "开房、送果盘、调音响、帮客人点歌", subEn: "Open up, fruit plates, sound, song requests", min: 45, energy: -5, mood: 1, pay: 0.12, xp: 1, hours: [H(18), H(27)], max: 4, core: true, scene: { set: "home", pose: "idle", bg: "🎤 🪩 🎶", prop: "🎤" } },
-  { id: "sing", emoji: "🎶", zh: "陪唱暖场", en: "Warm up the room", sub: "客人不好意思开口，你先唱一首", subEn: "Shy guests — you sing the first song", min: 20, energy: -3, mood: 4, pay: 0.06, network: 1, hours: [H(19), H(27)], max: 3 },
+  { ...CLOCKIN(H(17, 30), H(19, 30)), zh: "晚班打卡", sub: "换上工服，检查包厢话筒和点歌屏", subEn: "Uniform on, test the mics and song screens" },
+  { id: "room", emoji: "🎤", zh: "包厢服务", en: "Look after a room", sub: "开房、送果盘、调音响、帮客人点歌", subEn: "Open up, fruit plates, sound, song requests", min: 45, energy: -5, mood: 1, pay: 0.12, xp: 1, hours: [H(18), H(24)], max: 4, core: true, scene: { set: "home", pose: "idle", bg: "🎤 🪩 🎶", prop: "🎤" } },
+  { id: "sing", emoji: "🎶", zh: "陪唱暖场", en: "Warm up the room", sub: "客人不好意思开口，你先唱一首", subEn: "Shy guests — you sing the first song", min: 20, energy: -3, mood: 4, pay: 0.06, network: 1, hours: [H(19), H(24)], max: 3 },
   { id: "upsell", emoji: "🍻", zh: "推酒水套餐", en: "Upsell drinks", sub: "「再加一打啤酒送果盘哦」——有提成", subEn: "“A dozen more beers comes with fruit” — commission", min: 10, energy: -1, mood: 0, pay: 0.1, max: 3, risk: { p: 0.45, zh: "客人说喝够了", en: "They've had enough", mood: -1, payCut: 0 } },
-  { id: "tips", emoji: "🧧", zh: "客人给小费", en: "Tips", sub: "唱嗨了的客人塞了个红包", subEn: "A happy room hands you a red packet", min: 5, energy: 0, mood: 5, pay: 0.15, hours: [H(22), H(27)], max: 1, risk: { p: 0.6, zh: "今晚的客人都很普通", en: "A quiet night — no tips", mood: 0, payCut: 0 } },
+  { id: "tips", emoji: "🧧", zh: "客人给小费", en: "Tips", sub: "唱嗨了的客人塞了个红包", subEn: "A happy room hands you a red packet", min: 5, energy: 0, mood: 5, pay: 0.15, hours: [H(21), H(24)], max: 1, risk: { p: 0.6, zh: "今晚的客人都很普通", en: "A quiet night — no tips", mood: 0, payCut: 0 } },
   { id: "clean", emoji: "🧽", zh: "收拾包厢", en: "Clean the rooms", sub: "满桌的空瓶和瓜子壳", subEn: "Empty bottles and seed shells everywhere", min: 20, energy: -4, mood: -1, max: 3, core: true },
-  MEAL("夜宵", "Late-night snack", 15, [H(22), H(26)]),
+  MEAL("夜宵", "Late-night snack", 15, [H(21, 30), H(24)]),
   WATER, TOILET,
-  CLOCKOUT(H(24)),
+  CLOCKOUT(H(23)), // the game day turns over at midnight, so the shift settles before it
 ];
 
 const TEACHER: RoutineStep[] = [
@@ -199,6 +199,111 @@ const DRIVER: RoutineStep[] = [
   WATER,
 ];
 
+/* ---- more trades: the people who keep the city running ---- */
+const GUARD: RoutineStep[] = [
+  { ...CLOCKIN(H(7), H(9)), zh: "接班打卡", sub: "换上制服，跟夜班交接对讲机", subEn: "Uniform on, take the radio from the night shift" },
+  { id: "gate", emoji: "🚧", zh: "站岗登记", en: "Gate duty", sub: "外卖快递一律登记，车辆抬杆放行", subEn: "Sign in every courier, lift the barrier for cars", min: 60, energy: -4, mood: -1, pay: 0.1, xp: 1, hours: [H(7), H(19)], max: 4, core: true, scene: { set: "station", pose: "idle", bg: "🚧 🏢 🚗", prop: "📋" } },
+  { id: "patrol", emoji: "🔦", zh: "巡逻", en: "Patrol", sub: "楼上楼下转一圈，消防通道别堆杂物", subEn: "Walk every floor; keep the fire exits clear", min: 40, energy: -5, mood: 1, pay: 0.08, hours: [H(8), H(19)], max: 3, core: true },
+  { id: "cctv", emoji: "📺", zh: "看监控", en: "Watch the CCTV", sub: "盯着十六宫格屏幕，眼皮打架", subEn: "Sixteen screens and heavy eyelids", min: 45, energy: 2, mood: -1, pay: 0.06, max: 2, risk: { p: 0.15, zh: "打了个盹被主管抓到，扣钱", en: "Dozed off — the supervisor saw. Fined", mood: -5, payCut: 0.1 } },
+  { id: "help", emoji: "📦", zh: "帮业主搬东西", en: "Help a resident", sub: "帮阿姨把米扛上楼，人家塞了瓶水", subEn: "Carry a sack of rice upstairs; she hands you a drink", min: 15, energy: -3, mood: 4, network: 1, max: 2 },
+  MEAL("食堂盒饭", "Canteen box lunch", 12, [H(11, 30), H(13, 30)]),
+  WATER, TOILET,
+  CLOCKOUT(H(19)),
+];
+const CLEANER: RoutineStep[] = [
+  { ...CLOCKIN(H(6), H(8)), zh: "清早打卡", sub: "天没亮就到，推上保洁车", subEn: "Before sunrise, push out the cart" },
+  { id: "mop", emoji: "🧽", zh: "拖地", en: "Mop the floors", sub: "大堂、走廊、电梯间，一遍又一遍", subEn: "Lobby, corridors, lift halls — again and again", min: 50, energy: -5, mood: 0, pay: 0.1, xp: 1, hours: [H(6), H(18)], max: 4, core: true, scene: { set: "mall", pose: "idle", bg: "🧽 🪣 ✨", prop: "🪣" } },
+  { id: "loo", emoji: "🚽", zh: "清洁卫生间", en: "Clean the toilets", sub: "最累的活，也最被人看见", subEn: "The hardest job, and the most noticed", min: 30, energy: -5, mood: -2, pay: 0.1, hours: [H(7), H(18)], max: 3, core: true },
+  { id: "bins", emoji: "🗑️", zh: "倒垃圾分类", en: "Sort the rubbish", sub: "干湿分开，纸箱攒起来还能卖钱", subEn: "Wet and dry apart — cardboard sells", min: 25, energy: -3, mood: 1, pay: 0.06, cash: 8, max: 2 },
+  { id: "glass", emoji: "🪟", zh: "擦玻璃", en: "Clean the glass", sub: "旋转门和落地窗，指纹永远擦不完", subEn: "Revolving doors and windows, endless fingerprints", min: 40, energy: -4, mood: 0, pay: 0.08, max: 1, core: true },
+  MEAL("自带饭盒", "Packed lunch", 0, [H(11), H(13)]),
+  { id: "sit", emoji: "🪑", zh: "楼梯间歇脚", en: "Rest in the stairwell", sub: "坐在台阶上，捶捶腰", subEn: "Sit on the steps, rub your back", min: 15, energy: 6, mood: 2, max: 2 },
+  WATER, TOILET,
+  CLOCKOUT(H(16)),
+];
+const COURIER: RoutineStep[] = [
+  { ...CLOCKIN(H(7), H(9)), zh: "网点分拣", sub: "传送带上几百个包裹，按片区扫码上车", subEn: "Hundreds of parcels off the belt, scan and load by area", min: 40, energy: -5 },
+  { id: "drop", emoji: "📦", zh: "派件", en: "Deliver parcels", sub: "一栋楼一栋楼送，打电话：「快递放驿站可以吗？」", subEn: "Building by building — “Can I leave it at the locker?”", min: 50, energy: -6, mood: 0, pay: 0.11, xp: 1, hours: [H(8), H(20)], max: 5, core: true, scene: { set: "station", pose: "walk", bg: "📦 🏘️ 🛵", prop: "📦" } },
+  { id: "stairs", emoji: "🪜", zh: "爬楼送大件", en: "Haul a big one upstairs", sub: "没电梯的七楼，一台洗衣机", subEn: "Seventh floor, no lift, one washing machine", min: 25, energy: -8, mood: -2, pay: 0.08, max: 1, core: true },
+  { id: "pickup", emoji: "📮", zh: "上门揽件", en: "Collect a return", sub: "退货揽件有提成", subEn: "Returns pay a commission", min: 20, energy: -2, mood: 0, pay: 0.05, max: 2, risk: { p: 0.25, zh: "客户不在家，白跑一趟", en: "Nobody home — wasted trip", mood: -3, payCut: 0 } },
+  MEAL("路边快餐", "Roadside fast food", 18, [H(11), H(14)]),
+  { id: "complaint", emoji: "📞", zh: "处理投诉", en: "Handle a complaint", sub: "「我的快递怎么显示签收了？」", subEn: "“Why does it say delivered?”", min: 15, energy: -2, mood: -4, max: 1 },
+  WATER, TOILET,
+  CLOCKOUT(H(19)),
+];
+const CHEF: RoutineStep[] = [
+  { ...CLOCKIN(H(9), H(10, 30)), zh: "进后厨", sub: "系上围裙，检查食材", subEn: "Apron on, check the deliveries" },
+  { id: "prep", emoji: "🔪", zh: "备菜切配", en: "Prep", sub: "切丝切片，备好一整天的料", subEn: "Slice and dice for the whole day", min: 50, energy: -4, mood: 0, pay: 0.08, xp: 1, hours: [H(9), H(11, 30)], max: 1, core: true, scene: { set: "kitchen", pose: "cook", bg: "🔪 🥬 🥩", prop: "🔪" } },
+  { id: "lunch", emoji: "🔥", zh: "午市炒锅", en: "Lunch rush on the wok", sub: "单子一张张打出来，锅铲不停", subEn: "Tickets keep printing, the wok never stops", min: 60, energy: -8, mood: 0, pay: 0.14, xp: 1, hours: [H(11), H(14)], max: 2, core: true, scene: { set: "kitchen", pose: "cook", bg: "🔥 🍳 🧾", prop: "🍳" } },
+  { id: "dinner", emoji: "🍲", zh: "晚市出菜", en: "Dinner service", sub: "招牌菜一桌接一桌", subEn: "Signature dishes, table after table", min: 60, energy: -8, mood: 1, pay: 0.14, xp: 1, hours: [H(17), H(21)], max: 2, core: true },
+  { id: "newdish", emoji: "🧪", zh: "研究新菜", en: "Try a new dish", sub: "老板说下周要上新", subEn: "The boss wants a new dish next week", min: 40, energy: -3, mood: 4, skill: 1, max: 1, risk: { p: 0.3, zh: "咸了，被老板骂", en: "Too salty — the boss isn't pleased", mood: -4, payCut: 0 } },
+  MEAL("员工餐", "Staff meal", 0, [H(14), H(16, 30)]),
+  { id: "clean", emoji: "🧼", zh: "收拾后厨", en: "Clean the kitchen", sub: "灶台油污和地沟，一天的收尾", subEn: "Grease and drains — the day's last job", min: 30, energy: -4, mood: 0, max: 1 },
+  WATER, TOILET,
+  CLOCKOUT(H(21)),
+];
+const NURSE: RoutineStep[] = [
+  { ...CLOCKIN(H(7), H(8, 30)), zh: "早交班", sub: "听夜班交代每个床位的情况", subEn: "Night shift briefs you bed by bed" },
+  { id: "round", emoji: "🩺", zh: "查房量体征", en: "Ward round", sub: "量血压、测体温、问一句「今天怎么样」", subEn: "Blood pressure, temperature, “how are you today?”", min: 45, energy: -4, mood: 1, pay: 0.1, xp: 1, hours: [H(7, 30), H(18)], max: 3, core: true, scene: { set: "office", pose: "walk", bg: "🏥 🩺 🛏️", prop: "🩺" } },
+  { id: "jab", emoji: "💉", zh: "打针输液", en: "Injections & drips", sub: "一针见血，病人都夸你手稳", subEn: "First try every time — patients notice", min: 40, energy: -4, mood: 1, pay: 0.11, xp: 1, skill: 1, hours: [H(8), H(17)], max: 3, core: true, risk: { p: 0.1, zh: "病人血管太细，扎了两次，被投诉", en: "Tiny veins, two tries — a complaint", mood: -5, payCut: 0 } },
+  { id: "chart", emoji: "📝", zh: "写护理记录", en: "Write the charts", sub: "每个病人都要记，一个字都不能错", subEn: "Every patient, every detail, no mistakes", min: 30, energy: -3, mood: -1, pay: 0.06, max: 2, core: true, scene: { set: "office", pose: "type", bg: "🏥 💻 📋", prop: "📝" } },
+  { id: "bell", emoji: "🔔", zh: "响铃处理", en: "Answer the call bell", sub: "3 床要换药，7 床要喝水", subEn: "Bed 3 needs a dressing, bed 7 wants water", min: 15, energy: -2, mood: 0, network: 1, max: 3 },
+  MEAL("医院食堂", "Hospital canteen", 15, [H(11, 30), H(13, 30)]),
+  WATER, TOILET,
+  CLOCKOUT(H(17, 30)),
+];
+const AGENT: RoutineStep[] = [
+  { ...CLOCKIN(H(8, 30), H(10)), zh: "门店早会", sub: "店长念业绩榜，喊口号", subEn: "The manager reads the sales board; team chant", min: 15, energy: -1 },
+  { id: "post", emoji: "📲", zh: "发房源", en: "Post listings", sub: "拍照修图，各个平台发一遍", subEn: "Shoot, retouch, post everywhere", min: 40, energy: -3, mood: 0, pay: 0.06, xp: 1, hours: [H(9), H(21)], max: 2, core: true, scene: { set: "office", pose: "type", bg: "🏠 📸 📲", prop: "📲" } },
+  { id: "calls", emoji: "☎️", zh: "打陌生电话", en: "Cold calls", sub: "「您好，请问您的房子考虑出售吗？」", subEn: "“Hello, are you thinking of selling?”", min: 30, energy: -3, mood: -3, pay: 0.05, hours: [H(9), H(20)], max: 2, core: true },
+  { id: "view", emoji: "🔑", zh: "带看", en: "Show a flat", sub: "带客户看房，夸采光夸学位", subEn: "Show the flat: the light, the school catchment", min: 50, energy: -5, mood: 1, pay: 0.08, network: 1, hours: [H(10), H(21)], max: 3, core: true },
+  { id: "deal", emoji: "🧧", zh: "签单", en: "Close a deal", sub: "谈价、压价、签合同——一单的佣金顶一个月", subEn: "Haggle and sign — one commission pays the month", min: 60, energy: -6, mood: 10, pay: 1.2, xp: 3, hours: [H(14), H(22)], max: 1, risk: { p: 0.65, zh: "客户最后说「再考虑考虑」，单黄了", en: "“Let me think about it” — the deal falls through", mood: -6, payCut: 0 } },
+  MEAL("外卖", "Takeaway", 22, [H(11, 30), H(14)]),
+  WATER, TOILET,
+  CLOCKOUT(H(20)),
+];
+const STREAMER: RoutineStep[] = [
+  { ...CLOCKIN(H(11), H(14)), zh: "开播", sub: "打光、开美颜、对着镜头说「家人们」", subEn: "Lights, filter, “hi everyone!”" },
+  { id: "live", emoji: "📱", zh: "直播带货", en: "Live selling", sub: "「三二一上链接！」库存一抢而空", subEn: "“Three, two, one — link’s up!”", min: 60, energy: -5, mood: 1, pay: 0.12, xp: 1, hours: [H(11), H(24)], max: 4, core: true, scene: { set: "home", pose: "sit", bg: "📱 💡 🛍️", prop: "📱" } },
+  { id: "pk", emoji: "⚔️", zh: "连麦 PK", en: "PK battle", sub: "和隔壁主播比礼物，输了要做惩罚", subEn: "Gift battle with another streamer — losers do a forfeit", min: 30, energy: -3, mood: 3, pay: 0.15, network: 1, hours: [H(19), H(24)], max: 1, risk: { p: 0.45, zh: "PK 输了，戴着猪鼻子播了半小时", en: "Lost the PK — half an hour in a pig nose", mood: -4, payCut: 0 } },
+  { id: "clip", emoji: "🎬", zh: "剪短视频", en: "Edit a short video", sub: "剪一条切片发出去引流", subEn: "Cut a clip to pull in viewers", min: 40, energy: -3, mood: 0, pay: 0.05, skill: 1, max: 2, core: true },
+  { id: "viral", emoji: "🚀", zh: "蹭热点", en: "Ride a trend", sub: "今天的热搜赶紧拍一条", subEn: "Film today's trending topic, fast", min: 25, energy: -2, mood: 2, pay: 0.4, max: 1, risk: { p: 0.7, zh: "没火，播放量 300", en: "Didn't take off — 300 views", mood: -3, payCut: 0 } },
+  MEAL("外卖", "Takeaway", 25, [H(12), H(15)]),
+  { id: "voice", emoji: "🍯", zh: "润嗓子", en: "Rest your voice", sub: "胖大海泡水，嗓子说哑了", subEn: "Herbal tea — your voice is gone", min: 10, energy: 3, mood: 1, max: 2 },
+  WATER, TOILET,
+  CLOCKOUT(H(22)),
+];
+const VENDOR: RoutineStep[] = [
+  { ...CLOCKIN(H(16), H(19)), zh: "出摊", sub: "三轮车推到老位置，支起小桌板", subEn: "Wheel the cart to your spot, unfold the table" },
+  { id: "sell", emoji: "🍢", zh: "摆摊卖货", en: "Work the stall", sub: "烤串、炒粉、手机壳，吆喝起来", subEn: "Skewers, fried noodles, phone cases — call it out", min: 45, energy: -4, mood: 2, pay: 0.13, xp: 1, hours: [H(16), H(24)], max: 5, core: true, scene: { set: "market", pose: "cook", bg: "🏮 🍢 👥", prop: "🍢" } },
+  { id: "stock", emoji: "🛒", zh: "批发进货", en: "Restock at the wholesaler", sub: "批发市场进货，越便宜越好", subEn: "Wholesale market — the cheaper the better", min: 40, energy: -3, mood: 0, cash: -60, max: 1, core: true },
+  { id: "runaway", emoji: "🏃", zh: "城管来了", en: "Inspectors!", sub: "收摊换个地方，过会儿再回来", subEn: "Pack up, move on, come back later", min: 15, energy: -4, mood: -3, max: 1, risk: { p: 0.35, zh: "没跑掉，被罚了款", en: "Too slow — fined", mood: -6, payCut: 0.15 } },
+  { id: "regular", emoji: "😋", zh: "熟客光顾", en: "A regular stops by", sub: "「老板，老样子！」", subEn: "“The usual, boss!”", min: 10, energy: 0, mood: 5, pay: 0.05, network: 1, hours: [H(18), H(24)], max: 2 },
+  MEAL("自己摊上的", "Eat from your own stall", 0, [H(16), H(19)]),
+  WATER, TOILET,
+  CLOCKOUT(H(23)),
+];
+const BUILDER: RoutineStep[] = [
+  { ...CLOCKIN(H(6, 30), H(8)), zh: "进工地", sub: "安全帽戴好，班组长点名", subEn: "Hard hat on, roll call" },
+  { id: "rebar", emoji: "🏗️", zh: "绑钢筋", en: "Tie rebar", sub: "太阳底下弯着腰，一根根绑", subEn: "Bent over in the sun, one tie at a time", min: 60, energy: -8, mood: -1, pay: 0.13, xp: 1, hours: [H(7), H(18)], max: 3, core: true, scene: { set: "station", pose: "lift", bg: "🏗️ ☀️ 🦺", prop: "🔩" } },
+  { id: "carry", emoji: "🧱", zh: "搬砖", en: "Carry bricks", sub: "真·搬砖，一车一车往上运", subEn: "Literally moving bricks, load after load", min: 45, energy: -8, mood: -1, pay: 0.11, hours: [H(7), H(18)], max: 3, core: true },
+  { id: "pour", emoji: "🪣", zh: "浇混凝土", en: "Pour concrete", sub: "泵车一开就不能停，赶工期", subEn: "Once the pump starts you don't stop", min: 60, energy: -9, mood: 0, pay: 0.16, hours: [H(8), H(17)], max: 1, core: true, risk: { p: 0.12, zh: "扭了腰，下午只能歇着", en: "Pulled your back — the afternoon's gone", mood: -6, payCut: 0.2 } },
+  MEAL("工地大锅饭", "Site canteen", 10, [H(11), H(13)]),
+  { id: "shade", emoji: "⛱️", zh: "树荫下午休", en: "Nap in the shade", sub: "躺在纸板上眯一会儿", subEn: "A nap on flattened cardboard", min: 30, energy: 12, mood: 2, hours: [H(12), H(14)], max: 1 },
+  WATER, TOILET,
+  CLOCKOUT(H(18)),
+];
+const COACH: RoutineStep[] = [
+  { ...CLOCKIN(H(9), H(11)), zh: "到馆打卡", sub: "换上紧身衣，先自己练半小时", subEn: "Into the gym kit, half an hour of your own training" },
+  { id: "pt", emoji: "🏋️", zh: "私教课", en: "Personal training", sub: "「最后三个！坚持住！」", subEn: "“Three more! Hold it!”", min: 60, energy: -5, mood: 2, pay: 0.15, xp: 1, hours: [H(9), H(22)], max: 4, core: true, scene: { set: "gym", pose: "lift", bg: "🏋️ 💪 🪞", prop: "🏋️" } },
+  { id: "class", emoji: "🤸", zh: "带团课", en: "Lead a group class", sub: "动感单车，音乐一开全场出汗", subEn: "Spin class — music up, everyone sweating", min: 45, energy: -6, mood: 4, pay: 0.1, hours: [H(18), H(21, 30)], max: 1, core: true },
+  { id: "sellcard", emoji: "💳", zh: "推销私教卡", en: "Sell a training package", sub: "「先体验一节免费课？」", subEn: "“How about a free trial session?”", min: 25, energy: -2, mood: 0, pay: 0.2, network: 1, max: 2, core: true, risk: { p: 0.55, zh: "人家只是来洗澡的", en: "They only came for the showers", mood: -3, payCut: 0 } },
+  { id: "train", emoji: "💪", zh: "自己练", en: "Your own workout", sub: "教练的身材就是招牌", subEn: "Your physique is the advert", min: 40, energy: -4, mood: 5, skill: 1, max: 1 },
+  MEAL("鸡胸肉沙拉", "Chicken-breast salad", 30, [H(11, 30), H(14)]),
+  WATER, TOILET,
+  CLOCKOUT(H(21)),
+];
+
 export const ROLE_META: Record<RoutineRole, RoleMeta> = {
   office: { where: "work", pay: "wage", zh: "白领", en: "Office worker" },
   coder: { where: "work", pay: "wage", zh: "程序员", en: "Programmer" },
@@ -214,15 +319,32 @@ export const ROLE_META: Record<RoutineRole, RoleMeta> = {
   flat: { where: "any", pay: "none", zh: "躺平青年", en: "Slacker" },
   rider: { where: "any", pay: "order", zh: "外卖骑手", en: "Delivery rider" },
   driver: { where: "any", pay: "order", zh: "的士司机", en: "Taxi driver" },
+  guard: { where: ["mall", "lodging", "bank", "transit"], pay: "wage", zh: "保安", en: "Security guard" },
+  cleaner: { where: ["mall", "transit", "lodging", "health", "learn"], pay: "wage", zh: "保洁阿姨", en: "Cleaner" },
+  courier: { where: "any", pay: "wage", zh: "快递员", en: "Courier" },
+  chef: { where: ["food", "market", "lodging"], pay: "wage", zh: "厨师", en: "Chef" },
+  nurse: { where: ["health"], pay: "wage", zh: "护士", en: "Nurse" },
+  agent: { where: ["mall", "market", "transit"], pay: "wage", zh: "房产中介", en: "Estate agent" },
+  streamer: { where: ["home", "mall", "scenic", "fun"], pay: "wage", zh: "带货主播", en: "Livestreamer" },
+  vendor: { where: ["market", "food", "transit", "scenic"], pay: "wage", zh: "摆摊小贩", en: "Street vendor" },
+  builder: { where: "work", pay: "wage", zh: "建筑工人", en: "Construction worker" },
+  coach: { where: ["gym"], pay: "wage", zh: "健身教练", en: "Gym coach" },
 };
-const STEPS: Record<RoutineRole, RoutineStep[]> = { office: OFFICE, coder: CODER, factory: FACTORY, waiter: WAITER, sales: SALES, barber: BARBER, masseur: MASSEUR, ktv: KTV, teacher: TEACHER, student: STUDENT, boss: BOSS, flat: FLAT, rider: RIDER, driver: DRIVER };
+const STEPS: Record<RoutineRole, RoutineStep[]> = { office: OFFICE, coder: CODER, factory: FACTORY, waiter: WAITER, sales: SALES, barber: BARBER, masseur: MASSEUR, ktv: KTV, teacher: TEACHER, student: STUDENT, boss: BOSS, flat: FLAT, rider: RIDER, driver: DRIVER, guard: GUARD, cleaner: CLEANER, courier: COURIER, chef: CHEF, nurse: NURSE, agent: AGENT, streamer: STREAMER, vendor: VENDOR, builder: BUILDER, coach: COACH };
 
 /** identity id → the job's daily routine */
 export function routineRole(identity: string): RoutineRole {
-  const map: Record<string, RoutineRole> = { rider: "rider", coder: "coder", rich: "boss", flat: "flat", worker: "office", factory: "factory", waiter: "waiter", sales: "sales", boss: "boss", driver: "driver", teacher: "teacher", student: "student", barber: "barber", masseur: "masseur", ktv: "ktv" };
+  const map: Record<string, RoutineRole> = { rider: "rider", coder: "coder", rich: "boss", flat: "flat", worker: "office", factory: "factory", waiter: "waiter", sales: "sales", boss: "boss", driver: "driver", teacher: "teacher", student: "student", barber: "barber", masseur: "masseur", ktv: "ktv", guard: "guard", cleaner: "cleaner", courier: "courier", chef: "chef", nurse: "nurse", agent: "agent", streamer: "streamer", vendor: "vendor", builder: "builder", coach: "coach" };
   return map[identity] ?? "office";
 }
-export function routineSteps(role: RoutineRole): RoutineStep[] { return STEPS[role]; }
+/* Clocking in stays possible until clock-out time: real players log in whenever
+   they can, so turning up late costs the attendance bonus (see doRoutine), it
+   never locks you out of the whole working day. */
+const STEPS_EFF = Object.fromEntries((Object.keys(STEPS) as RoutineRole[]).map((r) => {
+  const out = STEPS[r].find((x) => x.id === "clockout")?.hours?.[0];
+  return [r, STEPS[r].map((x) => (x.id === "clockin" && x.hours && out && out > x.hours[1] ? { ...x, hours: [x.hours[0], out] as [number, number] } : x))];
+})) as Record<RoutineRole, RoutineStep[]>;
+export function routineSteps(role: RoutineRole): RoutineStep[] { return STEPS_EFF[role]; }
 export const isOrderRole = (role: RoutineRole) => role === "rider" || role === "driver";
 /** work blocks for a full day's pay (paid at clock-out) */
 export const CORE_FOR_FULL_DAY = 5;

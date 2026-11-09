@@ -33,7 +33,21 @@ export default defineConfig({
   root: resolve(HERE, "../client"),
   base: "./",
   plugins: [missingPhotos(), react(), tailwindcss()],
-  build: { outDir: resolve(HERE, "dist"), emptyOutDir: true, chunkSizeWarningLimit: 4000 },
+  build: {
+    outDir: resolve(HERE, "dist"), emptyOutDir: true, chunkSizeWarningLimit: 4000,
+    // libraries in their own files: a game update re-downloads only the game code,
+    // three.js / React stay in the browser cache (the server marks hashed files immutable)
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("node_modules/three/")) return "three";
+          if (/node_modules\/(react|react-dom|scheduler|@tanstack)\//.test(id)) return "react";
+          if (id.includes("/client/src/i18n-en") || id.includes("/client/src/stories-en") || id.includes("/client/src/places-en")) return "english";
+          return undefined;
+        },
+      },
+    },
+  },
   server: {
     port: 5173,
     proxy: { "/actions": `http://127.0.0.1:${PORT}` },

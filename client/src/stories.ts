@@ -229,6 +229,51 @@ export const STORIES: NpcStory[] = [
         ? { title: "婆婆珍退休了", text: "阿杰接过了杆秤，生意时好时坏，但每个熟客他都记得名字。婆婆珍说：「慢慢嚟，我四十年前都系咁。」", fx: { mood: 10, network: 1 } }
         : { title: "婆婆珍还在档口", text: "婆婆珍还在卖菜，阿杰每个周末来帮手。「做得一日得一日，呢度就系我嘅家。」", fx: { mood: 8 } },
   },
+  /* ---- 惠州街坊 ---- */
+  {
+    npc: "阿海", title: "要不要上岸",
+    chapters: [
+      { need: 0, title: "码头的早上", text: "天没亮，阿海在澳头码头补网。「今年鱼越来越少，休渔期一过油钱都不够。我儿子叫我上岸，去他深圳那边带孙子。」", choices: [
+        { label: "帮他把网补完", reply: "你学着他的手势穿梭，手指被网绳勒得生疼。「不错嘛，有渔民的手。」", fx: { energy: -6, rel: 6 } },
+        { label: "问他舍不舍得这片海", reply: "他望着海平线很久：「我爷爷就在这儿打鱼。」", fx: { rel: 4, mood: 2 }, flag: "sea" },
+      ] },
+      { need: 8, title: "带游客出海", text: "阿海想试试休渔期开船带游客看日出，但不会在网上接单。「我这船，年轻人会喜欢吗？」", choices: [
+        { label: "帮他拍视频发到网上", reply: "你拍了一条日出出海的视频，第二天就有三家人来问。阿海笑得合不拢嘴。", fx: { energy: -8, skill: 1, rel: 8 }, flag: "tour" },
+        { label: "劝他还是听儿子的", reply: "「也是，老了，折腾不动了。」他把船绳又绕紧了一圈。", fx: { rel: 3 }, flag: "shore" },
+      ] },
+      { need: 18, title: "儿子的电话", text: "阿海的儿子又打电话来催：「爸，深圳的房间都给你收拾好了。」阿海放下电话问你：「你说我走还是不走？」", choices: [
+        { label: "留下来，把出海做成生意", reply: "「好！那我再撑几年。」他拍了拍船头。", fx: { rel: 5 }, flag: "stay" },
+        { label: "去深圳，一家人在一起", reply: "「孙子都不认得我了……是该去了。」", fx: { rel: 5 }, flag: "go" },
+      ] },
+    ],
+    ending: (f) => f.includes("stay") && f.includes("tour")
+      ? { title: "阿海的日出船", text: "阿海的「阿海日出船」排满了周末，儿子也带着孙子回来坐了一趟。他说：「这片海，还能再养我几年。」", fx: { mood: 14, network: 2 } }
+      : f.includes("go")
+        ? { title: "阿海上岸了", text: "阿海搬去了深圳，每天在小区楼下带孙子，偶尔给你发一张大亚湾的旧照片：「有空帮我去看看那片海。」", fx: { mood: 8 } }
+        : { title: "阿海还在补网", text: "阿海还在码头补网，鱼少了，日子也慢了。「海还在，我就在。」", fx: { mood: 6 } },
+  },
+  {
+    npc: "秀姐", title: "民宿的淡季",
+    chapters: [
+      { need: 0, title: "七间房", text: "秀姐带你看她的民宿：七间房，墙是她自己刷的，窗外就是巽寮湾。「国庆住满，现在一个礼拜才两单。」", choices: [
+        { label: "帮她拍一组房间照片", reply: "傍晚的光正好，照片里的海像在房间里。「这比我拍的好看十倍！」", fx: { energy: -6, rel: 7 } },
+        { label: "住一晚给她捧场", reply: "你在她的房间里睡到自然醒，窗外是海浪声。", fx: { money: -260, mood: 10, rel: 5 } },
+      ] },
+      { need: 8, title: "价格战", text: "隔壁新开的民宿打对折抢客。秀姐咬着嘴唇：「我要不要也降价？降了就是亏本。」", choices: [
+        { label: "不降价，加早餐和接站", reply: "「对，我做的是人情味。」她当晚就写了一块「免费接站」的牌子。", fx: { rel: 6 }, flag: "service" },
+        { label: "跟着降价先保住客源", reply: "订单多了，但她一晚上都在算账。", fx: { rel: 3 }, flag: "cheap" },
+      ] },
+      { need: 18, title: "广州的 offer", text: "以前的老板打电话给秀姐：「回来吧，部门总监的位置给你留着。」她问你：「你说，我是不是太任性了？」", choices: [
+        { label: "你没有任性，你在过想要的日子", reply: "她眼睛红了一下：「谢谢你。」", fx: { rel: 6, mood: 3 }, flag: "keep" },
+        { label: "先回去攒点钱，再回来开", reply: "「……也许吧。」她看着窗外的海，没说话。", fx: { rel: 3 }, flag: "back" },
+      ] },
+    ],
+    ending: (f) => f.includes("keep") && f.includes("service")
+      ? { title: "秀姐的民宿住满了", text: "「免费接站 + 秀姐早餐」上了小红书，周末一房难求。秀姐给你留了一间：「你的房间，什么时候来都有。」", fx: { mood: 15, network: 2 } }
+      : f.includes("back")
+        ? { title: "秀姐回广州了", text: "秀姐把民宿交给朋友打理，自己回广州上班。她说：「等我攒够了，再回去刷一次墙。」", fx: { mood: 6 } }
+        : { title: "秀姐撑过了淡季", text: "秀姐的民宿撑过了淡季，账本勉强打平。「不赚钱，但每天醒来就是海。」", fx: { mood: 9 } },
+  },
 ];
 
 export const storyOf = (npc: string) => STORIES.find((s) => s.npc === npc) ?? null;

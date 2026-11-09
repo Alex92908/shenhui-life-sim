@@ -20,7 +20,7 @@ findMetroRoute, findStationRoute, exitLocForStation, resolveLoc, partialFare, ne
 RESTAURANTS, DELIVERY_PLATFORMS, SHOP_VENUES, LODGINGS, rentFlatWeekly, OUTFITS, outfitOf, isRainy, HOME_ROOMS,
 LOC_EN, LOC_GRADE, CITY_INTRO,
 type AppId, type CityKey, type Loc, type TransportModeId, type MetroRoute,
-crossRoutes, isCrossOpen, crossHoursStr, crossFareStr, crossName, crossNote, CROSS_ROUTES, type CrossRoute, areaLocId
+crossRoutes, isCrossOpen, crossHoursStr, crossFareStr, crossName, crossNote, CROSS_ROUTES, type CrossRoute, areaLocId, stationLocId
 } from "./data";
 import { pickEvent, type GameEvent } from "./events";
 import {
@@ -28,6 +28,7 @@ generateDailyPosts, authorReply, chatReply, greetLine, hashStr, memOf, relLabel,
 type ChatAction, type MemMap, type NpcPost, type PlayerNews,
 } from "./npc";
 import { MapView } from "./MapView";
+import { drawOrigin, originById, tierOfIden, tierNow, TIERS, climbVerdict, randomNick, ORIGINS, type Origin } from "./origin";
 import { MetroMapModal } from "./MetroMap";
 import { PlacesMapModal } from "./PlacesMap";
 import { LifeStage3D, type LifeSet, type LifePose } from "./LifeStage";
@@ -88,6 +89,11 @@ const RW_LABEL: Record<RealWeather["kind"], string> = { clear: "晴", partly: "�
 
 interface GameState {
 cityKey: CityKey;
+/** the origin drawn at the start (抽签投胎) and the housing rung it started on */
+origin?: string;
+startTier?: number;
+/** where you were standing when the game last saved (reopening puts you back there) */
+loc?: string;
 idenId: string;
 day: number;
 money: number;
@@ -602,6 +608,10 @@ const pendingStationRide = useRef<{ route: MetroRoute; board: string; alight: st
 /** Final walking leg of a staged rail trip: after the ride ends at the
     station nearest the destination, walk the rest of the way there. */
 const pendingAfterRide = useRef<string | null>(null);
+/** the trip under way: where the figure is heading (the map follows this, not
+    whatever place you happen to be browsing), and enough to stop it midway */
+const [tripTo, setTripTo] = useState<string | null>(null);
+const tripRef = useRef<{ fromId: string; toId: string; fx: number; fz: number; tx: number; tz: number; startedAt: number; ms: number; cost: number; mode: TransportModeId } | null>(null);
 /** Latest walkTo, for callbacks (life-anim `after`) that fire from a stale
     render closure where walkTo's own walking/carriage guards are outdated. */
 const walkToRef = useRef<((locId: string, modeOverride?: TransportModeId) => void) | null>(null);
@@ -656,7 +666,7 @@ const [agreed, setAgreed] = useState(() => { try { return localStorage.getItem("
 const setAgreedStored = (v: boolean) => { setAgreed(v); try { if (v) localStorage.setItem("shhr-legal", LEGAL_VERSION); else localStorage.removeItem("shhr-legal"); } catch { /* storage unavailable */ } };
 const [quiz, setQuiz] = useState<{ key: string; opts: string[]; picked: string | null } | null>(null);
 /* 📌 固定收起：钉住后地区面板不再自动弹出，只有点右侧竖条才展开 */
-const [asideOpen, setAsideOpen] = useState(() => { try { return localStorage.getItem("shhr-pin-aside") !== "1"; } catch { return true; } });
+const [asideOpen, setAsideOpen] = useState(() => { if (typeof window !== "undefined" && window.innerWidth < 640) return false; /* on a phone the panel covers the whole map: show the city first */ try { return localStorage.getItem("shhr-pin-aside") !== "1"; } catch { return true; } });
 /* Top-area compaction: status detail / Summit activity / city intro all
    start folded away behind one-line bars so the map stays the hero. */
 const [fold, setFold] = useState<"hud" | "apec" | "intro" | null>(null);
@@ -748,6 +758,7 @@ window.setTimeout(() => setFloaters((arr) => arr.filter((f) => f.id !== id)), 20
 };
 const [levelFx, setLevelFx] = useState<{ name: string; nonce: number } | null>(null);
 const [dailyOpen, setDailyOpen] = useState(false);
+const justStartedRef = useRef(false);
 const dailyShownRef = useRef(0);
 const [chatInput, setChatInput] = useState("");
 const [result, setResult] = useState<ReturnType<typeof computeResult> | null>(null);
@@ -788,6 +799,23 @@ const [storyOpen, setStoryOpen] = useState<string | null>(null);
 const [setupName, setSetupName] = useState("");
 const [setupCity, setSetupCity] = useState<CityKey>("sz");
 const [setupIden, setSetupIden] = useState(IDENTITIES[0]!.id);
+/* 抽签投胎: the drawn origin, the slot-machine flicker while drawing, rerolls left */
+const [drawn, setDrawn] = useState<Origin | null>(null);
+const [shuffle, setShuffle] = useState<Origin | null>(null);
+const [rerolls, setRerolls] = useState(2);
+const tierAt = (st: GameState) => tierNow(st.startTier ?? tierOfIden(st.idenId), st.money, st.goal, IDENTITIES.find((i) => i.id === st.idenId)?.money ?? 1500);
+const drawFate = () => {
+  if (shuffle) return;
+  if (drawn) { if (rerolls <= 0) return; setRerolls((n) => n - 1); }
+  const final = drawOrigin(Math.random, drawn?.id);
+  let k = 0;
+  const tick = () => {
+    k += 1;
+    if (k < 12) { setShuffle(ORIGINS[Math.floor(Math.random() * ORIGINS.length)]!); window.setTimeout(tick, 45 + k * 9); }
+    else { setShuffle(null); setDrawn(final); track("origin_draw", { origin: final.id, tier: final.tier }); }
+  };
+  tick();
+};
 const finishedSent = useRef(false);
 const toastTimer = useRef<number | null>(null);
 
@@ -898,7 +926,8 @@ useEffect(() => {
 if (phase !== "game" || !gs) return;
 if (dailyShownRef.current !== gs.day) {
 dailyShownRef.current = gs.day;
-setDailyOpen(true);
+/* a brand-new player sees the map first — the daily-tasks sheet waits for their next day */
+if (justStartedRef.current) justStartedRef.current = false; else setDailyOpen(true);
 const posts = (gs.npcFeed ?? []).slice(0, 2);
 posts.forEach((p, i) => window.setTimeout(() => pushDanmakuRef.current(`${p.author}：${p.text}`), 1200 + i * 900));
 }
@@ -1213,7 +1242,7 @@ perks: strArr(g.perks).filter((id) => perkById(id)),
 license: num(g.license, 0), licDay: num(g.licDay, 0), carDay: num(g.carDay, 0), carOwned: g.carOwned === true,
 hangover: g.hangover === true, record: num(g.record, 0),
 romance: g.romance && typeof g.romance === "object" && !Array.isArray(g.romance) ? Object.fromEntries(Object.entries(g.romance as Record<string, unknown>).filter(([k, v]) => NPCS.some((n) => n.name === k) && typeof v === "number")) as Record<string, number> : {},
-cohabit: g.cohabit === true, routine: g.routine && typeof g.routine === "object" && !Array.isArray(g.routine) ? (g.routine as RoutineDay) : undefined, actCount: num(g.actCount, 0), partyPlays: num(g.partyPlays, 0),
+cohabit: g.cohabit === true, origin: typeof g.origin === "string" && g.origin.length < 40 ? g.origin : undefined, startTier: typeof g.startTier === "number" && g.startTier >= 0 && g.startTier <= 3 ? Math.round(g.startTier) : undefined, loc: typeof g.loc === "string" && g.loc.length < 120 ? g.loc : undefined, routine: g.routine && typeof g.routine === "object" && !Array.isArray(g.routine) ? (g.routine as RoutineDay) : undefined, actCount: num(g.actCount, 0), partyPlays: num(g.partyPlays, 0),
 };
 return { profile: { playerId: prof.playerId, name: prof.name }, gs };
 };
@@ -1239,8 +1268,8 @@ profileRef.current = prof;
 setProfile(prof);
 gsRef.current = restored;
 setGs(restored);
-setCurrentLoc("home");
-setSelectedLoc("home");
+{ const back = restored.loc && restored.loc !== "home" && resolveLoc(restored.cityKey, restored.loc) ? restored.loc : "home";
+  setCurrentLoc(back); currentLocRef.current = back; setSelectedLoc(back); }
 setPhase("game");
 const iden = IDENTITIES.find((i) => i.id === restored.idenId) ?? IDENTITIES[0]!;
 void api.joinWorld({
@@ -1279,6 +1308,7 @@ const crowd = crowdForRide(route.line.id, s0.day, s0.metroRides ?? 0);
 setRideBig(true);
 setCarriage({ route, fromLoc: fromLocId, toLoc: toLocId, stopIdx: 0, legIdx: 0, awaitingTransfer: false, crowdLabel: crowd.label, crowdDesc: crowd.desc, crowdLevel: crowd.level, seated: crowd.level === 0, gaveSeat: false, phoneUsed: false, heldRail: false });
 setRideEntry(0);
+setTripTo(toLocId);
 setCarriageLog(`🚪 在${route.stations[0]?.name ?? ""}站刷卡进闸，上了 ${route.line.name}。${route.isTransfer ? `这趟要换乘：${route.summary}，在 ${route.transferStations.join("、")} 站下车换乘，跟着车厢走就行，一次坐到底。` : ""}${route.shuttleFrom.length > 0 ? `其中 ${route.shuttleFrom.join("、")} 是站外接驳：两个站不在一处，下车后坐接驳巴士到另一个站再上车。` : ""}${crowd.desc}`);
 setSelectedLoc(toLocId);
 setAsideTab("place");
@@ -1373,7 +1403,7 @@ if (mode === "metro" || mode === "rail") {
 }
 let cost = 0; let energyCost = 0; let effMode: TransportModeId = "walk"; let modeLabel = "步行";
 if (mode === "run") { cost = 0; energyCost = Math.round(dist * 0.85); effMode = "run"; modeLabel = "跑步"; }
-else if (mode === "taxi") { cost = s0.idenId === "driver" ? 0 : Math.round(taxiFare(dist) * (evRef.current.taxiMul ?? 1)); /* a cabbie drives their own taxi */ energyCost = 1; effMode = "taxi"; modeLabel = "打车"; if (s0.money < cost) { showToast(`打车要 ${Y}${cost}，钱不够，改步行了。`); cost = 0; energyCost = Math.round(dist * 0.5); effMode = "walk"; modeLabel = "步行"; } }
+else if (mode === "taxi") { cost = s0.idenId === "driver" ? 0 : Math.round(taxiFare(dist) * (evRef.current.taxiMul ?? 1)); /* a cabbie drives their own taxi */ energyCost = 1; effMode = "taxi"; modeLabel = s0.idenId === "driver" ? "开的士" : "打车"; if (s0.money < cost) { showToast(`打车要 ${Y}${cost}，钱不够，改步行了。`); cost = 0; energyCost = Math.round(dist * 0.5); effMode = "walk"; modeLabel = "步行"; } }
 else if (mode === "moto") { cost = s0.idenId === "rider" ? 0 : motoFare(dist); /* riders ride their own e-bike: battery swaps are the cost */ energyCost = Math.max(1, Math.round(dist * 0.18)); effMode = "moto"; modeLabel = "电动车"; if (s0.money < cost) { showToast(`电动车要 ${Y}${cost}，钱不够，改步行了。`); cost = 0; energyCost = Math.round(dist * 0.5); effMode = "walk"; modeLabel = "步行"; } else if (dist > 22) { showToast(`路太远，电动车电量告急，骑到一半推了一段——远途还是坐${railWord(s0.cityKey)}/打车吧。`); energyCost += 4; } }
 else if (mode === "bike") { cost = bikeFare(dist); energyCost = Math.round(dist * 0.3); effMode = "bike"; modeLabel = "骑行"; if (s0.money < cost) { cost = 0; showToast(`骑行去${to.short}要 ${Y}${bikeFare(dist)}，钱包不够——共享单车免押金，这趟先免费骑。任何地点都能骑到，别让钱拦路。`); } }
 else if (mode === "bus") { cost = busFare(dist); energyCost = Math.max(1, Math.round(dist * 0.12)); effMode = "bus"; modeLabel = "公交"; if (s0.money < cost) cost = 0; }
@@ -1388,7 +1418,8 @@ else { energyCost = Math.round(dist * 0.5); }
 const jam = ["drive", "taxi", "bus"].includes(effMode) && isRushHour(nowMin(s0));
 if (jam) showToast(`🚦 高峰期，路上堵车，${modeLabel}要多花一半时间。`);
 mutate((s) => { s.money -= cost; s.energy -= energyCost; });
-if (cost > 0) showToast(`${modeLabel}去${to.short}，-${Y}${cost}${energyCost ? `，能量 -${energyCost}` : ""}，预计约 ${etaMinutes(effMode, dist)} 分钟到。`);
+if (en) { const ml = ({ 开的士: "Driving your taxi", 打车: "Taxi", 步行: "Walking" } as Record<string, string>)[modeLabel] ?? trText(modeLabel); showToast(`${ml} to ${trText(to.short)}${cost > 0 ? `, -${Y}${cost}` : ""}${energyCost && cost > 0 ? `, energy -${energyCost}` : ""} · about ${etaMinutes(effMode, dist)} min.${effMode === "walk" && cost <= 0 ? " A faster way would save a lot of time." : ""}`); }
+else if (cost > 0) showToast(`${modeLabel}去${to.short}，-${Y}${cost}${energyCost ? `，能量 -${energyCost}` : ""}，预计约 ${etaMinutes(effMode, dist)} 分钟到。`);
 else showToast(`${modeLabel}去${to.short}，预计约 ${etaMinutes(effMode, dist)} 分钟到。${effMode === "walk" ? "换个更快的出行方式能省不少时间。" : ""}`);
 if (nowRainy) {
 if (s0.outfit === "raincoat") showToast("🌧️ 下雨天，你穿着雨衣出门，雨点都顺着衣角滑下去了，没淋着。");
@@ -1405,6 +1436,8 @@ setWalking(true);
 const WATCH: Partial<Record<TransportModeId, number>> = { walk: 1.6, run: 2.4, bike: 3, moto: 3.8, bus: 4.2, taxi: 5, drive: 5.5 };
 const ms = clamp((dist / (WATCH[effMode] ?? modeById(effMode).mapSpeed)) * 1000 * (jam ? 1.5 : 1), 1500, 45000);
 setTripEta(Date.now() + ms);
+tripRef.current = { fromId: from.id, toId: locId, fx: from.x, fz: from.z, tx: to.x, tz: to.z, startedAt: Date.now(), ms, cost, mode: effMode };
+setTripTo(locId);
 /* 公交/打车不是地图上挪个小人就算搭乘：和地铁一样弹出车厢电影动画
    （站台等车→上车→坐进车厢看窗外→到站下车）。所有行程都触发，
    不分远近；四步动画按这趟的实际时长 ms 等分缩放，行程到点时
@@ -1423,6 +1456,7 @@ currentLocRef.current = locId;
 setWalking(false);
 setTripMode(null);
 setTripEta(null);
+setTripTo(null); tripRef.current = null;
 /* 到站不直接掐断搭乘动画：只标记已到达，弹窗等四步演完再收起。 */
 setRoadRideArrived(true);
 if (pendingStationRide.current) {
@@ -1507,6 +1541,7 @@ career: (CAREERS[st.careerIdx] ?? CAREERS[0]!).name, company: employerHere(st)?.
 title: metaRef.current.title, stamps: metaRef.current.stamps.length, stampTotal: SZ_STATION_COUNT, places: metaRef.current.atlas.length,
 lines: metaRef.current.linesDone.length, achievements: metaRef.current.achievements.length, streak: metaRef.current.streak.count,
 event: `${evRef.current.emoji} ${evRef.current.name}`, link: inviteLink(myPubRef.current, prof.name, st.employer),
+climb: (() => { const T = TIERS[st.cityKey]; const t0 = st.startTier ?? tierOfIden(st.idenId); const t1 = tierAt(st); return { from: `${T[t0]!.emoji} ${T[t0]!.zh}`, to: `${T[t1]!.emoji} ${T[t1]!.zh}`, verdict: climbVerdict(t0, t1, false), origin: originById(st.origin)?.zh }; })(),
 });
 if (blob) setShareImg((old) => { if (old) URL.revokeObjectURL(old.url); return { url: URL.createObjectURL(blob), blob }; });
 };
@@ -1514,7 +1549,8 @@ const shareNative = async () => {
 const st = gsRef.current; const prof = profileRef.current;
 if (!st || !prof) return;
 const link = inviteLink(myPubRef.current, prof.name, st.employer);
-const text = `我在《深惠人生模拟》里过到第 ${Math.min(30, st.day)} 天，存款 ¥${Math.round(st.money).toLocaleString()}，集了 ${metaRef.current.stamps.length} 个地铁站章。来一起过日子：`;
+const T = TIERS[st.cityKey]; const t0 = st.startTier ?? tierOfIden(st.idenId); const t1 = tierAt(st); const og = originById(st.origin);
+const text = `我在《深惠人生模拟》${og ? `抽到的出身是「${og.zh}」，` : ""}从「${T[t0]!.zh}」开始，第 ${Math.min(30, st.day)} 天${t1 > t0 ? "已经爬到" : t1 < t0 ? "跌到了" : "还在"}「${T[t1]!.zh}」。30 天能搬进${T[3]!.zh}吗？你也来抽一签：`;
 try {
 const file = shareImg ? new File([shareImg.blob], "shenhui-life.png", { type: "image/png" }) : null;
 if (file && navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], text, url: link });
@@ -1688,7 +1724,8 @@ const doRoutine = (id: string) => {
   let order: RiderOrder | null | undefined = rd.order; let orders = rd.orders ?? 0;
   const hasClock = routineSteps(role).some((x) => x.id === "clockin");
   if (!isOrderRole(role)) {
-    if (!atJob(role, locById(currentLocRef.current), s0)) { const w = ROLE_META[role].where; showToast(en ? "Do this at your workplace." : w === "work" ? "这些要到公司 / 厂里做。" : `这些要到${(w as string[]).map((t) => ({ food: "餐厅", market: "市场", mall: "商场", social: "娱乐场所", learn: "学校 / 图书馆", lodging: "酒店", health: "医院" } as Record<string, string>)[t] ?? t).join("、")}做。`); return; }
+    if (!atJob(role, locById(currentLocRef.current), s0)) { const w = ROLE_META[role].where; { const TL: Record<string, [string, string]> = { food: ["餐厅", "a restaurant"], market: ["市场", "a market"], mall: ["商场", "a mall"], social: ["娱乐场所", "a nightlife spot"], learn: ["学校 / 图书馆", "a school"], lodging: ["酒店", "a hotel"], health: ["医院", "a hospital"], gym: ["健身房", "a gym"], transit: ["车站", "a station"], bank: ["银行", "a bank"], home: ["小区", "a housing estate"], scenic: ["景区", "a sight"], fun: ["游乐场所", "an attraction"] };
+      showToast(w === "work" ? (en ? "Do this at your workplace (a company or industrial park)." : "这些要到公司 / 厂里 / 工地做。") : en ? `Do this at ${(w as string[]).map((t) => TL[t]?.[1] ?? t).join(", ")}.` : `这些要到${(w as string[]).map((t) => TL[t]?.[0] ?? t).join("、")}做。`); } return; }
     if (hasClock && id !== "clockin" && !rd.done.clockin) { showToast(en ? "Clock in first." : "先打卡上班。"); return; }
     const lateAfter = (step.hours?.[0] ?? 9 * 60) + 90; // over 1.5 h after the start window opens counts as late
     if (id === "clockin" && tn > lateAfter) { late = true; mood -= 4; note = en ? "Late — attendance bonus gone." : "迟到了，全勤奖没了。"; }
@@ -1746,7 +1783,7 @@ const doRoutine = (id: string) => {
     x.money += pay + (step.cash ?? 0); x.earned += pay; x.xp += risky ? 0 : xp;
     if (step.skill && !risky) x.skill += step.skill;
     if (step.network) x.network += step.network;
-    x.busyUntil = Date.now() + cooldownMs(step.min); x.busyWhat = step.zh;
+    x.busyUntil = Date.now() + cooldownMs(step.min); x.busyWhat = en ? step.en : step.zh;
     if (id === "clockout" || id === "handover") { x.workDay = x.day; if (id === "clockout") x.workCount += 1; }
   });
   if (pay > 0) floatReward(`+${fmt(pay)}`, "gold");
@@ -1766,6 +1803,38 @@ const riderGo = () => {
   if (target === currentLocRef.current) return;
   walkTo(target, routineRole(s0.idenId) === "driver" ? "taxi" : "moto");
 };
+/* stop a trip midway: get off at the nearest place / station / neighbourhood
+   to where you are right now (the unused part of a taxi / car / bike fare
+   comes back), optionally carrying on to the same destination another way */
+const stopTrip = (nextMode?: TransportModeId) => {
+  const t = tripRef.current; const s0 = gsRef.current;
+  if (!walking || carriage || !t || !s0) return;
+  const frac = clamp((Date.now() - t.startedAt) / t.ms, 0, 1);
+  const px = t.fx + (t.tx - t.fx) * frac, pz = t.fz + (t.tz - t.fz) * frac;
+  let best = t.fromId; let bd = Infinity;
+  const consider = (id: string, x: number, z: number) => { const d = Math.hypot(x - px, z - pz); if (d < bd) { bd = d; best = id; } };
+  for (const l of getLocations(s0.cityKey)) consider(l.id, l.x, l.z);
+  for (const pl of placesForCity(s0.cityKey)) consider(`pl:${pl.id}`, pl.x, pl.z);
+  for (const line of metroLinesForCity(s0.cityKey)) for (const st of line.stations) if (!st.name.endsWith("方向")) consider(stationLocId(st.name), st.x, st.z);
+  for (const a of AREA_LABELS) if (a.c === s0.cityKey) consider(areaLocId(a.c, a.n), a.x, a.z);
+  const refund = ["taxi", "drive", "moto", "bike"].includes(t.mode) ? Math.max(0, Math.round(t.cost * (1 - frac))) : 0;
+  if (walkTimer.current) window.clearTimeout(walkTimer.current);
+  pendingRide.current = null; pendingAfterRide.current = null; pendingStationRide.current = null; pendingSleep.current = false;
+  setRoadRide(null); setRoadRideArrived(false);
+  setWalking(false); setTripMode(null); setTripEta(null); setTripTo(null); tripRef.current = null;
+  setCurrentLoc(best); currentLocRef.current = best;
+  if (refund > 0) mutate((x) => { x.money += refund; });
+  const here = locById(best);
+  showToast(en ? `🛑 Stopped near ${trText(here.name)}${refund > 0 ? ` · ${Y}${refund} of the fare back` : ""}.` : `🛑 在「${here.name}」附近下了车${refund > 0 ? `，没坐完的 ${Y}${refund} 退回来了` : ""}。`);
+  if (nextMode && t.toId !== best) { setTravelMode(nextMode); window.setTimeout(() => walkToRef.current?.(t.toId, nextMode), 120); }
+  else setSelectedLoc(best);
+};
+/* remember where you stand, so reopening the game puts you back there */
+useEffect(() => {
+  const g = gsRef.current; if (!g || phase !== "game" || g.loc === currentLoc) return;
+  mutate((x) => { x.loc = currentLoc; });
+// eslint-disable-next-line react-hooks/exhaustive-deps
+}, [currentLoc, phase]);
 /* arriving moves the order on: at the shop you wait for the food, at the door you hand it over */
 useEffect(() => {
   const s0 = gsRef.current; if (!s0) return;
@@ -1784,8 +1853,8 @@ const routineActs = (loc: Loc, g: GameState): ActDef[] => {
     const toShop = o.stage === "toShop" || o.stage === "waiting";
     const tgt = toShop ? o.shop : o.dest;
     const dest = locById(tgt);
-    if (toShop) out.push({ kind: "__rider-cancel", emoji: "✖️", title: en ? "Cancel this order" : "取消这单", desc: en ? "The shop is closed or too far — the platform deducts a little." : "商家关门了或者太远：平台扣一点钱、心情也差点。", cost: `-${Y}2 · ${en ? "mood" : "心情"} -3` });
-    if (currentLoc !== tgt) out.push({ kind: "__rider-go", emoji: "🛵", title: role === "driver" ? (en ? (toShop ? `Drive to the passenger · ${trText(dest.name)}` : `Drive to ${trText(dest.name)}`) : (toShop ? `开去接乘客 · ${dest.name}` : `送乘客去 · ${dest.name}`)) : en ? (toShop ? `Ride to pick up · ${trText(dest.name)}` : `Ride to the customer · ${trText(dest.name)}`) : (toShop ? `骑去取餐 · ${dest.name}` : `骑去送餐 · ${dest.name}`), desc: en ? `Order worth ${Y}${o.pay}; over 10 minutes late loses 30%.` : `这单 ${Y}${o.pay}，超过 10 分钟算超时扣三成。地图上看你骑过去。`, cost: role === "driver" ? (en ? "your taxi" : "自己的的士") : en ? "e-bike" : "电动车" });
+    if (toShop) out.push({ kind: "__rider-cancel", emoji: "✖️", title: en ? (role === "driver" ? "Cancel this fare" : "Cancel this order") : "取消这单", desc: role === "driver" ? (en ? "Too far to bother — the app deducts a little." : "太远了不想跑：平台扣一点钱、心情也差点。") : en ? "The shop is closed or too far — the platform deducts a little." : "商家关门了或者太远：平台扣一点钱、心情也差点。", cost: `-${Y}2 · ${en ? "mood" : "心情"} -3` });
+    if (currentLoc !== tgt) out.push({ kind: "__rider-go", emoji: role === "driver" ? "🚕" : "🛵", title: role === "driver" ? (en ? (toShop ? `Drive to the passenger · ${trText(dest.name)}` : `Drive to ${trText(dest.name)}`) : (toShop ? `开去接乘客 · ${dest.name}` : `送乘客去 · ${dest.name}`)) : en ? (toShop ? `Ride to pick up · ${trText(dest.name)}` : `Ride to the customer · ${trText(dest.name)}`) : (toShop ? `骑去取餐 · ${dest.name}` : `骑去送餐 · ${dest.name}`), desc: role === "driver" ? (en ? `Meter about ${Y}${o.pay}; take over 10 minutes and the passenger complains (−30%). Watch your taxi on the map.` : `打表约 ${Y}${o.pay}，超过 10 分钟乘客会投诉（少收三成）。地图上看你开过去。`) : en ? `Order worth ${Y}${o.pay}; over 10 minutes late loses 30%.` : `这单 ${Y}${o.pay}，超过 10 分钟算超时扣三成。地图上看你骑过去。`, cost: role === "driver" ? (en ? "your taxi" : "自己的的士") : en ? "e-bike" : "电动车" });
   }
   for (const st of routineSteps(role)) {
     if (isOrderRole(role)) {
@@ -2470,7 +2539,7 @@ addLog(`${text}`);
     },
   });
 
-  const startGame = (name: string, city: CityKey, idenId: string) => {
+  const startGame = (name: string, city: CityKey, idenId: string, originId?: string) => {
     const iden = IDENTITIES.find((i) => i.id === idenId) ?? IDENTITIES[0]!;
     const cityInfo = CITIES[city];
     let rent = Math.round((cityInfo.rentBase * iden.rentMul) / 10) * 10;
@@ -2511,6 +2580,8 @@ addLog(`${text}`);
     if (perks.includes("rent")) { state.rent = Math.round((state.rent * 0.9) / 10) * 10; state.baseRent = state.rent; }
     if (perks.includes("friends")) state.npcMem = Object.fromEntries(NPCS.map((n) => { const m0 = memOf(state.npcMem, n.name); return [n.name, { ...m0, rel: Math.max(15, m0.rel), talks: Math.max(1, m0.talks) }]; }));
     if (perks.length) state.log = [{ day: 1, text: `深漂档案传承：${perks.map((id) => perkById(id)!.name).join("、")}。` }, ...state.log];
+    { const og = originById(originId); state.origin = og?.id; state.startTier = og?.tier ?? tierOfIden(iden.id);
+      if (og) state.log = [{ day: state.day, text: `抽签投胎：${og.zh}。${og.line}从「${TIERS[city][og.tier]!.zh}」出发，30 天能爬到哪一层？` }, ...state.log]; }
     // Came in through a friend's invite link: welcome bonus + an intro
     // (内推) to the friend's company.
     if (invite && invite.fromId !== myPubRef.current) {
@@ -2518,10 +2589,11 @@ addLog(`${text}`);
       state.log = [{ day: 1, text: `${invite.from}邀请你来${cityInfo.name}${state.referrals?.length ? `，还帮你内推了${companyById(invite.co ?? undefined).short}` : ""}。` }, ...state.log];
     }
     finishedSent.current = false;
+    justStartedRef.current = true;
     profileRef.current = prof;
     setProfile(prof);
     setAnalyticsPlayer(prof.playerId);
-    track("run_start", { city, iden: iden.id, perks: perks.length, day: state.day });
+    track("run_start", { city, iden: iden.id, perks: perks.length, day: state.day, origin: originId ?? "picked" });
     setCurrentLoc("home");
     setSelectedLoc("home");
     gsRef.current = state;
@@ -3630,6 +3702,54 @@ return (
 <main className="mx-auto w-full max-w-2xl px-4 pb-10 pt-6 lg:max-w-5xl">
 <p className="text-xs font-black tracking-[0.2em] text-[var(--accent)]">真人联机 · 同一座城</p>
 <h1 className="font-display mt-2 text-4xl font-black leading-tight">在深圳、惠州和香港，<br />过完这个十一月</h1>
+{(() => {
+  const T = TIERS[setupCity];
+  const hook = en
+    ? (setupCity === "hk" ? "30 days. Can you get from a subdivided flat to the Mid-Levels?" : setupCity === "hz" ? "30 days. Can you get from an urban-village room to a sea-view flat?" : "30 days. Can you get from an urban-village room to a flat in Nanshan?")
+    : (setupCity === "hk" ? "30 天，你能从劏房搬上半山吗？" : setupCity === "hz" ? "30 天，你能从城中村住进海景房吗？" : "30 天，你能从城中村搬进南山吗？");
+  const card = shuffle ?? drawn;
+  const ci = card ? IDENTITIES.find((i) => i.id === card.iden) : null;
+  return (
+  <section className="mt-4 rounded-[20px] border-2 border-[var(--border)] bg-[var(--surface)] p-4 shadow-[5px_5px_0_var(--border)]" aria-label={en ? "Draw your origin" : "抽签投胎"}>
+    <p className="font-display text-2xl font-black leading-snug">{hook}</p>
+    <p className="mt-1 text-sm text-[var(--dim)]">{en ? "You don't choose who you are — you draw it. Most people start at the bottom. Where you end up is up to you." : "出身靠抽签：骑手、保安、厨师……还是深二代？大多数人从最底层开始，结局看你自己。"}</p>
+    <div className="mt-3 flex flex-wrap gap-1.5">
+      {(Object.keys(CITIES) as CityKey[]).map((k) => (
+        <button key={k} type="button" onClick={() => setSetupCity(k)} aria-pressed={setupCity === k} className={`rounded-full border-2 px-3 py-1 text-xs font-black ${setupCity === k ? "border-[var(--border)] bg-[var(--text)] text-[var(--bg)]" : "border-[var(--line)]"}`}>{CITIES[k].emoji} {en ? trText(CITIES[k].name) : CITIES[k].name}</button>
+      ))}
+    </div>
+    <div className="mt-3 flex items-end gap-1" aria-hidden>
+      {T.map((t, i) => (
+        <div key={i} className={`flex-1 rounded-t-[8px] px-1 pb-1 text-center text-[10px] font-black leading-tight ${card && card.tier === i ? "bg-[var(--accent)] text-white" : "bg-[var(--surface2)] text-[var(--dim)]"}`} style={{ paddingTop: 6 + i * 8 }}>{t.emoji}<br />{en ? t.en : t.zh}</div>
+      ))}
+    </div>
+    {card && ci ? (
+      <div className={`mt-3 flex items-start gap-3 rounded-[14px] border-2 p-3 ${shuffle ? "border-dashed border-[var(--line)] opacity-70" : "border-[var(--accent)]"}`} aria-live="polite">
+        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full text-3xl" style={{ background: hexCss(ci.color) + "2b" }}>{ci.emoji}</span>
+        <span className="min-w-0">
+          <span className="block text-base font-black">{en ? card.en : card.zh}</span>
+          <span className="block text-xs leading-relaxed text-[var(--dim)]">{en ? card.lineEn : card.line}</span>
+          {!shuffle && <span className="mt-0.5 block text-xs font-bold">{en ? `Start with ${fmt(ci.money)} · about ${fmt(ci.pay)} a day` : `开局 ${fmt(ci.money)} · 日薪约 ${fmt(ci.pay)}`}</span>}
+        </span>
+      </div>
+    ) : (
+      <p className="mt-3 rounded-[14px] border-2 border-dashed border-[var(--line)] p-4 text-center text-sm font-bold text-[var(--dim)]">{en ? "Who will you be? Tap to draw." : "你会投胎成谁？点下面抽一签。"}</p>
+    )}
+    <div className="mt-3 grid gap-2">
+      {drawn && !shuffle ? (
+        <>
+          <button type="button" onClick={() => { const nm = setupName.trim() || randomNick(setupCity); setSetupName(nm); setAgreedStored(true); startGame(nm, setupCity, drawn.iden, drawn.id); }} className="w-full rounded-full bg-[var(--accent)] py-4 text-base font-black text-white shadow-[5px_5px_0_var(--border)]">{en ? "This is me — move in →" : "就这个命，进城 →"}</button>
+          <button type="button" disabled={rerolls <= 0} onClick={drawFate} className="w-full rounded-full border-2 border-[var(--border)] py-2.5 text-sm font-black disabled:opacity-40">{rerolls > 0 ? (en ? `🎲 Not having it — draw again (${rerolls} left)` : `🎲 不服，再抽一次（还剩 ${rerolls} 次）`) : (en ? "No more redraws — fate has spoken" : "抽完了，认命吧")}</button>
+        </>
+      ) : (
+        <button type="button" onClick={drawFate} disabled={!!shuffle} className="w-full rounded-full bg-[var(--accent)] py-4 text-base font-black text-white shadow-[5px_5px_0_var(--border)] disabled:opacity-70">{shuffle ? (en ? "Drawing…" : "抽签中…") : (en ? "🎲 Draw your origin — start in 10 seconds" : "🎲 抽签投胎 · 10 秒开局")}</button>
+      )}
+      <input value={setupName} onChange={(e) => setSetupName(e.target.value.slice(0, 12))} placeholder={en ? "Nickname (optional — we'll make one up)" : "昵称（可不填，自动起一个）"} aria-label={en ? "Nickname" : "昵称"} className="w-full rounded-full border-2 border-[var(--line)] bg-[var(--bg)] px-4 py-2 text-sm font-bold outline-none" />
+      <p className="text-center text-[11px] leading-relaxed text-[var(--dim)]">{en ? <>Starting means you agree to the <button type="button" onClick={() => setLegalDoc("terms")} className="font-black underline">Terms</button> and <button type="button" onClick={() => setLegalDoc("privacy")} className="font-black underline">Privacy Policy</button>.</> : <>开始即表示同意<button type="button" onClick={() => setLegalDoc("terms")} className="font-black underline">《用户协议》</button>和<button type="button" onClick={() => setLegalDoc("privacy")} className="font-black underline">《隐私政策》</button>。</>}</p>
+    </div>
+  </section>
+  );
+})()}
 <p className="mt-3 text-sm leading-relaxed text-[var(--dim)]">
 30 天生活模拟：选一座城、一个身份，在 3D 地图上打工、升职、吃饭、装修、攒钱。这次是<b className="text-[var(--text)]">真的联机</b>——其他打开游戏的人会以真身出现在你的地图上，你们共享一个城市频道、一份动态墙和一张排行榜。三座城随时互通：坐高铁去惠州，过关去香港（罗湖、福田、深圳湾，或高铁直达西九龙站）。11 月 14–19 日是深圳湾区峰会周，三个真实会场等你打工。
 </p>
@@ -3649,7 +3769,9 @@ return (
 </div>
 )}
 
-<label htmlFor="nickname" className="mt-6 block text-sm font-black">先给自己起个城市昵称（别人会看到）</label>
+<details className="mt-6 rounded-[16px] border-2 border-[var(--line)] bg-[var(--surface)] px-4 py-3">
+<summary className="cursor-pointer text-sm font-black">{en ? "Or pick your own identity, city and perks (all options) ▾" : "或者自己挑身份、城市和传承（完整选项）▾"}</summary>
+<label htmlFor="nickname" className="mt-4 block text-sm font-black">先给自己起个城市昵称（别人会看到）</label>
 <input id="nickname" value={setupName} onChange={(e) => setSetupName(e.target.value.slice(0, 12))} placeholder="比如：阿深、湾区小陈" className="mt-2 w-full rounded-[12px] border-2 border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-base font-bold outline-none" />
 
 <p className="mt-6 text-sm font-black">选一座城</p>
@@ -3723,6 +3845,7 @@ m.legacy = { ...m.legacy, equipped: m.legacy.equipped.includes(pk.id) ? m.legacy
 <button type="button" disabled={!setupName.trim() || !agreed} onClick={() => startGame(setupName.trim(), setupCity, setupIden)} className="mt-6 w-full rounded-full bg-[var(--accent)] py-4 text-base font-black text-white shadow-[5px_5px_0_var(--border)] disabled:opacity-40">
 进城，开始过日子 →
 </button>
+</details>
 <p className="mt-3 text-center text-xs leading-relaxed text-[var(--dim)]">规则：跟着北京时间过日子，每个自然月是一个赛季，第 N 天就是本月 N 号；做事有真实冷却，地铁、商场、景区按真实营业时间；没上线的日子会自动模拟上班吃饭；每周六睡前交租，存款跌破 -¥500 会被房东请出门；第 30 天结束结算并登上全城排行榜。</p>
 </main>
 {legalModal()}
@@ -3747,6 +3870,13 @@ return (
 </div>
 <div className="p-5">
 <p className="text-sm leading-relaxed">{result.quote}</p>
+{(() => { const T = TIERS[s.cityKey]; const t0 = s.startTier ?? tierOfIden(s.idenId); const t1 = tierAt(s); const og = originById(s.origin); return (
+<div className="mt-4 rounded-[16px] border-2 border-[var(--border)] bg-[var(--surface2)] p-4">
+<p className="text-xs font-black tracking-[0.15em] text-[var(--accent)]">{en ? "YOUR CLIMB" : "阶层变化"}</p>
+<p className="font-display mt-1 text-2xl font-black">{T[t0]!.emoji} {en ? T[t0]!.en : T[t0]!.zh} → {T[t1]!.emoji} {en ? T[t1]!.en : T[t1]!.zh}</p>
+<p className="mt-1 text-sm font-bold">{climbVerdict(t0, t1, en)}{og ? (en ? ` · drawn origin: ${og.en}` : ` · 抽到的出身：${og.zh}`) : ""}</p>
+<div className="mt-2 flex items-end gap-1" aria-hidden>{T.map((t, i) => <div key={i} className={`flex-1 rounded-t-[6px] py-1 text-center text-[10px] font-black ${i === t1 ? "bg-[var(--accent)] text-white" : i === t0 ? "bg-[var(--text)] text-[var(--bg)]" : "bg-[var(--surface)] text-[var(--dim)]"}`} style={{ paddingTop: 4 + i * 7 }}>{t.emoji}</div>)}</div>
+</div> ); })()}
 <div className="mt-4 grid grid-cols-3 gap-2 text-center">
 {[
 ["最终存款", fmt(s.money)], ["存活天数", `${Math.min(s.day, seasonLen)} 天`], ["上班", `${s.workCount} 次`],
@@ -3878,6 +4008,7 @@ return (
 <button type="button" onClick={() => setAccountOpen(true)} className={`chip ${!loggedIn && s.day >= 2 ? "border-[var(--accent)] text-[var(--accent)]" : ""}`} title={en ? "Account: keep your progress, unlock DMs and parties" : "账号：保住进度，解锁私聊和组局"}>👤 {loggedIn ? (en ? "Account" : "账号") : (en ? "Sign in" : "绑定账号")}</button>
 <button type="button" onClick={() => setDmOpen(true)} className={`chip ${unreadDm ? "border-[var(--accent)] text-[var(--accent)]" : ""}`} title={en ? "Private messages" : "私信"}>💬 {en ? "DMs" : "私信"}{unreadDm ? ` ${unreadDm}` : ""}</button>
 <span className="chip" title={iden.name}>{iden.emoji} {career.name} ×{career.mul}</span>
+{(() => { const t0 = s.startTier ?? tierOfIden(s.idenId); const t1 = tierAt(s); const T = TIERS[s.cityKey]; const top = T[3]!; return <span className="chip" title={en ? `Started in ${T[t0]!.en}; your savings now put you in ${T[t1]!.en}. Reach the goal to move up.` : `出身：${T[t0]!.zh}；按现在的存款，你在「${T[t1]!.zh}」。攒够目标就能往上爬。`}>🪜 {T[t0]!.emoji}→{T[t1]!.emoji} {en ? T[t1]!.en : T[t1]!.zh}{t1 < 3 ? (en ? ` · aim: ${top.en}` : ` · 目标${top.zh}`) : ""}</span>; })()}
 {(() => { const co = employerHere(s); return co ? <span className="chip" title={co.culture}>{co.emoji} {co.short}</span> : null; })()}
 {meta.title && <span className="chip" style={{ borderColor: "var(--gold)", color: "var(--gold)" }}>🏅 {meta.title}</span>}
 {isSaturday(s.day) && <span className="chip text-[var(--accent)]">🏠 今天交租 {fmt(s.rent)}</span>}
@@ -4019,12 +4150,15 @@ const q = mapQuery.trim();
    cross-border rail station), not just places with the word in their name */
 const crossQ = /口岸|过关|出境|入境|边境|跨境|码头|border|crossing|ferry/i.test(q);
 const crossIds = new Set(CROSS_ROUTES.filter((r) => r.from === s.cityKey && r.fromLoc !== "*").map((r) => r.fromLoc));
+/* English search ignores case, spaces and punctuation ("dameisha", "Mei Sha", "ocean-park"), and checks every English name we have */
+const nq = q.toLowerCase().replace(/[\s·'’.,\-–()（）]/g, "");
+const hit = (...names: (string | null | undefined)[]) => names.some((n) => !!n && (n.includes(q) || (nq.length >= 2 && n.toLowerCase().replace(/[\s·'’.,\-–()（）]/g, "").includes(nq))));
 const locResults = [
-...getLocations(s.cityKey).filter((l) => l.name.includes(q) || l.short.includes(q) || (LOC_EN[l.name] ?? "").toLowerCase().includes(q.toLowerCase()) || (crossQ && (l.type === "port" || crossIds.has(l.id)))).slice(0, crossQ ? 16 : 6),
-...placesForCity(s.cityKey).filter((p) => p.name.includes(q) || (p.en ?? "").toLowerCase().includes(q.toLowerCase())).slice(0, 8).map((p) => locById(`pl:${p.id}`)),
-...AREA_LABELS.filter((a) => a.c === s.cityKey && (a.n.includes(q) || (a.e ?? "").toLowerCase().includes(q.toLowerCase()))).slice(0, 6).map((a) => locById(areaLocId(a.c, a.n))),
+...getLocations(s.cityKey).filter((l) => hit(l.name, l.short, LOC_EN[l.name], trText(l.name), trText(l.short)) || (crossQ && (l.type === "port" || crossIds.has(l.id)))).slice(0, crossQ ? 16 : 6),
+...placesForCity(s.cityKey).filter((p) => hit(p.name, p.en, trText(p.name))).slice(0, 8).map((p) => locById(`pl:${p.id}`)),
+...AREA_LABELS.filter((a) => a.c === s.cityKey && hit(a.n, a.e)).slice(0, 6).map((a) => locById(areaLocId(a.c, a.n))),
 ];
-const stationResults = stationIndexOf(s.cityKey).filter((st) => st.name.includes(q)).slice(0, 6);
+const stationResults = stationIndexOf(s.cityKey).filter((st) => hit(st.name, trText(st.name), trText(`${st.name}站`))).slice(0, 6);
 return (
 <div className="absolute inset-x-1.5 top-full z-30 max-h-72 overflow-y-auto rounded-[14px] border-2 border-[var(--border)] bg-[var(--surface)] p-1.5 shadow-xl">
 {locResults.length === 0 && stationResults.length === 0 && <p className="px-2 py-1.5 text-xs text-[var(--dim)]">没找到「{q}」——地点名、{railWord(s.cityKey)}站名、英文名都能搜。</p>}
@@ -4033,7 +4167,7 @@ const plan = l.id !== currentLoc ? planRailTrip(s.cityKey, currentLoc, l.id) : n
 return (
 <button key={l.id} type="button" aria-label={`定位到${l.name}`} onClick={() => { setSelectedLoc(l.id); setAsideTab("place"); autoOpenAside(); setMapFocus({ locId: l.id, nonce: Date.now() }); setMapQuery(""); }} className="flex w-full items-center gap-2 rounded-[10px] px-2 py-1.5 text-left hover:bg-[var(--surface2)]">
 <span className="text-lg">{l.emoji}</span>
-<span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold">{l.name}</span><span className="block truncate text-[11px] text-[var(--dim)]">{l.id === currentLoc ? "你现在在这里" : plan ? `怎么去：${plan.boardLoc !== currentLoc ? `先步行到${locById(plan.boardLoc).short}站 · ` : ""}${railWord(s.cityKey)} ${plan.route.summary} · ${plan.route.stops} 站 · ${Y}${plan.route.fare}${plan.alightLoc !== l.id ? ` · 到${locById(plan.alightLoc).short}站再步行过去` : ""}` : "怎么去：离得很近，步行就到（在下方选好出行方式，点地点名或地图上的建筑前往）"}</span></span>
+<span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold">{en ? trText(l.name) : l.name}</span><span className="block truncate text-[11px] text-[var(--dim)]">{l.id === currentLoc ? "你现在在这里" : plan ? `怎么去：${plan.boardLoc !== currentLoc ? `先步行到${locById(plan.boardLoc).short}站 · ` : ""}${railWord(s.cityKey)} ${plan.route.summary} · ${plan.route.stops} 站 · ${Y}${plan.route.fare}${plan.alightLoc !== l.id ? ` · 到${locById(plan.alightLoc).short}站再步行过去` : ""}` : "怎么去：离得很近，步行就到（在下方选好出行方式，点地点名或地图上的建筑前往）"}</span></span>
 <span className="shrink-0 text-[11px] font-black text-[var(--accent2)]">定位 →</span>
 </button>
 );
@@ -4041,7 +4175,7 @@ return (
 {stationResults.map((st) => (
 <button key={st.name} type="button" aria-label={`在线网图上规划去${st.name}站`} onClick={() => { setMetroMapDest(st.name); setMetroMapOpen(true); setMapQuery(""); }} className="flex w-full items-center gap-2 rounded-[10px] px-2 py-1.5 text-left hover:bg-[var(--surface2)]">
 <span className="text-lg">{s.cityKey === "hz" ? "🚆" : "🚇"}</span>
-<span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold">{st.name}站</span><span className="block truncate text-[11px] text-[var(--dim)]">{st.lines.join(" · ")}</span></span>
+<span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold">{en ? `${trText(st.name)} Station` : `${st.name}站`}</span><span className="block truncate text-[11px] text-[var(--dim)]">{st.lines.join(" · ")}</span></span>
 <span className="shrink-0 text-[11px] font-black text-[var(--accent2)]">在线网图规划 →</span>
 </button>
 ))}
@@ -4049,7 +4183,7 @@ return (
 );
 })()}
 </div>
-<MapView lite={lite} fill paused={!!lifeAnim} train={carriage ? { pts: carriage.route.stations.map((st) => [st.x, st.z] as [number, number]), idx: carriage.stopIdx, stepMs: hopMs(carriage.route, carriage.stopIdx), color: (carriage.route.legs[carriage.legIdx]?.line ?? carriage.route.line).color, rail: carriage.route.legs.some((l) => ["szhz-rail", "guangshen", "hz-intercity", "ganshen-rail", "guangshan-rail", "hsr-hk"].includes(l.line.id)), hold: rideEntry !== null || carriage.awaitingTransfer || carriage.stopIdx >= carriage.route.stations.length - 1 } : null} cityKey={s.cityKey} selfLocId={selectedLoc} selfEmoji={iden.emoji} selfColor={iden.color} selfName={profile?.name ?? "我"} remotePlayers={remotePlayers} selfOutfitId={s.outfit} travelModeId={tripMode ?? travelMode} selfEtaAt={tripEta ?? undefined} arrival={arrival} weatherKind={rwOk ? realWeather!.kind : "unknown"} npcMoodEmoji={Object.fromEntries(npcsForCity(s.cityKey).map((n) => [n.name, moodEmoji(memOf(s.npcMem ?? {}, n.name).mood)]))} apecDay={isApecWeek(s.day)} focusLocId={mapFocus?.locId} focusX={mapFocus?.x} focusZ={mapFocus?.z} focusNonce={mapFocus?.nonce} destLocId={selectedLoc} onSelect={walkTo} onPickActor={pickActor} navOverlay={(
+<MapView lite={lite} fill paused={!!lifeAnim} train={carriage ? { pts: carriage.route.stations.map((st) => [st.x, st.z] as [number, number]), idx: carriage.stopIdx, stepMs: hopMs(carriage.route, carriage.stopIdx), color: (carriage.route.legs[carriage.legIdx]?.line ?? carriage.route.line).color, rail: carriage.route.legs.some((l) => ["szhz-rail", "guangshen", "hz-intercity", "ganshen-rail", "guangshan-rail", "hsr-hk"].includes(l.line.id)), hold: rideEntry !== null || carriage.awaitingTransfer || carriage.stopIdx >= carriage.route.stations.length - 1 } : null} cityKey={s.cityKey} selfLocId={walking || carriage ? (tripTo ?? selectedLoc) : currentLoc} selfEmoji={iden.emoji} selfColor={iden.color} selfName={profile?.name ?? "我"} remotePlayers={remotePlayers} selfOutfitId={s.outfit} travelModeId={tripMode ?? travelMode} selfEtaAt={tripEta ?? undefined} arrival={arrival} weatherKind={rwOk ? realWeather!.kind : "unknown"} npcMoodEmoji={Object.fromEntries(npcsForCity(s.cityKey).map((n) => [n.name, moodEmoji(memOf(s.npcMem ?? {}, n.name).mood)]))} apecDay={isApecWeek(s.day)} focusLocId={mapFocus?.locId} focusX={mapFocus?.x} focusZ={mapFocus?.z} focusNonce={mapFocus?.nonce} destLocId={selectedLoc} onSelect={walkTo} onPickActor={pickActor} navOverlay={(
 <>
 {/* 弹幕层：联机动态 / 聊天 / 街坊发言飘过地图上半区 */}
 {danmakuOn && (
@@ -4190,12 +4324,12 @@ return (
 <p className="mt-2 flex flex-wrap items-center gap-2 rounded-[10px] bg-[var(--surface2)] px-3 py-2 text-xs font-bold">👕 场合提示：这里更适合穿「{wo.name}」（{wo.scene}），你现在穿的是「{outfitOf(s.outfit).name}」。
 <button type="button" aria-label={`按场合换上${wo.name}`} onClick={() => buyOutfit(want)} className="rounded-full bg-[var(--text)] px-3 py-1 text-[11px] font-black text-[var(--bg)]">{s.ownedOutfits.includes(want) ? `换上${wo.name}` : `${fmt(wo.price)} 买下穿上`}</button></p> ); })()}
 {!arrived && !walking && (() => { const cur = locById(currentLoc); const d = Math.hypot(selLoc.x - cur.x, selLoc.z - cur.z); const tm = modesForCity(s.cityKey).find((m) => m.id === travelMode) ?? modeById(travelMode); return (
-<button type="button" onClick={() => walkTo(selLoc.id)} className="mt-3 w-full rounded-full bg-[var(--text)] py-3 text-sm font-black text-[var(--bg)]">{tm.emoji} {tm.name}过去 → · 预计约 {etaMinutes(travelMode, d)} 分钟（{tm.speedTag}）</button>
+<button type="button" onClick={() => walkTo(selLoc.id)} className="mt-3 w-full rounded-full bg-[var(--text)] py-3 text-sm font-black text-[var(--bg)]">{en ? `${tm.emoji} Go by ${trText(tm.name)} → · about ${etaMinutes(travelMode, d)} min (${trText(tm.speedTag)})` : `${tm.emoji} ${tm.name}过去 → · 预计约 ${etaMinutes(travelMode, d)} 分钟（${tm.speedTag}）`}</button>
 ); })()}
 {(() => { const g = guideForLocName(selLoc.name); if (!g) return null; return <ExperienceCard g={g} here={arrived} unlocked={(s.album ?? []).includes(g.key)} onCheckin={() => checkinGuide(g)} />; })()}
 <p className="mt-3.5 flex items-baseline justify-between gap-2"><span className="text-xs font-black tracking-wide">📍 在这里能做 · 常用操作</span><span className="text-[11px] font-bold text-[var(--dim)]">{arrived ? "点一下就行动" : "到了才能做"}</span></p>
 <div className="mt-2 grid gap-2">
-{actionsFor(selLoc, s).map((a) => { const own = a.kind.startsWith("__routine-") && !["__routine-wait"].includes(a.kind) || a.kind.startsWith("__rider-"); /* the rider's own steps don't depend on the shop's hours */ const tb = timeBlock(a.kind, s) ?? (a.kind === "__sleep" || a.kind === "rest" || own ? null : venueClosed(selLoc)); return (
+{actionsFor(selLoc, s).map((a) => { const own = a.kind.startsWith("__routine-") && (a.kind !== "__routine-wait" || routineRole(s.idenId) === "driver") || a.kind.startsWith("__rider-"); /* the rider's own steps don't depend on the shop's hours; a taxi passenger waves from anywhere, any hour */ const tb = timeBlock(a.kind, s) ?? (a.kind === "__sleep" || a.kind === "rest" || own ? null : venueClosed(selLoc)); return (
 <button key={a.kind + (a.arg ?? 0)} type="button" disabled={!arrived || a.disabled || !!tb} onClick={() => { if (a.kind === "__sleep") playLifeAnim("sleep", () => doSleep()); else if (a.kind.startsWith("__gocity-")) setCrossTo(a.kind.slice("__gocity-".length) as CityKey); else if (a.kind.startsWith("__routine-")) doRoutine(a.kind.slice("__routine-".length)); else if (a.kind === "__rider-go") riderGo(); else if (a.kind === "__rider-cancel") { const g0 = gsRef.current; if (g0) { const rd0 = routineToday(g0); mutate((x) => { x.routine = { ...rd0, order: null }; x.money -= 2; x.mood = clamp(x.mood - 3, 0, 100); }); showToast(en ? "Order cancelled (−¥2)." : "这单取消了，平台扣了 ¥2。"); } } else if (a.kind.startsWith("__cross-")) { const r = CROSS_ROUTES.find((x) => x.id === a.kind.slice("__cross-".length)); if (r) takeRoute(r); } else doAction(a.kind, a.arg ?? 0); }} className="act-btn">
 <span className="flex items-center justify-between text-sm font-black"><span>{a.title}</span><span>{a.emoji}</span></span>
 <span className="mt-0.5 block text-xs leading-relaxed text-[var(--dim)]">{a.desc}</span>
@@ -4989,6 +5123,15 @@ return (
 </div>
 </div>
 </div>); })()}
+{walking && !carriage && tripMode && (
+<div className="fixed left-1/2 top-[54px] z-[62] flex max-w-[calc(100vw-24px)] -translate-x-1/2 flex-wrap items-center justify-center gap-1.5 rounded-[16px] border-2 border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 shadow-xl" role="toolbar" aria-label={en ? "Trip controls" : "行程操作"}>
+<button type="button" onClick={() => stopTrip()} className="rounded-full bg-[#dc2626] px-3 py-1 text-xs font-black text-white">🛑 {en ? "Stop here" : "就地下车"}</button>
+<span className="text-[11px] font-bold text-[var(--dim)]">{en ? "or switch to" : "或改用"}</span>
+{modesForCity(s.cityKey).filter((m) => ["walk", "run", "bike", "moto", "bus", "metro", "taxi", "drive"].includes(m.id) && m.id !== tripMode).map((m) => (
+<button key={m.id} type="button" title={en ? trText(m.name) : m.name} aria-label={en ? `Switch to ${trText(m.name)}` : `改用${m.name}`} onClick={() => stopTrip(m.id)} className="rounded-full border border-[var(--line)] px-2 py-1 text-xs font-black">{m.emoji} {en ? trText(m.name) : m.name}</button>
+))}
+</div>
+)}
 {rideBig && (roadRide || carriage) && <button type="button" onClick={() => setRideBig(false)} className="fixed bottom-3 right-[min(412px,calc(100vw-12px))] z-[61] rounded-full border-2 border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-black shadow-xl">▾ {en ? "Fold" : "收起"}</button>}
 {storeOpen && phase === "game" && <StoreModal en={en} onClose={() => setStoreOpen(false)} toast={showToast} openAccount={() => setAccountOpen(true)} />}
 {accountOpen && phase === "game" && <AccountModal en={en} playerId={profile?.playerId ?? null} saveKey={LS_KEY} onClose={() => setAccountOpen(false)} toast={showToast} onChange={(v) => { setLoggedIn(v); track(v ? "account_login" : "account_logout"); }} />}

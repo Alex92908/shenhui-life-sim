@@ -83,6 +83,8 @@ export interface CardData {
   career: string; company: string; companyEmoji: string; title: string | null;
   stamps: number; stampTotal: number; places: number; lines: number;
   achievements: number; streak: number; event: string; link: string;
+  /** 抽签投胎: where you started on the housing ladder → where you are now */
+  climb?: { from: string; to: string; verdict: string; origin?: string };
 }
 
 /** Draw the share card; returns a PNG blob. */
@@ -102,7 +104,9 @@ export async function drawShareCard(d: CardData): Promise<Blob | null> {
   const font = (w: number, size: number) => `${w} ${size}px "PingFang SC","Noto Sans SC","Microsoft YaHei",sans-serif`;
   g.fillStyle = "#ffd34d"; g.font = font(900, 40); g.fillText("深惠人生模拟", 72, 110);
   g.fillStyle = "#fff"; g.font = font(900, 84); g.fillText(`${d.name}的${d.cityName}第 ${d.day} 天`, 72, 220);
-  if (d.title) { g.fillStyle = "#ffd34d"; g.font = font(800, 44); g.fillText(`🏅 ${d.title}`, 72, 290); }
+  if (d.climb) {
+    g.fillStyle = "#ffd34d"; g.font = font(800, 40); g.fillText(fit(g, `${d.climb.from} → ${d.climb.to} · ${d.climb.verdict}`, W - 144), 72, 290);
+  } else if (d.title) { g.fillStyle = "#ffd34d"; g.font = font(800, 44); g.fillText(`🏅 ${d.title}`, 72, 290); }
   // big money
   g.fillStyle = "rgba(255,255,255,0.12)"; roundRect(g, 60, 330, W - 120, 250, 36); g.fill();
   g.fillStyle = "rgba(255,255,255,0.75)"; g.font = font(700, 40); g.fillText("存款", 110, 400);
@@ -123,7 +127,7 @@ export async function drawShareCard(d: CardData): Promise<Blob | null> {
   });
   g.fillStyle = "#fff"; g.font = font(800, 38); g.fillText(fit(g, `今日城市事件：${d.event}`, W - 140), 72, 1090);
   g.fillStyle = "#fff"; roundRect(g, 60, 1140, W - 120, 150, 36); g.fill();
-  g.fillStyle = "#e63a1f"; g.font = font(900, 46); g.fillText("一起来深圳过日子 →", 100, 1205);
+  g.fillStyle = "#e63a1f"; g.font = font(900, 46); g.fillText(d.climb ? "你会抽到什么出身？来抽一签 →" : "一起来深圳过日子 →", 100, 1205);
   g.fillStyle = "#14202b"; g.font = font(600, 28); g.fillText(fit(g, d.link, W - 200), 100, 1258);
   return new Promise((ok) => c.toBlob((b) => ok(b), "image/png"));
 }
