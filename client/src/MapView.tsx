@@ -3441,7 +3441,7 @@ export function MapView(p: Props) {
       {cine && (
         <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-[5]" style={{ background: "radial-gradient(ellipse 118% 96% at 50% 42%, transparent 62%, rgba(5,10,18,0.34) 100%), linear-gradient(to bottom, rgba(5,10,18,0.16), transparent 13%, transparent 88%, rgba(5,10,18,0.2))" }} />
       )}
-      <div className={`absolute bottom-3 right-3 z-10 flex max-w-[calc(100%-24px)] flex-wrap justify-end gap-1.5 compact-dock${p.scenic ? " hidden" : ""}`}>
+      <div className={`absolute bottom-3 right-3 z-10 flex max-w-[calc(100%-24px)] flex-wrap justify-end gap-1.5 compact-dock${miniOpen ? " mini-open" : ""}${p.scenic ? " hidden" : ""}`}>
         {p.extraControls}
         <button type="button" aria-label={viewMenu ? "收起视角和时间按钮" : "更多：时间、镜头、标签"} aria-expanded={viewMenu} data-tip={viewMenu ? tt("收起", "Collapse") : tt("更多按钮", "More buttons")} onClick={() => setViewMenu((v) => !v)} className={`tipbtn compact-only h-9 w-9 place-items-center justify-center rounded-full border text-base shadow ${viewMenu ? "border-[var(--accent)] bg-[#14202b]/95 text-white" : "border-black/40 bg-[#fffdf8]/95"}`}>🎛️</button>
         <button type="button" aria-label="跳到白天" data-tip={tt("跳到白天", "Jump to day")} onClick={() => jumpToPhase(0.32)} className={`tipbtn grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow${viewMenu ? "" : " compact-hide"}`}>☀️</button>

@@ -768,6 +768,7 @@ const [tripTo, setTripTo] = useState<string | null>(null);
 const tripRef = useRef<{ fromId: string; toId: string; fx: number; fz: number; tx: number; tz: number; startedAt: number; ms: number; cost: number; mode: TransportModeId } | null>(null);
 /** Latest walkTo, for callbacks (life-anim `after`) that fire from a stale
     render closure where walkTo's own walking/carriage guards are outdated. */
+const [switchTrip, setSwitchTrip] = useState<{ to: string; mode: TransportModeId } | null>(null);
 const walkToRef = useRef<((locId: string, modeOverride?: TransportModeId) => void) | null>(null);
 const [toast, setToast] = useState<string | null>(null);
 const [activeEvent, setActiveEvent] = useState<GameEvent | null>(null);
@@ -921,7 +922,6 @@ useEffect(() => {
 const toggleMapFullscreen = () => {
   if (mapFullscreen) {
     setMapFullscreen(false);
-    setAsideOpen(true);
     if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
   } else {
     setMapFullscreen(true);
@@ -1770,6 +1770,13 @@ startMetroRide(locId, dest);
 };
 
 useEffect(() => { walkToRef.current = walkTo; });
+/* switching mid-trip: set off again only once the old trip has really ended (a fixed delay missed it on slow phones) */
+useEffect(() => {
+if (!switchTrip || walking || carriage) return;
+const st = switchTrip; setSwitchTrip(null);
+walkTo(st.to, st.mode);
+// eslint-disable-next-line react-hooks/exhaustive-deps
+}, [switchTrip, walking, carriage]);
 
 /* 到了一个地方：车站盖章、真实地点进图鉴（跨局保留） */
 useEffect(() => {
@@ -2146,7 +2153,7 @@ const stopTrip = (nextMode?: TransportModeId) => {
   if (refund > 0) mutate((x) => { x.money += refund; });
   const here = locById(best);
   showToast(en ? `🛑 Stopped near ${trText(here.name)}${refund > 0 ? ` · ${Y}${refund} of the fare back` : ""}.` : `🛑 在「${here.name}」附近下了车${refund > 0 ? `，没坐完的 ${Y}${refund} 退回来了` : ""}。`);
-  if (nextMode && t.toId !== best) { setTravelMode(nextMode); window.setTimeout(() => walkToRef.current?.(t.toId, nextMode), 120); }
+  if (nextMode && t.toId !== best) { setTravelMode(nextMode); setSwitchTrip({ to: t.toId, mode: nextMode }); }
   else setSelectedLoc(best);
 };
 /* remember where you stand, so reopening the game puts you back there */
@@ -4358,8 +4365,9 @@ return (
 {/* resources: money toward the goal, energy, mood */}
 <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
 <span className="res-pill" title={en ? `Savings goal ${fmt(s.goal)} · ${goalPct}%` : `存钱目标 ${fmt(s.goal)} · ${goalPct}%`}><span aria-hidden="true">💰</span><span className="flex flex-col leading-none"><span className={`text-[13px] font-black ${s.money < 0 ? "text-[var(--accent)]" : ""}`}>{fmt(s.money)}</span><span className="mt-0.5 block h-1 w-full min-w-[40px] overflow-hidden rounded-full bg-[var(--surface2)]"><span className="block h-full rounded-full bg-[var(--accent)]" style={{ width: `${goalPct}%` }} /></span></span></span>
-<span className="res-pill" title={en ? "Energy" : "能量"}><span aria-hidden="true">⚡</span><span className="text-[13px] font-black">{Math.round(s.energy)}</span></span>
-<span className="res-pill" title={en ? "Mood" : "心情"}><span aria-hidden="true">😊</span><span className="text-[13px] font-black">{Math.round(s.mood)}</span></span>
+<span className="res-pill compact-hide" title={en ? "Energy" : "能量"}><span aria-hidden="true">⚡</span><span className="text-[13px] font-black">{Math.round(s.energy)}</span></span>
+<span className="res-pill compact-hide" title={en ? "Mood" : "心情"}><span aria-hidden="true">😊</span><span className="text-[13px] font-black">{Math.round(s.mood)}</span></span>
+<span className="res-pill compact-only" title={en ? "Energy · mood" : "能量 · 心情"}><span className="text-[12px] font-black">⚡{Math.round(s.energy)}</span><span className="text-[12px] font-black">😊{Math.round(s.mood)}</span></span>
 {s.busyUntil && Date.now() < s.busyUntil ? <span className="res-pill border-[var(--accent)] text-[var(--accent)]">⏳ <span className="compact-hide">{s.busyWhat ?? "忙"} </span>{countdown(s.busyUntil - Date.now())}</span> : null}
 </div>
 <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
@@ -4380,6 +4388,7 @@ return (
 <button type="button" className="menu-item compact-only" onClick={() => { setPhoneApp(null); setPhoneOpen(true); }}>📱 {en ? "Phone" : "手机"}{unreadDm > 0 && <span className="red-dot static ml-auto" />}</button>
 <button type="button" className="menu-item compact-only" onClick={() => setDailyOpen(true)}>📋 {en ? "Daily tasks" : "每日任务"}</button>
 <button type="button" className="menu-item" onClick={() => void openShare()}>📤 {en ? "Share & invite" : "分享战绩、邀请朋友"}</button>
+<button type="button" className="menu-item" onClick={() => setMusicOpen(true)}>🎵 {en ? "Background music" : "背景音乐"}</button>
 <button type="button" className="menu-item" onClick={goHomeAndSleep}>😴 {en ? "Go home and sleep" : "回家睡觉"}</button>
 {(Object.keys(CITIES) as CityKey[]).filter((k) => k !== s.cityKey).map((k) => <button key={k} type="button" className="menu-item" onClick={() => setCrossTo(k)}>{k === "hk" || s.cityKey === "hk" ? "🛃" : "🚄"} {en ? `To ${CITY_EN[k]} · ${crossRoutes(s.cityKey, k).length} routes` : `去${CITIES[k].name} · ${crossRoutes(s.cityKey, k).length} 条路线`}</button>)}
 <div className="my-1 h-px bg-[var(--line)]" />
@@ -4542,7 +4551,8 @@ return (
 {/* Map — the hero, and now the whole stage: it fills the section
     edge-to-edge at all times. ⛶ 全屏 still offers the native
     full-viewport mode on top of that; Esc or the same button exits. */}
-<div ref={mapShellRef} className={mapFullscreen ? "fixed inset-0 z-[38] flex flex-col bg-[var(--bg)] p-3 pt-safe" : "absolute inset-0 flex flex-col p-2.5"}>
+<div ref={mapShellRef} className={mapFullscreen ? "fixed inset-0 z-[46] flex flex-col bg-[var(--bg)] p-3 pt-safe" : "absolute inset-0 flex flex-col p-2.5"}>
+{mapFullscreen && <button type="button" onClick={toggleMapFullscreen} className="fixed right-3 top-[calc(env(safe-area-inset-top)+12px)] z-[47] rounded-full bg-[var(--accent)] px-3.5 py-2 text-xs font-black text-white shadow-xl">✕ {en ? "Exit full screen" : "退出全屏"}</button>}
 <div className="relative px-1.5 pb-2.5">
 <div className="flex gap-2">
 <input value={mapQuery} onChange={(e) => setMapQuery(e.target.value)} onFocus={() => setSearchFocus(true)} onBlur={() => window.setTimeout(() => setSearchFocus(false), 220)} placeholder={s.cityKey === "hz" ? "🔍 搜地点或城轨/高铁站：西湖、老街、惠州南…" : s.cityKey === "hk" ? "🔍 搜地点或港铁站：旺角、中环、山顶、迪士尼…" : "🔍 搜地点或地铁站：公园、商场、医院、博物馆、海滩…"} aria-label={`搜索地点或${railWord(s.cityKey)}站`} className="min-w-0 flex-1 rounded-full border border-[var(--line)] bg-[var(--surface)] px-3.5 py-2 text-sm outline-none focus:border-[var(--border)]" />
@@ -4601,12 +4611,8 @@ return (
 );
 })()}
 </div>
-<MapView extraControls={<><button type="button" onClick={toggleSound} aria-pressed={soundIsOn} aria-label={soundIsOn ? (en ? "Mute" : "静音") : (en ? "Sound on" : "打开声音")} data-tip={soundIsOn ? (en ? "Sound on · tap to mute" : "声音开着 · 点一下静音") : (en ? "Muted · tap for music" : "已静音 · 点一下开声音")} className={`tipbtn grid h-9 w-9 place-items-center rounded-full border text-base shadow ${soundIsOn ? "border-black/40 bg-[#fffdf8]/95" : "border-[var(--accent)] bg-[#14202b]/95"}`}>{soundIsOn ? "🔊" : "🔇"}</button><span className="relative"><button type="button" onClick={() => setMusicOpen((o) => !o)} aria-expanded={musicOpen} aria-label={en ? "Change music" : "换背景音乐"} data-tip={en ? "Change music" : "换背景音乐"} className="tipbtn grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow">🎵</button>
-{musicOpen && <div className="menu-pop absolute bottom-[calc(100%+8px)] left-0 z-30 w-60 p-1.5 max-sm:-left-24">
-<p className="px-2.5 py-1.5 text-[11px] font-black text-[var(--dim)]">🎵 {en ? "Background music" : "背景音乐"}</p>
-{MUSIC_PICKS.map((m) => <button key={m.id} type="button" onClick={() => { setMusicPick(m.id); setMusicSel(m.id); if (!soundIsOn) { setSoundIsOn(true); setSound(true); } setMusicOpen(false); showToast(en ? `🎵 Music: ${m.en}` : `🎵 背景音乐：${m.zh}`); }} className={`menu-item ${musicSel === m.id ? "bg-[var(--surface2)]" : ""}`}>{m.emoji} {en ? m.en : m.zh}{musicSel === m.id && <span className="ml-auto">✓</span>}</button>)}
-<button type="button" onClick={() => { setMusicOpen(false); setLiveOpen(true); }} className="menu-item">🎧 {en ? "Musicians' originals (Livehouse)" : "听音乐人的原创（Livehouse）"}</button>
-</div>}</span></>} lite={lite} pinLocId={pinLoc} onPinClear={() => setPinLoc(null)} scenic={scenicMoment ? (() => { const m = scenicMoment.m; const l = locById(currentLoc); /* look out past the spot (over the water for sea views), from a little above the rooftops */ const az = m.faceSea && !m.path ? seawardAz(s.cityKey, l.x, l.z, m.az) : m.az; const ox = -Math.sin(az) * m.dist * 0.75, oz = -Math.cos(az) * m.dist * 0.75; return { x: (m.path ? m.path[0]![0] : l.x) + ox, z: (m.path ? m.path[0]![1] : l.z) + oz, phase: m.phase, az, pol: m.path ? Math.min(m.pol, 1.08) : 0.9, dist: m.path ? m.dist : m.dist * 2.1, path: m.path, durMs: m.durMs, nonce: scenicMoment.nonce }; })() : null} mapMode={mapMode} onMapMode={setMapMode} fill paused={!!lifeAnim} train={carriage ? { pts: carriage.route.stations.map((st) => [st.x, st.z] as [number, number]), idx: carriage.stopIdx, stepMs: hopMs(carriage.route, carriage.stopIdx), color: (carriage.route.legs[carriage.legIdx]?.line ?? carriage.route.line).color, rail: carriage.route.legs.some((l) => ["szhz-rail", "guangshen", "hz-intercity", "ganshen-rail", "guangshan-rail", "hsr-hk"].includes(l.line.id)), hold: rideEntry !== null || carriage.awaitingTransfer || carriage.stopIdx >= carriage.route.stations.length - 1 } : null} cityKey={s.cityKey} selfLocId={walking || carriage ? (tripTo ?? selectedLoc) : currentLoc} selfEmoji={iden.emoji} selfColor={iden.color} selfName={profile?.name ?? "我"} remotePlayers={remotePlayers} billboards={(billboardsQuery.data?.slots ?? []).flatMap((b) => (b.ad ? [{ slot: b.slot, text: b.ad.text, emoji: b.ad.emoji, owner: b.ad.owner }] : []))} selfOutfitId={s.outfit} travelModeId={tripMode ?? travelMode} selfEtaAt={tripEta ?? undefined} arrival={arrival} weatherKind={rwOk ? realWeather!.kind : "unknown"} npcMoodEmoji={Object.fromEntries(npcsForCity(s.cityKey).map((n) => [n.name, moodEmoji(memOf(s.npcMem ?? {}, n.name).mood)]))} apecDay={isApecWeek(s.day)} focusLocId={mapFocus?.locId} focusX={mapFocus?.x} focusZ={mapFocus?.z} focusNonce={mapFocus?.nonce} destLocId={selectedLoc} onSelect={walkTo} onPickActor={pickActor} navOverlay={(
+<MapView extraControls={<><button type="button" onClick={toggleSound} aria-pressed={soundIsOn} aria-label={soundIsOn ? (en ? "Mute" : "静音") : (en ? "Sound on" : "打开声音")} data-tip={soundIsOn ? (en ? "Sound on · tap to mute" : "声音开着 · 点一下静音") : (en ? "Muted · tap for music" : "已静音 · 点一下开声音")} className={`tipbtn grid h-9 w-9 place-items-center rounded-full border text-base shadow ${soundIsOn ? "border-black/40 bg-[#fffdf8]/95" : "border-[var(--accent)] bg-[#14202b]/95"}`}>{soundIsOn ? "🔊" : "🔇"}</button><span className="relative compact-hide"><button type="button" onClick={() => setMusicOpen((o) => !o)} aria-expanded={musicOpen} aria-label={en ? "Change music" : "换背景音乐"} data-tip={en ? "Change music" : "换背景音乐"} className="tipbtn grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow">🎵</button>
+</span></>} lite={lite} pinLocId={pinLoc} onPinClear={() => setPinLoc(null)} scenic={scenicMoment ? (() => { const m = scenicMoment.m; const l = locById(currentLoc); /* look out past the spot (over the water for sea views), from a little above the rooftops */ const az = m.faceSea && !m.path ? seawardAz(s.cityKey, l.x, l.z, m.az) : m.az; const ox = -Math.sin(az) * m.dist * 0.75, oz = -Math.cos(az) * m.dist * 0.75; return { x: (m.path ? m.path[0]![0] : l.x) + ox, z: (m.path ? m.path[0]![1] : l.z) + oz, phase: m.phase, az, pol: m.path ? Math.min(m.pol, 1.08) : 0.9, dist: m.path ? m.dist : m.dist * 2.1, path: m.path, durMs: m.durMs, nonce: scenicMoment.nonce }; })() : null} mapMode={mapMode} onMapMode={setMapMode} fill paused={!!lifeAnim} train={carriage ? { pts: carriage.route.stations.map((st) => [st.x, st.z] as [number, number]), idx: carriage.stopIdx, stepMs: hopMs(carriage.route, carriage.stopIdx), color: (carriage.route.legs[carriage.legIdx]?.line ?? carriage.route.line).color, rail: carriage.route.legs.some((l) => ["szhz-rail", "guangshen", "hz-intercity", "ganshen-rail", "guangshan-rail", "hsr-hk"].includes(l.line.id)), hold: rideEntry !== null || carriage.awaitingTransfer || carriage.stopIdx >= carriage.route.stations.length - 1 } : null} cityKey={s.cityKey} selfLocId={walking || carriage ? (tripTo ?? selectedLoc) : currentLoc} selfEmoji={iden.emoji} selfColor={iden.color} selfName={profile?.name ?? "我"} remotePlayers={remotePlayers} billboards={(billboardsQuery.data?.slots ?? []).flatMap((b) => (b.ad ? [{ slot: b.slot, text: b.ad.text, emoji: b.ad.emoji, owner: b.ad.owner }] : []))} selfOutfitId={s.outfit} travelModeId={tripMode ?? travelMode} selfEtaAt={tripEta ?? undefined} arrival={arrival} weatherKind={rwOk ? realWeather!.kind : "unknown"} npcMoodEmoji={Object.fromEntries(npcsForCity(s.cityKey).map((n) => [n.name, moodEmoji(memOf(s.npcMem ?? {}, n.name).mood)]))} apecDay={isApecWeek(s.day)} focusLocId={mapFocus?.locId} focusX={mapFocus?.x} focusZ={mapFocus?.z} focusNonce={mapFocus?.nonce} destLocId={selectedLoc} onSelect={walkTo} onPickActor={pickActor} navOverlay={(
 <>
 {/* 弹幕层：联机动态 / 聊天 / 街坊发言飘过地图上半区 */}
 {danmakuOn && !scenicMoment && (
@@ -4623,12 +4629,20 @@ return (
 ))}
 </div>
 {/* 左侧中段控制簇：出行导航 + 弹幕开关（不在顶部，不挡地图中心） */}
+{!asideOpen && !scenicMoment && (
+<div className={`feature-rail absolute right-2.5 z-20 flex flex-col items-center gap-1.5 ${barsHidden ? "top-[64px]" : "top-[150px]"}`}>
+{([["place", "📍", "地点", "Place"], ["feed", "🏘️", "动态", "Feed"], ["wall", "🧑‍🤝‍🧑", "街坊", "Locals"], ["chat", "💬", "聊天", "Chat"], ["board", "🏆", "排行", "Ranks"], ["guide", "📖", "图鉴", "Guide"]] as const).map(([k, icon, label, labelEn]) => (
+<button key={k} type="button" aria-label={en ? labelEn : label} onClick={() => { setAsideTab(k); setAsideOpen(true); }} className="rail-btn"><span aria-hidden="true" className="text-[19px] leading-none">{icon}</span><span className="rail-label">{en ? labelEn : label}</span></button>
+))}
+</div>
+)}
 <div className={`left-cluster feature-rail absolute left-2.5 z-20 flex flex-col items-center gap-1.5 ${barsHidden ? "top-[64px]" : "top-[150px]"}${scenicMoment ? " hidden" : ""}`}>
 {([
   { k: "hub", icon: "🧭", zh: "做什么", en: "To do", on: () => { setHubOpen(true); track("hub_open"); }, dot: false, hot: true },
   { k: "nav", icon: "🚶", zh: navOpen ? "收起" : "出行", en: navOpen ? "Close" : "Go", on: () => setNavOpen((o) => !o), dot: false, hot: navOpen },
   { k: "gigs", icon: "💼", zh: "零工", en: "Gigs", on: () => setGigsOpen(true), dot: gigActive > 0 || isPrime(), hot: false },
   { k: "party", icon: "🎉", zh: "组局", en: "Parties", on: () => setPartyOpen(true), dot: parties.some((pt) => pt.status === "open"), hot: false },
+  { k: "stamps", icon: "🎫", zh: "集章", en: "Stamps", on: () => { setAsideTab("collect"); setAsideOpen(true); }, dot: false, hot: false },
   { k: "store", icon: "✨", zh: "商店", en: "Store", on: () => setStoreOpen(true), dot: false, hot: false },
 ] as const).map((it) => (
 <button key={it.k} type="button" onClick={it.on} aria-label={en ? it.en : it.zh} className={`rail-btn${it.hot ? " rail-hot" : ""}`}><span aria-hidden="true" className="text-[19px] leading-none">{it.icon}</span><span className="rail-label">{en ? it.en : it.zh}</span>{it.dot && <span className="red-dot" />}</button>
@@ -5202,13 +5216,7 @@ return (
     一条窄窄的竖条：五个页签只留图标竖排 + 「地区面板」竖排字，一直
     留在屏幕边上一眼能看到；点任意图标就展开回对应页签。地图始终
     全屏，不被面板挤占。 */}
-{!asideOpen && !scenicMoment && (
-<div className="feature-rail fixed right-2.5 top-1/2 z-40 flex -translate-y-1/2 flex-col items-center gap-1.5">
-{([["place", "📍", "地点", "Place"], ["collect", "🎫", "集章", "Stamps"], ["feed", "🏘️", "动态", "Feed"], ["wall", "🧑‍🤝‍🧑", "街坊", "Locals"], ["chat", "💬", "聊天", "Chat"], ["board", "🏆", "排行", "Ranks"], ["guide", "📖", "图鉴", "Guide"]] as const).map(([k, icon, label, labelEn]) => (
-<button key={k} type="button" aria-label={en ? labelEn : label} onClick={() => { setAsideTab(k); setAsideOpen(true); }} className="rail-btn"><span aria-hidden="true" className="text-[19px] leading-none">{icon}</span><span className="rail-label">{en ? labelEn : label}</span></button>
-))}
-</div>
-)}
+
 {/* 地点卡：选中的地方显示在底部中间，常用动作一步到位；「全部」再打开完整面板 */}
 {!asideOpen && !scenicMoment && !placeCardOff && !musicOpen && !walking && !carriage && (() => { const vs = VENUE_SETS[selLoc.type]; const sm = momentsAt(s.cityKey, selLoc.id, selLoc.name)[0]; return (
 <div className="place-card absolute bottom-3 left-1/2 z-20 w-[min(380px,calc(100%-150px))] -translate-x-1/2">
@@ -5631,6 +5639,11 @@ return (
 <button type="button" onClick={finishScenic} className="pointer-events-auto absolute right-3 top-[calc(9vh+10px)] rounded-full bg-black/55 px-3 py-1.5 text-xs font-black text-white">✕ {en ? "End" : "结束"}</button>
 </div> ); })()}
 {liveOpen && phase === "game" && <LivehouseModal en={en} token={accountToken()} venue={en ? trText(locById(currentLoc).short) : locById(currentLoc).short} soundIsOn={soundIsOn} enableSound={() => { setSoundIsOn(true); setSound(true); }} onClose={() => setLiveOpen(false)} toast={showToast} openAccount={() => { setLiveOpen(false); setAccountOpen(true); }} openStore={() => { setLiveOpen(false); setStoreOpen(true); }} />}
+{musicOpen && <><button type="button" aria-label="关闭" onClick={() => setMusicOpen(false)} className="fixed inset-0 z-[58] cursor-default" /><div className="menu-pop fixed bottom-20 right-3 z-[59] w-64 p-1.5">
+<p className="px-2.5 py-1.5 text-[11px] font-black text-[var(--dim)]">🎵 {en ? "Background music" : "背景音乐"}</p>
+{MUSIC_PICKS.map((m) => <button key={m.id} type="button" onClick={() => { setMusicPick(m.id); setMusicSel(m.id); if (!soundIsOn) { setSoundIsOn(true); setSound(true); } setMusicOpen(false); showToast(en ? `🎵 Music: ${m.en}` : `🎵 背景音乐：${m.zh}`); }} className={`menu-item ${musicSel === m.id ? "bg-[var(--surface2)]" : ""}`}>{m.emoji} {en ? m.en : m.zh}{musicSel === m.id && <span className="ml-auto">✓</span>}</button>)}
+<button type="button" onClick={() => { setMusicOpen(false); setLiveOpen(true); }} className="menu-item">🎧 {en ? "Musicians' originals (Livehouse)" : "听音乐人的原创（Livehouse）"}</button>
+</div></>}
 {venue3d && phase === "game" && (
 <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/70 p-3 sm:items-center" role="dialog" aria-label={venue3d.name}>
 <div className="rise max-h-[94vh] w-full max-w-lg overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)]">
