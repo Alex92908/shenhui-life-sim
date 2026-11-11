@@ -9,12 +9,12 @@
 // furniture, props, signage, warm cinematic light and soft shadows, and the
 // camera eases in over each step while the actor's motion is eased (walk
 // strides follow an ease-in-out, so nobody teleports or moonwalks).
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MutableRefObject, type PointerEvent as ReactPointerEvent } from "react";
 import { SCENE_PHOTOS } from "./experience";
 import * as THREE from "three";
 import { makePostFx, type PostFx } from "./postfx";
 
-export type LifeSet = "flat" | "station" | "metro" | "train" | "bus" | "taxi" | "drive" | "concourse" | "platform" | "office" | "restaurant" | "market" | "mall" | "kitchen" | "bedroom" | "bathroom" | "gym" | "park" | "home" | "cruise" | "wheel" | "aquarium" | "turtle" | "coaster" | "safari" | "hike" | "beach" | "cablecar" | "club" | "clinic" | "classroom";
+export type LifeSet = "flat" | "station" | "metro" | "train" | "bus" | "taxi" | "drive" | "concourse" | "platform" | "office" | "restaurant" | "market" | "electronics" | "mall" | "kitchen" | "bedroom" | "bathroom" | "gym" | "park" | "home" | "cruise" | "wheel" | "aquarium" | "turtle" | "coaster" | "safari" | "hike" | "beach" | "cablecar" | "club" | "clinic" | "classroom";
 export type LifePose = "walk" | "idle" | "sit" | "drive" | "type" | "cook" | "eat" | "sleep" | "wash" | "lift" | "stretch" | "talk" | "dance" | "sing";
 
 interface Props {
@@ -36,7 +36,82 @@ interface Props {
   sign?: { text: string; emoji?: string; color?: number };
   seed?: number;
   /** someone who walks up and talks with the player (shop clerk, doctor, friend) */
-  partner?: { shirt: number; pants: number };
+  partner?: { shirt: number; pants: number; accessory?: string };
+  /** kids already in the flat, drawn smaller and left standing */
+  household?: { shirt: number; pants: number }[];
+  /** bag / cap / tie, the same piece the map draws, so the person matches */
+  accessory?: string;
+  /** venue interiors: joystick to walk, drag to look, a button to talk. Off for acted beats. */
+  roam?: boolean;
+  /** English labels on the in-world interact button */
+  en?: boolean;
+  onSpot?: (id: string) => void;
+  /** flat: tap a bed, sofa or stove in the room */
+  onFurn?: (id: string) => void;
+}
+
+/** where you can walk up and talk inside a venue. x/z sit on the open floor in front of the counter. */
+const ROAM_SPOTS: Partial<Record<LifeSet, { id: string; emoji: string; zh: string; en: string; x: number; z: number }[]>> = {
+  mall: [{ id: "try", emoji: "👗", zh: "试衣服", en: "Try it on", x: 2.15, z: -0.15 }, { id: "milktea", emoji: "🧋", zh: "买奶茶", en: "Bubble tea", x: -3.6, z: 0.85 }, { id: "toilet", emoji: "🚻", zh: "去洗手间", en: "Restroom", x: -1.1, z: 1.35 }],
+  market: [{ id: "haggle", emoji: "🥬", zh: "跟阿姨讲价", en: "Haggle", x: 0.15, z: -0.2 }, { id: "fish", emoji: "🐟", zh: "挑条鱼", en: "Pick a fish", x: -4.1, z: -0.15 }],
+  electronics: [{ id: "check", emoji: "📱", zh: "验二手手机", en: "Check a phone", x: -0.5, z: -0.2 }, { id: "parts", emoji: "🔌", zh: "配装配件", en: "Pick parts", x: 1.9, z: -0.1 }],
+  restaurant: [{ id: "order", emoji: "🍚", zh: "点猪脚饭", en: "Order rice", x: 0.55, z: 1.05 }, { id: "chat", emoji: "💬", zh: "跟老板娘聊", en: "Chat", x: 3.7, z: 0.35 }, { id: "share", emoji: "🪑", zh: "拼桌", en: "Share a table", x: -2.3, z: 0.55 }, { id: "toilet", emoji: "🚻", zh: "去洗手间", en: "Restroom", x: 4.6, z: 1.2 }],
+  office: [{ id: "coffee", emoji: "☕", zh: "茶水间聊天", en: "Pantry chat", x: 3.3, z: 0.95 }, { id: "ask", emoji: "🙋", zh: "请教前辈", en: "Ask a senior", x: -1.4, z: 1.15 }, { id: "toilet", emoji: "🚻", zh: "去洗手间", en: "Restroom", x: 4.8, z: 1.15 }],
+  flat: [{ id: "bed", emoji: "🛏️", zh: "上床躺一会儿", en: "Lie down", x: -2.4, z: -0.85 }, { id: "sit", emoji: "🛋️", zh: "在沙发坐下", en: "Sit", x: 0.2, z: 0.55 }, { id: "cook", emoji: "🍳", zh: "用灶台做饭", en: "Cook", x: 3.1, z: -0.15 }, { id: "wash", emoji: "🚿", zh: "洗一下", en: "Wash", x: 4.5, z: 1.05 }],
+  gym: [{ id: "coach", emoji: "🏋️", zh: "让教练看动作", en: "Check form", x: 0.15, z: 0.55 }, { id: "spot", emoji: "🤝", zh: "帮人保护", en: "Spot a set", x: 2.5, z: 0.35 }],
+  club: [{ id: "sing", emoji: "🎤", zh: "上台唱一首", en: "Sing", x: 0.5, z: 0.15 }, { id: "dance", emoji: "🕺", zh: "挤到台前跳", en: "Dance", x: -2.1, z: 0.75 }, { id: "drink", emoji: "🍹", zh: "吧台点一杯", en: "Get a drink", x: -4.5, z: 0.4 }, { id: "friend", emoji: "🙌", zh: "聊乐队", en: "Talk music", x: 3.3, z: 0.8 }, { id: "live", emoji: "🎧", zh: "听原创", en: "Live music", x: 1.7, z: 0.35 }],
+  clinic: [{ id: "see", emoji: "🩺", zh: "挂号看病", en: "See a doctor", x: 2.15, z: 0.25 }, { id: "nurse", emoji: "💉", zh: "问医保", en: "Ask insurance", x: -1.6, z: 0.55 }],
+  classroom: [{ id: "class", emoji: "📖", zh: "听一节课", en: "Sit in", x: -0.6, z: 1.15 }, { id: "classmate", emoji: "🤝", zh: "加个微信", en: "Swap WeChat", x: 2.1, z: 1.2 }],
+  bedroom: [{ id: "desk", emoji: "🛎️", zh: "问前台", en: "Ask the desk", x: 0.2, z: 0.85 }],
+  concourse: [{ id: "toilet", emoji: "🚻", zh: "去洗手间", en: "Restroom", x: 4.4, z: 1.05 }, { id: "wait", emoji: "🪑", zh: "坐一会儿", en: "Sit", x: 3.1, z: 0.55 }, { id: "water", emoji: "🧴", zh: "买瓶水", en: "Buy water", x: -3.5, z: 0.75 }],
+  park: [{ id: "bench", emoji: "🪑", zh: "坐长椅", en: "Bench", x: 2.2, z: 0.15 }, { id: "stroll", emoji: "🚶", zh: "沿园路走", en: "Walk the path", x: -2.2, z: 0.65 }, { id: "photo", emoji: "📸", zh: "拍一张", en: "Photo", x: 0.2, z: 1.1 }],
+  beach: [{ id: "waves", emoji: "🌊", zh: "踩进浪里", en: "Into the wash", x: 0.3, z: 0.8 }, { id: "shade", emoji: "⛱️", zh: "伞下歇着", en: "Shade", x: -2.5, z: 0.5 }],
+  hike: [{ id: "climb", emoji: "🥾", zh: "再往上走", en: "Climb on", x: 0.1, z: 0.65 }, { id: "view", emoji: "🏙️", zh: "看一眼城", en: "Look out", x: 2.5, z: 1.0 }],
+};
+
+/** Left-stick input for venue roam. x is strafe right, y is forward, each −1…1. */
+function MoveStick({ stick }: { stick: MutableRefObject<{ x: number; y: number }> }) {
+  const [k, setK] = useState({ x: 0, y: 0 });
+  const R = 36;
+  const place = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const b = e.currentTarget.getBoundingClientRect();
+    let x = e.clientX - (b.left + b.width / 2);
+    let y = e.clientY - (b.top + b.height / 2);
+    const m = Math.hypot(x, y);
+    if (m > R) { x = (x / m) * R; y = (y / m) * R; }
+    setK({ x, y });
+    stick.current.x = x / R;
+    stick.current.y = -y / R;
+  };
+  const down = (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    place(e);
+  };
+  const move = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+    place(e);
+  };
+  const up = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+    setK({ x: 0, y: 0 });
+    stick.current.x = 0;
+    stick.current.y = 0;
+  };
+  return (
+    <div
+      aria-label="移动摇杆"
+      onPointerDown={down}
+      onPointerMove={move}
+      onPointerUp={up}
+      onPointerCancel={up}
+      className="absolute bottom-3 left-3 z-20 h-[112px] w-[112px] touch-none select-none"
+    >
+      <div className="absolute inset-0 rounded-full border border-white/45 bg-black/30 shadow-[inset_0_0_0_12px_rgba(255,255,255,0.07)] backdrop-blur-[2px]" />
+      <div className="pointer-events-none absolute left-1/2 top-1/2 h-[54px] w-[54px] rounded-full border border-white/80 bg-white/88 shadow-[0_6px_16px_rgba(0,0,0,0.35)]" style={{ transform: `translate(calc(-50% + ${k.x}px), calc(-50% + ${k.y}px))` }} />
+    </div>
+  );
 }
 
 /** where furniture can go in the 3D home: x, z, facing — kept clear of the spot the player stands on */
@@ -291,6 +366,24 @@ interface Figure {
   armL: THREE.Group; armR: THREE.Group; head: THREE.Mesh; torso: THREE.Mesh;
 }
 
+function wearAccessory(g: THREE.Group, id: string | undefined) {
+  if (!id || id === "none") return;
+  const kind = id === "helmet" ? "cap" : id === "apron" || id === "vest" ? "bag" : id;
+  const mat = new THREE.MeshStandardMaterial({ color: kind === "cap" ? 0x24304d : kind === "tie" ? 0x8c2b2e : 0x54432e, roughness: 0.8 });
+  if (kind === "cap") {
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.14, 0.5), mat);
+    cap.position.y = 2.14; g.add(cap);
+    const brim = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.05, 0.3), mat);
+    brim.position.set(0, 2.08, 0.36); g.add(brim);
+  } else if (kind === "tie") {
+    const tie = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.44, 0.03), mat);
+    tie.position.set(0, 1.32, 0.2); g.add(tie);
+  } else if (kind === "bag") {
+    const bag = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.44, 0.16), mat);
+    bag.position.set(0.42, 1.18, -0.16); g.add(bag);
+  }
+}
+
 function makeFigure(mat: (c: number, r?: number) => THREE.MeshStandardMaterial, shirt: number, pants: number, skin = 0xf2c79b): Figure {
   // Detailed figure (PC high-end pass — no longer plain low-poly blocks):
   // rounded high-segment head with ears and a jaw taper, a neck, layered
@@ -380,6 +473,10 @@ export function LifeStage3D(p: Props) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const propsRef = useRef(p);
   propsRef.current = p;
+  const stickRef = useRef({ x: 0, y: 0 });
+  const [nearId, setNearId] = useState("");
+  const setNearRef = useRef(setNearId);
+  setNearRef.current = setNearId;
   const [glFailed, setGlFailed] = useState(false);
 
   useEffect(() => {
@@ -501,7 +598,7 @@ export function LifeStage3D(p: Props) {
     };
 
     /* ---- floor ---- */
-    const floorKind = setKind === "bathroom" || setKind === "kitchen" || setKind === "concourse" ? "tile" : setKind === "station" || setKind === "platform" ? "concrete" : setKind === "metro" || setKind === "train" || setKind === "bus" || setKind === "taxi" || setKind === "drive" ? "carriage" : setKind === "park" ? "grass" : setKind === "mall" ? "tile" : "wood";
+    const floorKind = setKind === "bathroom" || setKind === "kitchen" || setKind === "concourse" ? "tile" : setKind === "station" || setKind === "platform" ? "concrete" : setKind === "metro" || setKind === "train" || setKind === "bus" || setKind === "taxi" || setKind === "drive" ? "carriage" : setKind === "park" ? "grass" : setKind === "mall" || setKind === "electronics" ? "tile" : "wood";
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(22, 14), new THREE.MeshStandardMaterial({ map: floorTex(floorKind), roughness: 0.95 }));
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
@@ -1056,7 +1153,7 @@ export function LifeStage3D(p: Props) {
       // the player's own furniture, wherever they put it (see below)
       for (const it of furn ?? []) {
         const sl = FURN_SLOTS[it.slot]; if (!sl) continue;
-        const g = new THREE.Group(); g.position.set(sl.x, 0, sl.z); g.rotation.y = sl.ry; scene.add(g);
+        const g = new THREE.Group(); g.position.set(sl.x, 0, sl.z); g.rotation.y = sl.ry; g.userData.furnUse = it.id; scene.add(g);
         const gb = (w: number, h: number, d: number, c: number, x: number, y: number, z: number, rough = 0.8, extra: Partial<THREE.MeshStandardMaterialParameters> = {}) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(c, rough, extra)); m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; g.add(m); return m; };
         const gc = (r: number, h: number, c: number, x: number, y: number, z: number) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 18), mat(c, 0.6)); m.position.set(x, y, z); m.castShadow = true; g.add(m); return m; };
         const c = it.color; const dark = new THREE.Color(c).multiplyScalar(0.8).getHex();
@@ -1096,7 +1193,17 @@ export function LifeStage3D(p: Props) {
         } else if (it.id === "bathtub") {
           gb(1.8, 0.6, 0.85, c, 0, 0.3, 0, 0.2); gb(1.6, 0.05, 0.65, 0x7dd3fc, 0, 0.55, 0, 0.1, { transparent: true, opacity: 0.8 });
         } else { gb(0.8, 0.8, 0.8, c, 0, 0.4, 0); }
+        g.traverse((o) => { o.userData.furnUse = it.id; });
       }
+      /* the room's own bed, sofa and stove — tappable even before a catalogue piece is placed */
+      const tap = (id: string, x: number, y: number, z: number, w: number, h: number, d: number) => {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+        m.position.set(x, y, z); m.userData.furnUse = id; scene.add(m);
+      };
+      if (tr === 0) tap("bed-double", -3.5, 1.3, -2.3, 4.4, 3.0, 2.8);
+      else if (tr === 1) { tap("bed-double", -3.6, 0.7, -2.9, 2.4, 1.0, 1.4); tap("desk", 0.6, 1.1, -3.2, 1.7, 1.0, 0.8); }
+      else if (tr === 2) tap("sofa-fabric", -2.6, 0.8, -2.6, 3.2, 1.2, 1.2);
+      else { tap("sofa-fabric", -3.2, 0.7, -1.6, 4.4, 1.2, 1.4); tap("kitchen-cabinet", 3.4, 0.8, -0.6, 2.9, 1.3, 1.1); }
     } else if (setKind === "bedroom") {
       roomShell(0xf3e6cf, 0xc9a877, { windowX: 3.9, windowW: 1.9 });
       // detail pass: glowing bedside lamp, a woven rug, slippers by the bed
@@ -1277,6 +1384,36 @@ export function LifeStage3D(p: Props) {
       awn2.rotation.x = 0.38;
       box(2.2, 0.02, 1.1, 0xb3552e, 1.8, 0.012, 0.6, 1);
       box(1.6, 0.02, 0.9, 0x3f6d8e, -2.6, 0.012, 0.9, 1);
+    } else if (setKind === "electronics") {
+      // Huaqiangbei: one-metre counters of phones and parts, not a wet market
+      box(20, 5.5, 0.3, 0x1c2430, 0, 2.75, -3.9, 0.8);
+      box(5.2, 0.85, 0.08, 0x0b3a4a, -2.2, 3.55, -3.7, 0.5);
+      plane(5.0, 0.76, boardTex("#0b3a4a", [{ t: "华 强 北", s: 64, c: "#7dd3fc" }, { t: "手机 · 配件 · 当场验机", s: 30, c: "#e0f2fe" }]), -2.2, 3.55, -3.65);
+      box(3.4, 0.7, 0.08, 0x111827, 3.1, 3.4, -3.7, 0.5);
+      plane(3.2, 0.6, boardTex("#111827", [{ t: "二手手机  可议价", s: 40, c: "#fde68a" }]), 3.1, 3.4, -3.65);
+      box(5.4, 0.9, 1.25, 0x2a3340, 0, 0.45, -1.75, 0.7);
+      box(5.5, 0.06, 1.4, 0x9fd6ea, 0, 0.93, -1.75, 0.15, { transparent: true, opacity: 0.45, metalness: 0.6 });
+      const phones = [0x111827, 0xe8eef2, 0x1d4ed8, 0x111827, 0xf8fafc, 0x0f172a];
+      for (let i = 0; i < phones.length; i++) {
+        const px = -2.1 + (i % 3) * 0.7;
+        const pz = -2.05 + Math.floor(i / 3) * 0.55;
+        box(0.28, 0.02, 0.5, phones[i]!, px, 0.98, pz, 0.35, { metalness: 0.4 });
+        box(0.22, 0.012, 0.38, 0x38bdf8, px, 1.0, pz, 0.2, { emissive: 0x0ea5e9, emissiveIntensity: night ? 0.7 : 0.25 });
+      }
+      for (let i = 0; i < 4; i++) box(0.42, 0.16, 0.32, i % 2 ? 0xf59e0b : 0x334155, 1.55 + (i % 2) * 0.5, 1.05, -2.0 + Math.floor(i / 2) * 0.45, 0.6);
+      cyl(0.03, 0.03, 0.7, 0x94a3b8, -2.35, 1.7, -1.35, 0.4, { metalness: 0.7 });
+      cyl(0.16, 0.12, 0.05, 0xe2e8f0, -2.35, 1.32, -1.35, 0.3, { metalness: 0.6 });
+      extraFigure(0.4, 0, -2.7, 0, 0x0e7490, 0x1f2937);
+      box(0.7, 0.45, 0.04, 0x0f172a, 0.4, 1.05, -2.35, 0.5);
+      for (let i = 0; i < 8; i++) {
+        const lx = -2.4 + i * 0.7;
+        const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 6), mat(0xbae6fd, 0.3, { emissive: 0x7dd3fc, emissiveIntensity: night ? 1.6 : 0.8 }));
+        bulb.position.set(lx, 3.15, -1.15);
+        scene.add(bulb);
+        addGlow(lx, 3.15, -1.15, 0.45, 0x7dd3fc, 0.28);
+      }
+      box(2.4, 0.8, 1.05, 0x243044, -4.7, 0.4, -1.9, 0.7);
+      box(2.5, 0.05, 1.15, 0x67e8f9, -4.7, 0.82, -1.9, 0.2, { emissive: 0x22d3ee, emissiveIntensity: 0.35 });
     } else if (setKind === "mall") {
       box(22, 8, 0.3, 0xe9e2d4, 0, 4, -3.75, 1);
       // storefront: glowing interior behind glass panels + sign
@@ -1630,9 +1767,30 @@ export function LifeStage3D(p: Props) {
       if (rnd() < 0.6) { const c = cols[Math.floor(rnd() * cols.length)]!; box(1.0, 1.3, 0.05, c, -6.9 + 0.2, 2.6, -1.2, 0.8).rotation.y = Math.PI / 2; }
     }
     let talker: Figure | null = null;
-    if (partner) {
-      talker = extraFigure(1.05, 0, 0.6, -Math.PI / 2, partner.shirt, partner.pants);
-      bobbers.splice(bobbers.findIndex((b) => b.g === talker!.g), 1);
+    if (setKind === "flat") {
+      const tr = Math.max(0, Math.min(3, tier ?? 0));
+      const seat = [
+        { x: -2.95, y: -0.12, z: -2.45, ry: 0.15 },
+        { x: -2.7, y: -0.16, z: -2.7, ry: 0.25 },
+        { x: -1.7, y: -0.08, z: -2.55, ry: 0.12 },
+        { x: -2.0, y: -0.2, z: -1.45, ry: 0.08 },
+      ][tr] ?? { x: -2.95, y: -0.12, z: -2.45, ry: 0.15 };
+      if (partner) {
+        const seated = extraFigure(seat.x, seat.y, seat.z, seat.ry, partner.shirt, partner.pants, true);
+        wearAccessory(seated.g, partner.accessory);
+        bobbers.splice(bobbers.findIndex((b) => b.g === seated.g), 1);
+        talker = seated;
+      }
+      (propsRef.current.household ?? []).slice(0, 3).forEach((k, i) => {
+        const f = extraFigure(seat.x + 0.9 + i * 0.62, seat.y, seat.z + 0.15, seat.ry + 0.15, k.shirt, k.pants, true);
+        f.g.scale.setScalar(0.62);
+        bobbers.splice(bobbers.findIndex((b) => b.g === f.g), 1);
+      });
+    } else if (partner) {
+      const stood = extraFigure(1.05, 0, 0.6, -Math.PI / 2, partner.shirt, partner.pants);
+      wearAccessory(stood.g, partner.accessory);
+      bobbers.splice(bobbers.findIndex((b) => b.g === stood.g), 1);
+      talker = stood;
     }
     if (setKind === "cruise") {
       // 东江夜游: a lantern-lit sightseeing boat gliding at night — the far
@@ -1868,6 +2026,7 @@ export function LifeStage3D(p: Props) {
 
     /* ---- the actor ---- */
     const actor = makeFigure(mat, shirt, pants);
+    wearAccessory(actor.g, propsRef.current.accessory);
     const face = faceSprite(emoji);
     face.position.y = 2.42;
     actor.g.add(face);
@@ -1984,6 +2143,120 @@ export function LifeStage3D(p: Props) {
       });
     }
 
+    /* venue roam, Peacekeeper-style: left stick walks relative to the camera,
+       dragging the view orbits, and a button appears when you reach a spot */
+    const roaming = !!propsRef.current.roam && pose === "idle";
+    const pinSprites: { sp: THREE.Sprite; ring: THREE.Object3D; x: number; z: number; id: string }[] = [];
+    const nav = { x: 0.15, z: 1.15, tx: 0.15, tz: 1.15, yaw: Math.PI, dist: 0 };
+    let camYaw = 0;
+    let camPitch = 0.18;
+    let lookHold = 0;
+    let roamT = -1;
+    let lastNear = "";
+    let detachRoam = () => {};
+    const clampWalk = (x: number, z: number) => ({
+      x: Math.min(5.6, Math.max(-5.6, x)),
+      z: Math.min(2.15, Math.max(-1.15, z)),
+    });
+    if (roaming) {
+      renderer.domElement.style.touchAction = "none";
+      renderer.domElement.style.cursor = "crosshair";
+      for (const s of ROAM_SPOTS[setKind] ?? []) {
+        const sp = faceSprite(s.emoji);
+        sp.scale.set(0.92, 0.92, 1);
+        sp.position.set(s.x, 2.25, s.z);
+        scene.add(sp);
+        const ring = new THREE.Mesh(new THREE.RingGeometry(0.22, 0.34, 22), new THREE.MeshBasicMaterial({ color: 0xf5b942, side: THREE.DoubleSide, transparent: true, opacity: 0.9 }));
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.set(s.x, 0.03, s.z);
+        ring.castShadow = false;
+        scene.add(ring);
+        const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1.7, 6), new THREE.MeshBasicMaterial({ color: 0xf5b942, transparent: true, opacity: 0.28 }));
+        beam.position.set(s.x, 0.85, s.z);
+        scene.add(beam);
+        pinSprites.push({ sp, ring, x: s.x, z: s.z, id: s.id });
+      }
+      const raycaster = new THREE.Raycaster();
+      const ndc = new THREE.Vector2();
+      let lookPtr: number | null = null;
+      let downX = 0, downY = 0, lastX = 0, lastY = 0, moved = false;
+      const onDown = (e: PointerEvent) => {
+        if (e.button !== 0) return;
+        lookPtr = e.pointerId;
+        downX = lastX = e.clientX;
+        downY = lastY = e.clientY;
+        moved = false;
+      };
+      const onMove = (e: PointerEvent) => {
+        if (e.pointerId !== lookPtr) return;
+        const dx = e.clientX - lastX, dy = e.clientY - lastY;
+        lastX = e.clientX; lastY = e.clientY;
+        if (Math.hypot(e.clientX - downX, e.clientY - downY) > 6) moved = true;
+        if (!moved) return;
+        camYaw -= dx * 0.0075;
+        camPitch = Math.min(0.7, Math.max(-0.38, camPitch + dy * 0.0045));
+        lookHold = 1.5;
+      };
+      const walkTo = (e: PointerEvent) => {
+        const rect = renderer.domElement.getBoundingClientRect();
+        const lx = e.clientX - rect.left, ly = e.clientY - rect.top;
+        const v = new THREE.Vector3();
+        let best: (typeof pinSprites)[number] | null = null, bestD = 52;
+        for (const pin of pinSprites) {
+          v.set(pin.x, 2.0, pin.z).project(camera);
+          if (v.z > 1) continue;
+          const d = Math.hypot((v.x * 0.5 + 0.5) * rect.width - lx, (-v.y * 0.5 + 0.5) * rect.height - ly);
+          if (d < bestD) { bestD = d; best = pin; }
+        }
+        if (best) { nav.tx = best.x; nav.tz = best.z; return; }
+        ndc.set((lx / rect.width) * 2 - 1, -(ly / rect.height) * 2 + 1);
+        raycaster.setFromCamera(ndc, camera);
+        const hit = raycaster.intersectObject(floor, false)[0];
+        if (!hit) return;
+        const c = clampWalk(hit.point.x, hit.point.z);
+        nav.tx = c.x; nav.tz = c.z;
+      };
+      const onUp = (e: PointerEvent) => { if (e.pointerId !== lookPtr) return; lookPtr = null; if (!moved) walkTo(e); };
+      renderer.domElement.addEventListener("pointerdown", onDown);
+      renderer.domElement.addEventListener("pointermove", onMove);
+      renderer.domElement.addEventListener("pointerup", onUp);
+      renderer.domElement.addEventListener("pointercancel", onUp);
+      detachRoam = () => {
+        renderer.domElement.removeEventListener("pointerdown", onDown);
+        renderer.domElement.removeEventListener("pointermove", onMove);
+        renderer.domElement.removeEventListener("pointerup", onUp);
+        renderer.domElement.removeEventListener("pointercancel", onUp);
+        stickRef.current.x = 0; stickRef.current.y = 0;
+        setNearRef.current("");
+      };
+    }
+
+    let detachFurn = () => {};
+    if (setKind === "flat") {
+      renderer.domElement.style.cursor = "pointer";
+      const raycaster = new THREE.Raycaster();
+      const ndc = new THREE.Vector2();
+      const onClick = (e: MouseEvent) => {
+        if (e.button !== 0) return;
+        const rect = renderer.domElement.getBoundingClientRect();
+        if (rect.width < 2 || rect.height < 2) return;
+        ndc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        ndc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(ndc, camera);
+        const hits = raycaster.intersectObjects(scene.children, true);
+        for (const h of hits) {
+          let o: THREE.Object3D | null = h.object;
+          while (o) {
+            const id = o.userData.furnUse;
+            if (typeof id === "string" && id) { propsRef.current.onFurn?.(id); return; }
+            o = o.parent;
+          }
+        }
+      };
+      renderer.domElement.addEventListener("click", onClick);
+      detachFurn = () => { renderer.domElement.removeEventListener("click", onClick); };
+    }
+
     let raf = 0;
     const start = performance.now();
     const frame = (now: number) => {
@@ -1996,8 +2269,18 @@ export function LifeStage3D(p: Props) {
       const dist = startDist - push * 1.5;
       const sway = Math.sin(t * 0.35) * 0.45;
       const vib = setKind === "metro" || setKind === "station" || setKind === "train" || setKind === "bus" || setKind === "taxi" || setKind === "drive" ? Math.sin(t * 34) * 0.008 : 0;
-      camera.position.set(sway, 3.15 - push * 0.55 + vib, dist);
-      camera.lookAt(look[0], look[1], look[2]);
+      if (setKind === "flat" && (pose === "sit" || pose === "sleep")) {
+        const tr = Math.max(0, Math.min(3, propsRef.current.tier ?? 1));
+        const focus = (pose === "sleep"
+          ? [[-3.2, 0.9, -2.3], [-3.4, 0.85, -2.7], [-2.3, 0.8, -2.3], [-2.4, 0.75, -1.35]]
+          : [[-3.5, 0.9, -2.4], [-3.4, 0.85, -2.65], [-2.4, 0.85, -2.5], [-2.7, 0.75, -1.45]])[tr] ?? [-3.2, 0.9, -2.3];
+        const fx = focus[0] ?? -3.2, fy = focus[1] ?? 0.9, fz = focus[2] ?? -2.3;
+        camera.position.set(fx + 2.6, 2.05, fz + 3.2);
+        camera.lookAt(fx, fy, fz);
+      } else {
+        camera.position.set(sway, 3.15 - push * 0.55 + vib, dist);
+        camera.lookAt(look[0], look[1], look[2]);
+      }
 
       // reset actor to a neutral stance, then apply the pose
       const A = actor;
@@ -2009,7 +2292,77 @@ export function LifeStage3D(p: Props) {
       A.torso.scale.set(1, 1, 1);
       A.head.position.y = 1.86;
 
-      if (pose === "walk") {
+      if (roaming) {
+        const dt = roamT < 0 ? 0 : Math.min(0.05, Math.max(0, t - roamT));
+        roamT = t;
+        const sx = stickRef.current.x, sy = stickRef.current.y;
+        const mag = Math.min(1, Math.hypot(sx, sy));
+        const face = (mx: number, mz: number) => {
+          let turn = Math.atan2(mx, mz) - nav.yaw;
+          while (turn > Math.PI) turn -= Math.PI * 2;
+          while (turn < -Math.PI) turn += Math.PI * 2;
+          nav.yaw += turn * (1 - Math.exp(-12 * Math.max(dt, 0.016)));
+        };
+        if (mag > 0.14 && dt > 0) {
+          const fx = -Math.sin(camYaw), fz = -Math.cos(camYaw);
+          const rx = Math.cos(camYaw), rz = -Math.sin(camYaw);
+          let mx = rx * sx + fx * sy, mz = rz * sx + fz * sy;
+          const ml = Math.hypot(mx, mz) || 1;
+          mx /= ml; mz /= ml;
+          const sprint = mag > 0.9;
+          const step = (sprint ? 2.45 : 1.05 + mag * 0.85) * dt;
+          const c = clampWalk(nav.x + mx * step, nav.z + mz * step);
+          nav.x = c.x; nav.z = c.z; nav.tx = c.x; nav.tz = c.z; nav.dist += step;
+          face(mx, mz);
+          const swing = Math.sin(nav.dist * (sprint ? 2.55 : 2.15)) * (sprint ? 0.78 : 0.62);
+          A.g.position.set(nav.x, Math.abs(Math.cos(nav.dist * 2.15)) * (sprint ? 0.09 : 0.06), nav.z);
+          A.g.rotation.y = nav.yaw;
+          A.g.rotation.x = sprint ? 0.1 : 0.045;
+          A.legL.rotation.x = swing; A.legR.rotation.x = -swing;
+          A.armL.rotation.x = -swing * 0.75; A.armR.rotation.x = swing * 0.75;
+        } else {
+          const dx = nav.tx - nav.x, dz = nav.tz - nav.z;
+          const left = Math.hypot(dx, dz);
+          if (left > 0.08 && dt > 0) {
+            const step = Math.min(1.35 * dt, left);
+            const c = clampWalk(nav.x + (dx / left) * step, nav.z + (dz / left) * step);
+            nav.x = c.x; nav.z = c.z; nav.dist += step;
+            face(dx, dz);
+            const swing = Math.sin(nav.dist * 2.15) * 0.62;
+            A.g.position.set(nav.x, Math.abs(Math.cos(nav.dist * 2.15)) * 0.06, nav.z);
+            A.g.rotation.y = nav.yaw;
+            A.g.rotation.x = 0.04;
+            A.legL.rotation.x = swing; A.legR.rotation.x = -swing;
+            A.armL.rotation.x = -swing * 0.75; A.armR.rotation.x = swing * 0.75;
+          } else {
+            A.g.position.set(nav.x, Math.sin(t * 1.6) * 0.015, nav.z);
+            A.g.rotation.y = nav.yaw;
+            const swayA = Math.sin(t * 1.6) * 0.045;
+            A.armL.rotation.x = swayA; A.armR.rotation.x = -swayA;
+            A.head.rotation.y = Math.sin(t * 0.45) * 0.18;
+          }
+        }
+        let best = "", bestD = 1.15;
+        for (const pin of pinSprites) {
+          const d = Math.hypot(pin.x - nav.x, pin.z - nav.z);
+          const hot = d < 1.15;
+          pin.sp.position.y = 2.25 + Math.sin(t * 2.2 + pin.x) * 0.08;
+          pin.ring.scale.setScalar(hot ? 1.28 + Math.sin(t * 6) * 0.08 : 1);
+          if (d < bestD) { bestD = d; best = pin.id; }
+        }
+        if (best !== lastNear) { lastNear = best; setNearRef.current(best); }
+        if (lookHold > 0) lookHold = Math.max(0, lookHold - dt);
+        else if (mag > 0.14) {
+          const behind = nav.yaw + Math.PI;
+          let gap = behind - camYaw;
+          while (gap > Math.PI) gap -= Math.PI * 2;
+          while (gap < -Math.PI) gap += Math.PI * 2;
+          camYaw += gap * (1 - Math.exp(-2.6 * Math.max(dt, 0.016)));
+        }
+        const hd = 4.55;
+        camera.position.set(nav.x + Math.sin(camYaw) * hd, 1.72 + camPitch * 1.45, nav.z + Math.cos(camYaw) * hd);
+        camera.lookAt(nav.x - Math.sin(camYaw) * 0.55, 1.22, nav.z - Math.cos(camYaw) * 0.55);
+      } else if (pose === "walk") {
         // one eased crossing per step: strides are tied to distance covered,
         // so the feet slow down exactly when the body does — no sliding.
         const dur = 2.1;
@@ -2053,7 +2406,11 @@ export function LifeStage3D(p: Props) {
         A.head.position.y = 1.86 - bite * 0.05;
         A.head.rotation.x = bite * 0.12;
       } else if (pose === "sleep") {
-        A.g.position.set(-1.1, 0.68, -1.05);
+        if (setKind === "flat") {
+          const tr = Math.max(0, Math.min(3, propsRef.current.tier ?? 1));
+          const bed = [[-3.3, 0.85, -2.35], [-3.5, 0.72, -2.75], [-2.4, 0.55, -2.3], [-2.6, 0.5, -1.35]][tr] ?? [-3.3, 0.85, -2.35];
+          A.g.position.set(bed[0] ?? -3.3, bed[1] ?? 0.85, bed[2] ?? -2.35);
+        } else A.g.position.set(-1.1, 0.68, -1.05);
         A.g.rotation.x = -Math.PI / 2 + 0.1;
         A.g.rotation.z = 0.04;
         const br = Math.sin(t * 1.4) * 0.03;
@@ -2105,7 +2462,17 @@ export function LifeStage3D(p: Props) {
         A.g.position.y = -liftPh * 0.06;
       } else if (pose === "sit") {
         // seated on the carriage bench, phone in hand, city rushing past
-        if (setKind === "taxi") A.g.position.set(0.55, -0.3 + Math.sin(t * 1.8) * 0.008, -1.08);
+        if (setKind === "flat") {
+          const tr = Math.max(0, Math.min(3, propsRef.current.tier ?? 1));
+          const seat = [
+            { x: -4.05, y: -0.12, z: -2.45, ry: 0.15 },
+            { x: -4.15, y: -0.16, z: -2.7, ry: 0.25 },
+            { x: -3.15, y: -0.08, z: -2.55, ry: 0.12 },
+            { x: -3.5, y: -0.2, z: -1.45, ry: 0.08 },
+          ][tr]!;
+          A.g.position.set(seat.x, seat.y + Math.sin(t * 1.4) * 0.008, seat.z);
+          A.g.rotation.y = seat.ry;
+        } else if (setKind === "taxi") A.g.position.set(0.55, -0.3 + Math.sin(t * 1.8) * 0.008, -1.08);
         else if (setKind === "cruise" || setKind === "wheel" || setKind === "safari" || setKind === "cablecar") A.g.position.set(0, -0.05 + Math.sin(t * 1.3) * 0.02, -0.6);
         else if (setKind === "coaster") A.g.position.set(0, 0.05 + Math.sin(t * 9) * 0.03, -0.4);
         else A.g.position.set(0.95, -0.28 + Math.sin(t * 1.8) * 0.008, -1.9);
@@ -2147,7 +2514,7 @@ export function LifeStage3D(p: Props) {
       } else {
         // idle: placed per set, breathing + an occasional glance around
         if (setKind === "office") { A.g.position.set(2.05, 0, 0.95); A.g.rotation.y = Math.PI * 0.92; }
-        else if (setKind === "market") { A.g.position.set(0.2, 0, 0.25); A.g.rotation.y = Math.PI; }
+        else if (setKind === "market" || setKind === "electronics") { A.g.position.set(0.2, 0, 0.25); A.g.rotation.y = Math.PI; }
         else if (setKind === "station") { A.g.position.set(0.2, 0, 0.55); A.g.rotation.y = Math.PI; }
         else if (setKind === "concourse") { A.g.position.set(-0.05, 0, 0.55); A.g.rotation.y = Math.PI / 2; }
         else if (setKind === "platform") { A.g.position.set(0.2, 0, 0.55); A.g.rotation.y = Math.PI; }
@@ -2176,12 +2543,21 @@ export function LifeStage3D(p: Props) {
       for (const sw of swayers) sw.g.rotation.z = Math.sin(t * 1.3 + sw.ph) * 0.05;
       for (const sp of spinners) sp.rotation.y = t * 0.8;
       if (talker) {
-        // walks in from the right, then talks with their hands
-        const u = clamp01(t / 1.1);
-        talker.g.position.x = 3.2 - easeInOut(u) * 2.15;
-        const sw = u < 1 ? Math.sin(t * 9) * 0.5 : 0;
-        talker.legL.rotation.x = sw; talker.legR.rotation.x = -sw;
-        if (u >= 1) { talker.armR.rotation.x = -0.9 + Math.sin(t * 4.2) * 0.35; talker.armR.rotation.z = Math.sin(t * 2.1) * 0.2; talker.head.rotation.x = Math.sin(t * 3.1) * 0.06; talker.armL.rotation.x = -0.3; }
+        if (setKind === "flat") {
+          talker.legL.rotation.x = -1.35; talker.legR.rotation.x = -1.3;
+          talker.head.rotation.y = Math.sin(t * 0.55) * 0.22;
+          talker.head.rotation.x = 0.08;
+        } else if (pose === "idle") {
+          talker.head.rotation.y = Math.sin(t * 0.45) * 0.25;
+          talker.armR.rotation.x = -0.25;
+        } else {
+          // walks in from the right, then talks with their hands
+          const u = clamp01(t / 1.1);
+          talker.g.position.x = 3.2 - easeInOut(u) * 2.15;
+          const sw = u < 1 ? Math.sin(t * 9) * 0.5 : 0;
+          talker.legL.rotation.x = sw; talker.legR.rotation.x = -sw;
+          if (u >= 1) { talker.armR.rotation.x = -0.9 + Math.sin(t * 4.2) * 0.35; talker.armR.rotation.z = Math.sin(t * 2.1) * 0.2; talker.head.rotation.x = Math.sin(t * 3.1) * 0.06; talker.armL.rotation.x = -0.3; }
+        }
       }
       for (const d of dancers) { const b = Math.abs(Math.sin(t * 6.4 + d.ph)); d.f.g.position.y = d.y + b * 0.12; d.f.g.rotation.z = Math.sin(t * 3.2 + d.ph) * 0.06; }
       for (const cl of clubLights) { cl.l.intensity = 6 + Math.max(0, Math.sin(t * 3.2 + cl.ph)) * 22; cl.l.position.x += Math.sin(t * 0.9 + cl.ph) * 0.02; }
@@ -2211,6 +2587,8 @@ export function LifeStage3D(p: Props) {
     };
     raf = requestAnimationFrame(frame);
     return () => {
+      detachRoam();
+      detachFurn();
       cancelAnimationFrame(raf);
       ro.disconnect();
       fx?.dispose();
@@ -2239,5 +2617,17 @@ export function LifeStage3D(p: Props) {
       </div>
     );
   }
-  return <div ref={mountRef} className="absolute inset-0" aria-hidden="true" />;
+  const near = p.roam ? (ROAM_SPOTS[p.setKind] ?? []).find((s) => s.id === nearId) : undefined;
+  return (
+    <>
+      <div ref={mountRef} className="absolute inset-0" aria-hidden="true" />
+      {p.roam && !glFailed && <MoveStick stick={stickRef} />}
+      {p.roam && !glFailed && near && (
+        <button type="button" onClick={() => propsRef.current.onSpot?.(near.id)} className="absolute bottom-4 right-3 z-20 flex items-center gap-2 rounded-full border border-white/70 bg-white/95 py-2 pl-2.5 pr-3.5 text-[13px] font-black text-[#14202b] shadow-[0_8px_20px_rgba(0,0,0,0.28)]">
+          <span className="grid h-9 w-9 place-items-center rounded-full bg-[#14202b] text-lg">{near.emoji}</span>
+          <span className="leading-tight text-left"><span className="block text-[10px] font-bold text-black/45">{p.en ? "Interact" : "互动"}</span>{p.en ? near.en : near.zh}</span>
+        </button>
+      )}
+    </>
+  );
 }

@@ -1,5 +1,6 @@
 // 上线运营 + 真人关系：🆕 更新公告与意见箱、🤝 合租 / 结拜 / 情侣、🏛️ 业委会选举。
 import { useState, type ReactNode } from "react";
+import { adLines, sanheSay } from "./ads";
 import { api, type ApiResponse } from "./api";
 
 export type Bond = ApiResponse<typeof api, "getBonds">["bonds"][number];
@@ -290,11 +291,18 @@ export function GigsModal({ en, playerId, city, money, st, onClose, toast, refre
 /* ---- 📢 地图广告牌：每城三块，✨ 租一周 ---- */
 export type BillboardState = ApiResponse<typeof api, "getBillboards">;
 const AD_EMOJI = ["📢", "🍜", "☕", "🛍️", "💕", "🎉", "🏠", "💼", "🎮", "🐶"];
-export function BillboardModal({ en, token, playerName, city, spots, st, onClose, toast, refresh, openAccount, openStore }: { en: boolean; token: string; playerName: string; city: "sz" | "hz" | "hk"; spots: string[]; st: BillboardState | undefined; onClose: () => void; toast: (m: string) => void; refresh: () => void; openAccount: () => void; openStore: () => void }) {
+export function BillboardModal({ en, token, playerName, city, spots, shop, day, st, onClose, toast, refresh, openAccount, openStore }: { en: boolean; token: string; playerName: string; city: "sz" | "hz" | "hk"; spots: string[]; shop?: string | null; day: number; st: BillboardState | undefined; onClose: () => void; toast: (m: string) => void; refresh: () => void; openAccount: () => void; openStore: () => void }) {
   const T = (zh: string, e: string) => (en ? e : zh);
   const [slot, setSlot] = useState<number | null>(null);
   const [text, setText] = useState("");
   const [emoji, setEmoji] = useState("📢");
+  const scripts = adLines(city, shop);
+  const said = sanheSay(city, day);
+  const useLine = (line: string, mark: string) => {
+    setText(line.slice(0, 20));
+    setEmoji(mark);
+    setSlot((cur) => cur ?? (st?.slots ?? []).find((s) => !s.ad)?.slot ?? 0);
+  };
   const buy = async () => {
     if (slot === null) return;
     if (!token) { openAccount(); return; }
@@ -309,7 +317,16 @@ export function BillboardModal({ en, token, playerName, city, spots, st, onClose
     <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={T("地图广告牌", "Map billboards")}>
       <div className="rise max-h-[88vh] w-full max-w-md overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] p-4">
         <p className="flex items-center justify-between"><span className="font-display text-xl font-black">📢 {T("地图广告牌", "Map billboards")}</span><button type="button" onClick={onClose} className="rounded-full border px-3 py-1 text-xs font-black">✕</button></p>
-        <p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">{T(`全城最显眼的三个位置，挂在地图上所有玩家都看得到：表白、找室友、给自己的摊位打广告都行。${st?.price ?? 300} ✨ 一周。本地商家想投放，联系运营。`, `The three most visible spots in town, seen by every player on the map — a confession, looking for a roommate, an ad for your stall. ${st?.price ?? 300} ✨ a week. Local businesses: contact the team.`)}</p>
+        <p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">{T(`招聘、招租、销售、三和日结，点一句就写上，字还能改。空着的牌子每天也会挂这四类。${st?.price ?? 300} ✨ 一周。`, `Hiring, rooms, sales and day-labor. Tap a line to fill it in — you can still edit it. Empty boards carry these every day. ${st?.price ?? 300} ✨ a week.`)}</p>
+        <div className="mt-3 flex flex-col gap-2">
+          {scripts.map((g) => (
+            <div key={g.kind}>
+              <p className="text-[11px] font-black text-[var(--dim)]">{g.emoji} {T(g.label, g.en)}</p>
+              <div className="mt-1 flex flex-wrap gap-1">{g.lines.map((line) => <button key={line} type="button" onClick={() => useLine(line, g.emoji)} className={`rounded-full border px-2 py-1 text-[11px] font-black ${text === line ? "border-[var(--accent)] bg-[var(--accent)] text-white" : "border-[var(--line)]"}`}>{line}</button>)}</div>
+              {g.kind === "sanhe" && <p className="mt-1 text-[11px] leading-relaxed text-[var(--dim)]">{T(said.zh, said.en)}</p>}
+            </div>
+          ))}
+        </div>
         {(st?.slots ?? []).map((sl) => (
           <button key={sl.slot} type="button" disabled={!!sl.ad} onClick={() => setSlot(sl.slot)} className={`mt-2 block w-full rounded-[14px] border-2 p-3 text-left disabled:opacity-90 ${slot === sl.slot ? "border-[var(--accent)]" : "border-[var(--line)]"}`}>
             <span className="block text-xs font-black text-[var(--dim)]">📍 {spots[sl.slot] ?? `#${sl.slot + 1}`}</span>

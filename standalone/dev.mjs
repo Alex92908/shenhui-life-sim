@@ -1,5 +1,6 @@
 // `npm run dev`: API server (auto-restarts on server changes) + Vite dev
-// server with hot reload. Open http://localhost:5173
+// server with hot reload. Open http://localhost:5173 on this machine, or the
+// Network URL Vite prints (http://<this-LAN-IP>:5173) on a phone on the same Wi-Fi.
 import { spawn } from "node:child_process";
 
 const procs = [

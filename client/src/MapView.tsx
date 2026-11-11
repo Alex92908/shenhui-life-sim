@@ -13,6 +13,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { createLandmarks, mergeStatic } from "./landmarks";
 import { AREA_LABELS } from "./areas";
+import { ACCESSORIES, HAIRS } from "./living";
 import { activitiesAt } from "./activities";
 import { SKYLINE } from "./skyline";
 import * as TSZ from "./terrain-sz";
@@ -32,6 +33,10 @@ export interface RemotePlayer {
   emoji: string;
   color: number;
   locId: string;
+  /** hair index the player chose; absent until their heartbeat lands */
+  hair?: number;
+  /** accessory index into ACCESSORIES */
+  accessory?: number;
 }
 
 interface Props {
@@ -52,10 +57,12 @@ interface Props {
   selfName: string;
   remotePlayers: RemotePlayer[];
   /** 📢 rented billboards by slot (0–2), shown at the city's billboard spots */
-  billboards?: { slot: number; text: string; emoji: string; owner: string }[];
+  billboards?: { slot: number; text: string; emoji: string; owner: string; go?: string }[];
   /** extra buttons shown first in the bottom-right control row (sound) */
   extraControls?: ReactNode;
   selfOutfitId?: string;
+  selfHair?: number;
+  selfAccessory?: string;
   travelModeId?: string;
   npcMoodEmoji?: Record<string, string>;
   /** Real current weather kind for the played city (from the server's
@@ -152,6 +159,8 @@ interface Actor {
   shirt: number;
   pants: number;
   accessory: string;
+  /** index into HAIRS; a stable silhouette so two people in the same shirt are not the same person */
+  hair?: number;
   behavior: string;
   speed: number;
   seed: number;
@@ -215,17 +224,14 @@ const LAKES: Record<CityKey, { x: number; z: number; r: number }[]> = {
 const LAND = 0.6; // land deck height; buildings sit on it
 const WORLD = { x: 38, zn: -22, zs: 24 };
 
-/* ---- fill-the-frame camera framing ----
-   The miniature spans x −38…38 and z −22…~17 (coast). The camera must be
-   framed FROM those bounds and the canvas aspect, not from a fixed
-   distance: a fixed dist that filled a normal window left the city as a
-   small island in the top half of a fullscreen viewport, with the whole
-   bottom half empty sea. CAM_POL is the default polar angle — flatter
-   (more top-down) than the old 0.92 so the foreground water strip shrinks
-   and the land itself becomes the picture. fitDistForAspect returns the
-   distance at which the land fills the frame (height nearly full, width
-   allowed a slight crop so a wide-but-short stage still fills vertically
-   instead of floating in a sea of background). */
+/* ---- camera framing ----
+   The miniature spans x −38…38 and z −22…~17 (coast). Desktop "whole city"
+   uses contain: the distance at which every place fits. A phone is too
+   small for that — contain zooms out until the city is a postage stamp
+   in a void. Phones use fill instead, the way Apple Maps and Google Maps
+   do: a neighbourhood around you runs to the edges of the glass, and you
+   pinch out if you want the whole city. CAM_POL is flatter than the old
+   0.92 so the foreground water strip stays a strip. */
 const CAM_POL = 0.68;
 const LAND_CX = 0;
 const LAND_CZ = -2.5;
@@ -247,14 +253,20 @@ function frameOf(ck: CityKey) {
   }
   return f;
 }
-function fitDistForAspect(aspect: number, ck: CityKey = "sz"): number {
+function fitDistForAspect(aspect: number, ck: CityKey = "sz"): { contain: number; fill: number } {
   const f = frameOf(ck);
   const tanV = Math.tan(THREE.MathUtils.degToRad(42) / 2);
   const projH = f.h * Math.sin(CAM_POL) + 6; // places' depth projected + headroom for towers/labels
   const projW = f.w; // places' width (north-up: the city runs side to side)
   const distH = (projH / 2) / tanV;
   const distW = (projW / 2) / (tanV * Math.max(0.45, aspect));
-  return THREE.MathUtils.clamp(Math.max(distH * 1.03, distW * 1.2), 20, 110); // the tilted view narrows the ground: allow for it
+  const contain = THREE.MathUtils.clamp(Math.max(distH * 1.03, distW * 1.2), 20, 110);
+  /* a few blocks, not the metro. max() contains that patch in the glass,
+     so a tall phone and a wide phone both fill with streets, not void. */
+  const nearH = (8 / 2) / tanV;
+  const nearW = (12 / 2) / (tanV * Math.max(0.45, aspect));
+  const fill = THREE.MathUtils.clamp(Math.max(nearH, nearW) * 0.96, 14, contain);
+  return { contain, fill };
 }
 
 function coastZ(cityKey: CityKey, x: number): number {
@@ -414,6 +426,8 @@ interface Chip {
   area?: "big" | "small";
   /** The small English subtitle line under a place name, if any. */
   sub?: HTMLElement | null;
+  /** Billboard copy lives in its own span so the 「广告」 badge survives updates. */
+  textEl?: HTMLElement | null;
   w: number;
   h: number;
   lastText: string;
@@ -472,9 +486,12 @@ export function MapView(p: Props) {
   const streetRef = useRef(false);
   const focusRef = useRef(0);
   const lookRef = useRef<{ x: number; z: number; until: number } | null>(null);
-  /* a spot picked on the minimap stays the camera's centre (no drifting back to
-     the player) until the player sets off on a new trip */
+  /* a spot picked on the minimap stays the camera's centre until the player
+     asks to come back (tap themselves, ⌂, switch view) or sets off */
   const anchorRef = useRef<{ x: number; z: number } | null>(null);
+  /* tap-yourself: keep the lens on the live player, even in whole-city view
+     where an idle camera would otherwise settle on the city centre */
+  const trackSelfRef = useRef(false);
   /* the searched place, pinned until the next search or ✕ */
   const pinRef = useRef<{ id: string; x: number; z: number; name: string } | null>(null);
   useEffect(() => {
@@ -485,14 +502,31 @@ export function MapView(p: Props) {
   const FOLLOW_K = 0.34;
   const followRef = useRef(p.mapMode === "follow");
   followRef.current = p.mapMode === "follow";
-  const baseDist = () => Math.max(16, (fitDistRef.current || 46) * (followRef.current ? FOLLOW_K : 1));
-  useEffect(() => { anchorRef.current = null; }, [p.selfLocId]);
+  const fillDistRef = useRef(28);
+  const compactRef = useRef(false);
+  /* Desktop city mode contains the whole city. A phone contains a district
+     around you (fill) so the buildings reach the edges of the glass. */
+  const baseDist = () => {
+    const contain = fitDistRef.current || 46;
+    if (!compactRef.current) return Math.max(16, contain * (followRef.current ? FOLLOW_K : 1));
+    const fill = fillDistRef.current || 28;
+    return followRef.current ? Math.max(14, fill * 0.72) : fill;
+  };
+  const reportZoom = () => setZoomPct(Math.round((baseDist() / Math.max(1, camRef.current.dist)) * 100));
+  useEffect(() => {
+    // a new trip (or arrival) hands the camera back: follow while moving
+    anchorRef.current = null;
+    lookRef.current = null;
+    trackSelfRef.current = false;
+  }, [p.selfLocId]);
   useEffect(() => {
     // switching A ↔ B re-frames at that mode's distance; B always shows the minimap
     anchorRef.current = null;
+    lookRef.current = null;
+    trackSelfRef.current = false;
     autoFitRef.current = true;
     camRef.current.dist = baseDist();
-    setZoomPct(Math.round(((fitDistRef.current || 46) / camRef.current.dist) * 100));
+    reportZoom();
     if (p.mapMode === "follow") setMiniOpen(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.mapMode]);
@@ -517,8 +551,8 @@ export function MapView(p: Props) {
   /* LOL-style minimap: a live 2D thumbnail of the whole miniature, drawn
      on a small canvas from the SAME actor refs the 3D scene animates, so
      the player dot, NPC dots, remote players and the destination marker
-     move exactly when the big map moves. Clicking it points the main
-     camera at that spot through the same lookRef channel search uses. */
+     move exactly when the big map moves. Clicking it pins the main camera
+     there until the player taps themselves, resets, switches view, or sets off. */
   const [miniOpen, setMiniOpen] = useState(() => typeof window === "undefined" || (window.innerWidth >= 640 && window.innerHeight >= 500)); // phones and landscape phones: the map first, the minimap on request
   const miniCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -614,7 +648,7 @@ export function MapView(p: Props) {
   // App rebuilds remotePlayers / npcMoodEmoji as fresh objects on EVERY
   // render, so depending on them by identity re-ran this sync constantly;
   // depend on their content instead.
-  const remoteKey = p.remotePlayers.map((rp) => `${rp.id}|${rp.name}|${rp.emoji}|${rp.color}|${rp.locId}`).join(";");
+  const remoteKey = p.remotePlayers.map((rp) => `${rp.id}|${rp.name}|${rp.emoji}|${rp.color}|${rp.locId}|${rp.hair ?? ""}|${rp.accessory ?? ""}`).join(";");
   const moodKey = p.npcMoodEmoji ? Object.entries(p.npcMoodEmoji).map(([k, v]) => `${k}=${v}`).join(";") : "";
   const cityRef = useRef(p.cityKey);
   useEffect(() => {
@@ -645,6 +679,7 @@ export function MapView(p: Props) {
         cur.shirt = a.shirt;
         cur.pants = a.pants;
         cur.accessory = a.accessory;
+        cur.hair = a.hair;
         cur.behavior = a.behavior;
         cur.speed = a.speed;
         if (!a.wander) {
@@ -667,9 +702,9 @@ export function MapView(p: Props) {
     // visibly slow, a taxi crosses the miniature ~3× faster, rail fastest.
     // App's trip timer derives from the same table, so arrival matches.
     const selfSpeed = modeById((p.travelModeId ?? "walk") as TransportModeId).mapSpeed;
-    upsert({ key: "self", name: p.selfName, emoji: p.selfEmoji, color: p.selfColor, isSelf: true, seed: 7, heading: 0, phase: 0, blend: 0, startLoc: p.selfLocId, shirt: selfOutfit.shirt, pants: selfOutfit.pants, accessory: selfOutfit.id === "formal" ? "tie" : "none", behavior: "self", speed: selfSpeed });
+    upsert({ key: "self", name: p.selfName, emoji: p.selfEmoji, color: p.selfColor, isSelf: true, seed: 7, heading: 0, phase: 0, blend: 0, startLoc: p.selfLocId, shirt: selfOutfit.shirt, pants: selfOutfit.pants, accessory: p.selfAccessory && p.selfAccessory !== "none" ? p.selfAccessory : (selfOutfit.id === "formal" ? "tie" : "none"), hair: p.selfHair ?? 0, behavior: "self", speed: selfSpeed });
     for (const rp of p.remotePlayers) {
-      upsert({ key: `p-${rp.id}`, name: rp.name, emoji: rp.emoji, color: rp.color, seed: hash(rp.id), heading: 0, phase: hash(rp.id) % 6, blend: 0, startLoc: rp.locId, shirt: rp.color, pants: 0x2e3440, accessory: "none", behavior: "wander", speed: 2.4 });
+      upsert({ key: `p-${rp.id}`, name: rp.name, emoji: rp.emoji, color: rp.color, seed: hash(rp.id), heading: 0, phase: hash(rp.id) % 6, blend: 0, startLoc: rp.locId, shirt: rp.color, pants: 0x2e3440, accessory: ACCESSORIES[rp.accessory ?? 0]?.id ?? "none", hair: rp.hair ?? hash(rp.id) % 4, behavior: "wander", speed: 2.4 });
     }
     /* NPCs keep a quiet city company: each real player in town sends one neighbour home
        (at least two stay), so the map belongs to real people as soon as they show up */
@@ -679,7 +714,7 @@ export function MapView(p: Props) {
       const pool = preferred.length > 0 ? preferred : locs;
       const loc = pool[(hash(n.name) + i) % pool.length];
       const speed = n.behavior === "commute" ? 5.6 : n.behavior === "patrol" ? 3.4 : n.behavior === "stay" ? 2 : 4.2;
-      upsert({ key: `npc-${n.name}`, name: `${n.name}·${n.job}${p.npcMoodEmoji?.[n.name] ? ` ${p.npcMoodEmoji[n.name]}` : ""}`, emoji: n.emoji, color: n.color, wander: true, seed: hash(n.name), heading: 0, phase: hash(n.name) % 6, blend: 0, startLoc: loc?.id ?? "home", shirt: n.shirt, pants: n.pants, accessory: n.accessory, behavior: n.behavior, speed });
+      upsert({ key: `npc-${n.name}`, name: `${n.name}·${n.job}${p.npcMoodEmoji?.[n.name] ? ` ${p.npcMoodEmoji[n.name]}` : ""}`, emoji: n.emoji, color: n.color, wander: true, seed: hash(n.name), heading: 0, phase: hash(n.name) % 6, blend: 0, startLoc: loc?.id ?? "home", shirt: n.shirt, pants: n.pants, accessory: n.accessory, hair: hash(n.name) % 4, behavior: n.behavior, speed });
     });
     // NPC schedules: the beat changes with the real hour, and when it does
     // the NPC visibly travels to the new anchor across the map (commuting
@@ -703,7 +738,7 @@ export function MapView(p: Props) {
     for (const key of Array.from(actors.keys())) {
       if (!want.has(key)) actors.delete(key);
     }
-  }, [p.cityKey, p.selfLocId, p.selfEmoji, p.selfColor, p.selfName, remoteKey, p.selfOutfitId, moodKey, p.travelModeId]);
+  }, [p.cityKey, p.selfLocId, p.selfEmoji, p.selfColor, p.selfName, remoteKey, p.selfOutfitId, p.selfHair, p.selfAccessory, moodKey, p.travelModeId]);
 
   // Build/rebuild the whole 3D scene when the city changes.
   useEffect(() => {
@@ -2052,11 +2087,23 @@ export function MapView(p: Props) {
     pinBeam.visible = pinRing.visible = false;
     scene.add(pinBeam, pinRing);
 
-    /* ---- 📢 billboards: one chip per spot, filled from props each pass ---- */
+    /* ---- 📢 billboards: a real button per spot. The 「广告」 badge stays;
+       only the text span is rewritten each pass (textContent on the root
+       would wipe the badge). Click walks to the place that hosts the slot. ---- */
     billboardSpots(cityKey).forEach((spot, slot) => {
-      const d = mkChip("", "");
-      d.style.cssText += "pointer-events:none;font:900 11px 'Noto Sans SC',sans-serif;padding:3px 9px;border-radius:6px;color:#fff;background:linear-gradient(135deg,#e63a1f,#f59e0b);border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.35);display:none;";
-      chips.push({ el: d, kind: "road", ad: slot, w: 0, h: 0, lastText: "", visible: false, clampDx: 0, clampDy: 0, getPos: () => ({ x: spot.x, y: LAND + 4.2, z: spot.z }) });
+      const d = document.createElement("button");
+      d.type = "button";
+      d.setAttribute("aria-label", `广告，前往${spot.name}`);
+      d.style.cssText = "position:absolute;left:0;top:0;transform:translate(-50%,-100%);white-space:nowrap;pointer-events:auto;cursor:pointer;display:none;align-items:center;gap:5px;font:900 11px 'Noto Sans SC',sans-serif;padding:2px 9px 2px 2px;border-radius:999px;color:#fff;background:linear-gradient(135deg,#e63a1f,#f59e0b);border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.35);z-index:6;";
+      const badge = document.createElement("span");
+      badge.textContent = "广告";
+      badge.style.cssText = "display:inline-block;padding:1px 6px;border-radius:999px;background:#fff;color:#e63a1f;font:900 10px 'Noto Sans SC',sans-serif;letter-spacing:.06em;";
+      const textEl = document.createElement("span");
+      d.append(badge, textEl);
+      d.addEventListener("pointerdown", (e) => e.stopPropagation());
+      d.addEventListener("click", (e) => { e.stopPropagation(); e.preventDefault(); const ad = propsRef.current.billboards?.find((b) => b.slot === slot); propsRef.current.onSelect(ad?.go || spot.id); });
+      labels.appendChild(d);
+      chips.push({ el: d, kind: "road", ad: slot, textEl, w: 0, h: 0, lastText: "", visible: false, clampDx: 0, clampDy: 0, getPos: () => ({ x: spot.x, y: LAND + 4.2, z: spot.z }) });
     });
 
     /* ---- actors (3D) ---- */
@@ -2104,12 +2151,13 @@ export function MapView(p: Props) {
         head.position.y = 1.86;
         head.castShadow = true;
         body.add(head);
-        const hair = new THREE.Mesh(new THREE.SphereGeometry(0.325, 14, 10), new THREE.MeshStandardMaterial({ color: 0x2b2118, roughness: 0.95 }));
+        const hairMat = new THREE.MeshStandardMaterial({ color: 0x2b2118, roughness: 0.95 });
+        const hair = new THREE.Mesh(new THREE.SphereGeometry(0.325, 14, 10), hairMat);
         hair.position.y = 1.94;
         hair.scale.set(1, 0.72, 1);
         body.add(hair);
         (v.userData as { limbs?: ActorLimbs }).limbs = { armL, armR, legL, legR };
-        (v.userData as { mats?: { shirt: THREE.MeshStandardMaterial; dark: THREE.MeshStandardMaterial; pants: THREE.MeshStandardMaterial } }).mats = { shirt, dark: shirtDark, pants };
+        (v.userData as { mats?: { shirt: THREE.MeshStandardMaterial; dark: THREE.MeshStandardMaterial; pants: THREE.MeshStandardMaterial; hair: THREE.MeshStandardMaterial; hairMesh: THREE.Mesh } }).mats = { shirt, dark: shirtDark, pants, hair: hairMat, hairMesh: hair };
         // identity accessories, toggled by role/outfit: cap (保安), helmet (骑手),
         // tie (正装/通勤), apron (摊主), reflective vest (保洁), bag (学生/白领)
         const accGroup = new THREE.Group();
@@ -2366,8 +2414,8 @@ export function MapView(p: Props) {
       // multiplicatively so pinching feels like pinching
       const d = camRef.current.dist;
       const next = e.ctrlKey ? d * Math.exp(e.deltaY * 0.012) : d + e.deltaY * 0.05;
-      camRef.current.dist = Math.max(16, Math.min(130, next));
-      setZoomPct(Math.round((fitDistRef.current / camRef.current.dist) * 100));
+      camRef.current.dist = Math.max(14, Math.min(130, next));
+      reportZoom();
     };
     dom.addEventListener("pointerdown", onDown);
     dom.addEventListener("pointermove", onMove);
@@ -2401,10 +2449,13 @@ export function MapView(p: Props) {
       // Re-frame for the new size: the fill distance depends on the
       // canvas aspect, so fullscreen, window resizes and panel collapses
       // all re-fit the city to the frame while auto-fit is armed.
-      fitDistRef.current = fitDistForAspect(w / h, propsRef.current.cityKey);
+      const fit = fitDistForAspect(w / h, propsRef.current.cityKey);
+      fitDistRef.current = fit.contain;
+      fillDistRef.current = fit.fill;
+      compactRef.current = w < 820 || h < 520;
       if (autoFitRef.current) {
         camRef.current.dist = baseDist();
-        setZoomPct(Math.round((fitDistRef.current / camRef.current.dist) * 100));
+        reportZoom();
       }
     };
     resize();
@@ -2906,11 +2957,14 @@ export function MapView(p: Props) {
           const s = 1 + Math.sin(tSec * 3) * 0.12;
           ring.scale.set(s, s, 1);
         }
-        const mats = (view.userData as { mats?: { shirt: THREE.MeshStandardMaterial; dark: THREE.MeshStandardMaterial; pants: THREE.MeshStandardMaterial } }).mats;
+        const mats = (view.userData as { mats?: { shirt: THREE.MeshStandardMaterial; dark: THREE.MeshStandardMaterial; pants: THREE.MeshStandardMaterial; hair?: THREE.MeshStandardMaterial; hairMesh?: THREE.Mesh } }).mats;
         if (mats) {
           mats.shirt.color.setHex(a.shirt);
           mats.dark.color.copy(shirtTmp.setHex(a.shirt).multiplyScalar(0.78));
           mats.pants.color.setHex(a.pants);
+          const look = HAIRS[(a.hair ?? 0) % HAIRS.length] ?? HAIRS[0]!;
+          if (mats.hair) mats.hair.color.setHex(look.color);
+          if (mats.hairMesh) mats.hairMesh.scale.set(look.sx, look.sy, 1);
         }
         // your own car wears your identity colour
         const driveMat = (view.userData as { driveMat?: THREE.MeshStandardMaterial }).driveMat;
@@ -2948,7 +3002,7 @@ export function MapView(p: Props) {
         const look = lookRef.current;
         const anchor = anchorRef.current;
         if (anchor && !(look && performance.now() < look.until)) {
-          // the minimap's pick holds until the next trip
+          // minimap pin: hold this spot until tap-self, ⌂, a view switch, or setting off
           cam.tx += (THREE.MathUtils.clamp(anchor.x, -37, 37) - cam.tx) * Math.min(1, dt * 2.6);
           cam.tz += (THREE.MathUtils.clamp(anchor.z, -23, 23) - cam.tz) * Math.min(1, dt * 2.6);
         } else if (look && performance.now() < look.until) {
@@ -2972,7 +3026,9 @@ export function MapView(p: Props) {
           // so following never stalls at the map's edge districts.
           const movingNow = self.blend > 0.25;
           const fitD = fitDistRef.current || 46;
-          const centerW = movingNow || followRef.current ? 0 : THREE.MathUtils.clamp((cam.distCur - fitD * 0.7) / (fitD * 0.3), 0, 1); // at the overview distance the city frame is the picture
+          // phones stay on you: the frame is a neighbourhood, and centring
+          // the whole metro would put that neighbourhood off to one side
+          const centerW = compactRef.current || movingNow || followRef.current || trackSelfRef.current ? 0 : THREE.MathUtils.clamp((cam.distCur - fitD * 0.7) / (fitD * 0.3), 0, 1);
           const fr = frameOf(propsRef.current.cityKey);
           const fx = (self.x + leadX) * (1 - centerW) + fr.cx * centerW;
           const fz = (self.z + leadZ) * (1 - centerW) + (fr.cz - fr.h * 0.08) * centerW; // a touch north: the tilted view shows more foreground
@@ -3121,9 +3177,16 @@ export function MapView(p: Props) {
         } else if (chip.ad !== undefined) {
           const ad = propsRef.current.billboards?.find((b) => b.slot === chip.ad);
           if (!ad) { if (chip.visible) { chip.visible = false; chip.el.style.display = "none"; } continue; }
-          const t = `📢 ${ad.emoji} ${ad.text}`;
-          if (chip.el.textContent !== t) { chip.el.textContent = t; chip.el.title = `${ad.owner} · 广告 / Ad`; chip.w = 0; }
-          prio = 1.5;
+          const t = `${ad.emoji} ${ad.text}`;
+          if (chip.textEl && chip.textEl.textContent !== t) {
+            chip.textEl.textContent = t;
+            chip.el.title = `${ad.owner} · 广告 · 点一下去这里`;
+            chip.el.setAttribute("aria-label", `广告：${ad.text}，前往这里`);
+            chip.w = 0;
+          }
+          // ahead of the hover boost (0.5): moving the cursor onto the ad must not
+          // let a neighbouring place name take its spot and hide it
+          prio = 0.12;
         } else if (chip.station || chip.place) {
           if (!near && (overview || dCam > (chip.place ? 11 : 12))) {
             chip.visible = false;
@@ -3146,8 +3209,9 @@ export function MapView(p: Props) {
           }
           prio = 9;
         }
-        // around the cursor: labels win over the rest, closest first
-        if (near && !chip.self && (chip.kind !== "road" || chip.station || chip.place || chip.area)) prio = 0.5 + dHover / HOVER_R;
+        // around the cursor: labels win over the rest, closest first.
+        // billboards stay at their own priority so the cursor never hides them
+        if (near && chip.ad === undefined && !chip.self && (chip.kind !== "road" || chip.station || chip.place || chip.area)) prio = 0.5 + dHover / HOVER_R;
         // the English subtitle duplicates the name in English mode, and is
         // noise at city scale: show it only zoomed in, in Chinese
         if (chip.sub) {
@@ -3157,13 +3221,13 @@ export function MapView(p: Props) {
         const txt = chip.el.textContent ?? "";
         if (chip.w === 0 || (chip.kind === "actor" && txt !== chip.lastText)) {
           // measuring a label forces a layout: only a few per pass, so moving across the map doesn't stutter
-          if (measured >= 8 && !chip.self && chip.kind !== "loc") {
+          if (measured >= 8 && !chip.self && chip.kind !== "loc" && chip.ad === undefined) {
             // not measured yet: keep it hidden until its turn, or the first seconds after loading show every label at once
             if (chip.visible) { chip.visible = false; chip.el.style.display = "none"; }
             continue;
           }
           measured++;
-          chip.el.style.display = "";
+          chip.el.style.display = chip.ad !== undefined ? "inline-flex" : "";
           chip.w = chip.el.offsetWidth;
           chip.h = chip.el.offsetHeight;
           chip.lastText = txt;
@@ -3204,7 +3268,8 @@ export function MapView(p: Props) {
           c.chip.clampDy = ay - c.sy;
           const box = { x1: ax - hw, y1: ay - c.chip.h - (density === "all" ? 5 : 10), x2: ax + hw, y2: ay + (density === "all" ? 2 : 6) };
           const hit = placed.some((b) => box.x1 < b.x2 && box.x2 > b.x1 && box.y1 < b.y2 && box.y2 > b.y1);
-          if (hit) {
+          // a rented billboard is a button: overlap hides the other label, never the ad
+          if (hit && c.chip.ad === undefined) {
             c.chip.visible = false;
             c.chip.el.style.display = "none";
             continue;
@@ -3213,7 +3278,7 @@ export function MapView(p: Props) {
           if (c.chip.kind === "loc") locShown++;
           if (kk) kindShown[kk]++;
           c.chip.visible = true;
-          c.chip.el.style.display = c.chip.pin ? "flex" : "";
+          c.chip.el.style.display = c.chip.pin ? "flex" : c.chip.ad !== undefined ? "inline-flex" : "";
           c.chip.el.style.transform = `translate(-50%,-100%) translate(${ax.toFixed(1)}px,${ay.toFixed(1)}px)`;
           if (c.chip.kind === "loc") {
             const pos = c.chip.getPos();
@@ -3265,22 +3330,28 @@ export function MapView(p: Props) {
 
   const zoomBy = (f: number) => {
     autoFitRef.current = false;
-    camRef.current.dist = Math.max(16, Math.min(130, camRef.current.dist * f));
-    setZoomPct(Math.round((fitDistRef.current / camRef.current.dist) * 100));
+    camRef.current.dist = Math.max(14, Math.min(130, camRef.current.dist * f));
+    reportZoom();
   };
   const resetCam = () => {
     anchorRef.current = null;
+    lookRef.current = null;
+    trackSelfRef.current = false;
     camRef.current.az = 0; // north up: the long cities (Shenzhen strip, Hong Kong, Huizhou) fill the screen side to side
     camRef.current.pol = CAM_POL;
     autoFitRef.current = true;
     camRef.current.dist = baseDist();
-    setZoomPct(Math.round((fitDistRef.current / camRef.current.dist) * 100));
+    reportZoom();
   };
   const toggleStreetCam = () => {
     const next = !streetRef.current;
     streetRef.current = next;
     setStreetCam(next);
     if (next) {
+      // street level is the view from behind you, so a pinned look steps aside
+      anchorRef.current = null;
+      lookRef.current = null;
+      trackSelfRef.current = true;
       autoFitRef.current = false;
       setCine(true);
     } else {
@@ -3399,12 +3470,24 @@ export function MapView(p: Props) {
     if (!rect.width || !rect.height) return;
     const wx = MINI.xMin + ((e.clientX - rect.left) / rect.width) * (MINI.xMax - MINI.xMin);
     const wz = MINI.zMin + ((e.clientY - rect.top) / rect.height) * (MINI.zMax - MINI.zMin);
-    // LOL behaviour: clicking the minimap moves the CAMERA there (the
-    // lookRef channel wins over follow for a few seconds) — it locates,
-    // it does not start walking the player there.
-    lookRef.current = { x: wx, z: wz, until: performance.now() + 5000 };
-    // whole-city mode keeps the picked spot until the next trip; follow mode glances there, then comes back to you
-    if (!followRef.current) anchorRef.current = { x: wx, z: wz };
+    // Pin the camera on the clicked spot. It stays there — no timed glance —
+    // until the player taps their own dot, hits ⌂, switches view, or sets off.
+    // Tapping the player dot hands the lens back to them. 16px is a little
+    // wider than the drawn ring, still a dot on a whole-city thumbnail.
+    const self = actorsRef.current.get("self");
+    if (self) {
+      const sx = rect.left + ((self.x - MINI.xMin) / (MINI.xMax - MINI.xMin)) * rect.width;
+      const sy = rect.top + ((self.z - MINI.zMin) / (MINI.zMax - MINI.zMin)) * rect.height;
+      if (Math.hypot(e.clientX - sx, e.clientY - sy) <= 16) {
+        anchorRef.current = null;
+        lookRef.current = null;
+        trackSelfRef.current = true;
+        return;
+      }
+    }
+    trackSelfRef.current = false;
+    lookRef.current = null;
+    anchorRef.current = { x: wx, z: wz };
   };
 
   if (glFailed) {
@@ -3434,7 +3517,7 @@ export function MapView(p: Props) {
   }
 
   return (
-    <div className={p.fill ? "relative h-full min-h-0 w-full flex-1 overflow-hidden rounded-[12px] bg-[#0b1622]" : "relative h-[420px] w-full overflow-hidden rounded-[12px] bg-[#0b1622] sm:h-[480px] lg:h-[640px] xl:h-[740px] 2xl:h-[840px]"}>
+    <div className={p.fill ? "map-stage relative h-full min-h-0 w-full flex-1 overflow-hidden rounded-[12px] bg-[#0b1622]" : "map-stage relative h-[420px] w-full overflow-hidden rounded-[12px] bg-[#0b1622] sm:h-[480px] lg:h-[640px] xl:h-[740px] 2xl:h-[840px]"}>
       <div ref={mountRef} className="absolute inset-0" />
       <div ref={labelsRef} className="pointer-events-none absolute inset-0 overflow-hidden" />
       {cine && <div aria-hidden="true" className="cine-grade" />}
@@ -3455,7 +3538,7 @@ export function MapView(p: Props) {
         <button type="button" aria-label="放大地图" data-tip={tt("放大", "Zoom in")} onClick={() => zoomBy(0.78)} className="tipbtn grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">＋</button>
         <button type="button" aria-label="缩小地图" data-tip={tt("缩小", "Zoom out")} onClick={() => zoomBy(1.28)} className="tipbtn grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">－</button>
         <button type="button" aria-label="标签密度" title={labelDensity === "few" ? "标签：精简（点一下切换）" : labelDensity === "normal" ? "标签：标准（点一下切换）" : "标签：全部（点一下切换）"} data-tip={labelDensity === "few" ? tt("标签：精简", "Labels: few") : labelDensity === "normal" ? tt("标签：标准", "Labels: standard") : tt("标签：全部", "Labels: all")} onClick={cycleLabels} className={`tipbtn tip-r grid h-9 min-w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 px-2 text-[11px] font-black text-[#14202b] shadow${viewMenu ? "" : " compact-hide"}`}>🏷️{labelDensity === "few" ? "简" : labelDensity === "normal" ? "标" : "全"}</button>
-        <button type="button" aria-label={p.mapMode === "follow" ? "切换到全城视角" : "切换到跟随视角"} title={p.mapMode === "follow" ? "现在：跟随视角（镜头跟着你，小地图看全城）。点一下换成一眼看全城" : "现在：全城视角。点一下换成跟随视角（镜头跟着你，小地图看全城）"} data-tip={p.mapMode === "follow" ? tt("跟随视角 → 看全城", "Follow view → whole city") : tt("全城视角 → 跟着我", "City view → follow me")} onClick={() => p.onMapMode?.(p.mapMode === "follow" ? "city" : "follow")} className="tipbtn tip-r grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">{p.mapMode === "follow" ? "🗺️" : "🎯"}</button>
+        <button type="button" aria-label={p.mapMode === "follow" ? "切换到更广的视角" : "切换到贴身视角"} title={p.mapMode === "follow" ? "现在：贴着你。点一下拉开，看你这一片（宽屏上是整座城）" : "现在：看你这一片。点一下贴得更近。想看整座城就双指捏合"} data-tip={p.mapMode === "follow" ? tt("贴着我 → 看这一片", "Close → wider") : tt("这一片 → 贴着我", "Wider → close")} onClick={() => p.onMapMode?.(p.mapMode === "follow" ? "city" : "follow")} className="tipbtn tip-r grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">{p.mapMode === "follow" ? "🗺️" : "🎯"}</button>
         <button type="button" aria-label="重置视角" data-tip={tt("重置视角", "Reset view")} onClick={resetCam} className="tipbtn tip-r grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">⌂</button>
       </div>
       {/* LOL-style minimap: whole-city thumbnail, live-linked to the big map */}
@@ -3473,10 +3556,10 @@ export function MapView(p: Props) {
               height={242}
               onClick={onMiniClick}
               role="img"
-              aria-label="全城小地图：白色大圆点是你，彩色小点是NPC和在线玩家，红色靶心是目的地，虚线圈是大地图镜头位置；点击小地图任意位置，大地图镜头会定位过去"
+              aria-label={tt("全城小地图：白色大圆点是你，彩色小点是NPC和在线玩家，红色靶心是目的地，虚线圈是大地图镜头位置。点别处，镜头停在那里；点自己回到人物。", "City minimap. The white dot is you. Tap elsewhere and the camera stays there; tap yourself to come back.")}
               className="mini-canvas block h-[97px] w-[176px] cursor-crosshair sm:h-[121px] sm:w-[220px]"
             />
-            <p className="compact-hide px-2 py-1 text-[10px] font-bold leading-tight text-white/70">⚪ 你 · 🟡 NPC/玩家 · 🔴 目的地 · 点图定位镜头</p>
+            <p className="compact-hide px-2 py-1 text-[10px] font-bold leading-tight text-white/70">{tt("点别处镜头停住 · 点自己或 ⌂ 回来", "Tap to look · tap yourself or ⌂ to return")}</p>
           </div>
         ) : (
           <button type="button" aria-label="展开小地图" onClick={() => setMiniOpen(true)} className="rounded-full border border-black/50 bg-[#0b1622]/85 px-3.5 py-2 text-xs font-black text-white shadow-xl transition hover:bg-[#0b1622]">🗺️<span className="compact-hide"> 小地图 ▸</span></button>

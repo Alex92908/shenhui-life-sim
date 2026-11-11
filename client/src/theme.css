@@ -299,6 +299,33 @@ body {
 .rail-btn .red-dot{top:4px;right:5px;box-shadow:0 0 0 2px rgba(12,22,34,.9)}
 @media (max-width:639px),(max-height:500px){.rail-btn{width:46px;height:46px;border-radius:14px}.feature-rail{gap:5px}}
 @media (max-height:500px){.feature-rail{max-height:calc(100% - 24px);overflow-y:auto;scrollbar-width:none}}
+/* phones: the map is the glass, the way Apple Maps and Google Maps work.
+   Search and the side buttons float on top, inside the safe area, and the
+   city runs to the screen edge instead of sitting in a padded card. */
+@media (max-width: 819px), (max-height: 520px) {
+  .map-shell { padding: 0 !important; }
+  .map-search {
+    position: absolute;
+    z-index: 30;
+    left: 0;
+    right: 0;
+    top: 0;
+    padding: 8px max(8px, env(safe-area-inset-right, 0px)) 0 max(8px, env(safe-area-inset-left, 0px));
+    pointer-events: none;
+  }
+  .map-search > * { pointer-events: auto; }
+  .map-stage { border-radius: 0 !important; }
+  .feature-rail {
+    top: 64px !important;
+    max-height: calc(100% - 120px);
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+  .feature-rail.left-cluster { left: max(8px, env(safe-area-inset-left, 0px)) !important; }
+  .feature-rail.right-cluster { right: max(8px, env(safe-area-inset-right, 0px)) !important; }
+  .compact-dock { right: max(8px, env(safe-area-inset-right, 0px)) !important; bottom: max(8px, env(safe-area-inset-bottom, 0px)) !important; }
+  .mini-dock { left: max(8px, env(safe-area-inset-left, 0px)) !important; bottom: max(8px, env(safe-area-inset-bottom, 0px)) !important; }
+}
 
 /* bottom place card (Apple Maps style sheet peek) */
 .place-card{bottom:58px !important;border-radius:20px;border:1px solid var(--line);background:color-mix(in srgb,var(--surface) 92%,transparent);backdrop-filter:blur(18px);box-shadow:0 10px 30px rgba(0,0,0,.22);padding:10px 12px}
@@ -309,4 +336,23 @@ body {
 .tipbtn.tip-b::after{bottom:auto;top:calc(100% + 8px)}
 @media (max-width:639px){.icon-pill-label{display:none}.icon-pill{min-width:34px;height:36px;font-size:18px}.icon-pill .red-dot{top:3px;right:3px}.menu-item.compact-only{display:flex !important}}
 @media (max-width:639px),(max-height:500px){.place-card{bottom:128px !important}}
+/* landscape phones are short: the place card is one bar along the bottom,
+   not a sheet lifted into the middle of the city */
+@media (max-height: 500px) {
+  .float-bars { display: none !important; }
+  .place-card {
+    bottom: 52px !important;
+    width: min(720px, calc(100% - 124px)) !important;
+    padding: 4px 8px !important;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 8px !important;
+  }
+  .place-card > p { display: none !important; }
+  .place-card .pc-sub { display: none !important; }
+  .place-card .mt-2 { margin-top: 0 !important; }
+  .place-card > .flex { flex: 1; min-width: 0; }
+  .place-card .h-10 { width: 32px !important; height: 32px !important; }
+}
 @media (max-width:639px){.res-pill{font-size:12px}.res-pill .text-\[13px\]{font-size:12px}}

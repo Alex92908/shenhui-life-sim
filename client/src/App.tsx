@@ -6,9 +6,11 @@ import { api, type ApiResponse } from "./api";
 import { AREA_LABELS } from "./areas";
 import { AccountModal, accountToken } from "./Account";
 import { StoreModal, LOOK_COLOR, LOOK_TITLE } from "./Store";
-import { UpdatesModal, BondsModal, CommitteeModal, GigsModal, BillboardModal, BOND_INFO, policyMul, LATEST_UPDATE, type BondKind } from "./Social";
-const lookOf = (b: object): string | null => (b as { look?: string | null }).look ?? null;
+import { UpdatesModal, BondsModal, CommitteeModal, GigsModal, BillboardModal, BOND_INFO, PLEDGE_INFO, policyMul, LATEST_UPDATE, type BondKind } from "./Social";
+const lookOf = (b: object): string | null => storeLook((b as { look?: string | null }).look ?? null);
 import { TERMS, PRIVACY, LEGAL_VERSION, OPERATOR_MISSING } from "./legal";
+import { ACCESSORIES, HAIRS, CAR_PRICE, KID_NAMES, PLOT_PRICE, clamp100, furnUse, accessoryFromLook, hairFromLook, npcHome, plotWorth, storeLook } from "./living";
+import { listedRent, mapAds, sanhePay, sanheSay } from "./ads";
 import { getLang, setLangStored, installTranslator, LANGS, trText, type Lang } from "./i18n";
 import { cloudCode, newCloudCode, setCloudCode, prettyCode, liteDefault, setQuality, readInvite, inviteLink, clearInviteParams, drawShareCard } from "./share";
 import {
@@ -30,7 +32,7 @@ generateDailyPosts, authorReply, chatReply, greetLine, hashStr, memOf, relLabel,
 type ChatAction, type MemMap, type NpcPost, type PlayerNews,
 } from "./npc";
 import { MapView } from "./MapView";
-import { setSound, soundWanted, wakeSound, setScene, sfx, musicPick, setMusicPick, MUSIC_PICKS, type SoundScene, type MusicPick } from "./sound";
+import { setSound, soundWanted, wakeSound, setScene, setWorld, sfx, musicPick, setMusicPick, nowPlayingCredit, MUSIC_PICKS, MUSIC_CREDITS, EXTRA_CREDITS, type SoundScene, type MusicPick, type PlaceTone, type TravelTone } from "./sound";
 import { momentsAt, inBest, seawardAz, SCENIC_MOMENTS, type ScenicMoment } from "./scenic";
 import { LivehouseModal } from "./Livehouse";
 import { drawOrigin, originById, tierOfIden, tierNow, TIERS, climbVerdict, randomNick, ORIGINS, type Origin } from "./origin";
@@ -47,18 +49,25 @@ const VENUE_TALK: Partial<Record<LifeSet, VenueTalk[]>> = {
     { id: "order", emoji: "🍚", zh: "点一份猪脚饭", en: "Order trotter rice", who: "老板娘", whoEn: "The owner", say: "「靓仔/靓女，加个卤蛋？今日猪脚好靓。」", sayEn: "“Add a braised egg? The trotters are lovely today.”", pose: "eat", partner: [0xf3ead8, 0x4a3226], money: -25, energy: 14, mood: 4 },
     { id: "chat", emoji: "💬", zh: "跟老板娘聊两句", en: "Chat with the owner", who: "老板娘", whoEn: "The owner", say: "「我在这条街开了十二年店，楼都拆了两轮了。」", sayEn: "“Twelve years on this street. They've rebuilt the block twice.”", pose: "talk", partner: [0xf3ead8, 0x4a3226], mood: 5, network: 1 },
     { id: "share", emoji: "🪑", zh: "跟陌生人拼桌", en: "Share a table with a stranger", who: "拼桌的大哥", whoEn: "A man at your table", say: "「你也是外地来的吧？我湖南的，来深圳第八年了。」", sayEn: "“Not from here either? I'm from Hunan — eighth year in Shenzhen.”", pose: "eat", partner: [0x3b82f6, 0x2b2b33], mood: 6, network: 1 },
+    { id: "toilet", emoji: "🚻", zh: "去洗手间", en: "Use the restroom", who: "自己", whoEn: "You", say: "「好了。」", sayEn: "“That's better.”", pose: "idle" },
   ],
   mall: [
     { id: "try", emoji: "👗", zh: "试一件衣服", en: "Try something on", who: "店员", whoEn: "Shop assistant", say: "「这件很衬你，今天满 300 减 50。」", sayEn: "“That suits you — ¥50 off over ¥300 today.”", pose: "talk", partner: [0x111827, 0x111827], mood: 5 },
     { id: "milktea", emoji: "🧋", zh: "排队买杯奶茶", en: "Queue for bubble tea", who: "奶茶店员", whoEn: "Tea shop staff", say: "「三分糖去冰，前面还有 23 杯哦。」", sayEn: "“30% sugar, no ice — 23 cups ahead of you.”", pose: "idle", partner: [0xec4899, 0x1f2937], money: -18, mood: 6, energy: 4 },
+    { id: "toilet", emoji: "🚻", zh: "去洗手间", en: "Use the restroom", who: "自己", whoEn: "You", say: "「好了。」", sayEn: "“That's better.”", pose: "idle" },
   ],
   market: [
     { id: "haggle", emoji: "🥬", zh: "跟菜档阿姨讲价", en: "Haggle at the veg stall", who: "菜档阿姨", whoEn: "Veg stall auntie", say: "「两块五一斤啦，送你一把葱，下次再来！」", sayEn: "“¥2.50 a jin — have some spring onions free, come again!”", pose: "talk", partner: [0x65a30d, 0x374151], money: -12, mood: 5 },
     { id: "fish", emoji: "🐟", zh: "让鱼档老板挑条鱼", en: "Let the fishmonger pick a fish", who: "鱼档老板", whoEn: "The fishmonger", say: "「这条鲈鱼早上刚到，蒸八分钟，包你鲜。」", sayEn: "“This sea bass came in this morning — steam it eight minutes.”", pose: "talk", partner: [0x0ea5e9, 0x1f2937], money: -30, mood: 3, xp: 1 },
   ],
+  electronics: [
+    { id: "check", emoji: "📱", zh: "让档口老板验一部二手手机", en: "Have the stall owner check a used phone", who: "档口老板", whoEn: "The stall owner", say: "「电池健康 87%，面容能用。当场过机，不靠谱你别拿。」", sayEn: "“Battery health 87%, Face ID works. Check it here — don't take it if it isn't right.”", pose: "talk", partner: [0x0e7490, 0x1f2937], money: -80, mood: 4 },
+    { id: "parts", emoji: "🔌", zh: "配一套装机配件", en: "Pick parts for a build", who: "档口老板", whoEn: "The stall owner", say: "「内存和固态我给你配兼容的。装不好，你拿回来。」", sayEn: "“I'll match the RAM and the SSD. If it doesn't fit, bring it back.”", pose: "talk", partner: [0x0e7490, 0x1f2937], money: -120, xp: 1, mood: 3 },
+  ],
   office: [
     { id: "coffee", emoji: "☕", zh: "茶水间跟同事聊天", en: "Chat in the pantry", who: "同事", whoEn: "A colleague", say: "「听说下个月要调整架构……你那边有消息吗？」", sayEn: "“Heard there's a reorg next month… heard anything?”", pose: "talk", partner: [0x6366f1, 0x374151], mood: 3, network: 1 },
     { id: "ask", emoji: "🙋", zh: "请教前辈一个问题", en: "Ask a senior for advice", who: "前辈", whoEn: "A senior colleague", say: "「别急着做完，先想清楚谁来验收。」", sayEn: "“Don't rush to finish — first work out who signs it off.”", pose: "talk", partner: [0x1f2937, 0x374151], xp: 2, network: 1 },
+    { id: "toilet", emoji: "🚻", zh: "去洗手间", en: "Use the restroom", who: "自己", whoEn: "You", say: "「好了。」", sayEn: "“That's better.”", pose: "idle" },
   ],
   gym: [
     { id: "coach", emoji: "🏋️", zh: "让教练看看动作", en: "Ask the coach to check your form", who: "教练", whoEn: "The coach", say: "「核心收紧，背打直——对，就这样。办个私教课？」", sayEn: "“Brace your core, back straight — that's it. Fancy a PT package?”", pose: "lift", partner: [0xef4444, 0x111827], energy: -6, mood: 5 },
@@ -82,6 +91,24 @@ const VENUE_TALK: Partial<Record<LifeSet, VenueTalk[]>> = {
   bedroom: [
     { id: "desk", emoji: "🛎️", zh: "问前台附近哪里好吃", en: "Ask the front desk where to eat", who: "前台", whoEn: "The receptionist", say: "「出门右转第二个路口，那家砂锅粥开到凌晨。」", sayEn: "“Right out the door, second corner — that claypot congee is open till late.”", pose: "talk", partner: [0x1f2937, 0x1f2937], mood: 4 },
   ],
+  concourse: [
+    { id: "toilet", emoji: "🚻", zh: "去洗手间", en: "Use the restroom", who: "自己", whoEn: "You", say: "「好了。」", sayEn: "“That's better.”", pose: "idle" },
+    { id: "wait", emoji: "🪑", zh: "在大厅坐一会儿", en: "Sit in the hall", who: "自己", whoEn: "You", say: "「下一班还早，先坐着。」", sayEn: "“The next one isn't for a while.”", pose: "sit", mood: 3 },
+    { id: "water", emoji: "🧴", zh: "便利店买瓶水", en: "Buy a bottle of water", who: "店员", whoEn: "The clerk", say: "「冰的热的？扫码。」", sayEn: "“Cold or hot? Scan here.”", pose: "talk", partner: [0x0ea5e9, 0x1f2937], money: -6, mood: 2 },
+  ],
+  park: [
+    { id: "bench", emoji: "🪑", zh: "在长椅上坐一会儿", en: "Sit on the bench", who: "自己", whoEn: "You", say: "「风过来了。」", sayEn: "“Here comes the wind.”", pose: "sit", mood: 6 },
+    { id: "stroll", emoji: "🚶", zh: "沿着园路走一圈", en: "Walk the path", who: "自己", whoEn: "You", say: "「慢慢走，不赶。」", sayEn: "“No rush.”", pose: "idle", mood: 8, energy: -4 },
+    { id: "photo", emoji: "📸", zh: "在树下拍一张", en: "Take a photo under the trees", who: "自己", whoEn: "You", say: "「这张能发。」", sayEn: "“This one's worth posting.”", pose: "idle", mood: 6 },
+  ],
+  beach: [
+    { id: "waves", emoji: "🌊", zh: "踩进浪里", en: "Step into the wash", who: "自己", whoEn: "You", say: "「凉的，一下就醒了。」", sayEn: "“Cold. That woke you up.”", pose: "idle", mood: 10 },
+    { id: "shade", emoji: "⛱️", zh: "在伞下歇一会儿", en: "Sit in the shade", who: "自己", whoEn: "You", say: "「听着浪就行。」", sayEn: "“Just the waves.”", pose: "sit", mood: 6 },
+  ],
+  hike: [
+    { id: "climb", emoji: "🥾", zh: "再往上走一截", en: "Climb a bit further", who: "自己", whoEn: "You", say: "「腿酸，风倒是干净。」", sayEn: "“Legs burn. The air is clean.”", pose: "idle", mood: 8, energy: -6 },
+    { id: "view", emoji: "🏙️", zh: "停下来看一眼城", en: "Stop and look at the city", who: "自己", whoEn: "You", say: "「楼下那些灯，都是别人的班。」", sayEn: "“Those lights are other people's shifts.”", pose: "idle", mood: 8 },
+  ],
 };
 
 /* 营业场所的 3D 室内：地点类型 → 场景 */
@@ -89,6 +116,7 @@ const VENUE_SETS: Partial<Record<string, { set: LifeSet; zh: string; en: string 
   food: { set: "restaurant", zh: "推门进去：烧腊、猪脚饭、街坊在聊天", en: "Push the door: roast meats, trotter rice, regulars chatting" },
   mall: { set: "mall", zh: "逛一圈：橱窗、新品、冷气很足", en: "Have a wander: shop windows, new arrivals, strong air-con" },
   market: { set: "market", zh: "菜市场里转转：鱼档、菜档、讨价还价", en: "Walk the wet market: fish stalls, greens, haggling" },
+  electronics: { set: "electronics", zh: "一米柜台：手机、平板、配件，当场验机再付钱", en: "One-metre counters: phones, tablets and parts — check it before you pay" },
   work: { set: "office", zh: "看看工位：屏幕、咖啡、同事在敲代码", en: "See the office floor: screens, coffee, colleagues typing" },
   apec: { set: "office", zh: "会场里面：长桌、名牌、同传耳机", en: "Inside the venue: long tables, name cards, interpretation headsets" },
   bank: { set: "office", zh: "柜台和排队机", en: "The counters and the queue machine" },
@@ -99,10 +127,23 @@ const VENUE_SETS: Partial<Record<string, { set: LifeSet; zh: string; en: string 
   lodging: { set: "bedroom", zh: "前台拿房卡，上楼看看房间", en: "Key card from the desk, a look at the room" },
   service: { set: "office", zh: "办事大厅：取号、填表、等叫号", en: "The service hall: take a number, fill a form, wait" },
 };
+function venueFor(loc: { type: string; id: string; name: string }): { set: LifeSet; zh: string; en: string } | null {
+  const fixed = VENUE_SETS[loc.type];
+  if (fixed) return fixed;
+  if (loc.type === "transit" || loc.type === "port") return { set: "concourse", zh: "进站厅：闸机、安检、便利店。洗手间在里头。", en: "The concourse: gates, security, a shop. The restroom is inside." };
+  if (loc.type === "mountain") return { set: "hike", zh: "上山的路：石阶、树荫，走到能看见城的地方。", en: "The path up: stone steps and shade, until you can see the city." };
+  if (loc.type === "scenic" || loc.type === "fun") {
+    const beach = /沙|滩|海滨|beach|海龟|dameisha|xichong|xunliao|巽寮/i.test(`${loc.id}${loc.name}`);
+    return beach
+      ? { set: "beach", zh: "走到沙滩上：浪、伞、光脚。", en: "Onto the sand: waves, umbrellas, bare feet." }
+      : { set: "park", zh: "走进园子：树、长椅、风。", en: "Into the park: trees, a bench, the wind." };
+  }
+  return null;
+}
 import { routineRole, routineSteps, CORE_FOR_FULL_DAY, ROLE_META, isOrderRole, type RoutineDay, type RiderOrder, type RoutineStep, type RoutineRole } from "./routines";
 import { GUIDE, SCENE_PHOTOS, guideForLocName, tourForCity, type DayTour, type GuidePlace } from "./experience";
 import { creditFor } from "./photo-credits";
-import { SEASON_START, actionMinutes, clockStr, timeBlock, nowMin, countdown, cooldownMs, realMinLabel, venueClosed, inWindow, windowStr, RAIL_HOURS, modeHours, realGameDay, seasonStartFor, seasonLength, seasonMonth } from "./clock";
+import { SEASON_START, actionMinutes, clockStr, timeBlock, nowMin, countdown, cooldownMs, realMinLabel, venueClosed, inWindow, windowStr, RAIL_HOURS, modeHours, realGameDay, seasonStartFor, seasonLength, seasonMonth, bjNow } from "./clock";
 import { PERKS, MAX_EQUIP, perkById, runPoints } from "./legacy";
 import { STORIES, PART, storyOf, storyStatus, type StoryFx, type StoryProg } from "./stories";
 import { storyEN } from "./stories-en";
@@ -143,6 +184,7 @@ const GIFTS = {
   hongbao: { emoji: "🧧", name: "红包", cost: 88, effect: "¥88" },
   referral: { emoji: "🤝", name: "内推", cost: 0, effect: "你公司的面试门槛降低" },
   invite: { emoji: "🎉", name: "邀请报到", cost: 0, effect: "¥200 邀请奖励" },
+  share: { emoji: "💴", name: "分成", cost: 0, effect: "进钱包" },
 } as const;
 type GiftKind = keyof typeof GIFTS;
 type RealWeather = ApiResponse<typeof api, "getRealWeather">;
@@ -173,6 +215,20 @@ day: number;
 money: number;
 energy: number;
 mood: number;
+/** 0–100. They fall while you are away and pull you back to a meal, a wash, a person. */
+hunger: number;
+clean: number;
+social: number;
+/** 100 is content. Fun only comes back in a real place. Bladder is comfort — low means find a restroom. */
+fun: number;
+bladder: number;
+/** index into HAIRS — the silhouette other players can pick you out by */
+hair: number;
+/** index into ACCESSORIES. Bag, cap and tie stay visible from behind. */
+accessory: number;
+spouse?: string;
+kids: { name: string; day: number }[];
+plots: { city: CityKey; paid: number; day: number }[];
 rent: number;
 baseRent: number;
 goal: number;
@@ -192,9 +248,11 @@ venueFx?: string[];
 arcs?: Record<string, ArcProg>;
 /** NPC gigs already done ("day:id") */
 npcGigs?: string[];
+/** 三和 / 日结今天已经结过一单 */
+sanheDay?: number;
 /** 长线目标：买了房、开了店、带了徒弟 */
 ownFlat?: boolean; flatDay?: number;
-shop?: { kind: string; day: number; lvl: number; till: number };
+shop?: { kind: string; day: number; lvl: number; till: number; partner?: string };
 apprentice?: { name: string; day: number; lvl: number };
 homeSpent: number;
 xp: number;
@@ -325,6 +383,9 @@ function arcFxText(fx: ArcFx, en: boolean, ck: CityKey): string {
 return [fx.money ? `${fx.money > 0 ? "+" : "−"}${fmtMoney(Math.abs(fx.money), ck)}` : "", fx.mood ? `${en ? "mood" : "心情"} ${fx.mood > 0 ? "+" : ""}${fx.mood}` : "", fx.energy ? `${en ? "energy" : "能量"} ${fx.energy > 0 ? "+" : ""}${fx.energy}` : "", fx.network ? `${en ? "contacts" : "人脉"} +${fx.network}` : "", fx.xp ? `${en ? "XP" : "经验"} +${fx.xp}` : "", fx.rentPct ? `${en ? "rent" : "周租"} ${fx.rentPct > 0 ? "+" : ""}${fx.rentPct}%` : ""].filter(Boolean).join(" · ");
 }
 /** furniture placed in the 3D home: saved spot, else the next free spot in purchase order */
+function rentYouPay(gs: { rent: number; rentPolicy?: number; roommate?: string }): number {
+  return Math.round(gs.rent * (gs.rentPolicy ?? 1) * (gs.roommate ? 0.5 : 1));
+}
 function placedFurn(gs: GameState): { id: string; slot: number; color: number }[] {
 const used = new Set<number>(); const out: { id: string; slot: number; color: number }[] = [];
 for (const id of gs.furniture) { const p = gs.furnPos?.[id]; if (p !== undefined && p >= 0) used.add(p); }
@@ -872,11 +933,20 @@ const setMapMode = (m: "city" | "follow") => {
   setMapModeState(m);
   try { localStorage.setItem("shhr-mapmode", m); } catch { /* storage unavailable */ }
   track("map_mode_switch", { to: m, ab: mapAb });
-  showToast(m === "follow" ? (en ? "🎯 Follow view: the camera stays with you; the minimap shows the whole city." : "🎯 跟随视角：镜头跟着你，小地图看全城。") : (en ? "🗺️ Whole-city view." : "🗺️ 全城视角：一眼看全城。"));
+  const phone = typeof window !== "undefined" && (window.innerWidth < 820 || window.innerHeight < 520);
+  showToast(m === "follow"
+    ? (en ? "🎯 Close view: the streets around you fill the screen." : "🎯 近景：你身边的楼占满屏幕。")
+    : phone
+      ? (en ? "🗺️ A wider look at your part of the city. Pinch out for the whole city." : "🗺️ 拉开一点，看你这一片。再捏合能看全城。")
+      : (en ? "🗺️ Whole-city view." : "🗺️ 全城视角：一眼看全城。"));
 };
 const [retrainOpen, setRetrainOpen] = useState(false);
 const [liveOpen, setLiveOpen] = useState(false);
 const [home3d, setHome3d] = useState(false);
+const [lifeOpen, setLifeOpen] = useState(false);
+const [homeGuest, setHomeGuest] = useState<string | null>(null);
+const [visitHome, setVisitHome] = useState<{ tier: number; style: string | null; layout: { id: string; slot: number; color: number }[] } | null>(null);
+const [homePose, setHomePose] = useState<"idle" | "sit" | "sleep">("idle");
 const [furnSel, setFurnSel] = useState<string | null>(null);
 const [venue3d, setVenue3d] = useState<{ set: LifeSet; name: string; line: string; id?: string; emoji?: string; color?: number } | null>(null);
 const [venueTalk, setVenueTalk] = useState<VenueTalk | null>(null);
@@ -906,23 +976,43 @@ if (mapFullscreen) setAsideOpen(false);
 
 wasFullscreen.current = mapFullscreen;
 }, [mapFullscreen]);
+const exitMapFullscreen = () => {
+  setMapFullscreen(false);
+  const doc = document as Document & { webkitFullscreenElement?: Element | null; webkitExitFullscreen?: () => void };
+  if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+  else if (doc.webkitFullscreenElement) doc.webkitExitFullscreen?.();
+};
 useEffect(() => {
-  const onFs = () => { if (!document.fullscreenElement) setMapFullscreen(false); };
+  const doc = document as Document & { webkitFullscreenElement?: Element | null };
+  const onFs = () => { if (!document.fullscreenElement && !doc.webkitFullscreenElement) setMapFullscreen(false); };
   document.addEventListener("fullscreenchange", onFs);
-  return () => document.removeEventListener("fullscreenchange", onFs);
+  document.addEventListener("webkitfullscreenchange", onFs);
+  // Capture so Esc still leaves while the search box is focused. The browser
+  // often swallows Esc for its own fullscreen exit and never delivers the key,
+  // so fullscreenchange above is the other path; when the key does arrive,
+  // exit the Fullscreen API ourselves instead of only flipping React state.
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key !== "Escape" && e.key !== "Esc") return;
+    if (!mapFullscreenRef.current && !document.fullscreenElement && !doc.webkitFullscreenElement) return;
+    e.preventDefault();
+    exitMapFullscreen();
+  };
+  window.addEventListener("keydown", onKey, true);
+  return () => {
+    document.removeEventListener("fullscreenchange", onFs);
+    document.removeEventListener("webkitfullscreenchange", onFs);
+    window.removeEventListener("keydown", onKey, true);
+  };
 }, []);
 useEffect(() => {
   if (!mapFullscreen) return;
   const prev = document.body.style.overflow;
   document.body.style.overflow = "hidden";
-  const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMapFullscreen(false); };
-  window.addEventListener("keydown", onKey);
-  return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", onKey); };
+  return () => { document.body.style.overflow = prev; };
 }, [mapFullscreen]);
 const toggleMapFullscreen = () => {
   if (mapFullscreen) {
-    setMapFullscreen(false);
-    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+    exitMapFullscreen();
   } else {
     setMapFullscreen(true);
     setAsideOpen(false);
@@ -1360,6 +1450,8 @@ apecCount: s.apecCount,
 employer: s.employer ?? "startup",
 stamps: Math.min(999, metaRef.current.stamps.length),
 title: metaRef.current.title,
+hair: Math.max(0, Math.min(3, Math.round(s.hair ?? 0))),
+accessory: Math.max(0, Math.min(3, Math.round(s.accessory ?? 0))),
 });
 },
 onSuccess: (data) => {
@@ -1472,6 +1564,17 @@ day: Math.min(30, Math.max(1, Math.round(num(g.day, 1)))),
 money: Math.round(num(g.money, iden.money)),
 energy: clamp(num(g.energy, 90), 0, 100),
 mood: clamp(num(g.mood, iden.mood), 0, 100),
+hunger: clamp100(num(g.hunger, 78)),
+clean: clamp100(num(g.clean, 78)),
+social: clamp100(num(g.social, 70)),
+fun: clamp100(num(g.fun, 72)),
+bladder: clamp100(num(g.bladder, 84)),
+hair: Math.max(0, Math.min(HAIRS.length - 1, Math.round(num(g.hair, 0)))),
+accessory: Math.max(0, Math.min(ACCESSORIES.length - 1, Math.round(num(g.accessory, 0)))),
+sanheDay: Math.max(0, Math.round(num(g.sanheDay, 0))),
+spouse: typeof g.spouse === "string" && g.spouse ? g.spouse : undefined,
+kids: Array.isArray(g.kids) ? g.kids.flatMap((k) => { const o = k as { name?: unknown; day?: unknown }; return typeof o?.name === "string" ? [{ name: o.name, day: num(o.day, 1) }] : []; }).slice(0, 3) : [],
+plots: (() => { const out: GameState["plots"] = []; if (!Array.isArray(g.plots)) return out; for (const k of g.plots) { const o = k as { city?: unknown; paid?: unknown; day?: unknown }; const city = o?.city; if (city === "sz" || city === "hz" || city === "hk") out.push({ city, paid: num(o.paid, 0), day: num(o.day, 1) }); if (out.length >= 3) break; } return out; })(),
 rent: num(g.rent, 0),
 baseRent: num(g.baseRent, 0),
 goal: num(g.goal, iden.id === "rich" ? 30000 : iden.id === "flat" ? 5000 : CITIES[g.cityKey].goal),
@@ -1488,7 +1591,7 @@ venueFx: strArr(g.venueFx),
 npcGigs: strArr(g.npcGigs),
 arcs: g.arcs && typeof g.arcs === "object" && !Array.isArray(g.arcs) ? Object.fromEntries(Object.entries(g.arcs as Record<string, unknown>).filter(([k, v]) => arcById(k) && v && typeof v === "object").map(([k, v]) => { const o = v as Record<string, unknown>; return [k, { st: num(o.st, 0), day: num(o.day, 0), flags: strArr(o.flags), ...(typeof o.done === "string" ? { done: o.done } : {}) }]; })) : {},
 ownFlat: g.ownFlat === true, flatDay: typeof g.flatDay === "number" ? g.flatDay : undefined,
-shop: g.shop && typeof g.shop === "object" && typeof (g.shop as { kind?: unknown }).kind === "string" ? { kind: String((g.shop as { kind: string }).kind), day: num((g.shop as { day?: unknown }).day, 0), lvl: num((g.shop as { lvl?: unknown }).lvl, 1), till: num((g.shop as { till?: unknown }).till, 0) } : undefined,
+shop: g.shop && typeof g.shop === "object" && typeof (g.shop as { kind?: unknown }).kind === "string" ? { kind: String((g.shop as { kind: string }).kind), day: num((g.shop as { day?: unknown }).day, 0), lvl: num((g.shop as { lvl?: unknown }).lvl, 1), till: num((g.shop as { till?: unknown }).till, 0), partner: typeof (g.shop as { partner?: unknown }).partner === "string" ? (g.shop as { partner: string }).partner : undefined } : undefined,
 apprentice: g.apprentice && typeof g.apprentice === "object" && typeof (g.apprentice as { name?: unknown }).name === "string" ? { name: String((g.apprentice as { name: string }).name).slice(0, 20), day: num((g.apprentice as { day?: unknown }).day, 0), lvl: num((g.apprentice as { lvl?: unknown }).lvl, 0) } : undefined,
 homeSpent: num(g.homeSpent, 0),
 xp: num(g.xp, 0),
@@ -1593,7 +1696,8 @@ const s0 = gsRef.current; if (!s0) return;
 if (!inWindow(nowMin(), RAIL_HOURS[s0.cityKey])) { showToast(`🚇 ${railWord(s0.cityKey)}已经停运了（运营 ${windowStr(RAIL_HOURS[s0.cityKey])}，北京时间）。打车或者明早再坐。`); return; }
 const route = routeOverride ?? findMetroRoute(s0.cityKey, fromLocId, toLocId);
 if (!route) { showToast("这趟车暂时没规划出来，换个目的地试试。"); return; }
-if (s0.money < route.fare) { showToast(`车票 ${Y}${route.fare}，钱包不够，先打工攒点钱。`); return; }
+const due = evRef.current.metroFree ? 0 : Math.round(route.fare * policyRef.current.metro);
+if (s0.money < due) { showToast(`车票 ${Y}${due}，钱包不够，先打工攒点钱。`); return; }
 const crowd = crowdForRide(route.line.id, s0.day, s0.metroRides ?? 0);
 setRideBig(true);
 setCarriage({ route, fromLoc: fromLocId, toLoc: toLocId, stopIdx: 0, legIdx: 0, awaitingTransfer: false, crowdLabel: crowd.label, crowdDesc: crowd.desc, crowdLevel: crowd.level, seated: crowd.level === 0, gaveSeat: false, phoneUsed: false, heldRail: false });
@@ -1667,8 +1771,9 @@ if (mode === "metro" || mode === "rail") {
   // cancelled just because an endpoint has no station.
   const plan = planRailTrip(s0.cityKey, currentLocRef.current, locId);
   if (plan) {
-    if (s0.money < plan.route.fare) {
-      showToast(`这趟车票 ${Y}${plan.route.fare}（${plan.route.summary}），钱包不够，先打工攒点钱再坐。`);
+    const ticket = Math.round(plan.route.fare * policyRef.current.metro);
+    if (s0.money < ticket) {
+      showToast(`这趟车票 ${Y}${ticket}（${plan.route.summary}），钱包不够，先打工攒点钱再坐。`);
       setSelectedLoc(currentLocRef.current);
       return;
     }
@@ -1734,6 +1839,7 @@ setTripTo(locId);
    不分远近；四步动画按这趟的实际时长 ms 等分缩放，行程到点时
    最后一步没演完就等它演完再收（见 roadRideArrived 的处理）。 */
 setTripMode(effMode);
+if (effMode === "taxi") sfx("horn");
 if (effMode === "bus" || effMode === "taxi" || effMode === "drive") {
 setRideBig(true);
 setRoadRide({ mode: effMode, fromName: from.name, toName: to.name, fare: cost, durMs: ms, startedAt: Date.now() });
@@ -1884,17 +1990,35 @@ useEffect(() => {
 if (phase === "game") updMeta((m) => { touchStreak(m); });
 // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [phase]);
-/* background music follows the moment: club venues, scenic moments, rain, night or day */
+/* background music follows the moment; ambience follows the place */
 const [musicTick, setMusicTick] = useState(0);
+const [singing, setSinging] = useState(false);
+useEffect(() => { if (!lifeAnim) setSinging(false); }, [lifeAnim]);
+useEffect(() => { if (lifeAnim?.kind === "gathering") sfx("laugh"); }, [lifeAnim?.kind]);
 useEffect(() => { const id = window.setInterval(() => setMusicTick((n) => n + 1), 60_000); return () => window.clearInterval(id); }, []);
 useEffect(() => {
   if (phase !== "game") { setScene("off"); return; }
   const here = getLocations(gs?.cityKey ?? "sz").find((l) => l.id === currentLoc);
   const tn = nowMin();
   const sc: SoundScene = scenicMoment ? "scenic" : venue3d?.set === "club" || (here?.type === "social" && !walking) ? "club" : nowRainy ? "rain" : tn >= 19 * 60 || tn < 6 * 60 ? "night" : "day";
-  setScene(sc);
+  const sea = !!here && (here.type === "port" || /海|滩|湾|岛|港|泳|沙|渔/.test(here.name) || here.emoji === "🌊" || here.emoji === "🏖️");
+  const place: PlaceTone = !here ? "street" : sea ? "sea" : here.type === "mountain" || /山|峰|岭/.test(here.name) ? "mountain" : here.type === "market" ? "market" : here.type === "mall" ? "mall" : here.type === "food" || here.type === "transit" ? "crowd" : here.type === "social" ? "social" : here.type === "home" ? "home" : here.type === "scenic" || here.type === "fun" ? "park" : here.type === "work" || here.type === "learn" || here.type === "health" || here.type === "gym" || here.type === "bank" || here.type === "service" || here.type === "lodging" ? "indoor" : "street";
+  const travel: TravelTone = carriage ? "metro" : walking && (tripMode === "walk" || tripMode === "run") ? "walk" : "still";
+  const clock = bjNow();
+  const storm = rwOk ? realWeather!.kind === "storm" : weatherOf(gs?.day ?? 1, gs?.cityKey ?? "sz").includes("暴雨");
+  setWorld({ scene: sc, minute: tn, day: clock.d, month: clock.mo, place, travel, storm, karaoke: singing });
 // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [phase, currentLoc, walking, nowRainy, musicTick, soundIsOn, scenicMoment, venue3d]);
+}, [phase, currentLoc, walking, nowRainy, musicTick, soundIsOn, scenicMoment, venue3d, carriage, tripMode, singing]);
+const heardLoc = useRef<string | null>(null);
+useEffect(() => {
+  if (phase !== "game") return;
+  if (heardLoc.current === null) { heardLoc.current = currentLoc; return; }
+  if (heardLoc.current === currentLoc) return;
+  heardLoc.current = currentLoc;
+  const loc = getLocations(gs?.cityKey ?? "sz").find((l) => l.id === currentLoc);
+  if (loc && ["home", "mall", "market", "food", "social", "work", "lodging"].includes(loc.type)) sfx("door");
+}, [currentLoc, phase]); // eslint-disable-line react-hooks/exhaustive-deps
+useEffect(() => { if (venue3d) sfx("door"); }, [venue3d]);
 /* 今日城市事件：新的一天播报一次，并记进「见过的事件」 */
 useEffect(() => {
 if (phase !== "game") return;
@@ -1915,7 +2039,8 @@ const route = findStationRoute(s0.cityKey, fromName, toName);
 const board = exitLocForStation(s0.cityKey, fromName);
 const alight = exitLocForStation(s0.cityKey, toName);
 if (!route || !board || !alight) { showToast("这两个站之间规划不出线路，换个站试试。"); return; }
-if (s0.money < route.fare) { showToast(`这趟车票 ¥${route.fare}（${route.summary}），钱包不够，先打工攒点钱再坐。`); return; }
+const due = evRef.current.metroFree ? 0 : Math.round(route.fare * policyRef.current.metro);
+if (s0.money < due) { showToast(`这趟车票 ¥${due}（${route.summary}），钱包不够，先打工攒点钱再坐。`); return; }
 pendingRide.current = null;
 pendingAfterRide.current = null;
 if (board !== currentLocRef.current) {
@@ -2191,9 +2316,9 @@ const finishScenic = () => {
   const key = `${g.cityKey}:scenic:${cur.m.id}`;
   const first = !(g.visitedScenic ?? []).includes(key);
   const gain = (best ? 20 : 12) + (first ? 4 : 0);
-  mutate((x) => { x.mood = clamp(x.mood + gain, 0, 100); if (first) x.visitedScenic = [...(x.visitedScenic ?? []), key]; });
+  mutate((x) => { x.mood = clamp(x.mood + gain, 0, 100); x.fun = clamp100(x.fun + gain); if (first) x.visitedScenic = [...(x.visitedScenic ?? []), key]; });
   floatReward(`${en ? "mood" : "心情"} +${gain}`, "green");
-  sfx("arrive");
+  sfx("applause");
   showToast(en ? `${cur.m.emoji} ${cur.m.en}${best ? " — at the perfect time" : ""}. Mood +${gain}.` : `${cur.m.emoji} ${cur.m.zh}${best ? "，赶上了最好的时候" : ""}。心情 +${gain}。`);
   track("scenic_done", { id: cur.m.id, best, first });
 };
@@ -2342,30 +2467,31 @@ const kind = r.gift.kind as GiftKind;
 const meta0 = GIFTS[kind];
 if (!meta0) return;
 mutate((x) => {
-if (kind === "tea") { x.mood += 8; x.energy += 5; }
-else if (kind === "breakfast") x.energy += 15;
+if (kind === "tea") { x.mood += 8; x.energy += 5; x.social = clamp100(x.social + 8); }
+else if (kind === "breakfast") { x.energy += 15; x.hunger = clamp100(x.hunger + 22); }
 else if (kind === "hongbao") x.money += 88;
+else if (kind === "share") x.money += r.gift?.amount ?? 0;
 else if (kind === "referral" && r.gift?.company) x.referrals = [...new Set([...(x.referrals ?? []), r.gift.company])];
 else if (kind === "invite") x.money += 200;
 });
 updMeta((m) => bump(m, "social"));
 const coName = kind === "referral" ? companyById(r.gift.company ?? undefined).short : "";
 floatReward(`${meta0.emoji} 来自${r.gift.fromName}`, "green");
-showToast(kind === "invite" ? `🎉 你邀请的${r.gift.fromName}在城里站稳了脚跟！邀请奖励 ¥200 已到账。` : kind === "referral" ? `🤝 ${r.gift.fromName}把你内推进了${coName}：去${coName}面试，门槛降低（技能 -2、经验 -6）。` : `${meta0.emoji} ${r.gift.fromName}送了你一份${meta0.name}（${meta0.effect}）。在聊天页可以回赠。`);
+showToast(kind === "invite" ? `🎉 你邀请的${r.gift.fromName}在城里站稳了脚跟！邀请奖励 ¥200 已到账。` : kind === "share" ? `💴 ${r.gift.fromName}的店分了你 ¥${r.gift.amount ?? 0}，已经进钱包。` : kind === "referral" ? `🤝 ${r.gift.fromName}把你内推进了${coName}：去${coName}面试，门槛降低（技能 -2、经验 -6）。` : `${meta0.emoji} ${r.gift.fromName}送了你一份${meta0.name}（${meta0.effect}）。在聊天页可以回赠。`);
 addLog(`收到${r.gift.fromName}送的${meta0.name}。`);
 }).catch(() => { claimingGifts.current.delete(g.id); });
 };
-const sendGift = (toId: string, toName: string, kind: GiftKind) => {
+const sendGift = (toId: string, toName: string, kind: GiftKind, amount?: number) => {
 const s0 = gsRef.current; const prof = profileRef.current;
 if (!s0 || !prof) return;
 const gm = GIFTS[kind];
 if (s0.money < gm.cost) { showToast(`${gm.name}要 ¥${gm.cost}，钱包不够。`); return; }
 if (kind === "referral" && (s0.employer ?? "startup") === "startup") { showToast("先进一家大厂，才能给别人内推。"); return; }
-void api.sendGift({ playerId: prof.playerId, toId, kind }).then((r) => {
+void api.sendGift({ playerId: prof.playerId, toId, kind, amount }).then((r) => {
 if (!r.ok) { showToast(r.error ?? "没送出去，稍后再试。"); return; }
 if (gm.cost) mutate((x) => { x.money -= gm.cost; x.mood += 3; });
 updMeta((m) => { m.giftsSent += 1; bump(m, "social"); });
-showToast(`${gm.emoji} 给${toName}送了${gm.name}${gm.cost ? `，-¥${gm.cost}` : ""}。对方下次上线就能收到。`);
+showToast(kind === "share" ? `💴 ${toName}的分成 ¥${amount ?? 0} 已记上，对方下次上线进钱包。` : `${gm.emoji} 给${toName}送了${gm.name}${gm.cost ? `，-¥${gm.cost}` : ""}。对方下次上线就能收到。`);
 }).catch(() => showToast("网络不太好，礼物没送出去。"));
 };
 
@@ -2396,16 +2522,21 @@ msg = `歇了一会儿，能量 +${14 + (s.outfit === "pajamas" ? 6 : 0)}，心�
 break;
 case "work": {
 const cost = (co?.energy ?? 28) - fitSave;
-const wage = Math.round(base * (co?.payMul ?? 1) * (ev.payMul ?? 1));
+let wage = Math.round(base * (co?.payMul ?? 1) * (ev.payMul ?? 1));
 const formalXp = s.outfit === "formal" ? 1 : 0;
 const buddy = colleagues.length > 0 ? 3 : 0;
+s.hunger = clamp100(s.hunger - 8); s.clean = clamp100(s.clean - 4); s.social = clamp100(s.social - 2); s.fun = clamp100(s.fun - 4); s.bladder = clamp100(s.bladder - 8);
+let hungryNote = "";
+if (s.hunger < 28) { wage = Math.round(wage * 0.85); s.mood -= 3; hungryNote = "，空着肚子干活，工钱打了八五折"; }
 s.money += wage; s.earned += wage; s.energy -= cost; s.xp += 2 + formalXp; s.workCount += 1; s.mood += (co?.mood ?? 0) + buddy;
-msg = `${co ? `在${co.short}` : ""}上班一天，工资 +${fmt(wage)}${ev.payMul ? "（今天发奖金 ×1.3）" : ""}，经验 +${2 + formalXp}${formalXp ? "（正装加成 +1）" : ""}${co?.mood ? `，心情 ${co.mood > 0 ? "+" : ""}${co.mood}` : ""}${buddy ? `，和同事${colleagues.map((p) => p.name).slice(0, 2).join("、")}一起上班心情 +3` : ""}。`;
+msg = `${co ? `在${co.short}` : ""}上班一天，工资 +${fmt(wage)}${ev.payMul ? "（今天发奖金 ×1.3）" : ""}，经验 +${2 + formalXp}${formalXp ? "（正装加成 +1）" : ""}${co?.mood ? `，心情 ${co.mood > 0 ? "+" : ""}${co.mood}` : ""}${buddy ? `，和同事${colleagues.map((p) => p.name).slice(0, 2).join("、")}一起上班心情 +3` : ""}${hungryNote}。`;
 break;
 }
 case "overtime": {
 const cost = (co ? co.energy + 14 : 42) - fitSave;
-const pay = Math.round(base * (co?.payMul ?? 1) * 1.75 * (co?.otMul ?? 1) * (ev.payMul ?? 1));
+let pay = Math.round(base * (co?.payMul ?? 1) * 1.75 * (co?.otMul ?? 1) * (ev.payMul ?? 1));
+s.hunger = clamp100(s.hunger - 10); s.clean = clamp100(s.clean - 6); s.fun = clamp100(s.fun - 6); s.bladder = clamp100(s.bladder - 10);
+if (s.hunger < 28) pay = Math.round(pay * 0.85);
 s.money += pay; s.earned += pay; s.energy -= cost; s.mood -= 12; s.xp += 3; s.otCount += 1;
 msg = `${co ? `在${co.short}` : ""}加班到深夜，+${fmt(pay)}，经验 +3，心情 -12。`;
 break;
@@ -2447,7 +2578,7 @@ feeds.push({ kind: "career", text: `从${from.short}跳槽到${co.short}` });
 break;
 }
 case "canteen":
-s.money -= 12; s.energy += 22; s.mood += 4; s.mealCount += 1;
+s.money -= 12; s.energy += 22; s.mood += 4; s.mealCount += 1; s.hunger = clamp100(s.hunger + 34);
 msg = `在${co?.short ?? "公司"}食堂刷工卡吃了一顿，¥12 吃到饱，能量 +22。`;
 break;
 case "campus-tour":
@@ -2468,19 +2599,19 @@ const f = FOODS[s.cityKey][arg];
 if (!f) break;
 const fc = Math.round(f.cost * (ev.eatMul ?? 1) * policyRef.current.eat);
 const fm = f.mood + (ev.eatMood ?? 0);
-s.money -= fc; s.energy += f.energy; s.mood += fm; s.mealCount += 1;
+s.money -= fc; s.energy += f.energy; s.mood += fm; s.mealCount += 1; s.hunger = clamp100(s.hunger + 40); s.fun = clamp100(s.fun + 6);
 msg = `${f.name}下肚，能量 +${f.energy}，心情 +${fm}${ev.eatMul ? `（美食节价 ¥${fc}）` : ""}。`;
 break;
 }
 case "wash":
 if (evRef.current.noWater) { msg = `🚱 今天${evRef.current.name}，水龙头拧开只有嘶嘶声。下楼买瓶水凑合吧。`; break; }
-s.energy += 6; s.mood += 6;
+s.energy += 6; s.mood += 6; s.clean = clamp100(s.clean + 46);
 msg = "洗漱整理了一番，神清气爽，能量 +6，心情 +6。";
 break;
 case "cook": {
 if (evRef.current.noWater) { msg = `🚱 今天${evRef.current.name}，做不了饭——出去吃，或者叫个外卖。`; break; }
 if (s.groceries <= 0) { msg = "冰箱空了，先去买菜（夜市/市场/商场都有买菜）再回来做饭。"; break; }
-s.groceries -= 1; s.energy += 34; s.mood += 9; s.mealCount += 1;
+s.groceries -= 1; s.energy += 34; s.mood += 9; s.mealCount += 1; s.hunger = clamp100(s.hunger + 48);
 msg = "自己做了一顿饭：洗菜、切菜、下锅，热气腾腾端上桌。能量 +34，心情 +9。";
 break;
 }
@@ -2498,7 +2629,7 @@ case "fun": {
 if (ev.beachClosed && isBeachLoc(loc)) { msg = "🌀 台风预警，海边今天封闭了，改天再来。"; break; }
 const cost = loc.funCost?? CITIES[s.cityKey].funCost;
 const mood = (loc.funMood?? CITIES[s.cityKey].moodFun) + (ev.funMood ?? 0);
-s.money -= cost; s.mood += mood;
+s.money -= cost; s.mood += mood; s.fun = clamp100(s.fun + Math.max(12, mood));
 msg = `${loc.funName?? CITIES[s.cityKey].funName}，心情 +${mood}。`;
 break;
 }
@@ -2613,11 +2744,11 @@ msg = `取出全部理财，+${fmt(amt)} 回到存款。`;
 break;
 }
 case "social-ktv":
-s.money -= 88; s.mood += 18; s.network += 1;
+s.money -= 88; s.mood += 18; s.network += 1; s.social = clamp100(s.social + 24);
 msg = "唱K吼了两嗓子，心情 +18，人脉 +1。";
 break;
 case "social-drink":
-s.money -= 45; s.mood += 10; s.energy += 4;
+s.money -= 45; s.mood += 10; s.energy += 4; s.social = clamp100(s.social + 16);
 msg = "小酌一杯，聊了聊最近的行情，心情 +10。";
 break;
 case "market-phone": {
@@ -2743,6 +2874,7 @@ const special: LifeKind | undefined = kind !== "fun" && kind !== "stroll" && kin
   : loc.type === "mountain" || ["luofu", "nankunshan", "xiangtoushan", "gaobangshan", "tanglangshan", "fenghuangshan"].includes(loc.id) || loc.placeKind === "peak" ? "hike"
   : /海滩|沙滩|海边|海滨|杨梅坑|黄金海岸|檀悦/.test(loc.name) || loc.placeKind === "beach" ? "beach" : undefined;
 const ak = special ?? animMap[kind];
+if (kind === "social-ktv") setSinging(true);
 if (ak && msg && !(kind === "cook" && s0.groceries <= 0) && !(kind === "buy-groceries" && s0.money < 28)) playLifeAnim(ak);
 };
 
@@ -2756,12 +2888,85 @@ if (tb) { showToast(`⏰ ${tb}。`); return; }
 const first = s0.sleptDay !== s0.day;
 const night = inWindow(nowMin(), [20 * 60, 34 * 60]);
 mutate((s) => {
-if (first) { s.energy = 100; s.sleptDay = s.day; s.mood += homeMoodBonus(s) + (night ? 4 : 0); }
+if (first) { s.energy = 100; s.sleptDay = s.day; s.mood += homeMoodBonus(s) + (night ? 4 : 0); s.clean = clamp100(s.clean + 28); s.hunger = clamp100(s.hunger - 16); s.bladder = clamp100(s.bladder + 40); s.fun = clamp100(s.fun + 8); }
 else s.energy = Math.min(100, s.energy + 20);
 s.busyUntil = Date.now() + cooldownMs(first ? actionMinutes("sleep") : 40); s.busyWhat = "睡觉";
 s.lastActiveDay = s.day;
 });
-showToast(first ? `😴 美美睡了一觉，能量回满${night ? "，按时睡觉心情 +4" : ""}。日子跟着北京时间走，睡觉不会跳到明天。` : "😴 又眯了一会儿，能量 +20（今天已经睡过整觉了）。");
+showToast(first ? `😴 美美睡了一觉，能量回满${night ? "，按时睡觉心情 +4" : ""}。睡醒会饿一点。日子跟着北京时间走，睡觉不会跳到明天。` : "😴 又眯了一会儿，能量 +20（今天已经睡过整觉了）。");
+};
+const eatBowl = () => {
+  const s0 = gsRef.current; if (!s0) return;
+  if (s0.money < 25) { showToast(en ? "A bowl of noodles is ¥25." : "一碗面 ¥25，钱包不够。"); return; }
+  mutate((s) => { s.money -= 25; s.hunger = clamp100(s.hunger + 36); s.fun = clamp100(s.fun + 6); s.energy = Math.min(100, s.energy + 8); s.mood = Math.min(100, s.mood + 2); s.mealCount += 1; });
+  showToast(en ? "A bowl of noodles. Less hungry." : "吃了碗面，不那么饿了。");
+};
+const washHome = () => {
+  if (!home3d && !homeGuest && currentLocRef.current !== "home") { showToast(en ? "Go home to wash." : "回家才能洗澡。点地图上的家，走到了再洗。"); return; }
+  if (evRef.current.noWater) { showToast(en ? "No water today." : `今天停水，洗不了。`); return; }
+  mutate((s) => { s.energy = Math.min(100, s.energy + 6); s.mood = Math.min(100, s.mood + 6); s.clean = clamp100(s.clean + 46); s.bladder = 100; });
+  showToast(en ? "Washed up." : "洗了个澡，干净了。");
+};
+const seeSomeone = () => {
+  const s0 = gsRef.current; if (!s0) return;
+  const loc = locById(currentLocRef.current);
+  const lively = ["food", "mall", "work", "fun", "market", "gym", "transit", "scenic", "home", "lodging"].includes(loc.type);
+  if (!lively) { showToast(en ? "Go where people are — a mall, a food street, the office — then try again." : "去人多的地方再说：夜市、商场、公司，或者回家。"); return; }
+  const cast = npcsForCity(s0.cityKey);
+  const who = (s0.spouse && loc.type === "home" ? s0.spouse : null) ?? cast.find((n) => n.preferTypes.includes(loc.type))?.name ?? cast[0]?.name ?? "街坊";
+  mutate((s) => {
+    s.social = clamp100(s.social + 22); s.mood = Math.min(100, s.mood + 4);
+    const m = { ...memOf(s.npcMem ?? {}, who) }; m.rel = Math.max(-100, Math.min(100, m.rel + 2)); m.lastDay = s.day; s.npcMem = { ...(s.npcMem ?? {}), [who]: m };
+  });
+  showToast(en ? `You talked with ${who}.` : `和${who}说了会儿话，心里松一点。`);
+};
+const askOut = (name: string) => {
+  const s0 = gsRef.current; if (!s0) return;
+  if (s0.spouse && s0.spouse !== name) { showToast(en ? "You already registered with someone." : `你已经和${s0.spouse}领过证了。`); return; }
+  if (s0.money < 60) { showToast(en ? "A date is ¥60." : "约会一顿要 ¥60，钱包不够。"); return; }
+  mutate((s) => {
+    s.money -= 60;
+    const pts = (s.romance?.[name] ?? 0) + 14;
+    s.romance = { ...(s.romance ?? {}), [name]: pts };
+    s.social = clamp100(s.social + 18); s.fun = clamp100(s.fun + 14); s.mood = Math.min(100, s.mood + 6);
+    const m = { ...memOf(s.npcMem ?? {}, name) }; m.rel = Math.max(-100, Math.min(100, m.rel + 6)); m.lastDay = s.day; s.npcMem = { ...(s.npcMem ?? {}), [name]: m };
+  });
+  const stage = ROMANCE_STAGES[romanceStage((gsRef.current?.romance?.[name] ?? 0))]?.name[en ? 1 : 0] ?? "";
+  showToast(en ? `Date with ${name}. ${stage}` : `和${name}吃了一顿，现在是「${stage}」。再到「恋人」就能领证。`);
+};
+const spotsOf = (layout: { id: string; slot: number }[]) => layout.flatMap((p) => { const f = furnById(p.id); return f && p.slot >= 0 && p.slot <= 6 ? [{ id: p.id, slot: p.slot, color: f.color }] : []; });
+const publishHome = () => {
+  const s0 = gsRef.current; const prof = profileRef.current;
+  if (!s0 || !prof) return;
+  void api.publishHome({ playerId: prof.playerId, tier: tierAt(s0), style: s0.homeStyle, layout: placedFurn(s0).map((p) => ({ id: p.id, slot: p.slot })) }).catch(() => {});
+};
+const openVisit = (name: string) => {
+  mutate((s) => { s.social = clamp100(s.social + 12); s.mood = Math.min(100, s.mood + 4); });
+  const npc = npcHome(name);
+  setVisitHome(npc ? { tier: npc.tier, style: null, layout: spotsOf(npc.layout) } : null);
+  setHomePose("idle");
+  setHomeGuest(name); setLifeOpen(false); setHome3d(true);
+  const pub = (world?.online ?? []).find((p) => p.name === name)?.id ?? bonds.find((b) => b.status === "active" && b.peerName === name)?.peerId;
+  if (pub) void api.getHome({ pub }).then((r) => { if (r.home) setVisitHome({ tier: r.home.tier, style: r.home.style, layout: spotsOf(r.home.layout) }); }).catch(() => {});
+  showToast(en ? `You walked into ${name}'s place.` : `走进${name}的家。人已经坐着了，你自己走过去。`);
+};
+const usePlacedFurn = (id: string) => {
+  const u = furnUse(id);
+  if (!u) { showToast(en ? "This piece is just for the room." : "这件是摆设，用不上。"); return; }
+  if (!home3d && !homeGuest && currentLocRef.current !== "home") { showToast(en ? "You can use furniture once you're home." : "人要在家里才能用家具。先走回家。"); return; }
+  if (u === "cook") {
+    const s0 = gsRef.current; if (!s0) return;
+    if (evRef.current.noWater) { showToast(en ? "No water today — can't cook." : `今天停水，做不了饭。`); return; }
+    if (s0.groceries <= 0) { showToast(en ? "The fridge is empty. Buy groceries first." : "冰箱空了，先去夜市或市场买菜。"); return; }
+    mutate((s) => { s.groceries -= 1; s.energy = Math.min(100, s.energy + 34); s.mood = Math.min(100, s.mood + 9); s.mealCount += 1; s.hunger = clamp100(s.hunger + 48); s.fun = clamp100(s.fun + 6); });
+    showToast(en ? "You cooked a meal." : "用灶台做了一顿饭，不饿了。");
+    return;
+  }
+  if (u === "wash") { washHome(); return; }
+  if (u === "bed") { mutate((s) => { s.energy = Math.min(100, s.energy + 16); s.mood = Math.min(100, s.mood + 4); }); setHomePose("sleep"); showToast(en ? "You lay down for a bit." : "在床上躺了一会儿，精神回来一点。想睡整觉就点「睡一觉」。"); return; }
+  mutate((s) => { s.mood = Math.min(100, s.mood + 6); s.social = clamp100(s.social + (homeGuest ? 8 : 0)); });
+  setHomePose("sit");
+  showToast(u === "watch" ? (en ? "You sat and watched for a while." : "坐下来看了一会儿。") : (en ? "You sat down." : "在沙发上坐了一会儿。"));
 };
 
 /* 北京时间过了零点：把错过的日子一天天过完（没上线的日子自动模拟上班、吃饭），周六照常交租 */
@@ -2774,13 +2979,14 @@ let simDays = 0; let simPay = 0;
 const next = mutate((s) => {
 while (s.day < target) {
 const d = s.day;
+s.hunger = clamp100(s.hunger - 22); s.clean = clamp100(s.clean - 16); s.social = clamp100(s.social - 12); s.fun = clamp100(s.fun - 14); s.bladder = clamp100(s.bladder - 20);
 if (s.lastActiveDay !== d) {
 simDays += 1;
 if (!/周六|周日/.test(weekday(d))) { const w = Math.round(basePay(s) * 0.6); s.money += w; s.earned += w; simPay += w; s.workCount += 1; }
-s.money -= 40; s.mealCount += 2;
+s.money -= 40; s.mealCount += 2; s.hunger = clamp100(s.hunger + 40);
 }
 if (isSaturday(d)) {
-{ const pol = s.rentPolicy ?? 1; const mate = s.roommate; const due = Math.round(s.rent * pol * (mate ? 0.5 : 1));
+{ const due = rentYouPay(s); const mate = s.roommate; const pol = s.rentPolicy ?? 1;
 s.money -= due;
 s.rentPaid += due;
 rentMsg += ` 周六交租 -${fmt(due)}${mate ? `（和室友${mate}平摊）` : ""}${pol < 1 ? "（业委会减租 5%）" : ""}。`; }
@@ -2855,6 +3061,7 @@ const advanceRef = useRef(advanceDays); advanceRef.current = advanceDays;
 const [, setClockTick] = useState(0);
 const lastBeatKey = useRef(-1);
 const primeSaid = useRef(-1);
+const needNag = useRef("");
 useEffect(() => {
 if (phase !== "game") return;
 const beat = () => {
@@ -2866,7 +3073,24 @@ const now = Date.now();
 const step = (s.perks ?? []).includes("early") ? 120_000 : 180_000;
 const last = s.regenAt ?? now;
 const gained = Math.floor((now - last) / step);
-if (gained > 0) mutate((x) => { x.energy = Math.min(100, x.energy + (x.energy < 100 ? gained : 0)); x.regenAt = last + gained * step; });
+if (gained > 0) {
+mutate((x) => {
+  x.energy = Math.min(100, x.energy + (x.energy < 100 ? gained : 0));
+  x.hunger = clamp100(x.hunger - gained * 6);
+  x.clean = clamp100(x.clean - gained * 3);
+  x.social = clamp100(x.social - gained * 3);
+  x.fun = clamp100(x.fun - gained * 4);
+  x.bladder = clamp100(x.bladder - gained * 5);
+  if (x.hunger < 18) x.mood = clamp(x.mood - gained, 0, 100);
+  x.regenAt = last + gained * step;
+});
+const n = gsRef.current;
+const nag = !n ? "" : n.hunger < 28 ? "h" : n.bladder < 28 ? "b" : n.clean < 28 ? "c" : n.fun < 28 ? "f" : n.social < 28 ? "s" : "";
+if (nag && needNag.current !== nag) {
+  needNag.current = nag;
+  showToast(nag === "h" ? (en ? "You're hungry. Eat, or go home and cook." : "饿了。去吃饭，或者回家用灶台做饭。") : nag === "b" ? (en ? "Find a restroom — malls, restaurants and the office have one. Walk up to it." : "内急。商场、饭店、公司里有洗手间，走进去，走到那个点。") : nag === "c" ? (en ? "You need a wash. Home has a bathroom." : "该洗洗了。回家才能洗澡。") : nag === "f" ? (en ? "Go somewhere. A bar, the sea, or the Livehouse. Sitting still does not count." : "闷了。去酒吧、海边，或者 Livehouse。坐着不算玩。") : (en ? "It's been quiet. Go find someone." : "有点闷。去找个人说说话。"));
+} else if (!nag) needNag.current = "";
+}
 /* 只在分钟变了或者正在冷却时才重绘，免得整个界面每秒刷新 */
 if (isPrime() && primeSaid.current !== s.day) { primeSaid.current = s.day; pushDanmakuRef.current(en ? "🔥 8 pm prime time: most players are online now — gigs, parties and the Livehouse are busiest. Neighbours' gigs pay ×1.5 for an hour." : "🔥 晚 8 点黄金档：现在在线的人最多——零工、组局、Livehouse 最热闹，街坊零工一小时内工钱 ×1.5。"); }
 const busy = !!s.busyUntil && now < s.busyUntil + 1000;
@@ -2945,6 +3169,7 @@ addLog(`${text}`);
     const state: GameState = {
       cityKey: city, idenId: iden.id, day: 1,
       money: iden.money, energy: 88 + iden.energyBonus, mood: iden.mood,
+      hunger: 82, clean: 86, social: 64, fun: 72, bladder: 88, hair: 0, accessory: 0, sanheDay: 0, kids: [], plots: [],
       rent, baseRent: rent,
       goal: iden.id === "rich" ? 30000 : iden.id === "flat" ? 5000 : cityInfo.goal,
       earned: 0, rentPaid: 0, workCount: 0, otCount: 0, mealCount: 0,
@@ -3057,7 +3282,7 @@ addLog(`${text}`);
     if (!f) return;
     const cost = Math.round(f.cost * 1.5);
     mutate((s) => {
-      s.money -= cost; s.energy += f.energy; s.mood += f.mood; s.mealCount += 1;
+      s.money -= cost; s.energy += f.energy; s.mood += f.mood; s.mealCount += 1; s.hunger = clamp100(s.hunger + 38);
     });
     showToast(`${f.name}（外卖）到了，-${fmt(cost)}，能量 +${f.energy}。`);
     setPhoneOpen(false);
@@ -3249,7 +3474,8 @@ addLog(`${text}`);
       s.xp += out.xp; s.skill += out.skill; s.fit += out.fit; s.network += out.network;
       s.busyUntil = Date.now() + cooldownMs(out.minutes, (s.perks ?? []).includes("route")); s.busyWhat = a.name[0]; s.lastActiveDay = s.day;
       s.actCount = (s.actCount ?? 0) + 1;
-      if (mates > 0) s.partyPlays = (s.partyPlays ?? 0) + 1;
+      if (mates > 0) { s.partyPlays = (s.partyPlays ?? 0) + 1; s.social = clamp100(s.social + 20); }
+      if (p.mate) s.social = clamp100(s.social + 14);
       if (out.drop?.food) s.groceries += 1;
       if (a.id === "license") {
         s.licDay = s.day;
@@ -3293,6 +3519,7 @@ addLog(`${text}`);
     if (out.drop && firstFind) { const hit = dropById(out.drop.key); if (hit && hit.item.rarity === 3) postFeed("life", `${a.name[0]}收获了稀有的${hit.item.name[0]}`); }
     track("activity", { id: a.id, tier: out.tier, party: mates > 0, drop: !!out.drop, risk: out.risk?.kind ?? "" });
     const anim = ACT_ANIM[a.id];
+    if (a.id === "ktv" || a.id === "bizktv") setSinging(true);
     if (anim) playLifeAnim(anim);
     if (p.partyId && profileRef.current) {
       const pid = p.partyId;
@@ -3460,7 +3687,7 @@ addLog(`${text}`);
     const r = RESTAURANTS.find((x) => x.id === venueScene?.id); if (!r) return;
     const d = r.dishes[dishIdx]; if (!d) return;
     const s0 = gsRef.current; if (!s0 || s0.money < d.cost) { showToast("钱包不够这道菜，先看看菜单过过瘾。"); return; }
-    mutate((s) => { s.money -= d.cost; s.energy += d.energy; s.mood += d.mood; s.mealCount += 1; });
+    mutate((s) => { s.money -= d.cost; s.energy += d.energy; s.mood += d.mood; s.mealCount += 1; s.hunger = clamp100(s.hunger + 42); });
     showToast(`🍽️ ${d.name}上桌了，-${fmt(d.cost)}，能量 +${d.energy}，心情 +${d.mood}。`);
     addLog(`在${restName}堂食「${d.name}」，-${fmt(d.cost)}。`);
 playLifeAnim("eat");
@@ -3471,7 +3698,7 @@ playLifeAnim("eat");
     if (!plat || !f) return;
     const cost = Math.round(f.cost * plat.feeMul);
     if (s0.money < cost) { showToast("钱不够点这单外卖。"); return; }
-    mutate((s) => { s.money -= cost; s.energy += f.energy; s.mood += f.mood; s.mealCount += 1; });
+    mutate((s) => { s.money -= cost; s.energy += f.energy; s.mood += f.mood; s.mealCount += 1; s.hunger = clamp100(s.hunger + 36); });
     showToast(`${plat.emoji} ${plat.name}：${f.name}送到了，-${fmt(cost)}，能量 +${f.energy}。骑手在楼下等你取餐。`);
     addLog(`用${plat.name}点了${f.name}外卖，-${fmt(cost)}。`);
   };
@@ -3550,7 +3777,7 @@ playLifeAnim("shopping");
     const acts = co ? [...companyActions(co, s), ...(loc.type === "work" ? [] : baseActionsFor(loc, s))] : baseActionsFor(loc, s);
     const ev = todayEvent;
     acts.unshift(...routineActs(loc, s));
-    { const vs = VENUE_SETS[loc.type]; if (vs) acts.push({ kind: "__venue3d", emoji: "🚪", title: en ? "Step inside · 3D" : "进店看看 · 3D", desc: en ? vs.en : vs.zh, cost: en ? "free" : "免费" }); }
+    { const vs = venueFor(loc); if (vs) acts.push({ kind: "__venue3d", emoji: "🚪", title: en ? "Step inside · 3D" : "走进去 · 3D", desc: en ? vs.en : vs.zh, cost: en ? "free" : "免费" }); }
     if (loc.type === "social") acts.unshift({ kind: "__livehouse", emoji: "🎶", title: en ? "Into the Livehouse" : "进 Livehouse 听歌", desc: en ? "The whole city hears the same song at the same moment — independent musicians' originals" : "全城同步放同一首歌：独立音乐人的原创投稿，你也能投稿", cost: en ? "free" : "免费" });
     for (const m of momentsAt(s.cityKey, loc.id, loc.name)) acts.unshift({ kind: `__scenic-${m.id}`, emoji: m.emoji, title: en ? m.en : m.zh, desc: `${en ? m.hintEn : m.hint}${inBest(m, nowMin()) ? (en ? " · ✨ perfect time right now" : " · ✨ 现在正是最好的时候") : ""}`, cost: en ? `mood +${inBest(m, nowMin()) ? 20 : 12} · free` : `心情 +${inBest(m, nowMin()) ? 20 : 12} · 免费` });
     if (loc.type === "learn") acts.push({ kind: "__retrain", emoji: "🎓", title: en ? "Retrain / get certified" : "转行培训 / 考证", desc: en ? "Switch to another job: pay the course fee, have the skill it needs." : "换一份工作：交培训费，技能够就能转。外卖员也能考成护士。", cost: en ? "course fee" : "培训费" });
@@ -3576,6 +3803,7 @@ playLifeAnim("shopping");
     switch (loc.type) {
       case "home":
         return [
+          { kind: "__home3d", title: "走进屋里", emoji: "🚪", desc: "推门进去。摇杆走到床、沙发、灶台、洗手间，再点互动。", cost: "免费" },
           { kind: "__sleep", title: "睡一觉", emoji: "😴", desc: "每天第一次睡觉回满能量；日子跟着北京时间走，睡觉不会跳到明天", cost: "能量回满" },
           { kind: "wash", title: "起床洗漱", emoji: "🪥", desc: "刷牙、洗脸、整理自己，新的一天从卫生间开始", cost: "能量 +6 · 心情 +6 · 免费" },
           { kind: "cook", title: "自己做饭", emoji: "🍳", desc: `用冰箱里的食材做一顿（当前食材 ×${s.groceries}）：洗菜、切菜、下锅、上桌`, cost: "食材 -1 · 能量 +34 · 心情 +9", disabled: s.groceries <= 0 },
@@ -3619,7 +3847,7 @@ playLifeAnim("shopping");
         return [{ kind: "buy-groceries", title: "买菜囤食材", emoji: "🥬", desc: `在摊位上挑新鲜的菜、蛋、肉，拎回家放冰箱（当前食材 ×${s.groceries}）`, cost: `-${Y}28 · 食材 +1`, disabled: s.money < 28 },
         ...FOODS[s.cityKey].map((f, i) => ({
           kind: "eat", arg: i, title: f.name, emoji: f.emoji, desc: f.desc,
-          cost: `-${fmt(f.cost)} · 能量 +${f.energy} · 心情 +${f.mood}`,
+          cost: `-${fmt(Math.round(f.cost * policyRef.current.eat))} · 能量 +${f.energy} · 心情 +${f.mood}`,
         }))];
       case "fun":
         return [
@@ -3705,7 +3933,7 @@ playLifeAnim("shopping");
 const myId = myPub;
 const remotePlayers = (world?.online ?? [])
 .filter((pl) => pl.cityKey === cityKey && pl.id !== myId)
-.map((pl) => ({ id: pl.id, name: pl.name, emoji: pl.emoji, color: pl.color, locId: pl.locId }));
+.map((pl) => ({ id: pl.id, name: pl.name, emoji: pl.emoji, color: pl.color, locId: pl.locId, hair: hairFromLook(pl.look) ?? undefined, accessory: accessoryFromLook(pl.look) ?? undefined }));
 const onlineHere = (world?.online ?? []).filter((pl) => pl.cityKey === cityKey);
 const timeStr = (iso: string) => new Date(iso).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
 
@@ -3713,7 +3941,8 @@ const renderHomePanel = (s: GameState) => (
 <div className="mt-4 border-t border-[var(--line)] pt-4">
 {(() => { const tpl = tplByName(s.homeStyle); const wall = hexCss(tpl?.wall ?? 0xefe9dc); const floor = hexCss(tpl?.floor ?? 0xb8a888); const atHome = currentLoc === "home"; return (
 <div className="mb-3">
-<button type="button" onClick={() => setHome3d(true)} className="mb-2 w-full rounded-full bg-[var(--text)] py-2.5 text-sm font-black text-[var(--bg)]">🏠 {en ? "My home · 3D" : "我的家 · 3D"} <span className="font-bold opacity-75">· {(() => { const T = TIERS[s.cityKey][tierAt(s)]!; return en ? T.en : T.zh; })()}</span></button>
+<button type="button" onClick={() => { publishHome(); setHome3d(true); }} className="mb-2 w-full rounded-full bg-[var(--text)] py-2.5 text-sm font-black text-[var(--bg)]">🏠 {en ? "My home · 3D" : "我的家 · 3D"} <span className="font-bold opacity-75">· {(() => { const T = TIERS[s.cityKey][tierAt(s)]!; return en ? T.en : T.zh; })()}</span></button>
+<div className="mb-2 flex flex-wrap gap-1.5"><button type="button" onClick={() => usePlacedFurn("bed-double")} className="rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] font-black">{en ? "Lie down" : "躺一会儿"}</button><button type="button" onClick={() => usePlacedFurn("kitchen-cabinet")} className="rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] font-black">{en ? "Cook" : "做饭"}</button><button type="button" onClick={washHome} className="rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] font-black">{en ? "Wash" : "洗澡"}</button></div>
 <div className="grid grid-cols-2 gap-2" role="img" aria-label={`户型图：${homeName(s)}，客厅、卧室、厨房、卫生间四间，已摆 ${s.furniture.length} 件家具，食材 ${s.groceries} 份`}>
 {HOME_ROOMS.map((room, ri) => {
 const ownedHere = s.furniture.flatMap((id) => { const f = furnById(id); return f && f.room === room.id ? [f] : []; });
@@ -3753,7 +3982,7 @@ return (
 </div>
 </div>
 </div> ); })()}
-<p className="text-sm font-bold">🏠 {homeName(s)} · 舒适度 {computeComfort(s)} · 周租 {fmt(s.rent)} · 已购家具 {s.furniture.length} 件</p>
+<p className="text-sm font-bold">🏠 {homeName(s)} · 舒适度 {computeComfort(s)} · 周租 {fmt(rentYouPay(s))} · 已购家具 {s.furniture.length} 件</p>
 <p className="mt-1 text-xs text-[var(--dim)]">舒适度越高，每天睡醒心情回得越多；家具和风格同款搭配还有额外加成。数据来自 ZhuyaHome 的风格模板、家具目录与材料价。</p>
 <p className="mt-3 text-xs font-black tracking-wide text-[var(--dim)]">换个装修风格（ZhuyaHome 模板）</p>
 <div className="mt-2 grid gap-2">
@@ -4057,7 +4286,7 @@ return (
 {dests.map(({ locId, route }) => (
 <button key={locId} type="button" onClick={() => { setPhoneOpen(false); startMetroRide(currentLoc, locId); }} className="act-btn">
 <span className="text-sm font-bold">{locById(locId).emoji} {locById(locId).name} <span style={{ color: route.line.colorCss }}>● {route.summary}</span></span>
-<span className="block text-xs text-[var(--dim)]">{route.stops} 站{route.isTransfer ? ` · 在 ${route.transferStations.join("、")} 换乘` : ""}{route.shuttleFrom.length > 0 ? " · 含站外接驳巴士" : ""} · 票价 {Y}{route.fare} · 点这里进车厢</span>
+<span className="block text-xs text-[var(--dim)]">{route.stops} 站{route.isTransfer ? ` · 在 ${route.transferStations.join("、")} 换乘` : ""}{route.shuttleFrom.length > 0 ? " · 含站外接驳巴士" : ""} · 票价 {Y}{Math.round(route.fare * policyRef.current.metro)} · 点这里进车厢</span>
 </button>
 ))}
 </div>
@@ -4347,9 +4576,78 @@ const city = CITIES[s.cityKey];
 const career = CAREERS[s.careerIdx] ?? CAREERS[0]!;
 const selLoc = locById(selectedLoc);
 const arrived = currentLoc === selectedLoc && !walking;
+const shopLabel = s.shop ? (SHOP_KINDS.find((k) => k.id === s.shop!.kind)?.zh ?? null) : null;
+const boards = mapAds(s.cityKey, s.day, (billboardsQuery.data?.slots ?? []).flatMap((b) => (b.ad ? [{ slot: b.slot, text: b.ad.text, emoji: b.ad.emoji, owner: b.ad.owner }] : [])), shopLabel);
+const spotsNow = billboardSpots(s.cityKey);
+const adHere = boards.find((b) => spotsNow[b.slot]?.id === selLoc.id) ?? boards.find((b) => b.go === selLoc.id && b.kind) ?? null;
+const said = sanheSay(s.cityKey, s.day);
+const takeSanhe = () => {
+  const s0 = gsRef.current; if (!s0) return;
+  const line = sanheSay(s0.cityKey, s0.day);
+  if ((s0.sanheDay ?? 0) === s0.day) { showToast(en ? `Already settled today. ${line.en}` : `今天这单结过了。${line.zh}`); return; }
+  if (s0.energy < 22) { showToast(en ? "Too tired to stand a shift." : "站不动了，歇一歇再来。"); return; }
+  const pay = sanhePay(s0.cityKey);
+  mutate((x) => {
+    x.money += pay; x.earned += pay; x.energy -= 22; x.xp += 1; x.sanheDay = x.day;
+    x.hunger = clamp100(x.hunger - 14); x.clean = clamp100(x.clean - 8); x.fun = clamp100(x.fun - 6); x.bladder = clamp100(x.bladder - 8);
+  });
+  sfx("coin");
+  showToast(en ? `${line.en} +${fmt(pay)}` : `${line.zh} 日结 +${fmt(pay)}。`);
+};
+const rentDueNow = rentYouPay(s);
+const askRent = () => showToast(en ? `The listed room is ${fmt(listedRent(s.cityKey))} a week. You pay ${fmt(rentDueNow)}.` : `房东挂的单间，周租 ${fmt(listedRent(s.cityKey))}。你这周实际交 ${fmt(rentDueNow)}。`);
+const askSale = () => showToast(en ? `${adHere?.owner ?? "The stall"}: ${adHere?.text ?? "today's price"}. Ask at the counter.` : `${adHere?.owner ?? "摊主"}：${adHere?.text ?? "今日特价"}。到柜台问。`);
 const phaseApec = apecPhase(s.day);
 const goalPct = clamp(Math.round((s.money / s.goal) * 100), 0, 100);
 const tt = (zh: string, e: string) => (en ? e : zh);
+const rentDue = rentDueNow;
+const VENUE_PLACE: Partial<Record<LifeSet, string>> = { restaurant: "food", mall: "mall", office: "work", gym: "gym", market: "market", electronics: "market", club: "fun", classroom: "learn", clinic: "health", bedroom: "lodging" };
+const MEET_IDS = new Set(["share", "coffee", "friend", "chat", "ask", "try", "classmate", "spot", "haggle", "fish"]);
+const regularHere = (set: LifeSet) => {
+  const kind = VENUE_PLACE[set];
+  if (!kind) return undefined;
+  const cast = npcsForCity(s.cityKey).filter((n) => (n.preferTypes as string[]).includes(kind));
+  return cast.length ? cast[s.day % cast.length] : undefined;
+};
+const runVenueTalk = (v: VenueTalk) => {
+  if (!venue3d) return;
+  const key = `${s.day}:${venue3d.set}:${v.id}`;
+  const cost = -(v.money ?? 0);
+  if (s.money < cost) { showToast(en ? "Not enough money for that." : "钱不够。"); return; }
+  mutate((x) => {
+    x.money += v.money ?? 0; x.energy = clamp(x.energy + (v.energy ?? 0), 0, 100);
+    if (v.id === "toilet") x.bladder = 100;
+    if (v.id === "order" || v.id === "share") { x.hunger = clamp100(x.hunger + 28); x.fun = clamp100(x.fun + 8); }
+    if (v.id === "milktea") { x.hunger = clamp100(x.hunger + 8); x.fun = clamp100(x.fun + 10); }
+    if (["sing", "dance", "drink", "friend", "live", "try"].includes(v.id)) x.fun = clamp100(x.fun + 16);
+    if (["bench", "stroll", "photo", "waves", "shade", "climb", "view", "wait"].includes(v.id)) x.fun = clamp100(x.fun + (v.id === "waves" || v.id === "climb" || v.id === "stroll" ? 18 : 12));
+    if (v.id === "water") { x.hunger = clamp100(x.hunger + 8); x.fun = clamp100(x.fun + 4); }
+    if (["share", "coffee", "friend", "chat", "ask", "try", "classmate", "spot"].includes(v.id)) x.social = clamp100(x.social + 8);
+    if (!(x.venueFx ?? []).includes(key)) { x.mood = clamp(x.mood + (v.mood ?? 0), 0, 100); x.network += v.network ?? 0; x.xp += v.xp ?? 0; x.venueFx = [...(x.venueFx ?? []).filter((k) => k.startsWith(`${x.day}:`)), key]; }
+  });
+  if (["share", "coffee", "friend", "chat", "ask", "try", "classmate", "spot"].includes(v.id) && !(s.venueFx ?? []).includes(key)) {
+    const who = regularHere(venue3d.set);
+    if (who) {
+      let stage = "";
+      mutate((x) => {
+        const m = { ...memOf(x.npcMem ?? {}, who.name) };
+        m.rel = Math.max(-100, Math.min(100, m.rel + 4));
+        m.lastDay = x.day;
+        x.npcMem = { ...(x.npcMem ?? {}), [who.name]: m };
+        if (m.rel >= 8 && x.spouse !== who.name) {
+          const pts = (x.romance?.[who.name] ?? 0) + 6;
+          x.romance = { ...(x.romance ?? {}), [who.name]: pts };
+          stage = ROMANCE_STAGES[romanceStage(pts)]?.name[en ? 1 : 0] ?? "";
+        }
+      });
+      showToast(en ? `You ran into ${who.name}${stage ? `. ${stage}` : "."}` : stage ? `碰上了${who.name}，现在是「${stage}」。` : `碰上了${who.name}，又熟了一点。`);
+    }
+  }
+  if (v.money) sfx("coin"); else sfx("click");
+  if (!soundIsOn) { setSoundIsOn(true); setSound(true); }
+  if (v.open === "live") { setVenue3d(null); setVenueTalk(null); setLiveOpen(true); return; }
+  setVenueTalk(v);
+};
 const feedKindEmoji: Record<string, string> = { join: "👋", career: "📈", apec: "🌐", home: "🏠", money: "💰", finish: "🏁", life: "✨" };
 
 return (
@@ -4368,6 +4666,7 @@ return (
 <span className="res-pill compact-hide" title={en ? "Energy" : "能量"}><span aria-hidden="true">⚡</span><span className="text-[13px] font-black">{Math.round(s.energy)}</span></span>
 <span className="res-pill compact-hide" title={en ? "Mood" : "心情"}><span aria-hidden="true">😊</span><span className="text-[13px] font-black">{Math.round(s.mood)}</span></span>
 <span className="res-pill compact-only" title={en ? "Energy · mood" : "能量 · 心情"}><span className="text-[12px] font-black">⚡{Math.round(s.energy)}</span><span className="text-[12px] font-black">😊{Math.round(s.mood)}</span></span>
+<button type="button" className="res-pill" onClick={() => setLifeOpen(true)} title={en ? "Hunger, restroom, wash, fun, people" : "饿了、内急、该洗了、想玩、想找人"}><span className="text-[12px] font-black">🍚{Math.round(s.hunger)}</span><span className="compact-hide text-[12px] font-black">🚿{Math.round(s.clean)}</span>{(s.bladder < 40 || s.fun < 40) && <span className="text-[12px] font-black">{s.bladder < 40 ? `🚻${Math.round(s.bladder)}` : ""}{s.fun < 40 ? ` 🎧${Math.round(s.fun)}` : ""}</span>}</button>
 {s.busyUntil && Date.now() < s.busyUntil ? <span className="res-pill border-[var(--accent)] text-[var(--accent)]">⏳ <span className="compact-hide">{s.busyWhat ?? "忙"} </span>{countdown(s.busyUntil - Date.now())}</span> : null}
 </div>
 <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
@@ -4377,15 +4676,16 @@ return (
 <button type="button" title={todayEvent.desc} aria-label={`今日城市事件：${todayEvent.name}`} onClick={() => showToast(`${todayEvent.emoji} 今日城市事件「${todayEvent.name}」：${todayEvent.desc}`)} className="chip">{todayEvent.emoji} {todayEvent.name}</button>
 <span className="chip"><span className="live-dot" /> {(world?.onlineSz ?? 0) + (world?.onlineHz ?? 0) + (world?.onlineHk ?? 0)}{en ? " online" : " 人在线"}</span>
 </span>
+{(() => { const ch = committeeQuery.data?.chair; const short = ch && ch.pledge in PLEDGE_INFO ? PLEDGE_INFO[ch.pledge].short[en ? 1 : 0] : null; return <button type="button" className="chip" onClick={() => setCommitteeOpen(true)}>{ch && short ? `${ch.emoji} ${ch.name} · ${short}` : (en ? "No chair · full price" : "城主空缺 · 原价")}</button>; })()}
 <button type="button" aria-label="打开每日任务" onClick={() => setDailyOpen(true)} className="icon-pill compact-hide"><span aria-hidden="true">📋</span><span className="icon-pill-label">{en ? "Tasks" : "任务"}</span></button>
-<button type="button" aria-label="打开手机" onClick={() => { setPhoneApp(null); setPhoneOpen(true); }} className="icon-pill compact-hide"><span aria-hidden="true">📱</span><span className="icon-pill-label">{en ? "Phone" : "手机"}</span>{unreadDm > 0 && <span className="red-dot" />}</button>
+<button type="button" aria-label="打开手机" onClick={() => { setPhoneApp(null); setPhoneOpen(true); sfx("notify"); }} className="icon-pill compact-hide"><span aria-hidden="true">📱</span><span className="icon-pill-label">{en ? "Phone" : "手机"}</span>{unreadDm > 0 && <span className="red-dot" />}</button>
 <div className="relative">
 <button type="button" aria-label={en ? "Menu" : "菜单"} aria-expanded={menuOpen} onClick={() => setMenuOpen((o) => !o)} className="icon-pill"><span aria-hidden="true">☰</span><span className="icon-pill-label">{en ? "Menu" : "菜单"}</span>{(updateSeen !== latestKey || bondInvites > 0 || unreadDm > 0) && <span className="red-dot" />}</button>
 {menuOpen && (<>
 <button type="button" aria-label="关闭菜单" onClick={() => setMenuOpen(false)} className="fixed inset-0 z-40 cursor-default" />
 <div className="menu-pop absolute right-0 top-[calc(100%+8px)] z-50 w-64 p-1.5" onClick={() => setMenuOpen(false)}>
 <div className="flex items-center justify-between px-2.5 py-2"><span className="text-xs font-black text-[var(--dim)]">{en ? "Language" : "语言"}</span><span onClick={(e) => e.stopPropagation()}>{langToggle()}</span></div>
-<button type="button" className="menu-item compact-only" onClick={() => { setPhoneApp(null); setPhoneOpen(true); }}>📱 {en ? "Phone" : "手机"}{unreadDm > 0 && <span className="red-dot static ml-auto" />}</button>
+<button type="button" className="menu-item compact-only" onClick={() => { setPhoneApp(null); setPhoneOpen(true); sfx("notify"); }}>📱 {en ? "Phone" : "手机"}{unreadDm > 0 && <span className="red-dot static ml-auto" />}</button>
 <button type="button" className="menu-item compact-only" onClick={() => setDailyOpen(true)}>📋 {en ? "Daily tasks" : "每日任务"}</button>
 <button type="button" className="menu-item" onClick={() => void openShare()}>📤 {en ? "Share & invite" : "分享战绩、邀请朋友"}</button>
 <button type="button" className="menu-item" onClick={() => setMusicOpen(true)}>🎵 {en ? "Background music" : "背景音乐"}</button>
@@ -4393,6 +4693,7 @@ return (
 {(Object.keys(CITIES) as CityKey[]).filter((k) => k !== s.cityKey).map((k) => <button key={k} type="button" className="menu-item" onClick={() => setCrossTo(k)}>{k === "hk" || s.cityKey === "hk" ? "🛃" : "🚄"} {en ? `To ${CITY_EN[k]} · ${crossRoutes(s.cityKey, k).length} routes` : `去${CITIES[k].name} · ${crossRoutes(s.cityKey, k).length} 条路线`}</button>)}
 <div className="my-1 h-px bg-[var(--line)]" />
 <button type="button" className="menu-item" onClick={() => { setUpdatesOpen(true); setUpdateSeen(latestKey); try { localStorage.setItem("shhr-update-seen", latestKey); } catch { /* storage unavailable */ } }}>🆕 {en ? "What's new" : "更新公告"}{updateSeen !== latestKey && <span className="red-dot static ml-auto" />}</button>
+<button type="button" className="menu-item" onClick={() => setLifeOpen(true)}>🏠 {en ? "Living: eat, home, family, land" : "过日子：吃饭、家里、家人、地"}</button>
 <button type="button" className="menu-item" onClick={() => setBondsOpen(true)}>🤝 {en ? "Bonds: roommates, partner" : "关系：室友、搭子、伴侣"}{bondInvites > 0 && <span className="red-dot static ml-auto" />}</button>
 <button type="button" className="menu-item" onClick={() => setDmOpen(true)}>💬 {en ? "Messages" : "私信"}{unreadDm > 0 && <span className="red-dot static ml-auto" />}</button>
 <button type="button" className="menu-item" onClick={() => setCommitteeOpen(true)}>🏛️ {en ? "Estate committee" : "业委会选举"}</button>
@@ -4425,7 +4726,7 @@ return (
 <div className="hard-card px-3.5 py-2.5">
 <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
 {(() => { const t0 = s.startTier ?? tierOfIden(s.idenId); const t1 = tierAt(s); const T = TIERS[s.cityKey]; const top = T[3]!; return <span className="chip" title={en ? `Started in ${T[t0]!.en}; your savings now put you in ${T[t1]!.en}. Reach the goal to move up.` : `出身：${T[t0]!.zh}；按现在的存款，你在「${T[t1]!.zh}」。攒够目标就能往上爬。`}>🪜 {T[t0]!.emoji}→{T[t1]!.emoji} {en ? T[t1]!.en : T[t1]!.zh}{t1 < 3 ? (en ? ` · aim: ${top.en}` : ` · 目标${top.zh}`) : ""}</span>; })()}
-{isSaturday(s.day) && <span className="chip text-[var(--accent)]">🏠 今天交租 {fmt(s.rent)}</span>}
+{isSaturday(s.day) && <span className="chip text-[var(--accent)]">🏠 今天交租 {fmt(rentDue)}</span>}
 {inWindow(nowMin(), [19 * 60, 21 * 60]) && <button type="button" onClick={() => setGigsOpen(true)} className="chip text-[var(--accent)]">🔥 {isPrime() ? (en ? "Prime time now · gigs ×1.5" : "黄金档进行中 · 零工 ×1.5") : (en ? `Prime time in ${20 * 60 - nowMin()} min` : `${20 * 60 - nowMin()} 分钟后黄金档`)}</button>}
 <button type="button" aria-label="竖着收起状态卡，收成屏幕左侧的竖排按钮" title="竖着收起，收成屏幕左侧的竖排按钮，点一下就展开" onClick={() => setBarsHidden(true)} className="ml-auto shrink-0 rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] font-black transition hover:border-[var(--border)]">◂ 收起</button>
 </div>
@@ -4473,7 +4774,7 @@ return (
 </div>
 </div>
 <p className="mt-3 flex flex-wrap gap-1.5">
-<span className="chip">🏠 周租 {fmt(s.rent)}</span>
+<span className="chip">🏠 周租 {fmt(rentDue)}{(s.rentPolicy ?? 1) < 1 ? (en ? " · chair −5%" : " · 城主减租") : ""}{s.roommate ? (en ? " · split" : " · 合租") : ""}</span>
 <span className="chip">{iden.emoji} {iden.name}</span>
 <span className="chip">{career.name} ×{career.mul}</span>
 <span className="chip">经验 {s.xp}</span>
@@ -4515,7 +4816,7 @@ return (
 <div className="mt-1.5 rounded-[12px] bg-white/60 p-2.5">
 <p className="text-xs font-black">{isToday ? "今日任务" : `${task.dateLabel} 第一班（提前认路）`} · {task.dateLabel} {task.event}</p>
 <p className="mt-0.5 text-xs leading-relaxed">{task.roleEmoji} 你当<b>{task.role}</b>：{task.title} —— 地点：{venue.emoji} {venue.name}。{done ? "✅ 已完成" : checked ? "📸 已打卡，到会场就能上岗" : "先坐地铁去会场打卡，再上岗"}</p>
-{plan && <p className="mt-0.5 text-[11px] font-bold">🚇 怎么去：{plan.boardLoc !== currentLoc ? `先步行到${locById(plan.boardLoc).short}站 · ` : ""}{plan.route.summary} · {plan.route.stops} 站 · {Y}{plan.route.fare}{plan.alightLoc !== task.venueLocId ? ` · 到${locById(plan.alightLoc).short}站再步行过去` : ""}</p>}
+{plan && <p className="mt-0.5 text-[11px] font-bold">🚇 怎么去：{plan.boardLoc !== currentLoc ? `先步行到${locById(plan.boardLoc).short}站 · ` : ""}{plan.route.summary} · {plan.route.stops} 站 · {Y}{Math.round(plan.route.fare * policyRef.current.metro)}{plan.alightLoc !== task.venueLocId ? ` · 到${locById(plan.alightLoc).short}站再步行过去` : ""}</p>}
 {!plan && currentLoc !== task.venueLocId && <p className="mt-0.5 text-[11px] font-bold">🚇 怎么去：离得很近，步行就到。</p>}
 <div className="mt-2 flex flex-wrap gap-2">
 {!atVenue && !done && <button type="button" aria-label={`坐地铁前往${venue.name}打卡`} onClick={() => walkTo(task.venueLocId, "metro")} className="rounded-full bg-[#5c4a00] px-3.5 py-1.5 text-[11px] font-black text-white">🚇 坐地铁去{venue.short}打卡</button>}
@@ -4551,14 +4852,19 @@ return (
 {/* Map — the hero, and now the whole stage: it fills the section
     edge-to-edge at all times. ⛶ 全屏 still offers the native
     full-viewport mode on top of that; Esc or the same button exits. */}
-<div ref={mapShellRef} className={mapFullscreen ? "fixed inset-0 z-[46] flex flex-col bg-[var(--bg)] p-3 pt-safe" : "absolute inset-0 flex flex-col p-2.5"}>
-{mapFullscreen && <button type="button" onClick={toggleMapFullscreen} className="fixed right-3 top-[calc(env(safe-area-inset-top)+12px)] z-[47] rounded-full bg-[var(--accent)] px-3.5 py-2 text-xs font-black text-white shadow-xl">✕ {en ? "Exit full screen" : "退出全屏"}</button>}
-<div className="relative px-1.5 pb-2.5">
+<div ref={mapShellRef} className={mapFullscreen ? "map-shell fixed inset-0 z-[46] flex flex-col bg-[var(--bg)] p-3 pt-safe" : "map-shell absolute inset-0 flex flex-col p-2.5"}>
+<div className="map-search relative z-30 px-1.5 pb-2.5">
 <div className="flex gap-2">
 <input value={mapQuery} onChange={(e) => setMapQuery(e.target.value)} onFocus={() => setSearchFocus(true)} onBlur={() => window.setTimeout(() => setSearchFocus(false), 220)} placeholder={s.cityKey === "hz" ? "🔍 搜地点或城轨/高铁站：西湖、老街、惠州南…" : s.cityKey === "hk" ? "🔍 搜地点或港铁站：旺角、中环、山顶、迪士尼…" : "🔍 搜地点或地铁站：公园、商场、医院、博物馆、海滩…"} aria-label={`搜索地点或${railWord(s.cityKey)}站`} className="min-w-0 flex-1 rounded-full border border-[var(--line)] bg-[var(--surface)] px-3.5 py-2 text-sm outline-none focus:border-[var(--border)]" />
 <button type="button" aria-label="打开景点分布图" onClick={() => setPlacesMapOpen(true)} data-tip={tt("景点分布图","Places map")} className={`tipbtn tip-b grid h-10 w-10 shrink-0 place-items-center rounded-full text-[17px] text-white shadow bg-[var(--green)]`}>🗺️</button>
 <button type="button" aria-label={s.cityKey === "hz" ? "打开惠州城际高铁线网图" : s.cityKey === "hk" ? "打开香港港铁线网图" : "打开地铁线路图"} onClick={() => { setMetroMapDest(null); setMetroMapOpen(true); }} data-tip={tt("线路图","Line map")} className={`tipbtn tip-b grid h-10 w-10 shrink-0 place-items-center rounded-full text-[17px] text-white shadow bg-[var(--accent2)]`}>🚇</button>
-<button type="button" aria-label={mapFullscreen ? "退出地图全屏" : "地图全屏"} aria-pressed={mapFullscreen} onClick={toggleMapFullscreen} data-tip={(mapFullscreen ? tt("退出全屏","Exit full screen") : tt("全屏看地图","Full screen"))} className={`tipbtn tip-b tip-r grid h-10 w-10 shrink-0 place-items-center rounded-full text-[17px] text-white shadow ${mapFullscreen ? "bg-[var(--accent)]" : "bg-[#14202b]"}`}>⛶</button>
+<button type="button" aria-label={mapFullscreen ? "退出地图全屏" : "地图全屏"} aria-pressed={mapFullscreen} onClick={toggleMapFullscreen} data-tip={(mapFullscreen ? tt("退出全屏","Exit full screen") : tt("全屏看地图","Full screen"))} className="tipbtn tip-b tip-r grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#14202b] text-white shadow">
+<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+{mapFullscreen
+  ? <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />
+  : <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />}
+</svg>
+</button>
 </div>
 {mapQuery.trim() === "" && searchFocus && searchHist.some((h) => h.city === s.cityKey) && (
 <div className="absolute inset-x-1.5 top-full z-30 max-h-72 overflow-y-auto rounded-[14px] border-2 border-[var(--border)] bg-[var(--surface)] p-1.5 shadow-xl">
@@ -4594,7 +4900,7 @@ const plan = l.id !== currentLoc ? planRailTrip(s.cityKey, currentLoc, l.id) : n
 return (
 <button key={l.id} type="button" aria-label={`定位到${l.name}`} onClick={() => { setSelectedLoc(l.id); setAsideTab("place"); autoOpenAside(); setMapFocus({ locId: l.id, nonce: Date.now() }); setMapQuery(""); setPinLoc(l.id); rememberSearch({ locId: l.id, name: l.name, city: s.cityKey }); }} className="flex w-full items-center gap-2 rounded-[10px] px-2 py-1.5 text-left hover:bg-[var(--surface2)]">
 <span className="text-lg">{l.emoji}</span>
-<span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold">{en ? trText(l.name) : l.name}</span><span className="block truncate text-[11px] text-[var(--dim)]">{l.id === currentLoc ? "你现在在这里" : plan ? `怎么去：${plan.boardLoc !== currentLoc ? `先步行到${locById(plan.boardLoc).short}站 · ` : ""}${railWord(s.cityKey)} ${plan.route.summary} · ${plan.route.stops} 站 · ${Y}${plan.route.fare}${plan.alightLoc !== l.id ? ` · 到${locById(plan.alightLoc).short}站再步行过去` : ""}` : "怎么去：离得很近，步行就到（在下方选好出行方式，点地点名或地图上的建筑前往）"}</span></span>
+<span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold">{en ? trText(l.name) : l.name}</span><span className="block truncate text-[11px] text-[var(--dim)]">{l.id === currentLoc ? "你现在在这里" : plan ? `怎么去：${plan.boardLoc !== currentLoc ? `先步行到${locById(plan.boardLoc).short}站 · ` : ""}${railWord(s.cityKey)} ${plan.route.summary} · ${plan.route.stops} 站 · ${Y}${Math.round(plan.route.fare * policyRef.current.metro)}${plan.alightLoc !== l.id ? ` · 到${locById(plan.alightLoc).short}站再步行过去` : ""}` : "怎么去：离得很近，步行就到（在下方选好出行方式，点地点名或地图上的建筑前往）"}</span></span>
 <span className="shrink-0 text-[11px] font-black text-[var(--accent2)]">定位</span>
 <span role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); setMapQuery(""); setPinLoc(l.id); rememberSearch({ locId: l.id, name: l.name, city: s.cityKey }); walkTo(l.id); }} onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); setMapQuery(""); setPinLoc(l.id); walkTo(l.id); } }} className="shrink-0 rounded-full bg-[var(--accent)] px-2.5 py-1 text-[11px] font-black text-white">{en ? "Go" : "去这里"}</span>
 </button>
@@ -4611,8 +4917,8 @@ return (
 );
 })()}
 </div>
-<MapView extraControls={<><button type="button" onClick={toggleSound} aria-pressed={soundIsOn} aria-label={soundIsOn ? (en ? "Mute" : "静音") : (en ? "Sound on" : "打开声音")} data-tip={soundIsOn ? (en ? "Sound on · tap to mute" : "声音开着 · 点一下静音") : (en ? "Muted · tap for music" : "已静音 · 点一下开声音")} className={`tipbtn grid h-9 w-9 place-items-center rounded-full border text-base shadow ${soundIsOn ? "border-black/40 bg-[#fffdf8]/95" : "border-[var(--accent)] bg-[#14202b]/95"}`}>{soundIsOn ? "🔊" : "🔇"}</button><span className="relative compact-hide"><button type="button" onClick={() => setMusicOpen((o) => !o)} aria-expanded={musicOpen} aria-label={en ? "Change music" : "换背景音乐"} data-tip={en ? "Change music" : "换背景音乐"} className="tipbtn grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow">🎵</button>
-</span></>} lite={lite} pinLocId={pinLoc} onPinClear={() => setPinLoc(null)} scenic={scenicMoment ? (() => { const m = scenicMoment.m; const l = locById(currentLoc); /* look out past the spot (over the water for sea views), from a little above the rooftops */ const az = m.faceSea && !m.path ? seawardAz(s.cityKey, l.x, l.z, m.az) : m.az; const ox = -Math.sin(az) * m.dist * 0.75, oz = -Math.cos(az) * m.dist * 0.75; return { x: (m.path ? m.path[0]![0] : l.x) + ox, z: (m.path ? m.path[0]![1] : l.z) + oz, phase: m.phase, az, pol: m.path ? Math.min(m.pol, 1.08) : 0.9, dist: m.path ? m.dist : m.dist * 2.1, path: m.path, durMs: m.durMs, nonce: scenicMoment.nonce }; })() : null} mapMode={mapMode} onMapMode={setMapMode} fill paused={!!lifeAnim} train={carriage ? { pts: carriage.route.stations.map((st) => [st.x, st.z] as [number, number]), idx: carriage.stopIdx, stepMs: hopMs(carriage.route, carriage.stopIdx), color: (carriage.route.legs[carriage.legIdx]?.line ?? carriage.route.line).color, rail: carriage.route.legs.some((l) => ["szhz-rail", "guangshen", "hz-intercity", "ganshen-rail", "guangshan-rail", "hsr-hk"].includes(l.line.id)), hold: rideEntry !== null || carriage.awaitingTransfer || carriage.stopIdx >= carriage.route.stations.length - 1 } : null} cityKey={s.cityKey} selfLocId={walking || carriage ? (tripTo ?? selectedLoc) : currentLoc} selfEmoji={iden.emoji} selfColor={iden.color} selfName={profile?.name ?? "我"} remotePlayers={remotePlayers} billboards={(billboardsQuery.data?.slots ?? []).flatMap((b) => (b.ad ? [{ slot: b.slot, text: b.ad.text, emoji: b.ad.emoji, owner: b.ad.owner }] : []))} selfOutfitId={s.outfit} travelModeId={tripMode ?? travelMode} selfEtaAt={tripEta ?? undefined} arrival={arrival} weatherKind={rwOk ? realWeather!.kind : "unknown"} npcMoodEmoji={Object.fromEntries(npcsForCity(s.cityKey).map((n) => [n.name, moodEmoji(memOf(s.npcMem ?? {}, n.name).mood)]))} apecDay={isApecWeek(s.day)} focusLocId={mapFocus?.locId} focusX={mapFocus?.x} focusZ={mapFocus?.z} focusNonce={mapFocus?.nonce} destLocId={selectedLoc} onSelect={walkTo} onPickActor={pickActor} navOverlay={(
+<MapView extraControls={<><button type="button" onClick={toggleSound} aria-pressed={soundIsOn} aria-label={soundIsOn ? (en ? "Mute" : "静音") : (en ? "Sound on" : "打开声音")} data-tip={soundIsOn ? (en ? "Sound on · tap to mute" : "声音开着 · 点一下静音") : (en ? "Muted · tap for music" : "已静音 · 点一下开声音")} className={`tipbtn grid h-9 w-9 place-items-center rounded-full border text-base shadow ${soundIsOn ? "border-black/40 bg-[#fffdf8]/95" : "border-[var(--accent)] bg-[#14202b]/95"}`}>{soundIsOn ? "🔊" : "🔇"}</button><span className="relative"><button type="button" onClick={() => setMusicOpen((o) => !o)} aria-expanded={musicOpen} aria-label={en ? "Change music" : "换背景音乐"} data-tip={en ? "Change music" : "换背景音乐"} className="tipbtn grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow">🎵</button>
+</span></>} lite={lite} pinLocId={pinLoc} onPinClear={() => setPinLoc(null)} scenic={scenicMoment ? (() => { const m = scenicMoment.m; const l = locById(currentLoc); /* look out past the spot (over the water for sea views), from a little above the rooftops */ const az = m.faceSea && !m.path ? seawardAz(s.cityKey, l.x, l.z, m.az) : m.az; const ox = -Math.sin(az) * m.dist * 0.75, oz = -Math.cos(az) * m.dist * 0.75; return { x: (m.path ? m.path[0]![0] : l.x) + ox, z: (m.path ? m.path[0]![1] : l.z) + oz, phase: m.phase, az, pol: m.path ? Math.min(m.pol, 1.08) : 0.9, dist: m.path ? m.dist : m.dist * 2.1, path: m.path, durMs: m.durMs, nonce: scenicMoment.nonce }; })() : null} mapMode={mapMode} onMapMode={setMapMode} fill paused={!!lifeAnim} train={carriage ? { pts: carriage.route.stations.map((st) => [st.x, st.z] as [number, number]), idx: carriage.stopIdx, stepMs: hopMs(carriage.route, carriage.stopIdx), color: (carriage.route.legs[carriage.legIdx]?.line ?? carriage.route.line).color, rail: carriage.route.legs.some((l) => ["szhz-rail", "guangshen", "hz-intercity", "ganshen-rail", "guangshan-rail", "hsr-hk"].includes(l.line.id)), hold: rideEntry !== null || carriage.awaitingTransfer || carriage.stopIdx >= carriage.route.stations.length - 1 } : null} cityKey={s.cityKey} selfLocId={walking || carriage ? (tripTo ?? selectedLoc) : currentLoc} selfEmoji={iden.emoji} selfColor={iden.color} selfName={profile?.name ?? "我"} remotePlayers={remotePlayers} billboards={boards} selfOutfitId={s.outfit} selfHair={s.hair} selfAccessory={ACCESSORIES[s.accessory ?? 0]?.id ?? "none"} travelModeId={tripMode ?? travelMode} selfEtaAt={tripEta ?? undefined} arrival={arrival} weatherKind={rwOk ? realWeather!.kind : "unknown"} npcMoodEmoji={Object.fromEntries(npcsForCity(s.cityKey).map((n) => [n.name, moodEmoji(memOf(s.npcMem ?? {}, n.name).mood)]))} apecDay={isApecWeek(s.day)} focusLocId={mapFocus?.locId} focusX={mapFocus?.x} focusZ={mapFocus?.z} focusNonce={mapFocus?.nonce} destLocId={selectedLoc} onSelect={walkTo} onPickActor={pickActor} navOverlay={(
 <>
 {/* 弹幕层：联机动态 / 聊天 / 街坊发言飘过地图上半区 */}
 {danmakuOn && !scenicMoment && (
@@ -4630,7 +4936,7 @@ return (
 </div>
 {/* 左侧中段控制簇：出行导航 + 弹幕开关（不在顶部，不挡地图中心） */}
 {!asideOpen && !scenicMoment && (
-<div className={`feature-rail absolute right-2.5 z-20 flex flex-col items-center gap-1.5 ${barsHidden ? "top-[64px]" : "top-[150px]"}`}>
+<div className={`feature-rail right-cluster absolute right-2.5 z-20 flex flex-col items-center gap-1.5 ${barsHidden ? "top-[64px]" : "top-[150px]"}`}>
 {([["place", "📍", "地点", "Place"], ["feed", "🏘️", "动态", "Feed"], ["wall", "🧑‍🤝‍🧑", "街坊", "Locals"], ["chat", "💬", "聊天", "Chat"], ["board", "🏆", "排行", "Ranks"], ["guide", "📖", "图鉴", "Guide"]] as const).map(([k, icon, label, labelEn]) => (
 <button key={k} type="button" aria-label={en ? labelEn : label} onClick={() => { setAsideTab(k); setAsideOpen(true); }} className="rail-btn"><span aria-hidden="true" className="text-[19px] leading-none">{icon}</span><span className="rail-label">{en ? labelEn : label}</span></button>
 ))}
@@ -4742,8 +5048,27 @@ return (
 </p>
 )}
 <p className="mt-0.5 text-xs leading-relaxed text-[var(--dim)]">
-{selLoc.type === "home" ? `你现在的家：周租 ${fmt(s.rent)}，舒适度 ${computeComfort(s)}，已买家具 ${s.furniture.length} 件。睡觉回能量，也能在这儿按 ZhuyaHome 的样子装修。` : selLoc.desc}
+{selLoc.type === "home" ? `你现在的家：周租 ${fmt(rentDue)}，舒适度 ${computeComfort(s)}，已买家具 ${s.furniture.length} 件。睡觉回能量，也能在这儿按 ZhuyaHome 的样子装修。` : selLoc.desc}
 </p>
+{adHere && (
+<div className="mt-2">
+<p className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-[#e63a1f] to-[#f59e0b] px-1.5 py-1 text-[11px] font-black text-white">
+<span className="shrink-0 rounded-full bg-white px-1.5 py-px text-[10px] tracking-wide text-[#e63a1f]">{en ? "AD" : "广告"}</span>
+<span className="min-w-0 flex-1">{adHere.emoji} {adHere.text}</span>
+<span className="shrink-0 text-[10px] font-bold text-white/85">{adHere.owner}</span>
+</p>
+{adHere.kind === "sanhe" && <p className="mt-1 text-[11px] leading-relaxed text-[var(--dim)]">{en ? said.en : said.zh}</p>}
+<div className="mt-1.5 flex flex-wrap gap-1.5">
+{adHere.kind === "hire" && adHere.go && !arrived && <button type="button" onClick={() => walkTo(adHere.go!)} className="rounded-full bg-[var(--text)] px-2.5 py-1 text-[11px] font-black text-[var(--bg)]">{en ? "Go interview" : "去这家面试"}</button>}
+{adHere.kind === "hire" && arrived && companyAt(s.cityKey, selLoc.id) && <button type="button" disabled={s.energy < 12} onClick={() => doAction("interview")} className="rounded-full bg-[var(--text)] px-2.5 py-1 text-[11px] font-black text-[var(--bg)] disabled:opacity-40">{en ? "Apply" : "投简历"}</button>}
+{adHere.kind === "rent" && !arrived && <button type="button" onClick={() => walkTo("home")} className="rounded-full bg-[var(--text)] px-2.5 py-1 text-[11px] font-black text-[var(--bg)]">{en ? "See the room" : "去看这间"}</button>}
+{adHere.kind === "rent" && arrived && <button type="button" onClick={askRent} className="rounded-full bg-[var(--text)] px-2.5 py-1 text-[11px] font-black text-[var(--bg)]">{en ? "Ask the rent" : "问问房租"}</button>}
+{adHere.kind === "sale" && <button type="button" onClick={() => { if (!arrived && adHere.go) walkTo(adHere.go); else askSale(); }} className="rounded-full bg-[var(--text)] px-2.5 py-1 text-[11px] font-black text-[var(--bg)]">{arrived ? (en ? "Today's price" : "看看特价") : (en ? "Go to the stall" : "去摊位")}</button>}
+{adHere.kind === "sanhe" && !arrived && adHere.go && <button type="button" onClick={() => walkTo(adHere.go!)} className="rounded-full bg-[var(--text)] px-2.5 py-1 text-[11px] font-black text-[var(--bg)]">{en ? "Go stand a shift" : "去站一天"}</button>}
+{adHere.kind === "sanhe" && arrived && <button type="button" disabled={s.energy < 22 || (s.sanheDay ?? 0) === s.day} onClick={takeSanhe} className="rounded-full bg-[var(--text)] px-2.5 py-1 text-[11px] font-black text-[var(--bg)] disabled:opacity-40">{(s.sanheDay ?? 0) === s.day ? (en ? "Settled today" : "今天结过了") : (en ? `Stand a shift · ${fmt(sanhePay(s.cityKey))}` : `站一天 · 日结 ${fmt(sanhePay(s.cityKey))}`)}</button>}
+</div>
+</div>
+)}
 {(selLoc.er || selLoc.tel || selLoc.addr || selLoc.hours) && (
 <p className="mt-1.5 flex flex-wrap gap-1.5 text-[11px] font-bold">
 {selLoc.er && <span className="chip" style={{ borderColor: "#dc2626", color: "#dc2626" }}>🚑 24 小时急诊 · Emergency</span>}
@@ -4765,7 +5090,7 @@ return (
 <p className="mt-3.5 flex items-baseline justify-between gap-2"><span className="text-xs font-black tracking-wide">📍 在这里能做 · 常用操作</span><span className="text-[11px] font-bold text-[var(--dim)]">{arrived ? "点一下就行动" : "到了才能做"}</span></p>
 <div className="mt-2 grid gap-2">
 {actionsFor(selLoc, s).map((a) => { const own = a.kind.startsWith("__routine-") && (a.kind !== "__routine-wait" || routineRole(s.idenId) === "driver") || a.kind.startsWith("__rider-") || a.kind.startsWith("__scenic-") || a.kind === "__livehouse" || a.kind === "__venue3d"; /* the rider's own steps don't depend on the shop's hours; a taxi passenger waves from anywhere, any hour */ const tb = timeBlock(a.kind, s) ?? (a.kind === "__sleep" || a.kind === "rest" || own ? null : venueClosed(selLoc)); return (
-<button key={a.kind + (a.arg ?? 0)} type="button" disabled={!arrived || a.disabled || !!tb} onClick={() => { if (a.kind === "__sleep") playLifeAnim("sleep", () => doSleep()); else if (a.kind.startsWith("__gocity-")) setCrossTo(a.kind.slice("__gocity-".length) as CityKey); else if (a.kind.startsWith("__routine-")) doRoutine(a.kind.slice("__routine-".length)); else if (a.kind === "__rider-go") riderGo(); else if (a.kind === "__retrain") setRetrainOpen(true); else if (a.kind.startsWith("__scenic-")) startScenic(a.kind.slice("__scenic-".length)); else if (a.kind === "__livehouse") setLiveOpen(true); else if (a.kind === "__venue3d") { const vs = VENUE_SETS[selLoc.type]; if (vs) setVenueTalk(null), setVenue3d({ set: vs.set, name: en ? trText(selLoc.name) : selLoc.name, line: en ? vs.en : vs.zh, id: selLoc.id, emoji: selLoc.emoji, color: selLoc.color }); } else if (a.kind === "__rider-cancel") { const g0 = gsRef.current; if (g0) { const rd0 = routineToday(g0); mutate((x) => { x.routine = { ...rd0, order: null }; x.money -= 2; x.mood = clamp(x.mood - 3, 0, 100); }); showToast(en ? "Order cancelled (−¥2)." : "这单取消了，平台扣了 ¥2。"); } } else if (a.kind.startsWith("__cross-")) { const r = CROSS_ROUTES.find((x) => x.id === a.kind.slice("__cross-".length)); if (r) takeRoute(r); } else doAction(a.kind, a.arg ?? 0); }} className="act-btn">
+<button key={a.kind + (a.arg ?? 0)} type="button" disabled={!arrived || a.disabled || !!tb} onClick={() => { if (a.kind === "__sleep") playLifeAnim("sleep", () => doSleep()); else if (a.kind.startsWith("__gocity-")) setCrossTo(a.kind.slice("__gocity-".length) as CityKey); else if (a.kind.startsWith("__routine-")) doRoutine(a.kind.slice("__routine-".length)); else if (a.kind === "__rider-go") riderGo(); else if (a.kind === "__retrain") setRetrainOpen(true); else if (a.kind.startsWith("__scenic-")) startScenic(a.kind.slice("__scenic-".length)); else if (a.kind === "__livehouse") setLiveOpen(true); else if (a.kind === "__home3d") { publishHome(); setHomeGuest(null); setVisitHome(null); setHomePose("idle"); setHome3d(true); } else if (a.kind === "__venue3d") { const vs = venueFor(selLoc); if (vs) setVenueTalk(null), setVenue3d({ set: vs.set, name: en ? trText(selLoc.name) : selLoc.name, line: en ? vs.en : vs.zh, id: selLoc.id, emoji: selLoc.emoji, color: selLoc.color }); } else if (a.kind === "__rider-cancel") { const g0 = gsRef.current; if (g0) { const rd0 = routineToday(g0); mutate((x) => { x.routine = { ...rd0, order: null }; x.money -= 2; x.mood = clamp(x.mood - 3, 0, 100); }); showToast(en ? "Order cancelled (−¥2)." : "这单取消了，平台扣了 ¥2。"); } } else if (a.kind.startsWith("__cross-")) { const r = CROSS_ROUTES.find((x) => x.id === a.kind.slice("__cross-".length)); if (r) takeRoute(r); } else doAction(a.kind, a.arg ?? 0); }} className="act-btn">
 <span className="flex items-center justify-between text-sm font-black"><span>{a.title}</span><span>{a.emoji}</span></span>
 <span className="mt-0.5 block text-xs leading-relaxed text-[var(--dim)]">{a.desc}</span>
 <span className="mt-1 block text-xs font-bold text-[var(--accent2)]">{a.cost}{a.kind !== "__sleep" && ` · ⏳ ${realMinLabel(actionMinutes(a.kind))}`}</span>
@@ -4849,7 +5174,7 @@ return (
 {allMetroDestinations(s.cityKey, selLoc.id).slice(0, 12).map(({ locId, route }) => (
 <button key={locId} type="button" onClick={() => startMetroRide(selLoc.id, locId)} className="act-btn">
 <span className="text-sm font-bold">{locById(locId).emoji} {locById(locId).name}</span>
-<span className="block text-xs text-[var(--dim)]"><span style={{ color: route.line.colorCss }}>● {route.summary}</span> · {route.stops} 站{route.isTransfer ? ` · ${route.transferStations.join("、")}换乘` : ""}{route.shuttleFrom.length > 0 ? " · 含站外接驳巴士" : ""} · 票价 {Y}{route.fare} · 进车厢乘车</span>
+<span className="block text-xs text-[var(--dim)]"><span style={{ color: route.line.colorCss }}>● {route.summary}</span> · {route.stops} 站{route.isTransfer ? ` · ${route.transferStations.join("、")}换乘` : ""}{route.shuttleFrom.length > 0 ? " · 含站外接驳巴士" : ""} · 票价 {Y}{Math.round(route.fare * policyRef.current.metro)} · 进车厢乘车</span>
 </button>
 ))}
 </div></div>
@@ -4917,7 +5242,7 @@ return (
 <div className="rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
 <p className="text-sm font-black">🔑 {en ? "Buy your own flat" : "买套自己的房"} {!s.ownFlat && <span className="text-[var(--accent)]">{en ? `deposit ${fmt(fp, s.cityKey)}` : `首付 ${fmt(fp, s.cityKey)}`}</span>}</p>
 <p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">{s.ownFlat ? (en ? `Yours since day ${s.flatDay}. The mortgage replaces rent; every morning in your own home: mood +2.` : `第 ${s.flatDay} 天拿到钥匙。月供代替房租，每天在自己家醒来心情 +2。`) : (en ? "Pay the deposit and the weekly rent becomes a mortgage of 80%. No more landlords." : "付了首付，周租变成八折的月供。从此不看房东脸色。")}</p>
-{!s.ownFlat && <button type="button" disabled={s.money < fp} onClick={() => { mutate((x) => { x.money -= fp; x.ownFlat = true; x.flatDay = x.day; x.rent = Math.round((x.rent * 0.8) / 10) * 10; x.baseRent = Math.round((x.baseRent * 0.8) / 10) * 10; x.roommate = undefined; x.mood = clamp(x.mood + 20, 0, 100); }); addLog("🔑 买房了！在湾区有了自己的家。"); sfx("arrive"); showToast(en ? "🔑 You got the keys! Rent is now a mortgage." : "🔑 拿到钥匙了！房租变成了月供。"); }} className="mt-2 w-full rounded-full bg-[var(--accent)] py-2 text-xs font-black text-white disabled:opacity-40">{s.money < fp ? (en ? `Still ${fmt(fp - s.money, s.cityKey)} short` : `还差 ${fmt(fp - s.money, s.cityKey)}`) : (en ? "Pay the deposit" : "付首付")}</button>}
+{!s.ownFlat && <button type="button" disabled={s.money < fp} onClick={() => { mutate((x) => { x.money -= fp; x.ownFlat = true; x.flatDay = x.day; x.rent = Math.round((x.rent * 0.8) / 10) * 10; x.baseRent = Math.round((x.baseRent * 0.8) / 10) * 10; x.roommate = undefined; x.mood = clamp(x.mood + 20, 0, 100); }); publishHome(); addLog("🔑 买房了！在湾区有了自己的家。"); sfx("cheer"); showToast(en ? "🔑 You got the keys. This home is the one visitors walk into." : "🔑 拿到钥匙了。这套房子就是别人来串门时走进去的那一间。"); }} className="mt-2 w-full rounded-full bg-[var(--accent)] py-2 text-xs font-black text-white disabled:opacity-40">{s.money < fp ? (en ? `Still ${fmt(fp - s.money, s.cityKey)} short` : `还差 ${fmt(fp - s.money, s.cityKey)}`) : (en ? "Pay the deposit" : "付首付")}</button>}
 </div>
 <div className="rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
 <p className="text-sm font-black">🏪 {en ? "Open a little shop" : "开一家小店"}</p>
@@ -4925,7 +5250,7 @@ return (
 <p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">{k.emoji} {en ? `${k.en} · level ${s.shop.lvl} · open since day ${s.shop.day}. It takes money every day — even while you're offline. Some days lose money.` : `${k.zh} · ${s.shop.lvl} 级 · 第 ${s.shop.day} 天开张。每天都在营业（你不在线也是），偶尔会亏。`}</p>
 <p className="mt-1 text-sm font-black">{en ? "In the till: " : "收银台里："}<span className={s.shop.till >= 0 ? "text-green-700" : "text-red-600"}>{fmt(s.shop.till, s.cityKey)}</span></p>
 <div className="mt-2 grid grid-cols-2 gap-1.5">
-<button type="button" disabled={s.shop.till === 0} onClick={() => { const t = s.shop!.till; mutate((x) => { x.money += t; if (t > 0) x.earned += t; x.shop = { ...x.shop!, till: 0 }; }); sfx("coin"); showToast(t >= 0 ? (en ? `Collected ${fmt(t, s.cityKey)} from the shop.` : `从店里收了 ${fmt(t, s.cityKey)}。`) : (en ? `Covered a loss of ${fmt(-t, s.cityKey)}.` : `补上了亏损 ${fmt(-t, s.cityKey)}。`)); }} className="rounded-full bg-[var(--text)] py-2 text-xs font-black text-[var(--bg)] disabled:opacity-40">{en ? "Empty the till" : "收钱"}</button>
+<button type="button" disabled={s.shop.till === 0} onClick={() => { const t = s.shop!.till; const partner = s.shop!.partner; const share = partner && t > 0 ? Math.round(t * 0.2) : 0; mutate((x) => { x.money += t - share; if (t - share > 0) x.earned += t - share; x.shop = { ...x.shop!, till: 0 }; }); const mate = bonds.find((b) => b.status === "active" && b.peerName === partner); if (share > 0 && mate) sendGift(mate.peerId, mate.peerName, "share", share); sfx("coin"); showToast(t < 0 ? (en ? `Covered a loss of ${fmt(-t, s.cityKey)}.` : `补上了亏损 ${fmt(-t, s.cityKey)}。`) : share > 0 ? (en ? `Collected ${fmt(t - share, s.cityKey)}. ${fmt(share, s.cityKey)} is on its way to ${partner}'s wallet.` : `收了 ${fmt(t - share, s.cityKey)}。${fmt(share, s.cityKey)} 记给${partner}，对方下次上线进钱包。`) : (en ? `Collected ${fmt(t, s.cityKey)} from the shop.` : `从店里收了 ${fmt(t, s.cityKey)}。`)); }} className="rounded-full bg-[var(--text)] py-2 text-xs font-black text-[var(--bg)] disabled:opacity-40">{en ? "Empty the till" : "收钱"}</button>
 <button type="button" disabled={s.money < up || s.shop.lvl >= 5} onClick={() => { mutate((x) => { x.money -= up; x.shop = { ...x.shop!, lvl: x.shop!.lvl + 1 }; }); sfx("arrive"); showToast(en ? "Shop upgraded — more customers every day." : "小店升级了，每天客人更多。"); }} className="rounded-full border border-[var(--line)] py-2 text-xs font-black disabled:opacity-40">{s.shop.lvl >= 5 ? (en ? "Max level" : "满级了") : (en ? `Upgrade · ${fmt(up, s.cityKey)}` : `升级 · ${fmt(up, s.cityKey)}`)}</button>
 </div></>); })() : (<>
 <p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">{en ? `Rent a shopfront for ${fmt(sp, s.cityKey)}. It earns every day, even when you're offline.` : `盘一间铺面 ${fmt(sp, s.cityKey)}，每天自己挣钱，你不在线也照样营业。`}</p>
@@ -5218,18 +5543,34 @@ return (
     全屏，不被面板挤占。 */}
 
 {/* 地点卡：选中的地方显示在底部中间，常用动作一步到位；「全部」再打开完整面板 */}
-{!asideOpen && !scenicMoment && !placeCardOff && !musicOpen && !walking && !carriage && (() => { const vs = VENUE_SETS[selLoc.type]; const sm = momentsAt(s.cityKey, selLoc.id, selLoc.name)[0]; return (
+{!asideOpen && !scenicMoment && !placeCardOff && !musicOpen && !walking && !carriage && (() => { const vs = venueFor(selLoc); const sm = momentsAt(s.cityKey, selLoc.id, selLoc.name)[0]; return (
 <div className="place-card absolute bottom-3 left-1/2 z-20 w-[min(380px,calc(100%-150px))] -translate-x-1/2">
 <div className="flex items-center gap-2.5">
 <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[12px] text-2xl" style={{ background: hexCss(selLoc.color) + "2b" }}>{selLoc.emoji}</span>
-<span className="min-w-0 flex-1"><span className="block truncate text-[15px] font-black">{en ? trText(selLoc.name) : selLoc.name}</span><span className="block truncate text-[11px] font-bold text-[var(--dim)]">{arrived ? (en ? "📍 You're here" : "📍 你在这里") : (en ? "Tap Go to head there" : "点「去这里」出发")}</span></span>
+<span className="min-w-0 flex-1"><span className="block truncate text-[15px] font-black">{en ? trText(selLoc.name) : selLoc.name}</span><span className="pc-sub block truncate text-[11px] font-bold text-[var(--dim)]">{arrived ? (en ? "📍 You're here" : "📍 你在这里") : (en ? "Tap Go to head there" : "点「去这里」出发")}</span></span>
 <button type="button" aria-label={en ? "Hide" : "收起"} onClick={() => setPlaceCardOff(true)} className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-black text-[var(--dim)] hover:bg-[var(--surface2)]">✕</button>
 </div>
+{adHere && (
+<div className="mt-2">
+<p className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-[#e63a1f] to-[#f59e0b] px-1.5 py-1 text-[11px] font-black text-white">
+<span className="shrink-0 rounded-full bg-white px-1.5 py-px text-[10px] tracking-wide text-[#e63a1f]">{en ? "AD" : "广告"}</span>
+<span className="min-w-0 flex-1 truncate">{adHere.emoji} {adHere.text}</span>
+</p>
+{adHere.kind === "sanhe" && <p className="mt-1 text-[11px] leading-snug text-[var(--dim)]">{en ? said.en : said.zh}</p>}
+</div>
+)}
 <div className="mt-2 flex gap-1.5">
 {!arrived && <button type="button" onClick={() => walkTo(selectedLoc)} className="pc-btn pc-primary">🚶 {en ? "Go here" : "去这里"}</button>}
 {arrived && sm && <button type="button" onClick={() => startScenic(sm.id)} className="pc-btn">{sm.emoji} {en ? "View" : "观景"}</button>}
-{arrived && vs && <button type="button" onClick={() => { setVenueTalk(null); setVenue3d({ set: vs.set, name: en ? trText(selLoc.name) : selLoc.name, line: en ? vs.en : vs.zh, id: selLoc.id, emoji: selLoc.emoji, color: selLoc.color }); }} className="pc-btn">🚪 {en ? "Step inside" : "进店 3D"}</button>}
+{arrived && selLoc.type === "home" && <button type="button" onClick={() => { publishHome(); setHomeGuest(null); setVisitHome(null); setHomePose("idle"); setHome3d(true); }} className="pc-btn">🚪 {en ? "Go inside" : "走进屋里"}</button>}
+{arrived && vs && <button type="button" onClick={() => { setVenueTalk(null); setVenue3d({ set: vs.set, name: en ? trText(selLoc.name) : selLoc.name, line: en ? vs.en : vs.zh, id: selLoc.id, emoji: selLoc.emoji, color: selLoc.color }); }} className="pc-btn">🚪 {en ? "Step inside" : "走进去"}</button>}
 {arrived && selLoc.type === "social" && <button type="button" onClick={() => setLiveOpen(true)} className="pc-btn">🎶 {en ? "Live" : "听歌"}</button>}
+{adHere?.kind === "hire" && adHere.go && currentLoc !== adHere.go && <button type="button" onClick={() => walkTo(adHere.go!)} className="pc-btn">{en ? "Interview" : "去面试"}</button>}
+{adHere?.kind === "hire" && arrived && companyAt(s.cityKey, selLoc.id) && <button type="button" disabled={s.energy < 12} onClick={() => doAction("interview")} className="pc-btn pc-primary">{en ? "Apply" : "投简历"}</button>}
+{adHere?.kind === "sanhe" && arrived && <button type="button" disabled={s.energy < 22 || (s.sanheDay ?? 0) === s.day} onClick={takeSanhe} className="pc-btn pc-primary">{(s.sanheDay ?? 0) === s.day ? (en ? "Settled" : "结过了") : (en ? "Day shift" : "站一天")}</button>}
+{adHere?.kind === "sanhe" && !arrived && adHere.go && <button type="button" onClick={() => walkTo(adHere.go!)} className="pc-btn">{en ? "Day shift" : "去站一天"}</button>}
+{adHere?.kind === "rent" && <button type="button" onClick={() => { if (currentLoc === "home" && selLoc.id === "home") askRent(); else walkTo("home"); }} className="pc-btn">{currentLoc === "home" && selLoc.id === "home" ? (en ? "The rent" : "问问房租") : (en ? "The room" : "去看房")}</button>}
+{adHere?.kind === "sale" && <button type="button" onClick={() => { if (arrived) askSale(); else if (adHere.go) walkTo(adHere.go); }} className="pc-btn">{arrived ? (en ? "Price" : "特价") : (en ? "Stall" : "去摊位")}</button>}
 <button type="button" onClick={() => { setAsideTab("place"); setAsideOpen(true); }} className={`pc-btn${arrived ? " pc-primary" : ""}`}>{arrived ? (en ? "⌃ Things to do" : "⌃ 能做的事") : (en ? "⌃ Details" : "⌃ 详情")}</button>
 </div>
 </div> ); })()}
@@ -5416,7 +5757,7 @@ return (
 <div className="p-4 pb-3 text-white" style={{ background: curLine.colorCss }}>
 <p className="flex items-center justify-between text-xs font-black"><span>{isRailRide ? "🚄" : "🚇"} {curLine.name}{c.route.isTransfer ? ` · 全程 ${c.route.summary}` : ""}</span><span>{c.crowdLabel}</span></p>
 <p className="font-display mt-1 text-2xl font-black">{c.awaitingTransfer ? `换乘站 · ${curStation?.name}站` : arrivedC ? `已到达 · ${curStation?.name}站` : `下一站 · ${nextStation?.name ?? ""}`}</p>
-<p className="mt-0.5 text-xs opacity-90">{locById(c.fromLoc).name} → {locById(c.toLoc).name} · 共 {c.route.stops} 站{c.route.isTransfer ? ` · 换乘 ${c.route.transferStations.length} 次（${c.route.transferStations.join("、")}）` : ""} · 票价 {Y}{c.route.fare} · {c.seated ? "💺 坐着" : "🧍 站着扶杆"}</p>
+<p className="mt-0.5 text-xs opacity-90">{locById(c.fromLoc).name} → {locById(c.toLoc).name} · 共 {c.route.stops} 站{c.route.isTransfer ? ` · 换乘 ${c.route.transferStations.length} 次（${c.route.transferStations.join("、")}）` : ""} · 票价 {Y}{Math.round(c.route.fare * policyRef.current.metro)} · {c.seated ? "💺 坐着" : "🧍 站着扶杆"}</p>
 </div>
 {/* route strip */}
 <div ref={routeStripRef} className="relative flex items-center gap-0 overflow-x-auto px-4 pt-3 [scrollbar-width:none]">
@@ -5436,7 +5777,7 @@ return (
 <button type="button" onClick={doTransfer} className="w-full rounded-full bg-[var(--accent)] py-3.5 text-sm font-black text-white">{c.route.shuttleFrom.includes(curStation?.name ?? "") ? `🚌 在${curStation?.name}下车 · 坐接驳巴士到${nextStation?.name ?? "对面站"}换乘 ${(c.route.legs[c.legIdx + 1]?.line.short) ?? "下一条线"}` : `🔁 在${curStation?.name}换乘上车 → ${(c.route.legs[c.legIdx + 1]?.line.name) ?? "下一条线"}`}</button>
 ) : (
 <>
-<button type="button" disabled={!arrivedC} onClick={() => finishMetroRide()} className="w-full rounded-full bg-[var(--accent)] py-3.5 text-sm font-black text-white disabled:opacity-40">{arrivedC ? `🔔 到站了，下车出站 → ${locById(c.toLoc).name}（票 ${Y}${c.route.fare}）` : `行驶中… 还有 ${total - 1 - c.stopIdx} 站（自动报站中）`}</button>
+<button type="button" disabled={!arrivedC} onClick={() => finishMetroRide()} className="w-full rounded-full bg-[var(--accent)] py-3.5 text-sm font-black text-white disabled:opacity-40">{arrivedC ? `🔔 到站了，下车出站 → ${locById(c.toLoc).name}（票 ${Y}${Math.round(c.route.fare * policyRef.current.metro)}）` : `行驶中… 还有 ${total - 1 - c.stopIdx} 站（自动报站中）`}</button>
 {!arrivedC && c.stopIdx > 0 && curStation && (
 <button type="button" onClick={() => finishMetroRide(c.stopIdx)} className="mt-2 w-full rounded-full border-2 border-[var(--border)] bg-[var(--surface)] py-2.5 text-sm font-black">🚪 就在「{curStation.name}」下车（票 {Y}{partialFare(c.route, c.stopIdx)}）</button>
 )}
@@ -5530,7 +5871,7 @@ const rows = (Object.keys(CAT_LABEL) as ActCat[]).flatMap((c) => ACTIVITIES_LIST
 const todo: { t: string; go?: () => void }[] = [];
 if (s.workDay !== s.day && employerHere(s)) todo.push({ t: en ? `💼 Haven't worked today — ${companyById(s.employer).short}` : `💼 今天还没上班：${companyById(s.employer).short}`, go: () => { const co = employerHere(s); if (co?.locIds[0]) { setHubOpen(false); walkTo(co.locIds[0]); } } });
 if (s.sleptDay !== s.day && nowMin() >= 21 * 60) todo.push({ t: en ? "😴 Time for bed — go home and sleep" : "😴 不早了，回家睡觉", go: () => { setHubOpen(false); goHomeAndSleep(); } });
-if (isSaturday(s.day)) todo.push({ t: en ? `🏠 Rent ${fmt(s.rent)} is due tonight` : `🏠 今晚交租 ${fmt(s.rent)}` });
+if (isSaturday(s.day)) todo.push({ t: en ? `🏠 Rent ${fmt(rentDue)} is due tonight` : `🏠 今晚交租 ${fmt(rentDue)}` });
 for (const st of STORIES.filter((x) => npcsForCity(s.cityKey).some((n) => n.name === x.npc))) { const k = storyStatus(st, s.story?.[st.npc], memOf(s.npcMem ?? {}, st.npc).rel, s.day).kind; if (k === "ready" || k === "ending") todo.push({ t: en ? `📖 ${trText(st.npc)}'s story has a new chapter` : `📖 ${st.npc}的故事有新章节`, go: () => { setHubOpen(false); openNpcChat(st.npc); } }); }
 const openParties = parties.filter((pt) => pt.status === "open" && !pt.members.some((m) => m.id === myId));
 if (openParties.length) todo.push({ t: en ? `🎉 ${openParties.length} open part${openParties.length > 1 ? "ies" : "y"} in the city` : `🎉 城里有 ${openParties.length} 个局在等人`, go: () => { setHubOpen(false); setPartyOpen(true); } });
@@ -5626,7 +5967,7 @@ return (
 {updatesOpen && phase === "game" && profile && <UpdatesModal en={en} playerId={profile.playerId} city={s.cityKey} news={news} onClose={() => setUpdatesOpen(false)} toast={showToast} />}
 {bondsOpen && phase === "game" && profile && <BondsModal en={en} playerId={profile.playerId} bonds={bonds} onClose={() => setBondsOpen(false)} toast={showToast} refresh={() => void bondsQuery.refetch()} openCard={(pub) => { setBondsOpen(false); setCardOf(pub); }} />}
 {committeeOpen && phase === "game" && profile && <CommitteeModal en={en} playerId={profile.playerId} city={s.cityKey} cityName={en ? trText(CITIES[s.cityKey].name) : CITIES[s.cityKey].name} st={committeeQuery.data} onClose={() => setCommitteeOpen(false)} toast={showToast} refresh={() => void committeeQuery.refetch()} openAccount={() => { setCommitteeOpen(false); setAccountOpen(true); }} />}
-{adsOpen && phase === "game" && profile && <BillboardModal en={en} token={accountToken()} playerName={profile.name} city={s.cityKey} spots={billboardSpots(s.cityKey).map((l) => (en ? trText(l.name) : l.name))} st={billboardsQuery.data} onClose={() => setAdsOpen(false)} toast={showToast} refresh={() => void billboardsQuery.refetch()} openAccount={() => { setAdsOpen(false); setAccountOpen(true); }} openStore={() => { setAdsOpen(false); setStoreOpen(true); }} />}
+{adsOpen && phase === "game" && profile && <BillboardModal en={en} token={accountToken()} playerName={profile.name} city={s.cityKey} day={s.day} shop={shopLabel} spots={billboardSpots(s.cityKey).map((l) => (en ? trText(l.name) : l.name))} st={billboardsQuery.data} onClose={() => setAdsOpen(false)} toast={showToast} refresh={() => void billboardsQuery.refetch()} openAccount={() => { setAdsOpen(false); setAccountOpen(true); }} openStore={() => { setAdsOpen(false); setStoreOpen(true); }} />}
 {gigsOpen && phase === "game" && profile && <GigsModal prime={isPrime()} npcGigs={npcGigsToday(s).map((g) => ({ id: g.id, who: `${g.whoEmoji} ${en ? trText(g.who) : g.who}`, emoji: g.emoji, title: en ? g.en : g.zh, pay: fmt(Math.round(g.pay * (isPrime() ? 1.5 : 1)), s.cityKey), cost: en ? `energy −${g.energy}` : `能量 −${g.energy}`, done: (s.npcGigs ?? []).includes(`${s.day}:${g.id}`) }))} onNpcGig={(id) => { const g = npcGigsToday(s).find((x) => x.id === id); if (!g) return; if (s.energy < g.energy) { showToast(en ? "Too tired for that one." : "太累了，干不动。"); return; } const pay = Math.round(g.pay * (isPrime() ? 1.5 : 1)); mutate((x) => { x.money += pay; x.earned += pay; x.energy -= g.energy; x.mood = clamp(x.mood + 3, 0, 100); x.network += 1; x.npcGigs = [...(x.npcGigs ?? []).filter((k) => k.startsWith(`${x.day}:`)), `${x.day}:${g.id}`]; const m = x.npcMem?.[g.who]; if (m) x.npcMem = { ...x.npcMem, [g.who]: { ...m, rel: (m.rel ?? 0) + 3 } }; }); sfx("coin"); showToast(en ? `Helped ${trText(g.who)}: +${fmt(pay, s.cityKey)}, contacts +1, and they like you more.` : `帮了${g.who}一把：+${fmt(pay, s.cityKey)}，人脉 +1，关系更近了。`); }} en={en} playerId={profile.playerId} city={s.cityKey} money={s.money} st={gigsQuery.data} onClose={() => setGigsOpen(false)} toast={showToast} refresh={() => void gigsQuery.refetch()} onHeld={(n) => mutate((x) => { x.money -= n; })} onDeliver={() => { const g = gsRef.current; if (!g || g.energy < 8) { showToast(en ? "Too tired to deliver — rest first." : "太累了，先休息一下再交付。"); return false; } mutate((x) => { x.energy -= 8; }); return true; }} openAccount={() => { setGigsOpen(false); setAccountOpen(true); }} />}
 {scenicMoment && phase === "game" && (() => { const m = scenicMoment.m; const ln = m.lines[Math.min(scenicLine, m.lines.length - 1)]!; return (
 <div className="pointer-events-none fixed inset-0 z-[70]" role="dialog" aria-label={en ? m.en : m.zh}>
@@ -5639,25 +5980,88 @@ return (
 <button type="button" onClick={finishScenic} className="pointer-events-auto absolute right-3 top-[calc(9vh+10px)] rounded-full bg-black/55 px-3 py-1.5 text-xs font-black text-white">✕ {en ? "End" : "结束"}</button>
 </div> ); })()}
 {liveOpen && phase === "game" && <LivehouseModal en={en} token={accountToken()} venue={en ? trText(locById(currentLoc).short) : locById(currentLoc).short} soundIsOn={soundIsOn} enableSound={() => { setSoundIsOn(true); setSound(true); }} onClose={() => setLiveOpen(false)} toast={showToast} openAccount={() => { setLiveOpen(false); setAccountOpen(true); }} openStore={() => { setLiveOpen(false); setStoreOpen(true); }} />}
-{musicOpen && <><button type="button" aria-label="关闭" onClick={() => setMusicOpen(false)} className="fixed inset-0 z-[58] cursor-default" /><div className="menu-pop fixed bottom-20 right-3 z-[59] w-64 p-1.5">
+{musicOpen && <><button type="button" aria-label="关闭" onClick={() => setMusicOpen(false)} className="fixed inset-0 z-[58] cursor-default" /><div className="menu-pop fixed bottom-20 right-3 z-[59] max-h-[min(70vh,32rem)] w-[min(20rem,calc(100vw-1.5rem))] overflow-y-auto p-1.5">
 <p className="px-2.5 py-1.5 text-[11px] font-black text-[var(--dim)]">🎵 {en ? "Background music" : "背景音乐"}</p>
 {MUSIC_PICKS.map((m) => <button key={m.id} type="button" onClick={() => { setMusicPick(m.id); setMusicSel(m.id); if (!soundIsOn) { setSoundIsOn(true); setSound(true); } setMusicOpen(false); showToast(en ? `🎵 Music: ${m.en}` : `🎵 背景音乐：${m.zh}`); }} className={`menu-item ${musicSel === m.id ? "bg-[var(--surface2)]" : ""}`}>{m.emoji} {en ? m.en : m.zh}{musicSel === m.id && <span className="ml-auto">✓</span>}</button>)}
+{(() => { const c = nowPlayingCredit(); if (!c) return null; return <p className="px-2.5 py-1 text-[10px] leading-snug text-[var(--dim)]">{en ? "Now playing: " : "正在播放："}{en ? c.en : c.zh}</p>; })()}
+<details className="border-t border-[var(--line)] px-2.5 py-1.5">
+<summary className="cursor-pointer text-[10px] font-black text-[var(--dim)]">{en ? "Track credits" : "曲目署名"}</summary>
+<ul className="mt-1 max-h-36 space-y-1 overflow-y-auto text-[10px] leading-snug text-[var(--dim)]">
+{MUSIC_CREDITS.map((c) => { const m = MUSIC_PICKS.find((p) => p.id === c.id); return <li key={c.id}><span className="font-black text-[var(--text)]">{m?.emoji} {en ? m?.en : m?.zh}</span><br />{en ? c.en : c.zh}</li>; })}
+{EXTRA_CREDITS.map((c) => <li key={c.id}>{en ? c.en : c.zh}</li>)}
+<li>{en ? "Sound effects: Mixkit — free for games, no credit required. Do not redistribute the raw files." : "音效：Mixkit，可免费放进游戏，不必署名。不要把原始文件单独再发出去。"}</li>
+</ul>
+</details>
 <button type="button" onClick={() => { setMusicOpen(false); setLiveOpen(true); }} className="menu-item">🎧 {en ? "Musicians' originals (Livehouse)" : "听音乐人的原创（Livehouse）"}</button>
 </div></>}
 {venue3d && phase === "game" && (
 <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/70 p-3 sm:items-center" role="dialog" aria-label={venue3d.name}>
 <div className="rise max-h-[94vh] w-full max-w-lg overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)]">
-<div className="relative h-[40vh] min-h-[220px]">
-<LifeStage3D key={`venue-${venue3d.id ?? venue3d.set}-${venueTalk?.id ?? ""}`} sign={{ text: venue3d.name, emoji: venue3d.emoji, color: venue3d.color }} seed={[...(venue3d.id ?? venue3d.name)].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 100003, 7)} wall={venue3d.color !== undefined ? mixHex(venue3d.color, 0xf6efe2, 0.82) : undefined} setKind={venue3d.set} pose={venueTalk?.pose ?? "idle"} partner={venueTalk?.partner ? { shirt: venueTalk.partner[0], pants: venueTalk.partner[1] } : undefined} shirt={outfitOf(s.outfit).shirt} pants={outfitOf(s.outfit).pants} night={nowMin() >= 18 * 60 || nowMin() < 6 * 60} emoji={iden.emoji} />
+<div className="relative h-[52vh] min-h-[300px]">
+<LifeStage3D key={`venue-${venue3d.id ?? venue3d.set}-${venueTalk?.id ?? ""}-${s.accessory}`} sign={{ text: venue3d.name, emoji: venue3d.emoji, color: venue3d.color }} seed={[...(venue3d.id ?? venue3d.name)].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 100003, 7)} wall={venue3d.color !== undefined ? mixHex(venue3d.color, 0xf6efe2, 0.82) : undefined} setKind={venue3d.set} pose={venueTalk?.pose ?? "idle"} partner={(() => { const host = regularHere(venue3d.set); const meeting = !!(venueTalk && host && MEET_IDS.has(venueTalk.id)); if (meeting && host) return { shirt: host.shirt, pants: host.pants, accessory: host.accessory }; if (venueTalk?.partner) return { shirt: venueTalk.partner[0], pants: venueTalk.partner[1] }; if (host && !venueTalk) return { shirt: host.shirt, pants: host.pants, accessory: host.accessory }; return undefined; })()} shirt={outfitOf(s.outfit).shirt} pants={outfitOf(s.outfit).pants} accessory={ACCESSORIES[s.accessory ?? 0]?.id} night={nowMin() >= 18 * 60 || nowMin() < 6 * 60} emoji={iden.emoji} en={en} roam={!venueTalk} onSpot={(id) => { const v = (VENUE_TALK[venue3d.set] ?? []).find((t) => t.id === id); if (v) runVenueTalk(v); }} />
 <div className="cine-grade" />
-{venueTalk && <div key={venueTalk.id} className="rise pointer-events-none absolute inset-x-3 top-3 mr-10 rounded-[14px] bg-white/92 px-3 py-2 text-[13px] font-bold leading-snug text-black shadow-lg"><span className="text-[11px] font-black text-[#b45309]">{en ? venueTalk.whoEn : venueTalk.who}</span><br />{en ? venueTalk.sayEn : venueTalk.say}</div>}
+{(() => { const host = regularHere(venue3d.set); const meeting = !!(venueTalk && host && MEET_IDS.has(venueTalk.id)); return <>
+{!venueTalk && host && <p className="absolute bottom-3 left-3 rounded-full bg-black/55 px-3 py-1 text-xs font-black text-white">{host.emoji} {en ? `${host.name} is here` : `${host.name}在这儿`}</p>}
+{venueTalk && <div key={venueTalk.id} className="rise pointer-events-none absolute inset-x-3 top-3 mr-10 rounded-[14px] bg-white/92 px-3 py-2 text-[13px] font-bold leading-snug text-black shadow-lg"><span className="text-[11px] font-black text-[#b45309]">{meeting && host ? `${host.emoji} ${host.name}` : (en ? venueTalk.whoEn : venueTalk.who)}</span><br />{en ? venueTalk.sayEn : venueTalk.say}<button type="button" onClick={() => setVenueTalk(null)} className="pointer-events-auto mt-1.5 block text-[11px] font-black text-[#b45309]">{en ? "Keep walking →" : "接着逛 →"}</button></div>}
+</>; })()}
 <button type="button" onClick={() => { setVenue3d(null); setVenueTalk(null); }} className="absolute right-3 top-3 rounded-full bg-black/55 px-3 py-1 text-xs font-black text-white">✕</button>
 </div>
 <div className="p-4"><p className="font-display text-xl font-black">{venue3d.name}</p><p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">{venue3d.line}</p>
-<div className="mt-3 grid gap-1.5">{(VENUE_TALK[venue3d.set] ?? []).map((v) => { const key = `${s.day}:${venue3d.set}:${v.id}`; const done = (s.venueFx ?? []).includes(key); const cost = -(v.money ?? 0); const fx = [cost > 0 ? fmt(-cost, s.cityKey) : "", v.energy ? `${en ? "energy" : "能量"} ${v.energy > 0 ? "+" : ""}${v.energy}` : "", !done && v.mood ? `${en ? "mood" : "心情"} +${v.mood}` : "", !done && v.network ? `${en ? "contacts" : "人脉"} +${v.network}` : "", !done && v.xp ? `${en ? "XP" : "经验"} +${v.xp}` : ""].filter(Boolean).join(" · "); return (
-<button key={v.id} type="button" disabled={s.money < cost} onClick={() => { mutate((x) => { x.money += v.money ?? 0; x.energy = clamp(x.energy + (v.energy ?? 0), 0, 100); if (!(x.venueFx ?? []).includes(key)) { x.mood = clamp(x.mood + (v.mood ?? 0), 0, 100); x.network += v.network ?? 0; x.xp += v.xp ?? 0; x.venueFx = [...(x.venueFx ?? []).filter((k) => k.startsWith(`${x.day}:`)), key]; } }); if (v.money) sfx("coin"); else sfx("click"); if (!soundIsOn) { setSoundIsOn(true); setSound(true); } if (v.open === "live") { setVenue3d(null); setVenueTalk(null); setLiveOpen(true); return; } setVenueTalk(v); }} className={`flex items-center gap-2 rounded-[12px] border px-3 py-2 text-left ${venueTalk?.id === v.id ? "border-[var(--accent)]" : "border-[var(--line)]"} bg-[var(--bg)] disabled:opacity-40`}>
-<span className="text-xl">{v.emoji}</span><span className="min-w-0 flex-1"><span className="block text-[13px] font-black">{en ? v.en : v.zh}</span><span className="block text-[11px] text-[var(--dim)]">{v.open === "live" ? (en ? "Free · open the Livehouse and listen together" : "免费 · 打开 Livehouse 一起听") : fx || (en ? "done today" : "今天聊过了")}</span></span></button> ); })}</div>
+<p className="mt-1 text-[11px] font-bold text-[var(--accent)]">{en ? "Left stick to walk — push it all the way to jog. Drag the picture to look around. Walk up to a gold ring, then tap Interact." : "左手摇杆走路，推满会小跑。按住画面拖动转镜头。走近金色光柱，点右边的「互动」。"}</p>
+<div className="mt-3 grid gap-1.5">{(VENUE_TALK[venue3d.set] ?? []).map((v) => { const key = `${s.day}:${venue3d.set}:${v.id}`; const done = (s.venueFx ?? []).includes(key); const cost = -(v.money ?? 0); const fx = [cost > 0 ? fmt(-cost, s.cityKey) : "", v.energy ? `${en ? "energy" : "能量"} ${v.energy > 0 ? "+" : ""}${v.energy}` : "", !done && v.mood ? `${en ? "mood" : "心情"} +${v.mood}` : "", !done && v.network ? `${en ? "contacts" : "人脉"} +${v.network}` : "", !done && v.xp ? `${en ? "XP" : "经验"} +${v.xp}` : "", v.id === "toilet" ? (en ? "feel better" : "内急好了") : ""].filter(Boolean).join(" · "); return (
+<button key={v.id} type="button" disabled={s.money < cost} onClick={() => runVenueTalk(v)} className={`flex items-center gap-2 rounded-[12px] border px-3 py-2 text-left ${venueTalk?.id === v.id ? "border-[var(--accent)]" : "border-[var(--line)]"} bg-[var(--bg)] disabled:opacity-40`}>
+<span className="text-xl">{v.emoji}</span><span className="min-w-0 flex-1"><span className="block text-[13px] font-black">{en ? v.en : v.zh}{(() => { const host = regularHere(venue3d.set); return host && MEET_IDS.has(v.id) ? ` · ${host.name}` : ""; })()}</span><span className="block text-[11px] text-[var(--dim)]">{v.open === "live" ? (en ? "Free · open the Livehouse and listen together" : "免费 · 打开 Livehouse 一起听") : fx || (en ? "done today" : "今天聊过了")}</span></span></button> ); })}</div>
 </div>
+</div>
+</div>
+)}
+{lifeOpen && phase === "game" && (
+<div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={en ? "Living" : "过日子"}>
+<div className="rise max-h-[88vh] w-full max-w-md overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] p-4">
+<p className="flex items-center justify-between"><span className="font-display text-xl font-black">{en ? "A life that pulls you back" : "过日子"}</span><button type="button" onClick={() => setLifeOpen(false)} className="rounded-full border px-3 py-1 text-xs font-black">✕</button></p>
+<p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">{(() => { const rows: [number, string][] = [[s.hunger, en ? "Hungry. Eat, or cook at home." : "饿了。去吃饭，或者回家做饭。"], [s.bladder, en ? "Find a restroom in a mall, a restaurant, or the office." : "内急。商场、饭店、公司里有洗手间，走进去。"], [s.clean, en ? "Go home and wash." : "该洗了。回家洗澡。"], [s.fun, en ? "Go out. A bar, the sea, or the Livehouse." : "闷了。去酒吧、海边，或者 Livehouse。坐着不算。"], [s.social, en ? "Go find someone." : "去找个人说说话。"]]; const worst = rows.reduce((a, b) => (a[0] <= b[0] ? a : b)); return worst[0] < 45 ? worst[1] : (en ? "You're fine. Fun still drops if you stay in." : "都还行。想玩也会自己往下掉，得出门。"); })()}</p>
+<div className="mt-3 grid grid-cols-5 gap-1">{([["🍚", en ? "Full" : "饱", s.hunger], ["🚻", en ? "Ok" : "急", s.bladder], ["🚿", en ? "Clean" : "净", s.clean], ["🎧", en ? "Fun" : "玩", s.fun], ["💬", en ? "People" : "人", s.social]] as [string, string, number][]).map(([ic, lb, v]) => <div key={lb} className="rounded-[12px] border border-[var(--line)] p-1.5"><p className="text-[10px] font-black">{ic} {lb}</p><p className={`text-lg font-black ${v < 30 ? "text-[var(--accent)]" : ""}`}>{Math.round(v)}</p></div>)}</div>
+<div className="mt-2 grid grid-cols-3 gap-1.5">
+<button type="button" onClick={eatBowl} className="rounded-full bg-[var(--text)] py-2 text-[11px] font-black text-[var(--bg)]">{en ? "Noodles ¥25" : "吃碗面 ¥25"}</button>
+<button type="button" onClick={washHome} className="rounded-full border border-[var(--line)] py-2 text-[11px] font-black">{en ? "Wash at home" : "回家洗澡"}</button>
+<button type="button" onClick={seeSomeone} className="rounded-full border border-[var(--line)] py-2 text-[11px] font-black">{en ? "Talk" : "找人说话"}</button>
+</div>
+<div className="mt-3 rounded-[12px] border border-[var(--line)] p-3">
+<p className="text-xs font-black text-[var(--dim)]">{en ? "Hair — so people can tell you apart" : "发型 · 别人一眼能认出你"}</p>
+<div className="mt-2 flex flex-wrap gap-1.5">{HAIRS.map((h, i) => <button key={h.zh} type="button" onClick={() => { mutate((x) => { x.hair = i; }); showToast(en ? h.en : `换成了${h.zh}。`); }} className={`rounded-full border px-2.5 py-1 text-[11px] font-black ${s.hair === i ? "border-[var(--accent)] bg-[var(--accent)] text-white" : "border-[var(--line)]"}`}>{en ? h.en : h.zh}</button>)}</div>
+<div className="mt-2 flex flex-wrap gap-1.5">{ACCESSORIES.map((a, i) => <button key={a.id} type="button" onClick={() => { mutate((x) => { x.accessory = i; }); showToast(en ? a.en : `戴上了${a.zh}。`); }} className={`rounded-full border px-2.5 py-1 text-[11px] font-black ${s.accessory === i ? "border-[var(--accent)] bg-[var(--accent)] text-white" : "border-[var(--line)]"}`}>{en ? a.en : a.zh}</button>)}</div>
+</div>
+<div className="mt-3 rounded-[12px] border border-[var(--line)] p-3">
+<p className="text-xs font-black text-[var(--dim)]">{en ? "Family" : "家人"}{s.spouse ? ` · ${s.spouse}` : ""}</p>
+{s.kids.length > 0 && <p className="mt-1 text-[11px] text-[var(--dim)]">{s.kids.map((k) => `${k.name} · ${en ? `day ${Math.max(1, s.day - k.day + 1)}` : `第 ${Math.max(1, s.day - k.day + 1)} 天`}`).join("  ")}</p>}
+<div className="mt-2 flex flex-wrap gap-1.5">
+{npcsForCity(s.cityKey).slice(0, 5).filter((n) => n.name !== s.spouse).map((n) => { const pts = s.romance?.[n.name] ?? 0; const st = ROMANCE_STAGES[romanceStage(pts)]!.name[en ? 1 : 0]; return <button key={n.name} type="button" onClick={() => askOut(n.name)} className="rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] font-black">{n.emoji} {en ? `Date ${n.name}` : `约${n.name}`} · {st}</button>; })}
+{Object.entries(s.romance ?? {}).filter(([, pts]) => romanceStage(pts) >= 2 && !s.spouse).map(([name]) => <button key={`m-${name}`} type="button" onClick={() => { mutate((x) => { x.spouse = name; x.cohabit = true; }); showToast(en ? `You and ${name} are together.` : `你和${name}领了证，一起住。房租按同居算。`); }} className="rounded-full bg-[var(--text)] px-2.5 py-1 text-[11px] font-black text-[var(--bg)]">{en ? `Marry ${name}` : `和${name}领证`}</button>)}
+{bonds.filter((b) => b.kind === "partner" && b.status === "active" && b.peerName !== s.spouse).map((b) => <button key={b.peerName} type="button" onClick={() => { mutate((x) => { x.spouse = b.peerName; x.cohabit = true; }); showToast(en ? `You and ${b.peerName} registered.` : `你和${b.peerName}领了证。`); }} className="rounded-full bg-[var(--text)] px-2.5 py-1 text-[11px] font-black text-[var(--bg)]">{en ? `Marry ${b.peerName}` : `和${b.peerName}领证`}</button>)}
+{s.spouse && s.kids.length < 3 && <button type="button" onClick={() => { const last = s.kids[s.kids.length - 1]?.day ?? 0; if (s.kids.length > 0 && s.day - last < 3) { showToast(en ? "Give it a few more days." : "再过几天。"); return; } const name = KID_NAMES[s.kids.length] ?? "宝宝"; mutate((x) => { x.kids = [...x.kids, { name, day: x.day }]; x.mood = Math.min(100, x.mood + 12); }); showToast(en ? `${name} is here.` : `${name}出生了。`); }} className="rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] font-black">{en ? "A child" : "要个孩子"}</button>}
+</div>
+<p className="mt-2 text-[11px] font-black text-[var(--dim)]">{en ? "Drop in" : "串门"}</p>
+<div className="mt-1 flex flex-wrap gap-1.5">
+{[...new Set([...(s.spouse ? [s.spouse] : []), ...npcsForCity(s.cityKey).filter((n) => (s.npcMem?.[n.name]?.rel ?? 0) >= 8 || (s.romance?.[n.name] ?? 0) >= 15).map((n) => n.name), ...bonds.filter((b) => b.status === "active").map((b) => b.peerName)])].filter((name) => !s.kids.some((k) => k.name === name)).slice(0, 6).map((name) => <button key={`v-${name}`} type="button" onClick={() => openVisit(name)} className="rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] font-black">{en ? `${name}'s home` : `去${name}家`}</button>)}
+</div>
+{!s.spouse && <p className="mt-1 text-[11px] text-[var(--dim)]">{en ? "A date is ¥60. Reach “Partners”, then you can register." : "约会 ¥60。到「恋人」就能领证，再过几天可以要孩子。"}</p>}
+</div>
+<div className="mt-3 rounded-[12px] border border-[var(--line)] p-3">
+<p className="text-xs font-black text-[var(--dim)]">{en ? "Send money to someone online" : "转给在线的人 · 红包 ¥88，对方下次上线到账"}</p>
+<div className="mt-2 flex flex-wrap gap-1.5">{onlineHere.filter((pl) => pl.id !== myId).slice(0, 6).map((pl) => <button key={pl.id} type="button" onClick={() => sendGift(pl.id, pl.name, "hongbao")} className="rounded-full bg-[var(--text)] px-2.5 py-1 text-[11px] font-black text-[var(--bg)]">🧧 {pl.name}</button>)}{onlineHere.filter((pl) => pl.id !== myId).length === 0 && <span className="text-[11px] text-[var(--dim)]">{en ? "Nobody else is online in this city right now." : "这座城现在没有别的在线玩家。"}</span>}</div>
+</div>
+<div className="mt-3 rounded-[12px] border border-[var(--line)] p-3">
+<p className="text-xs font-black text-[var(--dim)]">{en ? "Land in this city · about +1.8% a day" : "这块城里的地 · 拿着每天大约涨 1.8%"}</p>
+<div className="mt-2 flex flex-col gap-1.5">{s.plots.map((p, i) => { const w = plotWorth(p.paid, p.day, s.day); return <div key={`${p.city}-${i}`} className="flex items-center gap-2 text-[11px] font-black"><span className="flex-1">{CITIES[p.city].name} · {fmt(w, p.city)}</span><button type="button" onClick={() => { const got = Math.round(w * 0.92); mutate((x) => { x.money += got; x.plots = x.plots.filter((_, j) => j !== i); }); showToast(en ? `Sold. You keep ${fmt(got, p.city)} after the fee.` : `卖掉了，扣过手费到手 ${fmt(got, p.city)}。`); }} className="rounded-full border px-2 py-1">{en ? "Sell" : "卖掉"}</button></div>; })}</div>
+<button type="button" disabled={s.plots.length >= 3 || s.money < (PLOT_PRICE[s.cityKey] ?? 18000)} onClick={() => { const price = PLOT_PRICE[s.cityKey] ?? 18000; mutate((x) => { x.money -= price; x.plots = [...x.plots, { city: x.cityKey, paid: price, day: x.day }]; }); showToast(en ? `You bought a plot for ${fmt(price, s.cityKey)}.` : `买下一块地，${fmt(price, s.cityKey)}。拿得越久越值钱。`); }} className="mt-2 w-full rounded-full bg-[var(--text)] py-2 text-[11px] font-black text-[var(--bg)] disabled:opacity-40">{en ? `Buy here · ${fmt(PLOT_PRICE[s.cityKey] ?? 18000, s.cityKey)}` : `买在${CITIES[s.cityKey].name} · ${fmt(PLOT_PRICE[s.cityKey] ?? 18000, s.cityKey)}`}</button>
+</div>
+<div className="mt-3 flex flex-wrap gap-1.5">
+<button type="button" disabled={!!s.carOwned || (s.license ?? 0) < 3 || s.money < CAR_PRICE} onClick={() => { mutate((x) => { x.money -= CAR_PRICE; x.carOwned = true; }); showToast(en ? "The car is yours. Choose Drive when you travel." : "车是你的了。出行时选「自驾」。"); }} className="rounded-full border border-[var(--line)] px-3 py-2 text-[11px] font-black disabled:opacity-40">{s.carOwned ? (en ? "You have a car" : "已经有车") : (en ? `Buy a car · ${fmt(CAR_PRICE)}` : `买车 · ${fmt(CAR_PRICE)}`)}</button>
+{s.shop && bonds.filter((b) => (b.kind === "sworn" || b.kind === "partner") && b.status === "active").map((b) => <button key={b.peerName} type="button" onClick={() => { mutate((x) => { if (x.shop) x.shop = { ...x.shop, partner: b.peerName }; }); showToast(en ? `${b.peerName} takes 20% when you empty the till.` : `${b.peerName}入伙了。收钱时两成分给对方。`); }} className="rounded-full border border-[var(--line)] px-3 py-2 text-[11px] font-black">{s.shop?.partner === b.peerName ? "✓ " : ""}{en ? `Partner ${b.peerName}` : `和${b.peerName}合伙`}</button>)}
+{s.shop && npcsForCity(s.cityKey).filter((n) => (s.npcMem?.[n.name]?.rel ?? 0) >= 12).slice(0, 3).map((n) => <button key={`sp-${n.name}`} type="button" onClick={() => { mutate((x) => { if (x.shop) x.shop = { ...x.shop, partner: n.name }; }); showToast(en ? `${n.name} takes 20% when you empty the till.` : `${n.name}入伙了。收钱时两成分给对方。`); }} className="rounded-full border border-[var(--line)] px-3 py-2 text-[11px] font-black">{s.shop?.partner === n.name ? "✓ " : ""}{en ? `Partner ${n.name}` : `和${n.name}合伙`}</button>)}
+{!s.shop && <span className="self-center text-[11px] text-[var(--dim)]">{en ? "Open a shop, then you can take a partner. They take 20% of the till." : "小店开张之后可以请人合伙，收钱时两成给他们。"}</span>}
+</div>
+<button type="button" className="mt-3 block text-left text-xs font-black" onClick={() => { setLifeOpen(false); setCommitteeOpen(true); }}>🏛️ {committeeQuery.data?.chair ? (en ? `This week's chair: ${committeeQuery.data.chair.emoji} ${committeeQuery.data.chair.name}. The whole city runs on their pledge.` : `本周城主 ${committeeQuery.data.chair.emoji} ${committeeQuery.data.chair.name}。全城这一周按这个人的承诺过。`) : (en ? "No chair yet this week — go vote." : "本周还没选出城主。去投票，选出来全城都看得到。")}</button>
 </div>
 </div>
 )}
@@ -5665,21 +6069,27 @@ return (
 <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/70 p-3 sm:items-center" role="dialog" aria-label={en ? "My home" : "我的家"}>
 <div className="rise max-h-[94vh] w-full max-w-lg overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)]">
 <div className="relative h-[40vh] min-h-[220px]">
-{(() => { const pf = placedFurn(s); return <LifeStage3D key={`flat-${t}-${s.homeStyle}-${pf.map((x) => x.id + x.slot).join(",")}`} setKind="flat" tier={t} furn={pf} wall={tplByName(s.homeStyle)?.wall} pose="idle" shirt={outfitOf(s.outfit).shirt} pants={outfitOf(s.outfit).pants} night={tn >= 18 * 60 || tn < 6 * 60} emoji={iden.emoji} />; })()}
+{(() => { const who = homeGuest ?? s.spouse ?? null; const guest = who ? npcsForCity(s.cityKey).find((n) => n.name === who) : undefined; const pf = homeGuest ? (visitHome?.layout ?? []) : placedFurn(s); const tier = homeGuest && visitHome ? visitHome.tier : t; const wall = homeGuest ? (visitHome?.style ? tplByName(visitHome.style)?.wall : undefined) : tplByName(s.homeStyle)?.wall; const kids = homeGuest ? [] : s.kids.map((_, i) => ({ shirt: [0xf9a8d4, 0x93c5fd, 0xfde68a][i] ?? 0xf9a8d4, pants: 0x374151 })); return <LifeStage3D key={`flat-${tier}-${homePose}-${who ?? ""}-${kids.length}-${s.accessory}-${pf.map((x) => x.id + x.slot).join(",")}`} setKind="flat" tier={tier} furn={pf} wall={wall} pose={homePose} roam={homePose === "idle"} en={en} accessory={ACCESSORIES[s.accessory ?? 0]?.id} shirt={outfitOf(s.outfit).shirt} pants={outfitOf(s.outfit).pants} night={tn >= 18 * 60 || tn < 6 * 60} emoji={iden.emoji} onFurn={usePlacedFurn} onSpot={(id) => { if (id === "bed") usePlacedFurn("bed-double"); else if (id === "sit") usePlacedFurn("sofa-fabric"); else if (id === "cook") usePlacedFurn("kitchen-cabinet"); else if (id === "wash") washHome(); }} household={kids} partner={who ? { shirt: guest?.shirt ?? 0x60a5fa, pants: guest?.pants ?? 0x1f2937, accessory: guest?.accessory } : undefined} />; })()}
 <div className="cine-grade" />
-<button type="button" onClick={() => setHome3d(false)} className="absolute right-3 top-3 rounded-full bg-black/55 px-3 py-1 text-xs font-black text-white">✕</button>
+<button type="button" onClick={() => { setHome3d(false); setHomeGuest(null); setVisitHome(null); setHomePose("idle"); }} className="absolute right-3 top-3 rounded-full bg-black/55 px-3 py-1 text-xs font-black text-white">✕</button>
+<p className="pointer-events-none absolute bottom-3 right-3 max-w-[14rem] rounded-full bg-black/55 px-3 py-1 text-[11px] font-black text-white">{en ? "Walk up to a gold ring, then Interact. Tap the furniture too." : "走近金色光柱再互动。点家具也行。"}</p>
+{(homeGuest ?? s.spouse) ? <p className="absolute bottom-3 left-3 rounded-full bg-black/55 px-3 py-1 text-xs font-black text-white">{en ? `${homeGuest ?? s.spouse} is sitting with you${s.kids.length && !homeGuest ? ` · ${s.kids.length} at home` : ""}` : `${homeGuest ?? s.spouse}坐在旁边${s.kids.length && !homeGuest ? ` · 孩子${s.kids.length}个在家` : ""}`}</p> : null}
 </div>
 <div className="p-4">
-<p className="font-display text-xl font-black">{T[t]!.emoji} {en ? T[t]!.en : T[t]!.zh}</p>
-<p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">{t < 3 ? (en ? `Reach the month's goal to move up to ${T[t + 1]!.en} — your home changes with you.` : `攒够本月目标就能搬进「${T[t + 1]!.zh}」——爬上去，家就跟着变。`) : (en ? "Top of the ladder. Don't slip." : "到顶了，别掉下来。")}</p>
+<p className="font-display text-xl font-black">{homeGuest ? (en ? `${homeGuest}'s home` : `${homeGuest}的家`) : `${T[t]!.emoji} ${en ? T[t]!.en : T[t]!.zh}`}</p>
+<p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">{homeGuest ? (visitHome ? (en ? "This is their layout. Walk in — they are already sitting." : "这是对方家里的摆法。人已经坐着，你走进去。") : (en ? "They have not published a layout yet. The room is empty." : "对方还没把摆法发出来，屋里是空的。")) : t < 3 ? (en ? `Reach the month's goal to move up to ${T[t + 1]!.en} — your home changes with you.` : `攒够本月目标就能搬进「${T[t + 1]!.zh}」——爬上去，家就跟着变。`) : (en ? "Top of the ladder. Don't slip." : "到顶了，别掉下来。")}</p>
+<p className="mt-1 text-[11px] font-bold text-[var(--accent)]">{en ? "Left stick to walk. Push it all the way to jog. Drag the picture to look around." : "左手摇杆走路，推满会小跑。按住画面拖动转镜头。"}</p>
+<div className="mt-2 flex flex-wrap gap-1.5"><button type="button" onClick={() => usePlacedFurn("bed-double")} className="rounded-full bg-[var(--text)] px-2.5 py-1 text-[11px] font-black text-[var(--bg)]">{en ? "Lie down" : "躺一会儿"}</button><button type="button" onClick={() => usePlacedFurn("sofa-fabric")} className="rounded-full bg-[var(--text)] px-2.5 py-1 text-[11px] font-black text-[var(--bg)]">{en ? "Sit" : "坐下"}</button><button type="button" onClick={() => usePlacedFurn("kitchen-cabinet")} className="rounded-full bg-[var(--text)] px-2.5 py-1 text-[11px] font-black text-[var(--bg)]">{en ? "Cook" : "做饭"}</button><button type="button" onClick={washHome} className="rounded-full bg-[var(--text)] px-2.5 py-1 text-[11px] font-black text-[var(--bg)]">{en ? "Wash" : "洗澡"}</button>{homePose !== "idle" && <button type="button" onClick={() => setHomePose("idle")} className="rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] font-black">{en ? "Stand up" : "站起来"}</button>}</div>
 <div className="mt-2 flex items-end gap-1" aria-hidden>{T.map((x, i) => <div key={i} className={`flex-1 rounded-t-[6px] py-1 text-center text-[10px] font-black ${i === t ? "bg-[var(--accent)] text-white" : "bg-[var(--surface2)] text-[var(--dim)]"}`} style={{ paddingTop: 4 + i * 7 }}>{x.emoji}</div>)}</div>
-{(() => { const pf = placedFurn(s); const owned = s.furniture.flatMap((id) => { const f = furnById(id); return f ? [f] : []; }); const occ = (i: number) => pf.find((x) => x.slot === i)?.id; const put = (id: string, slot: number) => { mutate((x) => { const fp = { ...(x.furnPos ?? {}) }; for (const it of placedFurn(x)) if (fp[it.id] === undefined) fp[it.id] = it.slot; const other = Object.keys(fp).find((k) => k !== id && fp[k] === slot); if (other && slot >= 0) fp[other] = fp[id] ?? -1; fp[id] = slot; x.furnPos = fp; }); sfx("click"); }; return (
+{(() => { const pf = placedFurn(s); const owned = s.furniture.flatMap((id) => { const f = furnById(id); return f ? [f] : []; }); const occ = (i: number) => pf.find((x) => x.slot === i)?.id; const put = (id: string, slot: number) => { mutate((x) => { const fp = { ...(x.furnPos ?? {}) }; for (const it of placedFurn(x)) if (fp[it.id] === undefined) fp[it.id] = it.slot; const other = Object.keys(fp).find((k) => k !== id && fp[k] === slot); if (other && slot >= 0) fp[other] = fp[id] ?? -1; fp[id] = slot; x.furnPos = fp; }); publishHome(); sfx("click"); }; if (homeGuest) return null; return (
 <div className="mt-3 rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
 <p className="text-xs font-black text-[var(--dim)]">🛋️ {en ? "Arrange your furniture" : "摆家具"}{owned.length ? (en ? " · tap a piece, then a spot" : " · 先点家具，再点位置") : ""}</p>
 {owned.length === 0 ? <p className="mt-1 text-xs text-[var(--dim)]">{en ? "No furniture yet — buy some in “My home” (ZhuyaHome catalogue), then come back and place it." : "还没有家具。去「我的家」里买（ZhuyaHome 目录），回来就能摆。"}</p> : (<>
 <div className="mt-2 flex flex-wrap gap-1.5">{owned.map((f) => { const on = pf.some((x) => x.id === f.id); return <button key={f.id} type="button" onClick={() => setFurnSel(furnSel === f.id ? null : f.id)} className={`rounded-full border px-2.5 py-1 text-[11px] font-black ${furnSel === f.id ? "border-[var(--accent)] bg-[var(--accent)] text-white" : on ? "border-[var(--line)] bg-[var(--surface)]" : "border-dashed border-[var(--line)] text-[var(--dim)]"}`}>{f.emoji} {en ? trText(f.name) : f.name}</button>; })}</div>
 {furnSel && <div className="mt-2 grid grid-cols-4 gap-1.5">{FURN_SLOTS.map((sl, i) => { const o = occ(i); const of = o ? furnById(o) : null; return <button key={i} type="button" onClick={() => put(furnSel, i)} className={`rounded-[10px] border px-1.5 py-1.5 text-[10px] font-black ${o === furnSel ? "border-[var(--accent)] text-[var(--accent)]" : "border-[var(--line)]"}`}>{en ? sl.en : sl.zh}{of && o !== furnSel ? <span className="block font-bold text-[var(--dim)]">{of.emoji}</span> : null}</button>; })}<button type="button" onClick={() => put(furnSel, -1)} className="rounded-[10px] border border-dashed border-[var(--line)] px-1.5 py-1.5 text-[10px] font-black text-[var(--dim)]">{en ? "Put away" : "收起来"}</button></div>}
 </>)}
+{pf.length > 0 && <div className="mt-2 flex flex-wrap gap-1.5">{pf.map((it) => { const f = furnById(it.id); const u = furnUse(it.id); return f && u ? <button key={it.id} type="button" onClick={() => usePlacedFurn(it.id)} className="rounded-full bg-[var(--text)] px-2.5 py-1 text-[11px] font-black text-[var(--bg)]">{en ? `Use ${trText(f.name)}` : `用${f.name}`}</button> : null; })}</div>}
+<div className="mt-2 flex flex-wrap gap-1.5">{[...(s.spouse ? [s.spouse] : []), ...Object.keys(s.romance ?? {}).filter((n) => (s.romance?.[n] ?? 0) >= 15 && n !== s.spouse)].slice(0, 4).map((n) => <button key={n} type="button" onClick={() => { setHomeGuest(n); setHomePose("idle"); showToast(en ? `${n} is sitting inside. Walk over.` : `${n}已经坐在屋里。你走进去。`); }} className="rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] font-black">{homeGuest === n ? "✓ " : ""}{en ? `Invite ${n}` : `请${n}来`}</button>)}{homeGuest && <button type="button" onClick={() => { setHomeGuest(null); setHomePose("idle"); }} className="rounded-full border border-dashed px-2.5 py-1 text-[11px] font-black text-[var(--dim)]">{en ? "See them out" : "送客"}</button>}</div>
 </div> ); })()}
 </div>
 </div>
@@ -5954,7 +6364,7 @@ return (
 <h3 className="font-display mt-3 text-2xl font-black leading-snug">{en ? end.en : end.zh}</h3>
 <p className="mt-1.5 text-sm leading-relaxed text-[var(--dim)]">{en ? end.textEn : end.textZh}</p>
 <p className="mt-2 text-xs font-black text-[var(--accent)]">{arcFxText(end.fx, en, s.cityKey)}</p>
-<button type="button" onClick={() => { mutate((x) => { applyArcFx(x, end.fx); x.arcs = { ...(x.arcs ?? {}), [arc.id]: { ...prog, done: end.zh, day: x.day } }; }); addLog(`🎬 人生连续剧「${arc.zh}」结局：${end.zh}。`); sfx("arrive"); close(); }} className="mt-4 w-full rounded-full bg-[var(--accent)] py-2.5 text-sm font-black text-white">{en ? "The end" : "剧终"}</button>
+<button type="button" onClick={() => { mutate((x) => { applyArcFx(x, end.fx); x.arcs = { ...(x.arcs ?? {}), [arc.id]: { ...prog, done: end.zh, day: x.day } }; }); addLog(`🎬 人生连续剧「${arc.zh}」结局：${end.zh}。`); sfx("cheer"); close(); }} className="mt-4 w-full rounded-full bg-[var(--accent)] py-2.5 text-sm font-black text-white">{en ? "The end" : "剧终"}</button>
 </>) : stg && (<>
 <h3 className="font-display mt-3 text-2xl font-black leading-snug">{en ? stg.en : stg.zh}</h3>
 <p className="mt-1.5 text-sm leading-relaxed text-[var(--dim)]">{en ? stg.textEn : stg.textZh}</p>

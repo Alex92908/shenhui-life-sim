@@ -60,13 +60,14 @@ const playerShape = z.object({
   look: z.string().nullable().optional(),
 });
 
-const GIFT_KINDS = ["tea", "breakfast", "hongbao", "referral", "invite"] as const;
+const GIFT_KINDS = ["tea", "breakfast", "hongbao", "referral", "invite", "share"] as const;
 const giftShape = z.object({
   id: z.number(),
   fromId: z.string(),
   fromName: z.string(),
   kind: z.string(),
   company: z.string().nullable(),
+  amount: z.number(),
   createdAt: z.string(),
 });
 
@@ -754,6 +755,9 @@ export const Actions = {
       title: z.string().max(16).nullable().optional(),
       season: z.string().regex(/^\d{4}-\d{2}$/).optional(),
       device: z.string().max(64).optional(),
+      /* 0–3 hair, 0–3 accessory. Stored on cosmetic as #h2a1 so name colours stay intact. */
+      hair: z.number().int().min(0).max(3).optional(),
+      accessory: z.number().int().min(0).max(3).optional(),
     }),
     response: z.object({ world: worldResponse, inbox: z.array(giftShape), me: z.string(), bank: z.object({ money: z.number(), corrected: z.boolean() }).optional() }),
     async handler(ctx, args) {
@@ -790,6 +794,7 @@ export const Actions = {
           ...(args.stamps !== undefined ? { stamps: args.stamps } : {}),
           ...(args.title !== undefined ? { title: args.title } : {}),
           ...(args.season !== undefined ? { season: args.season } : {}),
+          ...(args.hair !== undefined ? { cosmetic: `${(prev?.cosmetic ?? "").replace(/#h[0-3](?:a[0-3])?$/, "")}#h${args.hair}a${args.accessory ?? 0}` } : {}),
           lastSeen: new Date(),
         })
         .where(eq(schema.players.id, args.playerId));
@@ -803,7 +808,7 @@ export const Actions = {
         .limit(10);
       return {
         world: await loadWorldCached(ctx, args.cityKey),
-        inbox: inboxRows.map((g) => ({ id: g.id, fromId: pubOf(g.fromId), fromName: g.fromName, kind: g.kind, company: g.company, createdAt: g.createdAt.toISOString() })),
+        inbox: inboxRows.map((g) => ({ id: g.id, fromId: pubOf(g.fromId), fromName: g.fromName, kind: g.kind, company: g.company, amount: g.amount ?? 0, createdAt: g.createdAt.toISOString() })),
         me: pubOf(args.playerId),
         ...(bank ? { bank: { money: bank.money, corrected: bank.corrected } } : {}),
       };
@@ -817,6 +822,7 @@ export const Actions = {
       playerId: z.string().min(4).max(64),
       toId: z.string().min(4).max(64),
       kind: z.enum(GIFT_KINDS),
+      amount: z.number().int().min(0).max(5000).optional(),
     }),
     response: z.object({ ok: z.boolean(), error: z.string().optional() }),
     async handler(ctx, args): Promise<{ ok: boolean; error?: string }> {
@@ -834,15 +840,18 @@ export const Actions = {
         .where(and(eq(schema.gifts.fromId, me.id), gte(schema.gifts.createdAt, dayAgo)));
       if (Number(sent[0]?.n ?? 0) >= 10) return { ok: false, error: "今天送得太多了，明天再送" };
       if (args.kind === "invite") return { ok: false, error: "邀请奖励由系统在朋友玩满 3 天后自动发放" };
+      const share = args.kind === "share" ? Math.min(5000, Math.max(0, args.amount ?? 0)) : 0;
+      if (args.kind === "share" && share < 1) return { ok: false, error: "分成金额不对" };
       await db.insert(schema.gifts).values({
         fromId: me.id,
         fromName: me.name,
         toId: to.id,
         kind: args.kind,
         company: args.kind === "referral" ? me.employer : null,
+        amount: share,
         createdAt: new Date(),
       });
-      const label = { tea: "一杯奶茶", breakfast: "一份早餐", hongbao: "一个红包", referral: "一次内推", invite: "一声谢谢：被邀请来深惠过日子" }[args.kind];
+      const label = { tea: "一杯奶茶", breakfast: "一份早餐", hongbao: "一个红包", referral: "一次内推", invite: "一声谢谢：被邀请来深惠过日子", share: `店里的分成 ¥${share}` }[args.kind];
       await db.insert(schema.feedEvents).values({ playerId: me.id, playerName: me.name, kind: "life", text: `给${to.name}送了${label}`, createdAt: new Date() });
       dropWorldCache();
       ctx.invalidateQueries();
@@ -863,7 +872,56 @@ export const Actions = {
         .limit(1);
       if (!g) return { ok: false, gift: null };
       await db.update(schema.gifts).set({ claimed: 1 }).where(eq(schema.gifts.id, g.id));
-      return { ok: true, gift: { id: g.id, fromId: pubOf(g.fromId), fromName: g.fromName, kind: g.kind, company: g.company, createdAt: g.createdAt.toISOString() } };
+      if (g.kind === "share" && g.amount > 0) await creditMoney(db, args.playerId, g.amount, `share from ${g.fromName}`);
+      return { ok: true, gift: { id: g.id, fromId: pubOf(g.fromId), fromName: g.fromName, kind: g.kind, company: g.company, amount: g.amount ?? 0, createdAt: g.createdAt.toISOString() } };
+    },
+  }),
+
+  publishHome: defineAction({
+    description: "Publishes the caller's furniture layout so a visitor walks into this home, not a generic room.",
+    request: z.object({
+      playerId: z.string().min(4).max(64),
+      tier: z.number().int().min(0).max(3),
+      style: z.string().max(40).nullable(),
+      layout: z.array(z.object({ id: z.string().regex(/^[a-z0-9-]{1,32}$/), slot: z.number().int().min(0).max(6) })).max(8),
+    }),
+    response: z.object({ ok: z.boolean() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const [me] = await db.select().from(schema.players).where(eq(schema.players.id, args.playerId)).limit(1);
+      if (!me || me.banned) return { ok: false };
+      const layout = JSON.stringify(args.layout);
+      await db.insert(schema.homes).values({ playerId: me.id, tier: args.tier, style: args.style, layout, updatedAt: new Date() })
+        .onConflictDoUpdate({ target: schema.homes.playerId, set: { tier: args.tier, style: args.style, layout, updatedAt: new Date() } });
+      return { ok: true };
+    },
+  }),
+
+  getHome: defineAction({
+    description: "Reads the home a player has published. Empty when they have not placed anything yet.",
+    request: z.object({ pub: z.string().min(4).max(64) }),
+    response: z.object({
+      home: z.object({
+        tier: z.number(),
+        style: z.string().nullable(),
+        layout: z.array(z.object({ id: z.string(), slot: z.number() })),
+      }).nullable(),
+    }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const [who] = await db.select().from(schema.players).where(eq(schema.players.pub, args.pub)).limit(1);
+      if (!who) return { home: null };
+      const [row] = await db.select().from(schema.homes).where(eq(schema.homes.playerId, who.id)).limit(1);
+      if (!row) return { home: null };
+      let layout: { id: string; slot: number }[] = [];
+      try {
+        const parsed = JSON.parse(row.layout) as unknown;
+        if (Array.isArray(parsed)) layout = parsed.flatMap((x) => {
+          const o = x as { id?: unknown; slot?: unknown };
+          return typeof o?.id === "string" && typeof o.slot === "number" ? [{ id: o.id, slot: o.slot }] : [];
+        }).slice(0, 8);
+      } catch { layout = []; }
+      return { home: { tier: row.tier, style: row.style, layout } };
     },
   }),
 
@@ -1737,7 +1795,10 @@ export const Actions = {
         const member = ents.some((e) => e.kind === "member" && (e.expiresAt?.getTime() ?? 0) > Date.now());
         if (!ents.some((e) => e.kind === "item" && e.item === args.item) && !(member && args.item === "name-gold")) return { ok: false, error: "还没有这个外观" };
       }
-      await db.update(schema.players).set({ cosmetic: args.item }).where(eq(schema.players.id, acc.playerId));
+      const [worn] = await db.select().from(schema.players).where(eq(schema.players.id, acc.playerId)).limit(1);
+      const hairBit = (worn?.cosmetic ?? "").match(/#h[0-3](?:a[0-3])?$/)?.[0] ?? "";
+      const nextLook = `${args.item ?? ""}${hairBit}`;
+      await db.update(schema.players).set({ cosmetic: nextLook || null }).where(eq(schema.players.id, acc.playerId));
       dropWorldCache(); ctx.invalidateQueries();
       return { ok: true };
     },

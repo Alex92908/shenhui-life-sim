@@ -49,7 +49,11 @@ export default defineConfig({
     },
   },
   server: {
+    // 0.0.0.0 so a phone on the same Wi-Fi can open the Network URL Vite prints.
+    // /actions still proxies to the API on this machine, so the phone only needs port 5173.
+    host: true,
     port: 5173,
+    strictPort: true,
     proxy: { "/actions": `http://127.0.0.1:${PORT}` },
   },
 });

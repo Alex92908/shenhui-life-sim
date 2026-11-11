@@ -99,6 +99,18 @@ export const feedEvents = sqliteTable("feed_events", {
 // Gifts between real players (0004): a 奶茶 / 早餐 / 红包 / 内推 sent to someone
 // online; the receiver claims it on their next heartbeat and the client
 // applies the effect. company is the sender's employer (for 内推).
+/** A player's published home: tier, wall style, and which piece sits in which slot.
+    Visiting reads this. The rest of the save stays on the device. */
+export const homes = sqliteTable("homes", {
+  playerId: text("player_id").primaryKey(),
+  tier: integer("tier").notNull().default(0),
+  style: text("style"),
+  layout: text("layout").notNull().default("[]"),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
 export const gifts = sqliteTable("gifts", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   fromId: text("from_id").notNull(),
@@ -107,6 +119,8 @@ export const gifts = sqliteTable("gifts", {
   kind: text("kind").notNull(),
   company: text("company"),
   claimed: integer("claimed").notNull().default(0),
+  /** 分成 / 红包里的金额。奶茶这类礼物是 0，效果在种类上。 */
+  amount: integer("amount").notNull().default(0),
   createdAt: integer("created_at", { mode: "timestamp_ms" })
     .notNull()
     .$defaultFn(() => new Date()),
