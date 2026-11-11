@@ -4,7 +4,7 @@
 // derived from lastSeen (a player counts as online for ~90s after their last
 // heartbeat). game fields are the player's current run snapshot, used for the
 // live leaderboard and the finished-season rankings.
-import { integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { integer, primaryKey, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 export const players = sqliteTable("players", {
   id: text("id").primaryKey(),
@@ -437,5 +437,407 @@ export const adminAudit = sqliteTable("admin_audit", {
   action: text("action").notNull(),
   target: text("target"),
   detail: text("detail"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+
+/* ---- round-2 (S): pets + community (c) ---- */
+export const strays = sqliteTable("strays", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  city: text("city").notNull(),
+  kind: text("kind").notNull(), // cat | dog
+  appearance: text("appearance").notNull(),
+  temper: text("temper").notNull(), // friendly | shy | wary
+  locId: text("loc_id").notNull(),
+  locName: text("loc_name").notNull(),
+  x: real("x").notNull().default(0),
+  z: real("z").notNull().default(0),
+  trust: integer("trust").notNull().default(0),
+  lastFedDay: integer("last_fed_day").notNull().default(-1),
+  firstSeenDay: integer("first_seen_day").notNull().default(1),
+  adopted: integer("adopted").notNull().default(0),
+  fedByCount: integer("fed_by_count").notNull().default(0),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+export const strayFeeds = sqliteTable("stray_feeds", {
+  strayId: integer("stray_id").notNull(),
+  playerId: text("player_id").notNull(),
+  day: integer("day").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+}, (t) => [primaryKey({ columns: [t.strayId, t.playerId, t.day] })]);
+export const playerPets = sqliteTable("player_pets", {
+  playerId: text("player_id").primaryKey(),
+  payload: text("payload").notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+export const notices = sqliteTable("notices", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  city: text("city").notNull(),
+  kind: text("kind").notNull(), // lost-pet | lost-item | found-pet | found-item
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  locId: text("loc_id").notNull(),
+  locName: text("loc_name").notNull(),
+  x: real("x"),
+  z: real("z"),
+  photoUrl: text("photo_url"),
+  authorId: text("author_id").notNull(),
+  authorName: text("author_name").notNull(),
+  status: text("status").notNull().default("open"), // open | claimed | expired
+  expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+  claimedByName: text("claimed_by_name"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+export const noticeReplies = sqliteTable("notice_replies", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  noticeId: integer("notice_id").notNull(),
+  authorId: text("author_id").notNull(),
+  authorName: text("author_name").notNull(),
+  text: text("text").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+export const snakeReports = sqliteTable("snake_reports", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  city: text("city").notNull(),
+  locId: text("loc_id").notNull(),
+  locName: text("loc_name").notNull(),
+  x: real("x"),
+  z: real("z"),
+  speciesGuess: text("species_guess").notNull().default(""),
+  description: text("description").notNull(),
+  photoUrl: text("photo_url"),
+  reporterId: text("reporter_id").notNull(),
+  reporterName: text("reporter_name").notNull(),
+  expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+  confirmations: integer("confirmations").notNull().default(0),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+export const snakeConfirms = sqliteTable("snake_confirms", {
+  reportId: integer("report_id").notNull(),
+  playerId: text("player_id").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+}, (t) => [primaryKey({ columns: [t.reportId, t.playerId] })]);
+export const fishingSpots = sqliteTable("fishing_spots", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  city: text("city").notNull(),
+  locId: text("loc_id").notNull(),
+  locName: text("loc_name").notNull(),
+  x: real("x"),
+  z: real("z"),
+  catchDesc: text("catch_desc").notNull(),
+  bait: text("bait").notNull().default(""),
+  notes: text("notes").notNull().default(""),
+  photoUrl: text("photo_url"),
+  reporterId: text("reporter_id").notNull(),
+  reporterName: text("reporter_name").notNull(),
+  confirmations: integer("confirmations").notNull().default(0),
+  lastConfirmedAt: integer("last_confirmed_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+export const fishingConfirms = sqliteTable("fishing_confirms", {
+  spotId: integer("spot_id").notNull(),
+  playerId: text("player_id").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+}, (t) => [primaryKey({ columns: [t.spotId, t.playerId] })]);
+
+/* ---- round-2 (S): black landlords / companies (d) ---- */
+export const blackReports = sqliteTable("black_reports", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  city: text("city").notNull(),
+  kind: text("kind").notNull(), // landlord | employer
+  reporterId: text("reporter_id").notNull(),
+  targetId: text("target_id").notNull(),
+  targetName: text("target_name").notNull(),
+  body: text("body").notNull(),
+  evidence: text("evidence"),
+  status: text("status").notNull().default("open"), // open | upheld | rejected | expired
+  verdictNote: text("verdict_note"),
+  dueAt: integer("due_at", { mode: "timestamp_ms" }).notNull(),
+  reporterClaimed: integer("reporter_claimed").notNull().default(0),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+export const blackReportVotes = sqliteTable("black_report_votes", {
+  reportId: integer("report_id").notNull(),
+  voterId: text("voter_id").notNull(),
+  side: text("side").notNull(), // uphold | reject
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+}, (t) => [primaryKey({ columns: [t.reportId, t.voterId] })]);
+export const blackReputations = sqliteTable("black_reputations", {
+  targetId: text("target_id").notNull(),
+  kind: text("kind").notNull(),
+  city: text("city").notNull().default("sz"),
+  targetName: text("target_name").notNull(),
+  score: integer("score").notNull().default(80),
+  upheldCount: integer("upheld_count").notNull().default(0),
+  rejectedCount: integer("rejected_count").notNull().default(0),
+  flaggedUntil: integer("flagged_until", { mode: "timestamp_ms" }),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+}, (t) => [primaryKey({ columns: [t.targetId, t.kind] })]);
+export const reporterStanding = sqliteTable("reporter_standing", {
+  playerId: text("player_id").primaryKey(),
+  credibility: integer("credibility").notNull().default(100),
+  filedCount: integer("filed_count").notNull().default(0),
+  upheldCount: integer("upheld_count").notNull().default(0),
+  rejectedCount: integer("rejected_count").notNull().default(0),
+  lockedUntil: integer("locked_until", { mode: "timestamp_ms" }),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+/* Server-side rent rollback: when an upheld landlord report is claimed, the
+   rolled-back rent is written here so a later save/load can never resurrect
+   the raised rent (the client's applyLandlordVerdict alone is not durable). */
+export const blackRentRollbacks = sqliteTable("black_rent_rollbacks", {
+  playerId: text("player_id").primaryKey(),
+  rent: integer("rent").notNull(),
+  baseRent: integer("base_rent").notNull(),
+  reportId: integer("report_id").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+
+/* ---- round-2 (S): open economy (e) ---- */
+export const tradeTasks = sqliteTable("trade_tasks", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  city: text("city").notNull(), // sz | hz | hk | any
+  posterId: text("poster_id").notNull(),
+  posterName: text("poster_name").notNull(),
+  kind: text("kind").notNull(), // buy | sell | swap | service | other
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  price: integer("price"),
+  negotiable: integer("negotiable").notNull().default(0),
+  tags: text("tags").notNull().default("[]"),
+  status: text("status").notNull().default("open"), // open | accepted | completed | cancelled | disputed
+  accepterId: text("accepter_id"),
+  accepterName: text("accepter_name"),
+  escrowHeld: integer("escrow_held").notNull().default(0),
+  escrowFromId: text("escrow_from_id"),
+  escrowFromName: text("escrow_from_name"),
+  createdDay: integer("created_day").notNull(),
+  expiresDay: integer("expires_day").notNull().default(0),
+  completionNote: text("completion_note"),
+  disputeReason: text("dispute_reason"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+/* Dedicated trade escrow ledger (NOT sendGift: gift kinds cap at ¥5,000 and
+   10/day). One row per hold; status held | released | refunded | frozen. */
+export const tradeEscrow = sqliteTable("trade_escrow", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  taskId: integer("task_id").notNull(),
+  kind: text("kind").notNull().default("trade"), // trade | sublet-deposit | delivery
+  payerId: text("payer_id").notNull(),
+  amount: integer("amount").notNull(),
+  status: text("status").notNull().default("held"), // held | released | refunded | frozen
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  releasedAt: integer("released_at", { mode: "timestamp_ms" }),
+});
+export const subletListings = sqliteTable("sublet_listings", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  city: text("city").notNull(),
+  ownerId: text("owner_id").notNull(),
+  ownerName: text("owner_name").notNull(),
+  homeLocId: text("home_loc_id").notNull().default("home"),
+  space: text("space").notNull(), // room | bed | sofa | whole
+  monthlyPrice: integer("monthly_price").notNull(),
+  deposit: integer("deposit").notNull().default(0),
+  terms: text("terms").notNull().default(""),
+  minDays: integer("min_days").notNull().default(0),
+  maxDays: integer("max_days").notNull().default(0),
+  availableFromDay: integer("available_from_day").notNull().default(0),
+  status: text("status").notNull().default("open"), // open | taken | closed
+  tenantId: text("tenant_id"),
+  tenantName: text("tenant_name"),
+  tenancyStartDay: integer("tenancy_start_day").notNull().default(0),
+  rentCollected: integer("rent_collected").notNull().default(0),
+  lastRentDay: integer("last_rent_day").notNull().default(0),
+  rentLate: integer("rent_late").notNull().default(0),
+  suspicion: integer("suspicion").notNull().default(0),
+  ownMonthlyRent: integer("own_monthly_rent"),
+  createdDay: integer("created_day").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+export const overseasOrders = sqliteTable("overseas_orders", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  buyerId: text("buyer_id").notNull(),
+  itemId: text("item_id").notNull(),
+  itemJson: text("item_json").notNull(),
+  qty: integer("qty").notNull().default(1),
+  paidTotal: integer("paid_total").notNull(),
+  dutyDue: integer("duty_due").notNull().default(0),
+  dutyPaid: integer("duty_paid").notNull().default(0),
+  shipDays: integer("ship_days").notNull(),
+  orderedDay: integer("ordered_day").notNull(),
+  etaDay: integer("eta_day").notNull(),
+  status: text("status").notNull().default("ordered"), // ordered | shipped | customs | arrived | held
+  heldOnce: integer("held_once").notNull().default(0),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+export const usedFurnitureOwned = sqliteTable("used_furniture_owned", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  playerId: text("player_id").notNull(),
+  pieceId: text("piece_id").notNull(),
+  baseId: text("base_id"),
+  name: text("name").notNull(),
+  emoji: text("emoji").notNull().default("🪑"),
+  room: text("room").notNull().default("living"),
+  condition: integer("condition").notNull(),
+  paidPrice: integer("paid_price").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+export const cheapGoodsOwned = sqliteTable("cheap_goods_owned", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  playerId: text("player_id").notNull(),
+  goodId: text("good_id").notNull(),
+  name: text("name").notNull(),
+  emoji: text("emoji").notNull().default("📦"),
+  kind: text("kind").notNull().default("other"),
+  state: text("state").notNull().default("plain"),
+  condition: integer("condition").notNull(),
+  buyPrice: integer("buy_price").notNull(),
+  boughtDay: integer("bought_day").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+export const usedFurnitureListings = sqliteTable("used_furniture_listings", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  city: text("city").notNull(),
+  sellerId: text("seller_id").notNull(),
+  sellerName: text("seller_name").notNull(),
+  baseId: text("base_id"),
+  name: text("name").notNull(),
+  emoji: text("emoji").notNull().default("🪑"),
+  room: text("room").notNull().default("living"),
+  condition: integer("condition").notNull(),
+  price: integer("price").notNull(),
+  newPrice: integer("new_price").notNull(),
+  note: text("note").notNull().default(""),
+  status: text("status").notNull().default("open"), // open | sold | closed
+  listedDay: integer("listed_day").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+
+/* ---- round-2 (S): lifestyles — Sanhe + lying flat (f) ---- */
+export const lifestyleStates = sqliteTable("lifestyle_states", {
+  playerId: text("player_id").primaryKey(),
+  payload: text("payload").notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+export const jobApplications = sqliteTable("job_applications", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  playerId: text("player_id").notNull(),
+  listingId: text("listing_id").notNull(),
+  day: integer("day").notNull(),
+  status: text("status").notNull().default("applied"), // applied | trial | hired | left
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+export const courseEnrollments = sqliteTable("course_enrollments", {
+  playerId: text("player_id").notNull(),
+  courseId: text("course_id").notNull(),
+  startDay: integer("start_day").notNull(),
+  days: integer("days").notNull(),
+  done: integer("done").notNull().default(0),
+  allowancePaid: integer("allowance_paid").notNull().default(0),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+}, (t) => [primaryKey({ columns: [t.playerId, t.courseId] })]);
+export const courseAllowanceDays = sqliteTable("course_allowance_days", {
+  playerId: text("player_id").notNull(),
+  courseId: text("course_id").notNull(),
+  day: integer("day").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+}, (t) => [primaryKey({ columns: [t.playerId, t.courseId, t.day] })]);
+export const guidanceSessions = sqliteTable("guidance_sessions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  playerId: text("player_id").notNull(),
+  routeId: text("route_id").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+export const trials = sqliteTable("trials", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  playerId: text("player_id").notNull(),
+  listingId: text("listing_id").notNull(),
+  startDay: integer("start_day").notNull(),
+  daysWorked: integer("days_worked").notNull().default(0),
+  totalScore: integer("total_score").notNull().default(0),
+  status: text("status").notNull().default("active"), // active | hired | left
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+export const trialDays = sqliteTable("trial_days", {
+  trialId: integer("trial_id").notNull(),
+  day: integer("day").notNull(),
+  score: integer("score").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+}, (t) => [primaryKey({ columns: [t.trialId, t.day] })]);
+export const flatGigs = sqliteTable("flat_gigs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  city: text("city").notNull(),
+  posterId: text("poster_id").notNull(),
+  posterName: text("poster_name").notNull(),
+  title: text("title").notNull(),
+  desc: text("desc").notNull().default(""),
+  pay: integer("pay").notNull().default(0),
+  kind: text("kind").notNull().default("help"), // help | work
+  status: text("status").notNull().default("open"), // open | taken | done | cancelled
+  takerId: text("taker_id"),
+  takerName: text("taker_name"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+export const stalls = sqliteTable("stalls", {
+  playerId: text("player_id").primaryKey(),
+  city: text("city").notNull(),
+  kind: text("kind").notNull(),
+  day: integer("day").notNull(),
+  lvl: integer("lvl").notNull().default(1),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+export const sanheShiftLogs = sqliteTable("sanhe_shift_logs", {
+  playerId: text("player_id").notNull(),
+  day: integer("day").notNull(),
+  shiftId: text("shift_id").notNull(),
+  pay: integer("pay").notNull(),
+  city: text("city").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+}, (t) => [primaryKey({ columns: [t.playerId, t.day] })]);
+
+/* ---- round-2 (S): delivery pool (h) ---- */
+export const deliveryPoolOrders = sqliteTable("delivery_pool_orders", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  city: text("city").notNull(),
+  customerId: text("customer_id").notNull(),
+  customerName: text("customer_name").notNull(),
+  platformId: text("platform_id").notNull().default(""),
+  restaurantId: text("restaurant_id").notNull(),
+  restaurantName: text("restaurant_name").notNull(),
+  itemsJson: text("items_json").notNull().default("[]"),
+  total: integer("total").notNull().default(0),
+  riderFee: integer("rider_fee").notNull(),
+  destId: text("dest_id"),
+  destName: text("dest_name").notNull(),
+  distance: integer("distance").notNull().default(0),
+  status: text("status").notNull().default("open"), // open | taken | pickedUp | delivered | expired | cancelled
+  riderId: text("rider_id"),
+  riderName: text("rider_name"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  deadlineAt: integer("deadline_at", { mode: "timestamp_ms" }).notNull(),
+  takenAt: integer("taken_at", { mode: "timestamp_ms" }),
+  deliveredAt: integer("delivered_at", { mode: "timestamp_ms" }),
+  tip: integer("tip").notNull().default(0),
+  stars: integer("stars"),
+});
+export const deliveryRiders = sqliteTable("delivery_riders", {
+  playerId: text("player_id").primaryKey(),
+  rating: integer("rating").notNull().default(500), // rating × 100 (5.00 = 500); avoids float drift
+  completed: integer("completed").notNull().default(0),
+  onTime: integer("on_time").notNull().default(0),
+  late: integer("late").notNull().default(0),
+  cancelled: integer("cancelled").notNull().default(0),
+  totalEarned: integer("total_earned").notNull().default(0),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+export const deliverySponsors = sqliteTable("delivery_sponsors", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  city: text("city").notNull(),
+  name: text("name").notNull(),
+  cuisine: text("cuisine").notNull().default(""),
+  emoji: text("emoji").notNull().default("🍜"),
+  tier: text("tier").notNull().default(""),
+  dishesJson: text("dishes_json").notNull().default("[]"),
+  owner: text("owner").notNull().default(""),
+  endsAt: integer("ends_at", { mode: "timestamp_ms" }).notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
 });

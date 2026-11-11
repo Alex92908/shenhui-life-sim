@@ -135,12 +135,12 @@ export function venueHours(l: Loc): VenueHours | null {
   const parsed = parseHours(l.hours);
   if (parsed) return { w: parsed };
   if (l.placeKind === "museum" || /博物馆|美术馆/.test(l.name)) return { w: [540, 1050], closedMon: true };
-  if (l.placeKind === "library" || l.type === "learn") return { w: [540, 1290] };
+  if (l.placeKind === "library" || l.type === "learn" || l.type === "library") return { w: [540, 1290] };
   if (l.type === "mall" || l.placeKind === "mall") return { w: [600, 1320] };
   if (l.type === "bank") return { w: [540, 1020], weekdaysOnly: true };
   if (l.type === "social") return { w: [1080, 1620] };
   if (l.type === "food") return { w: [420, 1560] };
-  if (l.type === "market") return { w: [480, 1320] };
+  if (l.type === "market" || ["electronics", "oilpainting", "secondhand", "seafood", "oldtown", "womensstreet"].includes(l.type)) return { w: [480, 1320] };
   if (l.placeKind === "themepark" || /欢乐谷|世界之窗|锦绣中华|野生动物园|东部华侨城|欢乐海岸|青青世界|海上田园|光明农场/.test(l.name)) return { w: [570, 1260] };
   if (l.type === "mountain" || l.placeKind === "peak") return { w: [360, 1080] };
   if (l.type === "port" && /罗湖|深圳湾|福田|莲塘/.test(l.name)) return { w: [390, 1440] };

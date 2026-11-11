@@ -34,7 +34,7 @@ export interface Activity {
 /* ---------- where things can happen ---------- */
 const N = (l: Loc) => l.name;
 /* Buildings that merely carry a water word in their name (海岸城商场, 香蜜湖 会议中心, 湖畔酒店…) are not water. */
-const notBuilding = (l: Loc) => !["work", "mall", "apec", "bank", "learn", "health", "lodging", "home", "service", "social", "port"].includes(l.type) && l.placeKind !== "mall" && l.placeKind !== "hospital" && l.placeKind !== "police";
+const notBuilding = (l: Loc) => !["work", "mall", "apec", "bank", "learn", "health", "lodging", "home", "service", "social", "port", "museum", "library", "factory", "electronics", "oilpainting", "secondhand"].includes(l.type) && l.placeKind !== "mall" && l.placeKind !== "hospital" && l.placeKind !== "police"; /* Round-2: new indoor types are buildings too (market subtypes that are streets — seafood/oldtown/womensstreet — deliberately stay out) */
 const isBeach = (l: Loc) => notBuilding(l) && !/维多利亚港/.test(N(l)) && (l.placeKind === "beach" || /海滩|沙滩|海边|海滨|双月湾|巽寮|黄金海岸|西涌|杨梅坑|大梅沙|小梅沙|较场尾|三角洲|海龟/.test(N(l)));
 const isSea = (l: Loc) => notBuilding(l) && (isBeach(l) || /渔港|海鲜街|码头|港湾|湾公园|栈道|海上田园|海岸线|海滨/.test(N(l)));
 const isLake = (l: Loc) => notBuilding(l) && /湖|水库|东江|河|江公园|植物园/.test(N(l));
@@ -43,11 +43,11 @@ const isGreen = (l: Loc) => l.placeKind === "park" || l.placeKind === "nature" |
 const isNight = (l: Loc) => l.type === "social";
 const isEat = (l: Loc) => l.type === "food" || /夜市|海鲜街|食街/.test(N(l));
 const isMall = (l: Loc) => l.type === "mall" || l.placeKind === "mall";
-const isMarket = (l: Loc) => l.type === "market";
+const isMarket = (l: Loc) => ["market", "electronics", "oilpainting", "secondhand", "seafood", "oldtown", "womensstreet"].includes(l.type); /* Round-2: market-subtype places are still markets for activities (e.g. 搓麻将) */
 const isStage = (l: Loc) => l.placeKind === "theatre" || /文化艺术中心|剧院|音乐厅|大剧院/.test(N(l));
 const isSport = (l: Loc) => l.type === "gym" || l.placeKind === "stadium";
 const isMuseum = (l: Loc) => l.placeKind === "museum" || /博物馆|美术馆|展览/.test(N(l));
-const isFun = (l: Loc) => l.placeKind === "themepark" || /欢乐谷|世界之窗|欢乐海岸|华侨城|锦绣中华|欢乐港湾/.test(N(l));
+const isFun = (l: Loc) => l.placeKind === "themepark" || /欢乐谷|世界之窗|欢乐海岸|华侨城|锦绣中华|欢乐港湾|迪士尼|海洋公园/.test(N(l)); /* Round-2: 迪士尼、海洋公园补进 isFun（审计表 5） */
 const isTransit = (l: Loc) => l.type === "transit" || l.type === "port";
 const isHome = (l: Loc) => l.type === "home";
 const isScenic = (l: Loc) => l.type === "scenic" || l.type === "fun" || l.placeKind === "attraction" || l.placeKind === "historic";

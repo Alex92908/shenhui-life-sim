@@ -213,7 +213,7 @@ export const GUIDE: GuidePlace[] = [
     tip: "先绕一圈一米柜台比三家再出手；买整机当场验机、开发票。",
     fact: "「中国电子第一街」：鼎盛时一节一米柜台月租炒到几十万，如今转型智能硬件、无人机和美妆。",
     factEn: "China's No.1 electronics street — one-metre counters once rented for fortunes; now it's drones and smart hardware.",
-    npc: "大芬姐", story: "大芬姐在赛格摆过柜台：“以前发货用麻袋装，现在的小哥背个双肩包，包里就是一家公司的全部库存。”",
+    npc: "阿杰", story: "阿杰在赛格摆了十年一米柜台：“以前发货用麻袋装，现在的小哥背个双肩包，包里就是一家公司的全部库存。买整机先验机，开发票，别贪便宜。”",
     sourceName: "PandaHoHo · 深圳科技旅行地图", sourceUrl: "https://pandahoho.com/zh/triplists/shenzhen-a-tech-traveler-s-city-map",
   },
   {

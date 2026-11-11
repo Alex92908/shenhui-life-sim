@@ -32,7 +32,21 @@ generateDailyPosts, authorReply, chatReply, greetLine, hashStr, memOf, relLabel,
 type ChatAction, type MemMap, type NpcPost, type PlayerNews,
 } from "./npc";
 import { MapView } from "./MapView";
-import { setSound, soundWanted, wakeSound, setScene, setWorld, sfx, musicPick, setMusicPick, nowPlayingCredit, MUSIC_PICKS, MUSIC_CREDITS, EXTRA_CREDITS, type SoundScene, type MusicPick, type PlaceTone, type TravelTone } from "./sound";
+import { setSound, soundWanted, wakeSound, setScene, setWorld, sfx, musicPick, setMusicPick, nowPlayingCredit, MUSIC_PICKS, MUSIC_CREDITS, EXTRA_CREDITS, setKaraokeLang, playFerryHorn, type SoundScene, type MusicPick, type PlaceTone, type TravelTone, type SceneSfxId } from "./sound";
+import { npcAllowedAt, type LocType, type VenueSetId, type AnimKindId } from "./data";
+import { vendorSellFor } from "./routines";
+/* ---- round-2 feature modules (see ROUND2-LOG-*.md for the integration snippets) ---- */
+import { venueSetFor, animFor } from "./round2/venues";
+import { adoptPet, interactWithPet, homecomingGreeting, tickPetDay, PET_STORAGE_KEY, serializePets, deserializePets, type PetsState, type InteractionKind } from "./round2/pets";
+import { buildNotice, feedStrayLocal, strayToAdoptInput, validateNotice, validateSnakeReport, validateFishingSpot } from "./round2/community";
+import { emptyEconomyState, economyDailyTick, buyUsedFurniture as buyUsedFurnitureLocal, buyCheapGood as buyCheapGoodLocal, resellUsedFurniture as resellUsedFurnitureLocal, postSubletListing, acceptSublet as acceptSubletLocal, postTradeTask as postTradeTaskLocal, searchTradeTasks, acceptTradeTask as acceptTradeTaskLocal, escrowTradeTask as escrowTradeTaskLocal, completeTradeTask as completeTradeTaskLocal, cancelTradeTask as cancelTradeTaskLocal, disputeTradeTask as disputeTradeTaskLocal, OVERSEAS_CATALOG, placeOverseasOrder as placeOverseasOrderLocal, payOverseasDuty as payOverseasDutyLocal, USED_FURNITURE, TRADE_TASK_EXAMPLES, type EconomyState, type TradeTask, type TradeTaskKind, type PlayerRef } from "./round2/economy";
+import { asReportTransport, buildRentEvidence, buildWageEvidence, canFile, validateDraft, reputationWarning, applyLandlordVerdict, applyEmployerVerdict, applyFalseReportPenalty, applyTrueReportGain, exposureLine, jurySummary, SUGGESTED_CHARGES, ReportBook, type ReportDraft, type BlackReport, type LandlordRemedy, type EmployerRemedy } from "./round2/report";
+import { defaultLifestyleState, sanitizeLifestyleState, type LifestyleState, type PlayerProfile, SANHE_SHIFTS, SANHE_SLEEP, SANHE_EATS, SANHE_MATES, takeSanheShift, sanheSleep, sanheEat, chatMate, SMALL_JOYS, doSmallJoy, encouragementFor, checkinDue, doCheckin, RENT_TALKS, negotiateRent, SECONDHAND_FLOOR, sellSecondHand, subletBunk, openStall, STALL_KINDS, JOB_CENTER_TABS, COURSES, INTERVIEW_QUESTIONS, listingsFor, applyForJob, bookGuidance, suggestRoute, enrollCourse, courseDayTick, mockInterview, startTrial, trialWorkDay, resolveTrial, flatDays, flatStatusLine, isJobCenterPlace, REAL_HELP, type LifeResult } from "./round2/lifestyles";
+import { advanceOrder, cancelOrder, courierTodaySummary, deliveryMenu, eatDelivered, emptyDeliveryState, generateCourierBoard, isDeliveryState, placeOrder, poolOrderToGig, poolPayloadFor, pushOrder, updateOrder, activeOrder, acceptGig, pickupGig, deliverGig, cancelGig, fmtDeliveryCountdown, MEMBERSHIP_PRICE, MEMBERSHIP_DAYS, membershipActive, type CourierGig, type CustomerOrder, type DeliveryState, type MenuItem } from "./round2/delivery";
+import { emptyHouseLayout, loadHouseLayout, saveHouseLayout, validateHouseLayout, houseLayoutToPlacedFurn, HOUSE_FURN_CATALOG, HOUSE_ROOM_KINDS, addHouseRoom, placeHouseFurniture, removeHousePiece, type HouseLayout } from "./round2/house";
+import { startPatrol, stopPatrol, observe, isWatched, isGameAvatarId } from "./round2/police";
+import { togglePhoneFullscreen } from "./round2/phone";
+import { voiceMode, setVoiceMode, VOICE_MODES, playNpcVoice } from "./round2/sounds";
 import { momentsAt, inBest, seawardAz, SCENIC_MOMENTS, type ScenicMoment } from "./scenic";
 import { LivehouseModal } from "./Livehouse";
 import { drawOrigin, originById, tierOfIden, tierNow, TIERS, climbVerdict, randomNick, ORIGINS, type Origin } from "./origin";
@@ -43,7 +57,7 @@ import { LifeStage3D, FURN_SLOTS, type LifeSet, type LifePose } from "./LifeStag
 
 /* 店里的人物互动：点一下，店员 / 熟人走过来跟你说话，角色换动作；
    心情、人脉奖励每天每项一次，花钱的每次都花 */
-interface VenueTalk { open?: "live"; id: string; emoji: string; zh: string; en: string; who: string; whoEn: string; say: string; sayEn: string; pose: LifePose; partner?: [number, number]; money?: number; mood?: number; energy?: number; network?: number; xp?: number }
+interface VenueTalk { open?: "live"; id: string; emoji: string; zh: string; en: string; who: string; whoEn: string; say: string; sayEn: string; pose: LifePose; partner?: [number, number]; money?: number; mood?: number; energy?: number; hunger?: number; network?: number; xp?: number }
 const VENUE_TALK: Partial<Record<LifeSet, VenueTalk[]>> = {
   restaurant: [
     { id: "order", emoji: "🍚", zh: "点一份猪脚饭", en: "Order trotter rice", who: "老板娘", whoEn: "The owner", say: "「靓仔/靓女，加个卤蛋？今日猪脚好靓。」", sayEn: "“Add a braised egg? The trotters are lovely today.”", pose: "eat", partner: [0xf3ead8, 0x4a3226], money: -25, energy: 14, mood: 4 },
@@ -109,36 +123,102 @@ const VENUE_TALK: Partial<Record<LifeSet, VenueTalk[]>> = {
     { id: "climb", emoji: "🥾", zh: "再往上走一截", en: "Climb a bit further", who: "自己", whoEn: "You", say: "「腿酸，风倒是干净。」", sayEn: "“Legs burn. The air is clean.”", pose: "idle", mood: 8, energy: -6 },
     { id: "view", emoji: "🏙️", zh: "停下来看一眼城", en: "Stop and look at the city", who: "自己", whoEn: "You", say: "「楼下那些灯，都是别人的班。」", sayEn: "“Those lights are other people's shifts.”", pose: "idle", mood: 8 },
   ],
+  /* ---- round-2 (b+g): walk-in dialogue for the new venue sets.
+     Spot ids MUST match ROAM_SPOTS in LifeStage (they do — same ids).
+     Reconciliation note (see ROUND2-LOG-int.md): area (b)'s venueSet names
+     cycle/gallery/nature/wetland have no LifeSet, so venueFor maps them
+     cycle→bikehub, gallery→museum, nature→park, wetland→farm; the talk
+     entries below are keyed by the LifeSet names. Where (b) and (g) gave
+     different ids for the same spot, the ROAM_SPOTS id wins (g's copy for
+     the 8 market/museum/library/factory sets; b's copy for the scenic sets
+     where it matches). ---- */
+  oilpainting: [
+    { id: "buy", emoji: "🖼️", zh: "买幅画挂家里", en: "Buy a painting for home", who: "画廊老板", whoEn: "The gallery owner", say: "「这幅是临摹的梵高，挂出租屋里，整个屋子都亮了。」", sayEn: "“This one's after Van Gogh — hang it in your flat and the whole room lights up.”", pose: "talk", partner: [0x7c3aed, 0x1f2937], money: -120, mood: 8 },
+    { id: "paint", emoji: "🎨", zh: "看画家作画", en: "Watch the painter", who: "画家", whoEn: "The painter", say: "「画画就是一笔一笔熬出来的，跟你们写代码一样。」", sayEn: "“Painting is one stroke at a time — like your code.”", pose: "talk", partner: [0xe8e2d4, 0x374151], mood: 5, xp: 1 },
+    { id: "frame", emoji: "🪟", zh: "装裱一幅画", en: "Frame a painting", who: "装裱师傅", whoEn: "The framer", say: "「这框一配，画立刻贵三成。」", sayEn: "“A good frame and the painting's worth 30% more.”", pose: "talk", partner: [0x7c3aed, 0x1f2937], money: -40, mood: 3 },
+  ],
+  secondhand: [
+    { id: "browse", emoji: "📻", zh: "淘淘旧货", en: "Browse the old goods", who: "摊主", whoEn: "The stall owner", say: "「这收音机还能响，三十块拿走。」", sayEn: "“This radio still plays — ¥30, take it.”", pose: "talk", partner: [0x78716c, 0x2f333a], money: -30, mood: 5 },
+    { id: "haggle", emoji: "💬", zh: "跟摊主讲价", en: "Haggle", who: "摊主", whoEn: "The stall owner", say: "「最低二十五，再低我亏本了。」", sayEn: "“¥25, lowest — any less and I lose money.”", pose: "talk", partner: [0x78716c, 0x2f333a], money: -12, mood: 5 },
+  ],
+  seafood: [
+    { id: "buy", emoji: "🦐", zh: "挑点海鲜", en: "Pick some seafood", who: "海鲜档老板", whoEn: "The seafood seller", say: "「这虾刚上岸，活蹦乱跳的，称给你。」", sayEn: "“These shrimp just came ashore — still jumping.”", pose: "talk", partner: [0x0e7490, 0x1f2937], money: -45, mood: 4 },
+    { id: "eat", emoji: "🍲", zh: "大排档代加工", en: "Have it cooked at the dai pai dong", who: "大排档老板", whoEn: "The dai pai dong cook", say: "「清蒸还是椒盐？坐下等十分钟。」", sayEn: "“Steamed or salt-and-pepper? Sit down, ten minutes.”", pose: "eat", partner: [0x7a9a4d, 0x44403c], money: -35, hunger: 28, mood: 6 },
+    { id: "boat", emoji: "⛵", zh: "跟渔民出海", en: "Go out with a fisherman", who: "渔民阿海", whoEn: "Ah Hai the fisherman", say: "「明早五点码头见，晕船可别怪我。」", sayEn: "“Five tomorrow at the pier — don't blame me if you're seasick.”", pose: "talk", partner: [0x0e7490, 0x1f2937], mood: 6, network: 1 },
+  ],
+  oldtown: [
+    { id: "snack", emoji: "🍢", zh: "吃客家小吃", en: "Try a Hakka snack", who: "小吃档老板", whoEn: "The snack seller", say: "「酿豆腐现做的，趁热吃。」", sayEn: "“Stuffed tofu, fresh — eat it hot.”", pose: "eat", partner: [0x7a9a4d, 0x44403c], money: -15, hunger: 18, mood: 5 },
+    { id: "stroll", emoji: "🚶", zh: "逛逛骑楼老街", en: "Walk the old street", who: "自己", whoEn: "You", say: "「这条街比我爷爷年纪还大。」", sayEn: "“This street is older than my grandad.”", pose: "idle", mood: 6 },
+  ],
+  womensstreet: [
+    { id: "clothes", emoji: "👗", zh: "淘件衣服", en: "Browse the clothes", who: "服装档老板", whoEn: "The clothes seller", say: "「这件卖得最好，穿上身看看。」", sayEn: "“This one's our bestseller — try it on.”", pose: "talk", partner: [0xec4899, 0x2f333a], money: -60, mood: 6 },
+    { id: "fish", emoji: "🐠", zh: "买条金鱼", en: "Buy a goldfish", who: "金鱼档老板", whoEn: "The goldfish seller", say: "「这条红白的，养得活。」", sayEn: "“This red-and-white one — it'll live.”", pose: "talk", partner: [0x65a30d, 0x374151], money: -12, mood: 4 },
+    { id: "flower", emoji: "🌸", zh: "买束花", en: "Buy flowers", who: "花档阿姨", whoEn: "The flower seller", say: "「今天的花新，拿回去插瓶。」", sayEn: "“Today's flowers are fresh — take some home.”", pose: "talk", partner: [0x65a30d, 0x374151], money: -20, mood: 5 },
+  ],
+  museum: [
+    { id: "exhibit", emoji: "🏺", zh: "慢慢看展", en: "See the exhibit", who: "自己", whoEn: "You", say: "「原来这座城是这样长起来的。」", sayEn: "“So this is how the city grew.”", pose: "idle", mood: 6, xp: 1 },
+    { id: "guide", emoji: "🎧", zh: "听讲解员讲", en: "Hear the guide", who: "讲解员", whoEn: "The guide", say: "「这件展品背后，是整整一代人的故事。」", sayEn: "“Behind this piece is a whole generation's story.”", pose: "talk", partner: [0x0ea5e9, 0x1f2937], mood: 5, xp: 2 },
+  ],
+  library: [
+    { id: "borrow", emoji: "📚", zh: "借本书回去", en: "Borrow a book", who: "图书管理员", whoEn: "The librarian", say: "「这本这个月借了十七次，你眼光不错。」", sayEn: "“This one's gone out seventeen times this month — good taste.”", pose: "talk", partner: [0x78716c, 0x374151], mood: 4, xp: 1 },
+    { id: "study", emoji: "📖", zh: "坐下自修一会儿", en: "Sit and study", who: "自己", whoEn: "You", say: "「安静得能听见自己的想法。」", sayEn: "“Quiet enough to hear yourself think.”", pose: "sit", mood: 5, energy: 4 },
+  ],
+  factory: [
+    { id: "tour", emoji: "🏭", zh: "看看产线", en: "See the production line", who: "班长", whoEn: "The shift lead", say: "「这条线一个班出三千件，安全帽戴好。」", sayEn: "“Three thousand a shift on this line. Helmet on.”", pose: "talk", partner: [0xf5b301, 0x2e3440], mood: 3, xp: 1 },
+    { id: "ask", emoji: "🙋", zh: "问问三班倒", en: "Ask about the shifts", who: "班长", whoEn: "The shift lead", say: "「夜班补贴多，就是熬人。年轻人，先想清楚。」", sayEn: "“Nights pay more — they just wear you out. Think it over.”", pose: "talk", partner: [0xf5b301, 0x2e3440], mood: 3, network: 1 },
+  ],
+  disney: [
+    { id: "castle", emoji: "🏰", zh: "在城堡前拍一张", en: "Take a photo at the castle", who: "自己", whoEn: "You", say: "「这张能发。」", sayEn: "“This one's worth posting.”", pose: "idle", mood: 10 },
+    { id: "ride", emoji: "🎢", zh: "排队坐一次过山车", en: "Queue for the coaster", who: "自己", whoEn: "You", say: "「下来腿软，心还在飞。」", sayEn: "“Legs like jelly. Heart still flying.”", pose: "idle", mood: 12, energy: -4 },
+    { id: "parade", emoji: "🎭", zh: "等花车游行", en: "Watch the parade", who: "自己", whoEn: "You", say: "「花车过来了，音乐一响，全场都站起来了。」", sayEn: "“Here comes the parade — the music starts and everyone stands up.”", pose: "idle", mood: 10 },
+  ],
+  tram: [
+    { id: "ride", emoji: "🚃", zh: "坐上层最前排", en: "Take the front seat upstairs", who: "自己", whoEn: "You", say: "「三块钱，整座城慢慢过。」", sayEn: "“Three dollars, and the whole city goes by slowly.”", pose: "sit", mood: 8 },
+    { id: "photo", emoji: "📸", zh: "给叮叮车拍一张", en: "Photo the tram", who: "自己", whoEn: "You", say: "「叮叮声一响，香港的味道就来了。」", sayEn: "“The ding-ding, and it smells like Hong Kong.”", pose: "idle", mood: 6 },
+  ],
+  temple: [
+    { id: "fortune", emoji: "🏮", zh: "摇一支签", en: "Draw a fortune stick", who: "解签师傅", whoEn: "The fortune reader", say: "「中上签。心诚，路就顺。」", sayEn: "“A good draw. A sincere heart, a smooth road.”", pose: "talk", partner: [0xdc2626, 0x1f2937], mood: 8 },
+    { id: "pray", emoji: "🙏", zh: "上香祈福", en: "Offer incense", who: "自己", whoEn: "You", say: "「香烟袅袅，心里安静了。」", sayEn: "“The incense curls up, and everything goes quiet inside.”", pose: "idle", mood: 8 },
+  ],
+  miniature: [
+    { id: "photo", emoji: "📸", zh: "在微缩铁塔下拍一张", en: "Photo under the miniature tower", who: "自己", whoEn: "You", say: "「上午巴黎，下午开罗。」", sayEn: "“Paris in the morning, Cairo in the afternoon.”", pose: "idle", mood: 8 },
+    { id: "tour", emoji: "🗼", zh: "跟着讲解走一圈", en: "Take the guided tour", who: "讲解员", whoEn: "The guide", say: "「这个比例是 1:15，细节都是手工做的。」", sayEn: "“It's 1:15 scale — every detail handmade.”", pose: "talk", partner: [0x0ea5e9, 0x1f2937], mood: 6, xp: 1 },
+  ],
+  farm: [
+    { id: "milk", emoji: "🐄", zh: "亲手挤一回牛奶", en: "Try milking a cow", who: "农场工人", whoEn: "The farmhand", say: "「轻点，顺着来——第一次都这样。」", sayEn: "“Gently, like this — everyone's first time is like that.”", pose: "talk", partner: [0x84cc16, 0x1f2937], mood: 8, xp: 1 },
+    { id: "pick", emoji: "🌽", zh: "摘一根玉米", en: "Pick some corn", who: "农场工人", whoEn: "The farmhand", say: "「现摘的玉米，回去煮着吃最甜。」", sayEn: "“Fresh-picked corn — boil it at home, sweetest that way.”", pose: "talk", partner: [0x84cc16, 0x1f2937], mood: 6 },
+    { id: "crab", emoji: "🦀", zh: "下滩涂摸一只蟹", en: "Catch a crab on the mudflat", who: "自己", whoEn: "You", say: "「它比我跑得快。」", sayEn: "“It's faster than I am.”", pose: "idle", mood: 8 },
+  ],
+  watershow: [
+    { id: "show", emoji: "⛲", zh: "看一场水秀", en: "Watch the water show", who: "自己", whoEn: "You", say: "「灯光在湖面上开花。」", sayEn: "“The lights bloom on the lake.”", pose: "idle", mood: 10 },
+    { id: "mall", emoji: "🛍️", zh: "逛逛滨海商场", en: "Browse the waterfront mall", who: "自己", whoEn: "You", say: "「海风从门口吹进来，商场里全是人。」", sayEn: "“Sea breeze through the doors, the mall full of people.”", pose: "idle", mood: 6 },
+  ],
+  boardwalk: [
+    { id: "stroll", emoji: "🚶", zh: "沿着栈道走到灯塔", en: "Walk the boardwalk to the lighthouse", who: "自己", whoEn: "You", say: "「海风追着你跑。」", sayEn: "“The sea wind chases you.”", pose: "idle", mood: 8 },
+    { id: "view", emoji: "🌅", zh: "扶着栏杆看海", en: "Watch the sea from the rail", who: "自己", whoEn: "You", say: "「不用下水，也能看一整个下午的海。」", sayEn: "“No need to get wet to watch the sea all afternoon.”", pose: "idle", mood: 8 },
+  ],
+  fishingport: [
+    { id: "buy", emoji: "🐟", zh: "买刚上岸的海鲜", en: "Buy the fresh catch", who: "鱼贩", whoEn: "The fish seller", say: "「刚卸船的，还蹦呢，称给你。」", sayEn: "“Just off the boat — still jumping.”", pose: "talk", partner: [0x0891b2, 0x1f2937], money: -50, mood: 6 },
+    { id: "boat", emoji: "⛵", zh: "问渔民能不能跟船", en: "Ask about going out on a boat", who: "渔民", whoEn: "The fisherman", say: "「天不亮就出海，晕船可别怪我。」", sayEn: "“We sail before dawn — don't blame me if you're seasick.”", pose: "talk", partner: [0x0369a1, 0x1f2937], mood: 5, network: 1 },
+  ],
+  bikehub: [
+    { id: "ride", emoji: "🚲", zh: "租辆车骑一段绿道", en: "Hire a bike for the greenway", who: "租车点老板", whoEn: "The bike-hire owner", say: "「这段路最平，骑到桥底再回来。」", sayEn: "“This stretch is the flattest — ride to the bridge and back.”", pose: "talk", partner: [0x84cc16, 0x1f2937], money: -20, mood: 8, energy: -4 },
+    { id: "rent", emoji: "🚲", zh: "挑一辆车租一天", en: "Rent a bike for the day", who: "租车点老板", whoEn: "The bike-hire owner", say: "「这辆变速最顺，押金一百，回来退你。」", sayEn: "“This one's gears are the smoothest — ¥100 deposit, back when you return it.”", pose: "talk", partner: [0x84cc16, 0x1f2937], money: -30, mood: 6 },
+  ],
 };
 
-/* 营业场所的 3D 室内：地点类型 → 场景 */
-const VENUE_SETS: Partial<Record<string, { set: LifeSet; zh: string; en: string }>> = {
-  food: { set: "restaurant", zh: "推门进去：烧腊、猪脚饭、街坊在聊天", en: "Push the door: roast meats, trotter rice, regulars chatting" },
-  mall: { set: "mall", zh: "逛一圈：橱窗、新品、冷气很足", en: "Have a wander: shop windows, new arrivals, strong air-con" },
-  market: { set: "market", zh: "菜市场里转转：鱼档、菜档、讨价还价", en: "Walk the wet market: fish stalls, greens, haggling" },
-  electronics: { set: "electronics", zh: "一米柜台：手机、平板、配件，当场验机再付钱", en: "One-metre counters: phones, tablets and parts — check it before you pay" },
-  work: { set: "office", zh: "看看工位：屏幕、咖啡、同事在敲代码", en: "See the office floor: screens, coffee, colleagues typing" },
-  apec: { set: "office", zh: "会场里面：长桌、名牌、同传耳机", en: "Inside the venue: long tables, name cards, interpretation headsets" },
-  bank: { set: "office", zh: "柜台和排队机", en: "The counters and the queue machine" },
-  gym: { set: "gym", zh: "跑步机、哑铃、镜子前自拍的人", en: "Treadmills, dumbbells, mirror selfies" },
-  social: { set: "club", zh: "灯光、乐队、人群跟着节拍跳", en: "Lights, a band, a crowd bouncing to the beat" },
-  health: { set: "clinic", zh: "候诊区、叫号屏、白大褂", en: "The waiting area, the queue screen, white coats" },
-  learn: { set: "classroom", zh: "黑板、课桌、下班后来上夜校的人", en: "Blackboard, desks, people at night school after work" },
-  lodging: { set: "bedroom", zh: "前台拿房卡，上楼看看房间", en: "Key card from the desk, a look at the room" },
-  service: { set: "office", zh: "办事大厅：取号、填表、等叫号", en: "The service hall: take a number, fill a form, wait" },
-};
-function venueFor(loc: { type: string; id: string; name: string }): { set: LifeSet; zh: string; en: string } | null {
-  const fixed = VENUE_SETS[loc.type];
-  if (fixed) return fixed;
-  if (loc.type === "transit" || loc.type === "port") return { set: "concourse", zh: "进站厅：闸机、安检、便利店。洗手间在里头。", en: "The concourse: gates, security, a shop. The restroom is inside." };
-  if (loc.type === "mountain") return { set: "hike", zh: "上山的路：石阶、树荫，走到能看见城的地方。", en: "The path up: stone steps and shade, until you can see the city." };
-  if (loc.type === "scenic" || loc.type === "fun") {
-    const beach = /沙|滩|海滨|beach|海龟|dameisha|xichong|xunliao|巽寮/i.test(`${loc.id}${loc.name}`);
-    return beach
-      ? { set: "beach", zh: "走到沙滩上：浪、伞、光脚。", en: "Onto the sand: waves, umbrellas, bare feet." }
-      : { set: "park", zh: "走进园子：树、长椅、风。", en: "Into the park: trees, a bench, the wind." };
-  }
-  return null;
+/* ---- round-2 (b+g): venueSet → LifeSet. Area (b)'s VenueSetId names
+   cycle/gallery/nature/wetland have no LifeSet in LifeStage (area (g)
+   built bikehub/fishingport instead), so they are aliased here — the
+   only place that may rename keys (App.tsx owns this mapping; data.ts
+   and LifeStage.tsx are untouched). ---- */
+const VENUE_SET_ALIAS: Partial<Record<string, LifeSet>> = { cycle: "bikehub", gallery: "museum", nature: "park", wetland: "farm" };
+function venueFor(loc: { type: string; id: string; name: string; venueSet?: VenueSetId; animKind?: AnimKindId }): { set: LifeSet; zh: string; en: string } | null {
+  // Round-2: per-place venueSet first (round2/venues.ts), then the type map
+  // + regex fallbacks there. Aliased sets are mapped to the LifeSet (g) built.
+  const r = venueSetFor(loc);
+  if (!r) return null;
+  return { set: (VENUE_SET_ALIAS[r.set] ?? r.set) as LifeSet, zh: r.zh, en: r.en };
 }
 import { routineRole, routineSteps, CORE_FOR_FULL_DAY, ROLE_META, isOrderRole, type RoutineDay, type RiderOrder, type RoutineStep, type RoutineRole } from "./routines";
 import { GUIDE, SCENE_PHOTOS, guideForLocName, tourForCity, type DayTour, type GuidePlace } from "./experience";
@@ -250,6 +330,10 @@ arcs?: Record<string, ArcProg>;
 npcGigs?: string[];
 /** 三和 / 日结今天已经结过一单 */
 sanheDay?: number;
+/** round-2 (f): Sanhe + lying-flat lifestyle state (see round2/lifestyles.ts). */
+life?: LifestyleState;
+/** round-2 (h): 外卖 / 跑单 — 顾客订单、券、会员、骑手档案、手上的单 */
+delivery?: DeliveryState;
 /** 长线目标：买了房、开了店、带了徒弟 */
 ownFlat?: boolean; flatDay?: number;
 shop?: { kind: string; day: number; lvl: number; till: number; partner?: string };
@@ -331,6 +415,17 @@ return TEMPLATES.find((t) => t.name === name)?? null;
 function furnById(id: string) {
 return FURNITURE.find((f) => f.id === id)?? null;
 }
+/** Round-2 (e): one-off used-furniture pieces (baseId null) live in
+    GameState.furniture under their own `usedfurn-…` id. Give them a
+    fallback entry so the home render / comfort math never breaks on an
+    unknown id — comfort is the used-piece comfort at middling condition,
+    and they never count toward a style match. */
+function furnByIdOrUsed(id: string) {
+const f = furnById(id);
+if (f) return f;
+if (id.startsWith("usedfurn-")) return { id, name: "二手家具", emoji: "🪑", room: "living", comfort: USED_FURNITURE.comfortAtCondition(10, 50), color: 0x8a7a5f, styles: [] as string[] };
+return null;
+}
 function styleMatchCount(gs: GameState): number {
 if (!gs.homeStyle) return 0;
 return gs.furniture.filter((id) => furnById(id)?.styles.includes(gs.homeStyle!)).length;
@@ -390,7 +485,7 @@ function placedFurn(gs: GameState): { id: string; slot: number; color: number }[
 const used = new Set<number>(); const out: { id: string; slot: number; color: number }[] = [];
 for (const id of gs.furniture) { const p = gs.furnPos?.[id]; if (p !== undefined && p >= 0) used.add(p); }
 for (const id of gs.furniture) {
-const f = furnById(id); if (!f) continue;
+const f = furnByIdOrUsed(id); if (!f) continue;
 let slot = gs.furnPos?.[id];
 if (slot === undefined) { slot = FURN_SLOTS.findIndex((_, i) => !used.has(i)); if (slot >= 0) used.add(slot); }
 if (slot >= 0) out.push({ id, slot, color: f.color });
@@ -401,7 +496,7 @@ function computeComfort(gs: GameState): number {
 const base = gs.homeStyle? (tplByName(gs.homeStyle)?.comfort?? 30): 12;
 let sum = base;
 for (const id of gs.furniture) {
-const f = furnById(id);
+const f = furnByIdOrUsed(id);
 if (f) sum += f.comfort;
 }
 return sum + styleMatchCount(gs) * 6;
@@ -840,7 +935,10 @@ if (phase !== "game") return;
 const t = window.setTimeout(() => { const g = gsRef.current; if (!g) return; const live = Object.entries(g.arcs ?? {}).find(([, p]) => !p.done && p.day < g.day); if (live) setArcCard((c) => c ?? { id: live[0] }); }, 2500);
 return () => window.clearTimeout(t);
 }, [phase]);
-const [phoneApp, setPhoneApp] = useState<AppId | null>(null);
+const [phoneApp, setPhoneApp] = useState<AppId | "trade" | null>(null);
+/* round-2 (e S2): the "交易" phone app lives in App.tsx — AppId lives in
+   data.ts (unowned), so the extra app is appended locally. */
+const PHONE_APPS: { id: AppId | "trade"; n: string; e: string }[] = [...APPS, { id: "trade", n: "交易", e: "🛒" }];
 const [phoneOpen, setPhoneOpen] = useState(false);
 const [asideTab, setAsideTab] = useState<"place" | "feed" | "wall" | "chat" | "board" | "guide" | "collect">("place");
 /* 长线进度：跨局保留（集章 / 图鉴 / 连续登录 / 本周目标 / 成就称号） */
@@ -1220,6 +1318,307 @@ useEffect(() => {
 // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [gigsQuery.data?.unclaimed, phase]);
 const gigActive = (gigsQuery.data?.mine ?? []).filter((g) => (g.role === "worker" && g.status === "taken") || (g.role === "employer" && g.status === "delivered")).length;
+
+/* ================= round-2: feature state + server queries ================= */
+/* (c) pets — localStorage-backed, server sync is fire-and-forget */
+const [pets, setPets] = useState<PetsState>(() => deserializePets(localStorage.getItem(PET_STORAGE_KEY)));
+const petsRef = useRef(pets); petsRef.current = pets;
+useEffect(() => { try { localStorage.setItem(PET_STORAGE_KEY, serializePets(pets)); } catch { /* storage unavailable */ } }, [pets]);
+/* (e) economy — local book (server is source of truth for shared listings) */
+const [econ, setEcon] = useState<EconomyState>(() => emptyEconomyState());
+const econRef = useRef(econ); econRef.current = econ;
+/* (d) black landlord / company reports */
+const reportBook = useMemo(() => new ReportBook(), []);
+const reportApi = useMemo(() => asReportTransport(api), []);
+const [reportDraft, setReportDraft] = useState<ReportDraft | null>(null);
+const reportsQuery = useQuery({
+  queryKey: ["blackReports", gs?.cityKey],
+  enabled: !!profile && !!gs,
+  queryFn: () => reportApi.getBlackReports({ playerId: profile!.playerId, city: gs?.cityKey ?? "sz" }),
+});
+/* (c) community — strays / notices / snakes / fishing spots */
+const straysQuery = useQuery({ queryKey: ["strays", cityKey], queryFn: () => api.getStrays({ cityKey, playerId: profile!.playerId }), enabled: phase === "game" && !!profile });
+const noticesQuery = useQuery({ queryKey: ["notices", cityKey], queryFn: () => api.getNotices({ cityKey, playerId: profile!.playerId }), refetchInterval: 120_000, enabled: phase === "game" && !!profile });
+const snakesQuery = useQuery({ queryKey: ["snakes", cityKey], queryFn: () => api.getSnakeWarnings({ cityKey, playerId: profile!.playerId }), refetchInterval: 120_000, enabled: phase === "game" && !!profile });
+const fishingQuery = useQuery({ queryKey: ["fishing", cityKey], queryFn: () => api.getFishingSpots({ cityKey, playerId: profile!.playerId }), refetchInterval: 300_000, enabled: phase === "game" && !!profile });
+/* (e) flea stock (server deterministic ids) + trade board (server) */
+const [fleaOpen, setFleaOpen] = useState(false);
+const fleaQuery = useQuery({ queryKey: ["flea", cityKey, gs?.day], queryFn: () => api.getFleaStock({ city: gs?.cityKey ?? "sz", day: gs?.day ?? 1 }), enabled: fleaOpen && phase === "game" });
+const tradeQuery = useQuery({ queryKey: ["tradeTasks", cityKey], queryFn: () => api.getTradeTasks({ city: gs?.cityKey ?? "sz", openOnly: true, limit: 50 }), enabled: phase === "game" && !!profile });
+/* (e) sublet listings (server) */
+const subletQuery = useQuery({ queryKey: ["sublets", cityKey], queryFn: () => api.getSubletListings({ city: gs?.cityKey ?? "sz", openOnly: true }), enabled: phase === "game" && !!profile });
+/* (f) job board (server ladder + player gigs) */
+const [jobCenterOpen, setJobCenterOpen] = useState(false);
+const [jobTab, setJobTab] = useState<"jobs" | "guide" | "interview" | "help">("jobs");
+const jobBoardQuery = useQuery({ queryKey: ["jobBoard", cityKey], queryFn: () => api.listJobBoard({ city: gs?.cityKey ?? "sz", playerId: profile?.playerId }), enabled: jobCenterOpen && !!profile });
+/* (h) shared delivery pool (server) */
+const poolQuery = useQuery({ queryKey: ["pool", cityKey], queryFn: () => api.deliveryPoolList({ playerId: profile!.playerId, city: gs?.cityKey ?? "sz" }), refetchInterval: 30_000, enabled: phase === "game" && !!profile });
+/* (h) delivery cart (hoisted: renderPhoneApp is a plain function, not a component) */
+const [deliveryCart, setDeliveryCart] = useState<{ key: string; qty: number }[]>([]);
+const [courierBoard, setCourierBoard] = useState<CourierGig[]>([]);
+/* (g) phone fullscreen + house building + police + lifestyles panels */
+const [phoneFull, setPhoneFull] = useState(false);
+const phoneSheetRef = useRef<HTMLDivElement | null>(null);
+const [buildOpen, setBuildOpen] = useState(false);
+const [houseLayout, setHouseLayout] = useState<HouseLayout>(() => loadHouseLayout() ?? emptyHouseLayout());
+const [patrolling, setPatrolling] = useState(false);
+const [sanheOpen, setSanheOpen] = useState(false);
+const [checkinOpen, setCheckinOpen] = useState(false);
+const [tradeTab, setTradeTab] = useState<"board" | "overseas">("board");
+const [tradeTitle, setTradeTitle] = useState("");
+const [tradeBody, setTradeBody] = useState("");
+const [tradePrice, setTradePrice] = useState("");
+const [tradeKind, setTradeKind] = useState<"buy" | "sell" | "swap" | "service" | "other">("sell");
+/* (c) community post forms */
+const [noticeTitle, setNoticeTitle] = useState("");
+const [noticeBody, setNoticeBody] = useState("");
+const [noticeKind, setNoticeKind] = useState<"lost-pet" | "lost-item" | "found-pet" | "found-item">("lost-pet");
+const [snakeSpecies, setSnakeSpecies] = useState("");
+const [snakeDesc, setSnakeDesc] = useState("");
+const [fishDesc, setFishDesc] = useState("");
+/* (e) overseas orders (server) */
+const overseasQuery = useQuery({ queryKey: ["overseas", profile?.playerId ?? ""], queryFn: () => api.getOverseasOrders({ playerId: profile!.playerId }), enabled: phase === "game" && !!profile && phoneOpen && phoneApp === "trade" });
+/* (f) rent negotiation stash — the Saturday rent run reads this */
+const rentDealRef = useRef<{ delayDays?: number; dueMul?: number }>({});
+const lastTickDayRef = useRef(0);
+const lifeSavedRef = useRef("");
+/* (d) merge server reports into the local book; apply the server-side rent
+   rollback on load (S, critical) — otherwise a save/load resurrects the
+   raised rent. getBlackReports also returns `standing` + `rentRollback`,
+   which the client type doesn't declare, so read them via a cast. */
+useEffect(() => {
+  if (!reportsQuery.data) return;
+  const d = reportsQuery.data as typeof reportsQuery.data & { standing?: { credibility: number; filedCount: number; upheldCount: number; rejectedCount: number; lockedUntil: string | null }; rentRollback?: { rent: number; baseRent: number } | null };
+  reportBook.mergeReports([...d.mine, ...d.jury, ...d.exposed]);
+  for (const r of d.reputations) reportBook.noteReputation(r);
+  if (d.standing) {
+    reportBook.state.standing = { ...reportBook.state.standing, credibility: d.standing.credibility, filedCount: d.standing.filedCount, upheldCount: d.standing.upheldCount, rejectedCount: d.standing.rejectedCount, lockedUntil: d.standing.lockedUntil };
+    reportBook.save();
+  }
+  if (d.rentRollback) {
+    const rb = d.rentRollback;
+    mutate((x) => { x.rent = rb.rent; x.baseRent = rb.baseRent; });
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [reportsQuery.data]);
+/* (f) push the lifestyle state to the server when it changes (fire-and-forget;
+   local is the source of truth for money — no endpoint here moves real money). */
+useEffect(() => {
+  const l = gs?.life; if (!l || !profile) return;
+  const key = JSON.stringify(l); if (key === lifeSavedRef.current) return;
+  lifeSavedRef.current = key;
+  void api.saveLifestyle({ playerId: profile.playerId, day: gs?.day ?? 1, life: l as unknown as Record<string, unknown> }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [gs?.life, profile?.playerId]);
+/* (c) homecoming greeting — first return home each day */
+useEffect(() => {
+  if (phase !== "game" || currentLoc !== "home") return;
+  const greet = homecomingGreeting(petsRef.current);
+  if (greet) { setPets((p) => ({ ...p, pets: [...p.pets] })); showToast(greet.text); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [currentLoc, phase]);
+/* (f) profile builder + generic lifestyle-action handler (LOG-f S6/S7) */
+const lifeProfile = (st: GameState): PlayerProfile => ({
+  skill: st.skill, xp: st.xp,
+  gigs: [...(st.npcGigs ?? []).map((g) => g.split(":").pop() ?? g), ...(st.arcs ? Object.keys(st.arcs) : [])],
+  coursesDone: (st.life?.flat.courses ?? []).filter((c) => c.done).map((c) => c.id),
+  interviewReady: st.life?.flat.interviewReady ?? 0,
+  day: st.day, city: st.cityKey,
+});
+const applyLife = (res: LifeResult) => {
+  if (!res.ok) { showToast(res.reason ? (en ? res.reason[1] : res.reason[0]) : ""); return; }
+  if (res.rentDelayDays !== undefined || res.rentDueMul !== undefined) rentDealRef.current = { delayDays: res.rentDelayDays, dueMul: res.rentDueMul };
+  mutate((x) => {
+    x.life = res.state;
+    const d = res.delta;
+    if (d.money) { x.money += d.money; if (d.money > 0) x.earned += d.money; x.maxMoney = Math.max(x.maxMoney, x.money); }
+    if (d.energy) x.energy = clamp(x.energy + d.energy, 0, 100);
+    if (d.mood) x.mood = clamp(x.mood + d.mood, 0, 100 + (res.state.flat.moodCapBonus ?? 0));
+    if (d.hunger) x.hunger = clamp100(x.hunger + d.hunger);
+    if (d.clean) x.clean = clamp100(x.clean + d.clean);
+    if (d.social) x.social = clamp100(x.social + d.social);
+    if (d.fun) x.fun = clamp100(x.fun + d.fun);
+    if (d.xp) x.xp += d.xp;
+    if (d.skill) x.skill += d.skill;
+    if (d.network) x.network += d.network;
+    if (d.fit) x.fit += d.fit;
+    if (res.hiredIdentityId) { x.idenId = res.hiredIdentityId; }
+  });
+  res.lines.forEach((l) => showToast(en ? l[1] : l[0]));
+};
+/* (d) jury vote + claim a verdict (mirrors the gig jury flow) */
+const voteBlack = async (report: BlackReport, side: "uphold" | "reject") => {
+  if (!profile) return;
+  try {
+    const r = await reportApi.blackReportVote({ playerId: profile.playerId, reportId: report.id, side });
+    if (r.ok) { showToast(en ? "Voted — the majority decides when it closes." : "投票了，结案后按多数执行。"); void reportsQuery.refetch(); }
+    else showToast(r.error ?? "");
+  } catch { showToast(en ? "Network hiccup" : "网络不太好"); }
+};
+const claimBlack = async (report: BlackReport) => {
+  if (!profile) return;
+  try {
+    const r = await reportApi.claimBlackReport({ playerId: profile.playerId, reportId: report.id });
+    if (!r.ok) { showToast(r.error ?? ""); return; }
+    if (report.status === "upheld" && r.remedy) {
+      const lines: string[] = [];
+      mutate((x) => {
+        if (!r.remedy) return;
+        const ls = report.kind === "landlord"
+          ? applyLandlordVerdict(x, r.remedy as LandlordRemedy, en)
+          : applyEmployerVerdict(x, r.remedy as EmployerRemedy, en);
+        lines.push(...ls);
+      });
+      for (const l of [...lines, ...r.lines]) addLog(l);
+      reportBook.state.standing = applyTrueReportGain(reportBook.state.standing);
+      addLog(exposureLine(report, en));
+    } else if (report.status === "rejected") {
+      const p = applyFalseReportPenalty(reportBook.state.standing, en);
+      reportBook.state.standing = p.standing;
+      for (const l of p.lines) addLog(l);
+    }
+    reportBook.save();
+    void reportsQuery.refetch();
+  } catch { showToast(en ? "Network hiccup" : "网络不太好"); }
+};
+/* (c) sync the local pet book to the server (device-switch backup) */
+const syncPetsToServer = (state: PetsState, adoptedStrayId?: string) => {
+  if (!profile) return;
+  void api.syncPets({
+    playerId: profile.playerId,
+    pets: state.pets.slice(0, 3).map((p) => ({ id: p.id, kind: p.kind, breed: p.breed.slice(0, 16), name: p.name, color: p.color, source: p.source, adoptedDay: p.adoptedDay, adoptedAt: p.adoptedAt, stats: p.stats, tricks: p.tricks, personality: p.personality, interactionsToday: p.interactionsToday, lastTickDay: p.lastTickDay, greetedToday: p.greetedToday })),
+    activePetId: state.activePetId ?? null,
+    ...(adoptedStrayId ? { adoptedStrayId } : {}),
+  }).catch(() => {});
+};
+/* (h) delivery handlers */
+const publishDeliveryToPool = (order: CustomerOrder) => {
+  const s0 = gsRef.current; if (!s0 || !profile) return;
+  const dest = locById(currentLocRef.current);
+  void api.deliveryPoolPublish({ playerId: profile.playerId, city: s0.cityKey, order: { ...poolPayloadFor(order, dest?.name ?? "家"), destId: dest?.id } }).catch(() => {});
+};
+const submitDeliveryOrder = (cart: { key: string; qty: number }[], platformId = DELIVERY_PLATFORMS[0]!.id, couponId?: string) => {
+  const s0 = gsRef.current; if (!s0) return;
+  const d = s0.delivery ?? emptyDeliveryState();
+  const r = placeOrder({ city: s0.cityKey, platformId, items: cart, couponId, coupons: d.coupons, memberUntilDay: d.memberUntilDay, day: s0.day, now: Date.now() });
+  if (!r.ok || !r.order || r.charge === undefined) { showToast(r.error ?? "下单失败。"); return; }
+  if (s0.money < r.charge) { showToast("钱不够点这单外卖。"); return; }
+  mutate((x) => {
+    x.money -= r.charge!; x.delivery = pushOrder(x.delivery ?? emptyDeliveryState(), r.order!);
+    if (couponId) x.delivery.coupons = (x.delivery ?? emptyDeliveryState()).coupons.filter((c) => c.id !== couponId);
+  });
+  addLog(`用${DELIVERY_PLATFORMS.find((p) => p.id === platformId)?.name ?? ""}点了${r.order.restaurantName}外卖，-${fmt(r.charge)}。`);
+  showToast(`🛵 下单成功！${r.order.riderName}正在赶往商家，预计 ${Math.round((r.order.etaAt - Date.now()) / 60_000)} 分钟送达。`);
+  setDeliveryCart([]);
+  setPhoneOpen(false);
+  void publishDeliveryToPool(r.order);
+};
+const eatDeliveryOrder = (orderId: string) => {
+  const s0 = gsRef.current; if (!s0?.delivery) return;
+  const o = s0.delivery.orders.find((x) => x.id === orderId); if (!o) return;
+  const r = eatDelivered(o);
+  if (!r.ok) { showToast(r.error ?? "还没送到。"); return; }
+  mutate((x) => {
+    const d = x.delivery ?? emptyDeliveryState();
+    x.energy = clamp100(x.energy + r.energy); x.mood = clamp100(x.mood + r.mood);
+    x.hunger = clamp100(x.hunger + r.hunger); x.mealCount += 1;
+    x.delivery = updateOrder(d, { ...o, stage: "eaten" });
+  });
+  showToast(`🍽️ ${o.items.map((i) => i.name).join("、")}吃完了，能量 +${r.energy}，心情 +${r.mood}。`);
+  playLifeAnim("eat");
+};
+const cancelDeliveryOrder = (orderId: string) => {
+  const s0 = gsRef.current; if (!s0?.delivery) return;
+  const o = s0.delivery.orders.find((x) => x.id === orderId); if (!o) return;
+  const { order, refund } = cancelOrder(o, Date.now());
+  mutate((x) => {
+    x.money += refund;
+    x.delivery = updateOrder(x.delivery ?? emptyDeliveryState(), order);
+  });
+  showToast(refund > 0 ? `订单已取消，退回 ${fmt(refund)}。` : "订单已取消。");
+};
+const buyDeliveryMembership = () => {
+  const s0 = gsRef.current; if (!s0 || s0.money < MEMBERSHIP_PRICE) { showToast("钱不够买月卡。"); return; }
+  mutate((x) => {
+    const d = x.delivery ?? emptyDeliveryState();
+    x.money -= MEMBERSHIP_PRICE;
+    x.delivery = { ...d, memberUntilDay: s0.day + MEMBERSHIP_DAYS };
+  });
+  showToast(`💳 外卖月卡已开通，30 天内免配送费 + 95 折。`);
+};
+const refreshCourierBoard = () => {
+  const s0 = gsRef.current; if (!s0) return;
+  const d = s0.delivery ?? emptyDeliveryState();
+  const stops = getLocations(s0.cityKey).map((l) => ({ id: l.id, name: l.name, type: l.type, x: l.x, z: l.z }));
+  const board = generateCourierBoard({
+    stops, city: s0.cityKey, now: Date.now(), nowMin: nowMin(),
+    rainy: nowRainy, profile: d.courier,
+    excludeShopIds: routineToday(s0).order?.shop ? [routineToday(s0).order!.shop] : [],
+  });
+  setCourierBoard(board);
+};
+const courierAccept = (g: CourierGig) => {
+  const s0 = gsRef.current; if (!s0 || !profile) return;
+  const d = s0.delivery ?? emptyDeliveryState();
+  const r = acceptGig(g, d.activeGigs, d.courier, Date.now());
+  if (!r.ok || !r.gig) { showToast(r.error ?? "接不了这单。"); return; }
+  mutate((x) => { const dd = x.delivery ?? emptyDeliveryState(); x.delivery = { ...dd, activeGigs: [...dd.activeGigs, r.gig!] }; });
+  setCourierBoard((b) => b.filter((x) => x.id !== g.id));
+  if (g.poolId !== undefined) void api.deliveryPoolClaim({ playerId: profile.playerId, city: s0.cityKey, poolId: String(g.poolId) }).catch(() => {});
+  showToast(`接单：${g.shopName} → ${g.destName}，先去商家取餐。`);
+};
+const courierPickup = (g: CourierGig) => {
+  const s0 = gsRef.current; if (!s0 || !profile) return;
+  const r = pickupGig(g, currentLoc === g.shopId, Date.now());
+  if (!r.ok || !r.gig) { showToast(r.error ?? ""); return; }
+  mutate((x) => { const dd = x.delivery ?? emptyDeliveryState(); x.delivery = { ...dd, activeGigs: dd.activeGigs.map((gg) => gg.id === g.id ? r.gig! : gg) }; });
+  if (g.poolId !== undefined) void api.deliveryPoolPickedUp({ playerId: profile.playerId, poolId: String(g.poolId) }).catch(() => {});
+  showToast(`已取餐，送往${g.destName}。`);
+};
+const courierDeliver = async (g: CourierGig) => {
+  const s0 = gsRef.current; if (!s0 || !profile) return;
+  const d = s0.delivery ?? emptyDeliveryState();
+  const r = deliverGig(g, { atDest: currentLoc === g.destId, climbedStairs: true, now: Date.now(), day: s0.day, profile: d.courier });
+  if (!r.ok) { showToast(r.error ?? ""); return; }
+  let pay = r.pay, tip = r.tip;
+  if (g.poolId !== undefined) {
+    try {
+      const pr = await api.deliveryPoolDelivered({ playerId: profile.playerId, poolId: String(g.poolId) });
+      if (pr.ok && pr.pay !== undefined) { pay = pr.pay; tip = pr.tip ?? 0; }
+    } catch { /* server unreachable — keep the local pay */ }
+  }
+  mutate((x) => {
+    const dd = x.delivery ?? emptyDeliveryState();
+    x.money += pay; x.earned += pay;
+    x.delivery = { ...dd, courier: r.profile, activeGigs: dd.activeGigs.filter((gg) => gg.id !== g.id), gigHistory: [{ id: g.id, shopName: g.shopName, destName: g.destName, pay, late: r.late, day: s.day }, ...dd.gigHistory] };
+  });
+  showToast(`送达！收入 ${fmt(pay)}${tip > 0 ? `（含小费 ${fmt(tip)}）` : ""}${r.late ? "（超时了，扣了点钱）" : ""}。`);
+};
+const courierCancel = (g: CourierGig) => {
+  const s0 = gsRef.current; if (!s0) return;
+  const d = s0.delivery ?? emptyDeliveryState();
+  const r = cancelGig(g, d.courier);
+  mutate((x) => { const dd = x.delivery ?? emptyDeliveryState(); x.delivery = { ...dd, courier: r.profile, activeGigs: dd.activeGigs.filter((gg) => gg.id !== g.id) }; });
+  showToast(r.blockedToday ? "今天取消太多次了，明天再接单。" : "这单取消了，评分掉了 0.2。");
+};
+/* (h) advance the active customer order in real time */
+useEffect(() => {
+  const t = window.setInterval(() => {
+    const s0 = gsRef.current; if (!s0?.delivery?.activeOrderId) return;
+    const o = activeOrder(s0.delivery); if (!o) return;
+    const { order, advancedTo } = advanceOrder(o, Date.now());
+    if (!advancedTo) return;
+    mutate((x) => { x.delivery = updateOrder(x.delivery ?? emptyDeliveryState(), order); });
+    if (advancedTo === "delivered") {
+      showToast(`🛵 外卖到了！${order.restaurantName}的餐在楼下，快趁热吃。`);
+      sfx("notify");
+    } else if (advancedTo === "pickedUp") {
+      showToast(`🛵 ${order.riderName}已取餐，正在送来的路上。`);
+    }
+  }, 15_000);
+  return () => window.clearInterval(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, []);
 /* the week's prices follow the elected chair's pledge; a roommate halves your rent */
 const policyRef = useRef(policyMul(null));
 policyRef.current = policyMul(committeeQuery.data?.chair?.pledge);
@@ -1369,6 +1768,10 @@ if (isLast) postFeed("life", `走完了一日游「${tour.name}」，又认识�
    them in dressed 3D sets (station platform, carriage, office, night-market
    stall, kitchen, bedroom) with the warm cinematic grade and camera push-in.
    No pre-rendered video anywhere — what you see is the game rendering live. */
+const CUTSCENE_ROAM: Partial<Record<LifeKind, LifeSet>> = {
+  sleep: "bedroom", cook: "kitchen", eat: "market", wash: "bathroom",
+  groceries: "market", gym: "gym", stroll: "park", shopping: "mall",
+};
 const playLifeAnim = (kind: LifeKind, after?: () => void) => {
 lifeAfterRef.current = after ?? null;
 setLifeAnim({ kind, idx: 0 });
@@ -1381,6 +1784,8 @@ if (after) after();
 };
 useEffect(() => {
 if (!lifeAnim) return;
+// round-2 (g S5): walkable beats are not time-boxed — onSpot / 跳过 advances.
+if (CUTSCENE_ROAM[lifeAnim.kind]) return;
 const scene = LIFE_SCENES[lifeAnim.kind];
 const tm = window.setTimeout(() => {
 if (lifeAnim.idx + 1 >= scene.steps.length) finishLifeAnim();
@@ -1398,7 +1803,8 @@ else localStorage.removeItem(LS_KEY);
 
 const update = (next: GameState) => {
 next.energy = clamp(next.energy, 0, 100);
-next.mood = clamp(next.mood, 0, 100);
+/* round-2 (f): the mood cap grows with small joys (max +15). */
+next.mood = clamp(next.mood, 0, 100 + (next.life?.flat.moodCapBonus ?? 0));
 next.maxMoney = Math.max(next.maxMoney, next.money);
 gsRef.current = next;
 setGs(next);
@@ -1563,7 +1969,7 @@ idenId: iden.id,
 day: Math.min(30, Math.max(1, Math.round(num(g.day, 1)))),
 money: Math.round(num(g.money, iden.money)),
 energy: clamp(num(g.energy, 90), 0, 100),
-mood: clamp(num(g.mood, iden.mood), 0, 100),
+mood: clamp(num(g.mood, iden.mood), 0, 100 + (sanitizeLifestyleState(g.life).flat.moodCapBonus ?? 0)),
 hunger: clamp100(num(g.hunger, 78)),
 clean: clamp100(num(g.clean, 78)),
 social: clamp100(num(g.social, 70)),
@@ -1572,6 +1978,10 @@ bladder: clamp100(num(g.bladder, 84)),
 hair: Math.max(0, Math.min(HAIRS.length - 1, Math.round(num(g.hair, 0)))),
 accessory: Math.max(0, Math.min(ACCESSORIES.length - 1, Math.round(num(g.accessory, 0)))),
 sanheDay: Math.max(0, Math.round(num(g.sanheDay, 0))),
+/* round-2 (f): lifestyle state, sanitized (old saves get the default). */
+life: sanitizeLifestyleState(g.life),
+/* round-2 (h): delivery state, guarded (old saves get an empty one). */
+delivery: isDeliveryState(g.delivery) ? g.delivery : emptyDeliveryState(),
 spouse: typeof g.spouse === "string" && g.spouse ? g.spouse : undefined,
 kids: Array.isArray(g.kids) ? g.kids.flatMap((k) => { const o = k as { name?: unknown; day?: unknown }; return typeof o?.name === "string" ? [{ name: o.name, day: num(o.day, 1) }] : []; }).slice(0, 3) : [],
 plots: (() => { const out: GameState["plots"] = []; if (!Array.isArray(g.plots)) return out; for (const k of g.plots) { const o = k as { city?: unknown; paid?: unknown; day?: unknown }; const city = o?.city; if (city === "sz" || city === "hz" || city === "hk") out.push({ city, paid: num(o.paid, 0), day: num(o.day, 1) }); if (out.length >= 3) break; } return out; })(),
@@ -1635,7 +2045,7 @@ perks: strArr(g.perks).filter((id) => perkById(id)),
 license: num(g.license, 0), licDay: num(g.licDay, 0), carDay: num(g.carDay, 0), carOwned: g.carOwned === true,
 hangover: g.hangover === true, record: num(g.record, 0),
 romance: g.romance && typeof g.romance === "object" && !Array.isArray(g.romance) ? Object.fromEntries(Object.entries(g.romance as Record<string, unknown>).filter(([k, v]) => NPCS.some((n) => n.name === k) && typeof v === "number")) as Record<string, number> : {},
-cohabit: g.cohabit === true, moodHitDay: typeof g.moodHitDay === "number" ? Math.round(g.moodHitDay) : undefined, switchDay: typeof g.switchDay === "number" ? Math.round(g.switchDay) : undefined, roommate: typeof g.roommate === "string" && g.roommate.length < 40 ? g.roommate : undefined, rentPolicy: typeof g.rentPolicy === "number" && g.rentPolicy >= 0.9 && g.rentPolicy <= 1 ? g.rentPolicy : undefined, origin: typeof g.origin === "string" && g.origin.length < 40 ? g.origin : undefined, startTier: typeof g.startTier === "number" && g.startTier >= 0 && g.startTier <= 3 ? Math.round(g.startTier) : undefined, loc: typeof g.loc === "string" && g.loc.length < 120 ? g.loc : undefined, routine: g.routine && typeof g.routine === "object" && !Array.isArray(g.routine) ? (g.routine as RoutineDay) : undefined, actCount: num(g.actCount, 0), partyPlays: num(g.partyPlays, 0),
+cohabit: g.cohabit === true, moodHitDay: typeof g.moodHitDay === "number" ? Math.round(g.moodHitDay) : undefined, switchDay: typeof g.switchDay === "number" ? Math.round(g.switchDay) : undefined, roommate: typeof g.roommate === "string" && g.roommate.length < 40 ? g.roommate : undefined, rentPolicy: typeof g.rentPolicy === "number" && g.rentPolicy >= 0.9 && g.rentPolicy <= 1 ? g.rentPolicy : undefined, origin: typeof g.origin === "string" && g.origin.length < 40 ? g.origin : undefined, startTier: typeof g.startTier === "number" && g.startTier >= 0 && g.startTier <= 3 ? Math.round(g.startTier) : undefined, loc: typeof g.loc === "string" && g.loc.length < 120 ? (g.cityKey === "hz" && g.loc === "hq" ? "qiaodong" : g.cityKey === "hz" && g.loc === "work" ? "work-hz" : g.loc) : undefined, routine: g.routine && typeof g.routine === "object" && !Array.isArray(g.routine) ? (g.routine as RoutineDay) : undefined, actCount: num(g.actCount, 0), partyPlays: num(g.partyPlays, 0),
 };
 return { profile: { playerId: prof.playerId, name: prof.name }, gs };
 };
@@ -2006,7 +2416,16 @@ useEffect(() => {
   const travel: TravelTone = carriage ? "metro" : walking && (tripMode === "walk" || tripMode === "run") ? "walk" : "still";
   const clock = bjNow();
   const storm = rwOk ? realWeather!.kind === "storm" : weatherOf(gs?.day ?? 1, gs?.cityKey ?? "sz").includes("暴雨");
-  setWorld({ scene: sc, minute: tn, day: clock.d, month: clock.mo, place, travel, storm, karaoke: singing });
+  /* round-2 (g S10): scene-matched sounds2 bed under the music */
+  const sceneSfx: SceneSfxId | undefined =
+    lifeAnim?.kind === "cook" ? "cooking"
+    : lifeAnim?.kind === "gym" ? "gym"
+    : lifeAnim?.kind === "sleep" ? "sleep"
+    : venue3d?.set === "restaurant" ? "cooking"
+    : venue3d?.set === "gym" ? "gym"
+    : venue3d?.set === "clinic" ? "hospital"
+    : undefined;
+  setWorld({ scene: sc, minute: tn, day: clock.d, month: clock.mo, place, travel, storm, karaoke: singing, sceneSfx });
 // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [phase, currentLoc, walking, nowRainy, musicTick, soundIsOn, scenicMoment, venue3d, carriage, tripMode, singing]);
 const heardLoc = useRef<string | null>(null);
@@ -2028,6 +2447,26 @@ if (todayEvent.moodHit && gsRef.current && gsRef.current.moodHitDay !== gsRef.cu
 showToast(`${todayEvent.emoji} 今日城市事件「${todayEvent.name}」：${todayEvent.desc}`);
 // eslint-disable-next-line react-hooks/exhaustive-deps
 }, [phase, todayEvent.id, todayEvent.desc]);
+
+/* round-2: once-per-day ticks (economy, courses, pets, encouragement, check-in) */
+useEffect(() => {
+  const d = gs?.day; if (phase !== "game" || !d || lastTickDayRef.current >= d) return;
+  lastTickDayRef.current = d;
+  const s0 = gsRef.current; if (!s0) return;
+  setPets((p) => ({ ...p, pets: p.pets.map((pet) => { const pp = { ...pet, stats: { ...pet.stats } }; for (const l of tickPetDay(pp, d)) addLog(l); return pp; }) }));
+  const et = economyDailyTick(econRef.current, d, s0.rent);
+  setEcon(et.state);
+  if (et.subletRentDue > 0) mutate((x) => { x.money += et.subletRentDue; x.earned += et.subletRentDue; });
+  for (const e of et.events) addLog(e);
+  if (s0.life) {
+    const cr = courseDayTick(s0.life, d);
+    if (cr.ok && (cr.lines.length || (cr.state.flat.courses ?? []).some((c) => c.done))) applyLife(cr);
+    const enc = encouragementFor(d);
+    showToast(`${enc.who[0]}：${enc.line[0]}`);
+    if (checkinDue(s0.life, d)) setCheckinOpen(true);
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [gs?.day, phase]);
 
 /* Ride exactly the route picked on the line map, between ANY two stations
    (not only stations that are also game locations). Not at the boarding
@@ -2176,7 +2615,7 @@ const doRoutine = (id: string) => {
   let order: RiderOrder | null | undefined = rd.order; let orders = rd.orders ?? 0;
   const hasClock = routineSteps(role).some((x) => x.id === "clockin");
   if (!isOrderRole(role)) {
-    if (!atJob(role, locById(currentLocRef.current), s0)) { const w = ROLE_META[role].where; { const TL: Record<string, [string, string]> = { food: ["餐厅", "a restaurant"], market: ["市场", "a market"], mall: ["商场", "a mall"], social: ["娱乐场所", "a nightlife spot"], learn: ["学校 / 图书馆", "a school"], lodging: ["酒店", "a hotel"], health: ["医院", "a hospital"], gym: ["健身房", "a gym"], transit: ["车站", "a station"], bank: ["银行", "a bank"], home: ["小区", "a housing estate"], scenic: ["景区", "a sight"], fun: ["游乐场所", "an attraction"] };
+    if (!atJob(role, locById(currentLocRef.current), s0)) { const w = ROLE_META[role].where; { const TL: Record<string, [string, string]> = { food: ["餐厅", "a restaurant"], market: ["市场", "a market"], mall: ["商场", "a mall"], social: ["娱乐场所", "a nightlife spot"], learn: ["学校 / 图书馆", "a school"], lodging: ["酒店", "a hotel"], health: ["医院", "a hospital"], gym: ["健身房", "a gym"], transit: ["车站", "a station"], bank: ["银行", "a bank"], home: ["小区", "a housing estate"], scenic: ["景区", "a sight"], fun: ["游乐场所", "an attraction"], electronics: ["电子市场", "an electronics market"], oilpainting: ["油画村", "an oil-painting village"], secondhand: ["二手市集", "a second-hand market"], seafood: ["海鲜街", "a seafood street"], oldtown: ["老街", "an old street"], womensstreet: ["女人街", "the Ladies' Market"], museum: ["博物馆", "a museum"], library: ["图书馆", "a library"], factory: ["厂区", "a factory"] };
       showToast(w === "work" ? (en ? "Do this at your workplace (a company or industrial park)." : "这些要到公司 / 厂里 / 工地做。") : en ? `Do this at ${(w as string[]).map((t) => TL[t]?.[1] ?? t).join(", ")}.` : `这些要到${(w as string[]).map((t) => TL[t]?.[0] ?? t).join("、")}做。`); } return; }
     if (hasClock && id !== "clockin" && !rd.done.clockin) { showToast(en ? "Clock in first." : "先打卡上班。"); return; }
     const lateAfter = (step.hours?.[0] ?? 9 * 60) + 90; // over 1.5 h after the start window opens counts as late
@@ -2367,7 +2806,11 @@ const routineActs = (loc: Loc, g: GameState): ActDef[] => {
     if (toShop) out.push({ kind: "__rider-cancel", emoji: "✖️", title: en ? (role === "driver" ? "Cancel this fare" : "Cancel this order") : "取消这单", desc: role === "driver" ? (en ? "Too far to bother — the app deducts a little." : "太远了不想跑：平台扣一点钱、心情也差点。") : en ? "The shop is closed or too far — the platform deducts a little." : "商家关门了或者太远：平台扣一点钱、心情也差点。", cost: `-${Y}2 · ${en ? "mood" : "心情"} -3` });
     if (currentLoc !== tgt) out.push({ kind: "__rider-go", emoji: role === "driver" ? "🚕" : "🛵", title: role === "driver" ? (en ? (toShop ? `Drive to the passenger · ${trText(dest.name)}` : `Drive to ${trText(dest.name)}`) : (toShop ? `开去接乘客 · ${dest.name}` : `送乘客去 · ${dest.name}`)) : en ? (toShop ? `Ride to pick up · ${trText(dest.name)}` : `Ride to the customer · ${trText(dest.name)}`) : (toShop ? `骑去取餐 · ${dest.name}` : `骑去送餐 · ${dest.name}`), desc: role === "driver" ? (en ? `Meter about ${Y}${o.pay}; take over 10 minutes and the passenger complains (−30%). Watch your taxi on the map.` : `打表约 ${Y}${o.pay}，超过 10 分钟乘客会投诉（少收三成）。地图上看你开过去。`) : en ? `Order worth ${Y}${o.pay}; over 10 minutes late loses 30%.` : `这单 ${Y}${o.pay}，超过 10 分钟算超时扣三成。地图上看你骑过去。`, cost: role === "driver" ? (en ? "your taxi" : "自己的的士") : en ? "e-bike" : "电动车" });
   }
-  for (const st of routineSteps(role)) {
+  for (const rawSt of routineSteps(role)) {
+    // Round-2 (b S6): the street vendor sells different goods per market subtype.
+    const st = role === "vendor" && rawSt.id === "sell"
+      ? { ...rawSt, ...vendorSellFor(locById(currentLoc)?.type ?? "market") }
+      : rawSt;
     if (isOrderRole(role)) {
       if (st.id === "wait" && !(o?.stage === "waiting" && currentLoc === o.shop)) continue;
       if ((st.id === "climb" || st.id === "handover") && !(o?.stage === "atDoor" && currentLoc === o.dest)) continue;
@@ -2603,6 +3046,17 @@ s.money -= fc; s.energy += f.energy; s.mood += fm; s.mealCount += 1; s.hunger = 
 msg = `${f.name}下肚，能量 +${f.energy}，心情 +${fm}${ev.eatMul ? `（美食节价 ¥${fc}）` : ""}。`;
 break;
 }
+/* round-2 (b S4d): per-subtype venue actions */
+case "seafood-feast": {
+  s.money -= 80; s.mood += 15; s.energy += 20; s.mealCount += 1; s.hunger = clamp100(s.hunger + 40); s.fun = clamp100(s.fun + 6);
+  msg = "现捞现做的海鲜大餐下肚，能量 +20，心情 +15。";
+  break;
+}
+case "snack-eat": {
+  s.money -= 25; s.mood += 8; s.energy += 10; s.mealCount += 1; s.hunger = clamp100(s.hunger + 20); s.fun = clamp100(s.fun + 4);
+  msg = "老街小吃吃到饱，能量 +10，心情 +8。";
+  break;
+}
 case "wash":
 if (evRef.current.noWater) { msg = `🚱 今天${evRef.current.name}，水龙头拧开只有嘶嘶声。下楼买瓶水凑合吧。`; break; }
 s.energy += 6; s.mood += 6; s.clean = clamp100(s.clean + 46);
@@ -2781,6 +3235,7 @@ break;
 case "ferry":
 s.money -= 60; s.mood += 18; s.energy -= 6;
 msg = "从蛇口坐轮渡出海，甲板上吹海风看港珠澳大桥，心情 +18。";
+playFerryHorn();
 break;
 case "flight":
 s.money -= 420; s.mood += 26; s.energy -= 14;
@@ -2861,18 +3316,16 @@ burstDanmaku([`🌐 峰会会场打卡 +1！`, "Lisa：三个会场集齐有徽�
 if (msg && kind === "apec-task") {
 burstDanmaku([`🎉 峰会今日任务完成！`, "Lisa：干得漂亮，这就是深圳服务 🌐", "阿强：给 峰会打工的人点赞", "陈伯：盛会办得好，街坊脸上有光", "王姨：辛苦啦，回来喝碗糖水"]);
 }
-const animMap: Partial<Record<string, LifeKind>> = { work: "code", overtime: "overtime", eat: "eat", canteen: "eat", interview: "code", "campus-tour": "stroll", gym: "gym", wash: "wash", cook: "cook", "buy-groceries": "groceries", stroll: "stroll", "social-ktv": "gathering", "social-drink": "gathering", "mall-shop": "shopping", "mall-cloth": "shopping", fun: "stroll" };
+const animMap: Partial<Record<string, LifeKind>> = { work: "code", overtime: "overtime", eat: "eat", canteen: "eat", interview: "code", "campus-tour": "stroll", gym: "gym", wash: "wash", cook: "cook", "buy-groceries": "groceries", stroll: "stroll", "social-ktv": "gathering", "social-drink": "gathering", "mall-shop": "shopping", "mall-cloth": "shopping", fun: "stroll", "seafood-feast": "eat", "snack-eat": "eat" };
 // signature rides and sights get their own scene instead of a plain stroll
-const special: LifeKind | undefined = kind !== "fun" && kind !== "stroll" && kind !== "checkin" ? undefined
-  : loc.id === "hejiang" || loc.id === "sanjiaozhou" ? "cruise"
-  : loc.name === "欢乐港湾" ? "wheel"
-  : loc.name.includes("海洋世界") || loc.name.includes("水族") ? "aquarium"
-  : loc.id === "haiguiwan" ? "turtle"
-  : loc.id === "happyvalley" ? "coaster"
-  : loc.id === "safari" ? "safari"
-  : loc.id === "octeast" ? "cablecar"
-  : loc.type === "mountain" || ["luofu", "nankunshan", "xiangtoushan", "gaobangshan", "tanglangshan", "fenghuangshan"].includes(loc.id) || loc.placeKind === "peak" ? "hike"
-  : /海滩|沙滩|海边|海滨|杨梅坑|黄金海岸|檀悦/.test(loc.name) || loc.placeKind === "beach" ? "beach" : undefined;
+// Round-2 (b): the signature animation is a table lookup by place id
+// (round2/venues.ts), not name regex. The new anim kinds (tram, temple,
+// oldtown, miniature, nature, farm, wetland, watershow, cycle, gallery)
+// are not LifeKinds yet — they fall back to the nearest existing scene
+// (stroll, beach for the wetland) until area (g) adds dedicated scenes.
+const ANIM_TO_LIFE: Partial<Record<string, LifeKind>> = { tram: "stroll", temple: "stroll", oldtown: "stroll", miniature: "stroll", nature: "stroll", farm: "stroll", wetland: "beach", watershow: "stroll", cycle: "stroll", gallery: "stroll" };
+const animRaw = animFor(loc, kind);
+const special: LifeKind | undefined = animRaw ? (ANIM_TO_LIFE[animRaw] ?? (animRaw as LifeKind)) : undefined;
 const ak = special ?? animMap[kind];
 if (kind === "social-ktv") setSinging(true);
 if (ak && msg && !(kind === "cook" && s0.groceries <= 0) && !(kind === "buy-groceries" && s0.money < 28)) playLifeAnim(ak);
@@ -2913,7 +3366,7 @@ const seeSomeone = () => {
   const lively = ["food", "mall", "work", "fun", "market", "gym", "transit", "scenic", "home", "lodging"].includes(loc.type);
   if (!lively) { showToast(en ? "Go where people are — a mall, a food street, the office — then try again." : "去人多的地方再说：夜市、商场、公司，或者回家。"); return; }
   const cast = npcsForCity(s0.cityKey);
-  const who = (s0.spouse && loc.type === "home" ? s0.spouse : null) ?? cast.find((n) => n.preferTypes.includes(loc.type))?.name ?? cast[0]?.name ?? "街坊";
+  const who = (s0.spouse && loc.type === "home" ? s0.spouse : null) ?? cast.find((n) => npcAllowedAt(n, loc))?.name ?? cast[0]?.name ?? "街坊";
   mutate((s) => {
     s.social = clamp100(s.social + 22); s.mood = Math.min(100, s.mood + 4);
     const m = { ...memOf(s.npcMem ?? {}, who) }; m.rel = Math.max(-100, Math.min(100, m.rel + 2)); m.lastDay = s.day; s.npcMem = { ...(s.npcMem ?? {}), [who]: m };
@@ -2986,10 +3439,17 @@ if (!/周六|周日/.test(weekday(d))) { const w = Math.round(basePay(s) * 0.6);
 s.money -= 40; s.mealCount += 2; s.hunger = clamp100(s.hunger + 40);
 }
 if (isSaturday(d)) {
-{ const due = rentYouPay(s); const mate = s.roommate; const pol = s.rentPolicy ?? 1;
+{ const deal = rentDealRef.current;
+if (deal.delayDays !== undefined && deal.delayDays > 0) {
+rentDealRef.current = { ...deal, delayDays: deal.delayDays - 1 };
+rentMsg += " 房东同意这周晚点交（之前谈好的）。";
+} else {
+let due = rentYouPay(s);
+if (deal.dueMul !== undefined) due = Math.round(due * deal.dueMul);
+const mate = s.roommate; const pol = s.rentPolicy ?? 1;
 s.money -= due;
 s.rentPaid += due;
-rentMsg += ` 周六交租 -${fmt(due)}${mate ? `（和室友${mate}平摊）` : ""}${pol < 1 ? "（业委会减租 5%）" : ""}。`; }
+rentMsg += ` 周六交租 -${fmt(due)}${mate ? `（和室友${mate}平摊）` : ""}${pol < 1 ? "（业委会减租 5%）" : ""}${deal.dueMul !== undefined ? "（之前谈好的折扣）" : ""}。`; } }
 if (s.money < -500) broke = true;
 }
 if (s.invest > 0) {
@@ -3144,6 +3604,16 @@ mutate((s) => {
 s.money = fx.money; s.energy = fx.energy; s.mood = fx.mood; s.earned = fx.earned;
 s.xp = fx.xp; s.skill = fx.skill; s.network = fx.network;
 });
+/* round-2 (d §5c): a report choice opens the composer with evidence prefilled. */
+if (choice.report) {
+  setReportDraft({
+    kind: choice.report, city: s0.cityKey,
+    targetId: choice.report === "landlord" ? `home:${s0.cityKey}` : (s0.employer ?? ""),
+    targetName: choice.report === "landlord" ? "房东" : (s0.employer ?? ""),
+    body: "",
+    evidence: choice.report === "landlord" ? buildRentEvidence({ baseRent: s0.baseRent ?? s0.rent, rent: s0.rent, rentPaid: s0.rentPaid, noticeText: ev.desc }) : undefined,
+  });
+}
 setActiveEvent(null);
 showToast(text);
 addLog(`${text}`);
@@ -3169,7 +3639,7 @@ addLog(`${text}`);
     const state: GameState = {
       cityKey: city, idenId: iden.id, day: 1,
       money: iden.money, energy: 88 + iden.energyBonus, mood: iden.mood,
-      hunger: 82, clean: 86, social: 64, fun: 72, bladder: 88, hair: 0, accessory: 0, sanheDay: 0, kids: [], plots: [],
+      hunger: 82, clean: 86, social: 64, fun: 72, bladder: 88, hair: 0, accessory: 0, sanheDay: 0, life: defaultLifestyleState(), delivery: emptyDeliveryState(), kids: [], plots: [],
       rent, baseRent: rent,
       goal: iden.id === "rich" ? 30000 : iden.id === "flat" ? 5000 : cityInfo.goal,
       earned: 0, rentPaid: 0, workCount: 0, otCount: 0, mealCount: 0,
@@ -3275,19 +3745,6 @@ addLog(`${text}`);
     setPhoneOpen(false);
   };
 
-  const orderFood = (idx: number) => {
-    const s0 = gsRef.current;
-    if (!s0) return;
-    const f = FOODS[s0.cityKey][idx];
-    if (!f) return;
-    const cost = Math.round(f.cost * 1.5);
-    mutate((s) => {
-      s.money -= cost; s.energy += f.energy; s.mood += f.mood; s.mealCount += 1; s.hunger = clamp100(s.hunger + 38);
-    });
-    showToast(`${f.name}（外卖）到了，-${fmt(cost)}，能量 +${f.energy}。`);
-    setPhoneOpen(false);
-  };
-
   const taxiTo = (locId: string) => {
     const s0 = gsRef.current;
     if (!s0) return;
@@ -3320,7 +3777,9 @@ addLog(`${text}`);
     if (!s0 || !npc) return;
     const mem = memOf(s0.npcMem ?? {}, npcName);
     setNpcChat(npcName);
-    setNpcLog([{ from: "npc", text: greetLine(npc, mem, dayCtx()) }]);
+    const greet = greetLine(npc, mem, dayCtx());
+    setNpcLog([{ from: "npc", text: greet }]);
+    playNpcVoice(npcName, greet, en ? "en-US" : "zh-CN");
   };
 
   const doNpcChat = (action: ChatAction) => {
@@ -3361,6 +3820,7 @@ addLog(`${text}`);
       gift: `这个送你（${fmt(25)} 的小礼物），不值钱，就图个乐呵，别嫌弃。`,
     };
     setNpcLog((log) => [...log, { from: "me", text: playerLines[action] }, { from: "npc", text: outcome.reply }]);
+    playNpcVoice(npc.name, outcome.reply, en ? "en-US" : "zh-CN");
     if (outcome.favour) addLog(`帮了${npc.name}一个忙，他记下了这份人情。`);
     else if (outcome.slight) addLog(`和${npc.name}聊天，玩笑开过了头，他有点不高兴。`);
     else if (outcome.giftGiven) addLog(`送了${npc.name}一份小礼物，关系暖和了些。`);
@@ -3844,8 +4304,7 @@ playLifeAnim("shopping");
           { kind: "rest", title: "原地发呆", emoji: "🌤️", desc: "什么都不做，也是一种恢复", cost: "能量 +14 · 心情 +8 · 免费" },
         ];
       case "food":
-        return [{ kind: "buy-groceries", title: "买菜囤食材", emoji: "🥬", desc: `在摊位上挑新鲜的菜、蛋、肉，拎回家放冰箱（当前食材 ×${s.groceries}）`, cost: `-${Y}28 · 食材 +1`, disabled: s.money < 28 },
-        ...FOODS[s.cityKey].map((f, i) => ({
+        return [...FOODS[s.cityKey].map((f, i) => ({
           kind: "eat", arg: i, title: f.name, emoji: f.emoji, desc: f.desc,
           cost: `-${fmt(Math.round(f.cost * policyRef.current.eat))} · 能量 +${f.energy} · 心情 +${f.mood}`,
         }))];
@@ -3920,9 +4379,72 @@ playLifeAnim("shopping");
         ];
       case "market":
         return [
-          { kind: "buy-groceries", title: "市集买菜", emoji: "🥬", desc: `郭叔的菜摊新鲜又便宜，买一篮子囤着（当前食材 ×${s.groceries}）`, cost: `-${Y}28 · 食材 +1`, disabled: s.money < 28 },
-          { kind: "market-phone", title: s.cityKey === "sz" ? "淘二手手机" : "淘二手好物", emoji: "📱", desc: "眼力决定收益：捡漏转手能赚，踩坑就自用", cost: `-${Y}400 · 约一半概率转手 +${Y}650`, disabled: s.money < 400 },
+          { kind: "buy-groceries", title: "市集买菜", emoji: "🥬", desc: `婆婆珍的菜摊新鲜又便宜，电车叮叮从摊边碌过，买一篮子囤着（当前食材 ×${s.groceries}）`, cost: `-${Y}28 · 食材 +1`, disabled: s.money < 28 },
+        ];
+      /* ---- round-2 (b S4): per-subtype venue actions. The `market` case
+         above now fires ONLY at the one true wet market (北角·春秧街街市）. ---- */
+      case "electronics":
+        return [
+          { kind: "market-phone", title: "淘二手手机捡漏", emoji: "📱", desc: "眼力决定收益：捡漏转手能赚，踩坑就自用", cost: `-${Y}400 · 约一半概率转手 +${Y}650`, disabled: s.money < 400 },
           { kind: "market-fix", title: "装机 / 维修兼职", emoji: "🛠️", desc: "帮摊主装机修小电器，手艺活", cost: `+${fmt(Math.round(base * 0.6))} · 能量 -20 · 经验 +1`, disabled: s.energy < 20 },
+          { kind: "mall-shop", title: "买配件", emoji: "🔌", desc: "数据线、钢化膜、充电头，现买现用", cost: `-${Y}120 · 心情 +14` },
+          { kind: "gig", title: loc.gigName ?? "装机 / 验机兼职", emoji: "🛠️", desc: "柜台帮工、验机、装机", cost: `+${fmt(Math.round(base * 0.55))} 起 · 能量 -18`, disabled: s.energy < 18 },
+          { kind: "rest", title: "在柜台边歇会儿", emoji: "🧋", desc: "坐一会儿，看人来人往讲价", cost: "能量 +14 · 心情 +8 · 免费" },
+        ];
+      case "oilpainting":
+        return [
+          { kind: "mall-shop", title: "买幅画装点出租屋", emoji: "🖼️", desc: "临摹名画、原创小品，挂回家心情都不一样", cost: `-${Y}120 · 心情 +14` },
+          { kind: "gig", title: loc.gigName ?? "画作装裱 / 临摹兼职", emoji: "🎨", desc: "临摹、装裱、画廊帮工", cost: `+${fmt(Math.round(base * 0.55))} 起 · 能量 -18`, disabled: s.energy < 18 },
+          { kind: "fun", title: loc.funName ?? "看画展", emoji: "✨", desc: loc.funDesc ?? "满墙油画慢慢看", cost: `-${fmt(loc.funCost ?? 0)} · 心情 +${loc.funMood ?? 20}` },
+          { kind: "rest", title: "在画廊里坐坐", emoji: "🪑", desc: "画看多了，坐下来歇会儿", cost: "能量 +14 · 心情 +8 · 免费" },
+        ];
+      case "secondhand":
+        return [
+          { kind: "market-phone", title: "淘二手好物", emoji: "📱", desc: "旧手机、旧家具、黑胶唱片，眼力决定收益", cost: `-${Y}400 · 约一半概率转手 +${Y}650`, disabled: s.money < 400 },
+          { kind: "market-fix", title: "修小电器兼职", emoji: "🛠️", desc: "帮摊主修小电器、装机", cost: `+${fmt(Math.round(base * 0.6))} · 能量 -20 · 经验 +1`, disabled: s.energy < 20 },
+          { kind: "mall-shop", title: "淘旧家具 / 黑胶", emoji: "📻", desc: "旧沙发、旧唱片，贱买也能捡到宝", cost: `-${Y}120 · 心情 +14` },
+          { kind: "gig", title: loc.gigName ?? "旧货整理 / 修小电器", emoji: "🧺", desc: "帮摊主整理旧货、修小电器", cost: `+${fmt(Math.round(base * 0.55))} 起 · 能量 -18`, disabled: s.energy < 18 },
+          { kind: "__flea", title: "二手家具市集", emoji: "🪑", desc: "今天的二手家具 + 便宜货（服务器当日货单）", cost: "按件计价" },
+          { kind: "rest", title: "在地摊边歇会儿", emoji: "🧋", desc: "坐一会儿，看看过路的人淘什么", cost: "能量 +14 · 心情 +8 · 免费" },
+        ];
+      case "seafood":
+        return [
+          { kind: "seafood-feast", title: "吃海鲜大餐", emoji: "🦐", desc: "现捞现称，隔壁大排档代加工", cost: `-${Y}80 · 能量 +20 · 心情 +15`, disabled: s.money < 80 },
+          { kind: "gig", title: loc.gigName ?? "海鲜街帮工 / 摆摊", emoji: "🦞", desc: "海鲜档帮工、摆摊、代客加工", cost: `+${fmt(Math.round(base * 0.55))} 起 · 能量 -18`, disabled: s.energy < 18 },
+          { kind: "fun", title: loc.funName ?? "海鲜街逛逛", emoji: "✨", desc: loc.funDesc ?? "水箱里的活鱼活虾慢慢看", cost: `-${fmt(loc.funCost ?? 0)} · 心情 +${loc.funMood ?? 20}` },
+          { kind: "rest", title: "在码头边歇会儿", emoji: "🧋", desc: "看渔船进出，吹吹海风", cost: "能量 +14 · 心情 +8 · 免费" },
+        ];
+      case "oldtown":
+        return [
+          { kind: "snack-eat", title: "吃老街小吃", emoji: "🥮", desc: "老婆饼、肠粉、客家小吃，现做现吃", cost: `-${Y}25 · 能量 +10 · 心情 +8`, disabled: s.money < 25 },
+          { kind: "gig", title: loc.gigName ?? "老城摆摊 / 帮工", emoji: "🏮", desc: "老城摆摊、老店帮工", cost: `+${fmt(Math.round(base * 0.55))} 起 · 能量 -18`, disabled: s.energy < 18 },
+          { kind: "fun", title: loc.funName ?? "逛老街", emoji: "✨", desc: loc.funDesc ?? "骑楼、老字号、界碑慢慢看", cost: `-${fmt(loc.funCost ?? 0)} · 心情 +${loc.funMood ?? 20}` },
+          { kind: "checkin", title: "拍照打卡", emoji: "📸", desc: "在老街地标前打卡", cost: "心情 +12 · 免费" },
+          { kind: "rest", title: "在骑楼下歇会儿", emoji: "🪑", desc: "老街的阴凉处最舒服", cost: "能量 +14 · 心情 +8 · 免费" },
+        ];
+      case "womensstreet":
+        return [
+          { kind: "snack-eat", title: "吃街边小吃", emoji: "🍢", desc: "女人街边走边吃", cost: `-${Y}25 · 能量 +10 · 心情 +8`, disabled: s.money < 25 },
+          { kind: "mall-shop", title: "淘衣服鞋袜", emoji: "👗", desc: "平价衣袜、金鱼、花，讲价是正经事", cost: `-${Y}120 · 心情 +14` },
+          { kind: "gig", title: loc.gigName ?? "女人街帮工", emoji: "🛍️", desc: "档口帮工、搬货、看摊", cost: `+${fmt(Math.round(base * 0.55))} 起 · 能量 -18`, disabled: s.energy < 18 },
+          { kind: "rest", title: "在档口边歇会儿", emoji: "🧋", desc: "人潮里坐一会儿", cost: "能量 +14 · 心情 +8 · 免费" },
+        ];
+      case "museum":
+        return [
+          { kind: "fun", title: loc.funName ?? "看展", emoji: "✨", desc: loc.funDesc ?? "展厅、展柜慢慢看", cost: `-${fmt(loc.funCost ?? 0)} · 心情 +${loc.funMood ?? 18}` },
+          { kind: "checkin", title: "拍照打卡", emoji: "📸", desc: "在展厅前打卡", cost: "心情 +12 · 免费" },
+          { kind: "rest", title: "在展厅长椅上歇会儿", emoji: "🪑", desc: "看累了就坐一会儿", cost: "能量 +14 · 心情 +8 · 免费" },
+        ];
+      case "library":
+        return [
+          { kind: "learn-self", title: "自修", emoji: "📖", desc: "免费自习，慢慢攒技能", cost: "能量 -10 · 技能 +1 · 心情 +2 · 免费", disabled: s.energy < 10 },
+          { kind: "fun", title: "借本书", emoji: "📚", desc: "借一本带回家慢慢读", cost: "心情 +6 · 免费" },
+          { kind: "rest", title: "在阅览桌边歇会儿", emoji: "🪑", desc: "翻书声里歇一会儿", cost: "能量 +14 · 心情 +8 · 免费" },
+        ];
+      case "factory":
+        return [
+          { kind: "work", title: "正经上班", emoji: "🏭", desc: `干一天活拿一天钱 · 职级「${(CAREERS[s.careerIdx] ?? CAREERS[0]!).name}」工资 ×${(CAREERS[s.careerIdx] ?? CAREERS[0]!).mul} · 经验 +2`, cost: `+${fmt(base)} · 能量 -${28 - fitSave}`, disabled: s.energy < 28 - fitSave },
+          { kind: "overtime", title: "拼命加班", emoji: "🔥", desc: "订单急，加班费一点五倍，钱多但掉心情", cost: `+${fmt(Math.round(base * 1.75))} · 能量 -${42 - fitSave} · 心情 -12`, disabled: s.energy < 42 - fitSave },
         ];
       default:
         return [];
@@ -3984,6 +4506,43 @@ return (
 </div> ); })()}
 <p className="text-sm font-bold">🏠 {homeName(s)} · 舒适度 {computeComfort(s)} · 周租 {fmt(rentYouPay(s))} · 已购家具 {s.furniture.length} 件</p>
 <p className="mt-1 text-xs text-[var(--dim)]">舒适度越高，每天睡醒心情回得越多；家具和风格同款搭配还有额外加成。数据来自 ZhuyaHome 的风格模板、家具目录与材料价。</p>
+{/* round-2 (d §5a) report landlord + (g S6) build-your-own-house + (e S5) sublet + (c) pets */}
+{(() => { const rep = reportsQuery.data?.reputations.find((r) => r.targetId === `home:${s.cityKey}`); const warn = reputationWarning(rep, en); const mySublet = (subletQuery.data?.listings ?? []).find((l) => l.owner.playerId === profile?.playerId); const others = (subletQuery.data?.listings ?? []).filter((l) => l.owner.playerId !== profile?.playerId);
+return (
+<div className="mt-3">
+{warn && <p className="mb-2 rounded-[12px] border border-[var(--accent)] p-2 text-xs font-bold leading-relaxed">{warn}</p>}
+<div className="flex flex-wrap gap-2">
+<button type="button" onClick={() => setReportDraft({ kind: "landlord", city: s.cityKey, targetId: `home:${s.cityKey}`, targetName: "房东", body: "", evidence: buildRentEvidence({ baseRent: s.baseRent ?? s.rent, rent: s.rent, rentPaid: s.rentPaid }) })} className="rounded-full border border-[var(--accent)] px-3 py-2 text-xs font-black text-[var(--accent)]">🚨 举报房东（乱涨租 / 扣押金）</button>
+<button type="button" onClick={() => setBuildOpen(true)} className="rounded-full bg-[var(--text)] px-3 py-2 text-xs font-black text-[var(--bg)]">🏗️ 自己盖房子</button>
+</div>
+<div className="mt-3 rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
+<p className="text-sm font-black">🔑 转租 <span className="font-normal text-[var(--dim)]">· 把空房间转租出去，收点租金</span></p>
+{mySublet ? <p className="mt-1 text-xs">你已挂出：一间房 · {fmt(mySublet.monthlyPrice)}/月 · 押金 {fmt(mySublet.deposit)} · {mySublet.status === "taken" ? `已租给 ${mySublet.tenant?.name ?? ""}` : "待租"}</p>
+: <button type="button" onClick={async () => { if (!profile) return; const monthly = Math.round(rentYouPay(s) * 4); const r = postSubletListing(econ.sublets, { owner: { playerId: profile.playerId, name: profile.name }, homeLocId: "home", city: s.cityKey, space: "room", monthlyPrice: monthly, deposit: rentYouPay(s), terms: "包水电网，禁烟，可养猫，押一付一", minDays: 7, maxDays: 0, availableFromDay: s.day, createdDay: s.day }); if (!r.ok || !r.value) { showToast(r.error ?? ""); return; } setEcon((e) => ({ ...e, sublets: r.value!.book })); try { const sr = await api.postSublet({ playerId: profile.playerId, homeLocId: "home", city: s.cityKey, space: "room", monthlyPrice: monthly, deposit: rentYouPay(s), terms: "包水电网，禁烟，可养猫，押一付一", minDays: 7, maxDays: 0, availableFromDay: s.day, ownMonthlyRent: monthly }); if (sr.warning) showToast(sr.warning); } catch { /* local listing already posted */ } showToast(`已挂出转租：${fmt(monthly)}/月，等人来住。`); void subletQuery.refetch(); }} className="mt-2 rounded-full bg-[var(--text)] px-3 py-2 text-xs font-black text-[var(--bg)]">把一间房挂出去（{fmt(Math.round(rentYouPay(s) * 4))}/月）</button>}
+{others.slice(0, 3).map((l) => (
+<div key={l.id} className="mt-2 flex items-center gap-2">
+<p className="min-w-0 flex-1 text-xs">{l.owner.name}的{l.space === "room" ? "一间房" : l.space === "bed" ? "一个床位" : l.space === "sofa" ? "沙发位" : "整套"} · {fmt(l.monthlyPrice)}/月 · 押金 {fmt(l.deposit)}{l.suspicion > 0 ? " · ⚠️ 疑似二房东加价" : ""}</p>
+<button type="button" onClick={async () => { if (!profile) return; if (s.money < l.deposit) { showToast("押金不够。"); return; } const local = acceptSubletLocal(econ.sublets, l.id, { playerId: profile.playerId, name: profile.name }, s.day); if (local.ok && local.value) { setEcon((e) => ({ ...e, sublets: local.value!.book })); mutate((x) => { x.money -= local.value!.depositDue; }); } try { const sr = await api.acceptSublet({ playerId: profile.playerId, listingId: l.id }); if (!sr.ok && !(local.ok)) { showToast(sr.error ?? ""); return; } } catch { if (!local.ok) { showToast("网络不太好"); return; } } showToast(`租下了 ${l.owner.name} 的房间，押金 ${fmt(l.deposit)} 已付。`); void subletQuery.refetch(); }} className="shrink-0 rounded-full border border-[var(--line)] px-3 py-1.5 text-xs font-black">租这间</button>
+</div>
+))}
+</div>
+{pets.pets.length > 0 && (
+<div className="mt-3 rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
+<p className="text-sm font-black">🐾 我的宠物</p>
+{pets.pets.map((pet) => (
+<div key={pet.id} className="mt-2">
+<p className="text-sm font-bold">{pet.kind === "cat" ? "🐱" : "🐶"} {pet.name} <span className="font-normal text-[var(--dim)]">· {pet.breed} · 亲密度 {Math.round(pet.stats.affection)} · 饥饿 {Math.round(pet.stats.hunger)} · 心情 {Math.round(pet.stats.mood)}</span></p>
+<div className="mt-1.5 flex flex-wrap gap-2">
+{(["feed", "play", "pet", "wash"] as InteractionKind[]).map((k) => (
+<button key={k} type="button" onClick={() => { const need = k === "feed" ? 12 : k === "wash" ? 30 : 0; if (need > 0 && s.money < need) { showToast("钱不够。"); return; } const r = interactWithPet(pets, pet.id, k); if (!r.ok) { showToast(r.error); return; } if (r.cost > 0) mutate((x) => { x.money -= r.cost; }); setPets({ ...pets, pets: [...pets.pets] }); syncPetsToServer(pets); showToast(`${pet.name}${r.note}`); }} className="rounded-full border border-[var(--line)] px-3 py-1.5 text-xs font-black">{k === "feed" ? "🍗 喂食 ¥12" : k === "play" ? "🎾 玩耍" : k === "pet" ? "🤲 摸摸" : "🛁 洗澡 ¥30"}</button>
+))}
+</div>
+</div>
+))}
+</div>
+)}
+</div>
+); })()}
 <p className="mt-3 text-xs font-black tracking-wide text-[var(--dim)]">换个装修风格（ZhuyaHome 模板）</p>
 <div className="mt-2 grid gap-2">
 {TEMPLATES.map((t) => {
@@ -4032,7 +4591,7 @@ return (
 </div>
 );
 
-const renderPhoneApp = (s: GameState, appId: AppId) => {
+const renderPhoneApp = (s: GameState, appId: AppId | "trade") => {
 const career = CAREERS[s.careerIdx] ?? CAREERS[0]!;
 const next = CAREERS[s.careerIdx + 1] ?? null;
 switch (appId) {
@@ -4065,6 +4624,15 @@ return (
 </div>
 ); })}
 </div>
+{(() => { const cur2 = employerHere(s); if (!cur2) return null; const rep = reportsQuery.data?.reputations.find((r) => r.targetId === cur2.id); const warn = reputationWarning(rep, en); return (
+<div className="mt-3">
+{warn && <p className="mb-2 rounded-[12px] border border-[var(--accent)] p-2 text-xs font-bold leading-relaxed">{warn}</p>}
+<button type="button" onClick={() => {
+  setReportDraft({ kind: "employer", city: s.cityKey, targetId: cur2.id, targetName: cur2.name, body: "", evidence: buildWageEvidence({ companyId: cur2.id, companyName: cur2.name, workCount: s.workCount, otCount: s.otCount, otPayPerShift: Math.round(basePay(s) * 0.5) }) });
+}} className="w-full rounded-full border border-[var(--accent)] py-2.5 text-sm font-black text-[var(--accent)]">🚨 举报这家公司（拖欠加班费 / 扣工资）</button>
+<p className="mt-1 text-[11px] text-[var(--dim)]">举报会公示给全城玩家陪审：属实就曝光，诬告会扣你自己的信用。</p>
+</div>
+); })()}
 </div>
 ); })()}
 </div>
@@ -4084,23 +4652,289 @@ return (
 </div>
 );
 })}
-</div>
-);
-case "food":
+{(() => { const d = s.delivery ?? emptyDeliveryState(); const p = d.courier; const summary = courierTodaySummary(p, s.day);
+const poolGigs: CourierGig[] = (poolQuery.data?.open ?? []).map((o) => poolOrderToGig({
+  id: Number(o.id), restaurantId: o.restaurantId, restaurantName: o.restaurantName,
+  destId: o.destId ?? "home", destName: o.destName,
+  distance: Math.max(1, Math.round(Math.hypot((locById(o.destId ?? "home")?.x ?? 0) - locById(currentLoc).x, (locById(o.destId ?? "home")?.z ?? 0) - locById(currentLoc).z) / 1000 * 10) / 10),
+  riderFee: o.riderFee, customerName: o.customerName, deadlineAt: o.deadlineAt,
+}));
 return (
-<div className="grid gap-2">
-{FOODS[s.cityKey].map((f, i) => (
-<div key={f.name} className="flex items-center gap-3 rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
-<div className="text-2xl">{f.emoji}</div>
-<div className="min-w-0 flex-1">
-<p className="text-sm font-bold">{f.name} <span className="text-[var(--accent)]">{fmt(Math.round(f.cost * 1.5))}</span></p>
-<p className="text-xs text-[var(--dim)]">{f.desc} · 能量 +{f.energy} · 心情 +{f.mood}（含配送费）</p>
+<div className="mt-3 border-t border-[var(--line)] pt-3">
+<p className="text-sm font-black">🛵 跑腿接单 <span className="font-normal text-[var(--dim)]">· 评分 {p.rating.toFixed(1)} · 今天已跑 {summary.count} 单 · 赚 {fmt(summary.earned)} · 准时 {summary.onTimeRate}% · {summary.level.title}</span></p>
+{courierBoard.length === 0 && <button type="button" onClick={refreshCourierBoard} className="mt-2 rounded-full bg-[var(--text)] px-3 py-2 text-xs font-black text-[var(--bg)]">刷新接单板</button>}
+{d.activeGigs.length > 0 && <div className="mt-2 grid gap-2">
+{d.activeGigs.map((g) => (
+<div key={g.id} className="rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
+<p className="text-sm font-bold">{g.shopEmoji} {g.shopName} → {g.destName} · {fmt(g.pay)}{g.surge > 0 ? `（含高峰 +${g.surge}）` : ""}{g.rainBonus > 0 ? `（雨天 +${g.rainBonus}）` : ""}</p>
+<p className="text-xs text-[var(--dim)]">{g.stage === "accepted" ? "已接单，去商家取餐" : "已取餐，送往顾客"} · 距离 {g.distance} 公里 · {g.stairs ? "老小区没电梯，要爬楼" : "有电梯"}{g.poolId !== undefined ? " · 真人顾客的单" : ""}</p>
+<div className="mt-2 flex gap-2">
+{g.stage === "accepted" && <button type="button" onClick={() => courierPickup(g)} className="rounded-full bg-[var(--text)] px-3 py-2 text-xs font-black text-[var(--bg)]">到店取餐</button>}
+{g.stage === "pickedUp" && <button type="button" onClick={() => void courierDeliver(g)} className="rounded-full bg-[var(--text)] px-3 py-2 text-xs font-black text-[var(--bg)]">确认送达</button>}
+<button type="button" onClick={() => courierCancel(g)} className="rounded-full border border-[var(--line)] px-3 py-2 text-xs font-black">取消</button>
 </div>
-<button type="button" aria-label={`点外卖${f.name}`} onClick={() => orderFood(i)} className="shrink-0 rounded-full bg-[var(--text)] px-3 py-2 text-xs font-black text-[var(--bg)]">下单</button>
+</div>
+))}
+</div>}
+{[...courierBoard.filter((g) => !d.activeGigs.some((a) => a.id === g.id)), ...poolGigs.filter((g) => !d.activeGigs.some((a) => a.id === g.id))].map((g) => (
+<div key={g.id} className="mt-2 flex items-center gap-3 rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
+<div className="min-w-0 flex-1">
+<p className="text-sm font-bold">{g.shopEmoji} {g.shopName} → {g.destName} <span className="text-[var(--accent)]">{fmt(g.pay)}</span></p>
+<p className="text-xs text-[var(--dim)]">距离 {g.distance} 公里 · {g.stairs ? "要爬楼" : "有电梯"}{g.poolId !== undefined ? ` · 真人顾客 ${g.customerName ?? ""}的单` : ""} · {Math.max(0, Math.round((g.deadlineAt - Date.now()) / 60_000))} 分钟内送达</p>
+</div>
+<button type="button" onClick={() => courierAccept(g)} className="shrink-0 rounded-full bg-[var(--text)] px-3 py-2 text-xs font-black text-[var(--bg)]">接单</button>
 </div>
 ))}
 </div>
+); })()}
+</div>
 );
+case "food": {
+const d = s.delivery ?? emptyDeliveryState();
+const menu = deliveryMenu(s.cityKey, d.myRatings);
+const active = activeOrder(d);
+const member = membershipActive(d.memberUntilDay, s.day);
+const cartTotal = deliveryCart.reduce((sum, c) => { const it = menu.flatMap((r) => r.items).find((i) => i.key === c.key); return sum + (it ? it.cost * c.qty : 0); }, 0);
+const cartCount = deliveryCart.reduce((n, c) => n + c.qty, 0);
+const addToCart = (it: MenuItem) => setDeliveryCart((c) => {
+  const firstRest = c.length ? menu.flatMap((r) => r.items).find((i) => i.key === c[0]!.key)?.restaurantId : undefined;
+  if (firstRest && firstRest !== it.restaurantId) return [{ key: it.key, qty: 1 }];
+  return [...c, { key: it.key, qty: 1 }];
+});
+return (
+<div>
+{active && (
+<div className="mb-3 rounded-[12px] border border-[var(--accent)] bg-[var(--bg)] p-3">
+<p className="text-sm font-black">🛵 {active.restaurantName} · {active.stage === "placed" ? "已下单，等商家接单" : active.stage === "accepted" ? "商家已接单" : active.stage === "preparing" ? "商家做餐中" : active.stage === "pickedUp" ? `${active.riderName}已取餐，正在送来` : active.stage === "arriving" ? `${active.riderName}快到了` : active.stage === "delivered" ? "已送达，快趁热吃" : "已吃完"}</p>
+<p className="text-xs text-[var(--dim)]">{active.items.map((i) => `${i.emoji}${i.name}×${i.qty}`).join("、")} · {fmt(active.total)} · {active.riderEmoji} {active.riderName}</p>
+{active.stage !== "eaten" && <p className="mt-0.5 text-xs font-bold text-[var(--accent)]">{fmtDeliveryCountdown(active, Date.now())}</p>}
+<div className="mt-2 flex gap-2">
+{active.stage === "delivered" && <button type="button" onClick={() => eatDeliveryOrder(active.id)} className="rounded-full bg-[var(--text)] px-3 py-2 text-xs font-black text-[var(--bg)]">🍽️ 开吃</button>}
+{(active.stage === "placed" || active.stage === "accepted" || active.stage === "preparing") && <button type="button" onClick={() => cancelDeliveryOrder(active.id)} className="rounded-full border border-[var(--line)] px-3 py-2 text-xs font-black">取消订单</button>}
+</div>
+</div>
+)}
+<div className="mb-2 flex items-center justify-between gap-2">
+<p className="text-sm font-black">🍜 点外卖</p>
+<button type="button" onClick={buyDeliveryMembership} disabled={member} className="rounded-full border border-[var(--line)] px-3 py-1.5 text-[11px] font-black disabled:opacity-50">{member ? `月卡有效到第 ${d.memberUntilDay} 天` : `买月卡 ${fmt(MEMBERSHIP_PRICE)}（30 天免配送费+95 折）`}</button>
+</div>
+{menu.map((r) => (
+<div key={r.id} className="mb-3">
+<p className="text-sm font-bold">{r.emoji} {r.name} <span className="font-normal text-[var(--dim)]">· {r.cuisine} · ★{r.rating.toFixed(1)}（{r.ratingCount}）</span></p>
+{r.items.map((it) => {
+const qty = deliveryCart.find((c) => c.key === it.key)?.qty ?? 0;
+return (
+<div key={it.key} className="mt-1.5 flex items-center gap-3 rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-2.5">
+<div className="text-xl">{it.emoji}</div>
+<div className="min-w-0 flex-1">
+<p className="text-sm font-bold">{it.name} <span className="text-[var(--accent)]">{fmt(it.cost)}</span></p>
+<p className="text-xs text-[var(--dim)]">能量 +{it.energy} · 心情 +{it.mood}</p>
+</div>
+{qty === 0
+? <button type="button" aria-label={`加${it.name}`} onClick={() => addToCart(it)} className="rounded-full bg-[var(--text)] px-3 py-1.5 text-sm font-black text-[var(--bg)]">＋</button>
+: <span className="flex items-center gap-1.5">
+<button type="button" aria-label="减一件" onClick={() => setDeliveryCart((c) => c.map((x) => x.key === it.key ? { ...x, qty: x.qty - 1 } : x).filter((x) => x.qty > 0))} className="rounded-full border border-[var(--line)] px-2.5 py-1 text-sm font-black">－</button>
+<span className="text-sm font-black">{qty}</span>
+<button type="button" aria-label="加一件" onClick={() => setDeliveryCart((c) => c.map((x) => x.key === it.key ? { ...x, qty: x.qty + 1 } : x))} className="rounded-full border border-[var(--line)] px-2.5 py-1 text-sm font-black">＋</button>
+</span>}
+</div>
+);
+})}
+</div>
+))}
+{cartCount > 0 && (
+<div className="sticky bottom-0 mt-3 rounded-[12px] bg-[var(--text)] p-3 text-[var(--bg)]">
+<p className="text-sm font-black">已选 {cartCount} 件 · 菜品合计 {fmt(cartTotal)}（配送费按单算）</p>
+<button type="button" onClick={() => submitDeliveryOrder(deliveryCart)} className="mt-2 w-full rounded-full bg-[var(--accent)] py-2.5 text-sm font-black text-white">提交订单</button>
+</div>
+)}
+{d.orders.length > 0 && (
+<div className="mt-4">
+<p className="text-xs font-black text-[var(--dim)]">最近订单</p>
+{d.orders.slice(0, 5).map((o) => (
+<p key={o.id} className="mt-1 text-xs">{o.restaurantName} · {fmt(o.total)} · {o.stage === "eaten" ? "已吃完" : o.stage === "delivered" ? "已送达" : "进行中"}{o.stage === "delivered" ? <button type="button" onClick={() => eatDeliveryOrder(o.id)} className="ml-2 font-black text-[var(--accent)]">开吃</button> : null}</p>
+))}
+</div>
+)}
+</div>
+);
+}
+case "trade": {
+const me: PlayerRef = { playerId: profile?.playerId ?? "", name: profile?.name ?? "我" };
+const serverTasks = (tradeQuery.data?.tasks ?? []) as unknown as TradeTask[];
+const localTasks = searchTradeTasks(econ.tradeTasks, { openOnly: true });
+const shown = [...serverTasks, ...localTasks.filter((t) => !serverTasks.some((x) => x.id === t.id))];
+const kindLabel = (k: TradeTaskKind) => ({ buy: "求购", sell: "出售", swap: "交换", service: "服务", other: "其他" } as Record<TradeTaskKind, string>)[k] ?? k;
+const postTrade = async () => {
+  if (!profile) return;
+  const price = tradePrice.trim() ? Math.max(0, Math.round(Number(tradePrice))) : undefined;
+  const r = postTradeTaskLocal(econ.tradeTasks, { poster: me, kind: tradeKind, title: tradeTitle, body: tradeBody, price, city: s.cityKey, createdDay: s.day });
+  if (!r.ok || !r.value) { showToast(r.error ?? "发不出去。"); return; }
+  setEcon((e) => ({ ...e, tradeTasks: r.value!.book }));
+  setTradeTitle(""); setTradeBody(""); setTradePrice("");
+  try { await api.postTradeTask({ playerId: profile.playerId, kind: tradeKind, title: tradeTitle, body: tradeBody, price, city: s.cityKey }); } catch { /* local copy already posted */ }
+  void tradeQuery.refetch();
+  showToast("交易贴发出去了，等人来接。");
+};
+const tradeAccept = async (t: TradeTask) => {
+  if (!profile || t.poster.playerId === me.playerId) return;
+  const local = acceptTradeTaskLocal(econ.tradeTasks, t.id, me);
+  if (local.ok && local.value) setEcon((e) => ({ ...e, tradeTasks: local.value!.book }));
+  try { const r = await api.acceptTradeTask({ playerId: profile.playerId, taskId: t.id }); if (!r.ok && !local.ok) showToast(r.error ?? ""); } catch { if (!local.ok) showToast("网络不太好"); }
+  void tradeQuery.refetch();
+};
+const tradeEscrow = async (t: TradeTask) => {
+  if (!profile || !t.price) return;
+  const local = escrowTradeTaskLocal(econ.tradeTasks, t.id, me, t.price);
+  if (local.ok && local.value) {
+    setEcon((e) => ({ ...e, tradeTasks: local.value!.book }));
+    mutate((x) => { x.money -= local.value!.escrowDue; });
+  }
+  try { await api.escrowTradeTask({ playerId: profile.playerId, taskId: t.id, amount: t.price }); } catch { /* local escrow already recorded */ }
+  if (local.ok && local.value) showToast(`已托管 ${fmt(local.value.escrowDue)}：钱先由系统拿着，确认收货后才打给对方。`);
+  else showToast(local.error ?? "");
+  void tradeQuery.refetch();
+};
+const tradeComplete = async (t: TradeTask) => {
+  if (!profile) return;
+  const local = completeTradeTaskLocal(econ.tradeTasks, t.id, me, "");
+  if (local.ok && local.value) {
+    setEcon((e) => ({ ...e, tradeTasks: local.value!.book }));
+    if (local.value.releaseTo?.playerId === me.playerId && local.value.releaseAmount > 0) mutate((x) => { x.money += local.value!.releaseAmount; x.earned += local.value!.releaseAmount; });
+  }
+  try { await api.completeTradeTask({ playerId: profile.playerId, taskId: t.id }); } catch { /* local copy already completed */ }
+  if (local.ok && local.value) showToast(`交易完成：「${t.title}」${local.value.releaseAmount > 0 && local.value.releaseTo?.playerId === me.playerId ? `，托管的 ${fmt(local.value.releaseAmount)} 已打给你。` : "。"}`);
+  else showToast(local.error ?? "");
+  void tradeQuery.refetch();
+};
+const tradeCancel = async (t: TradeTask) => {
+  if (!profile) return;
+  const local = cancelTradeTaskLocal(econ.tradeTasks, t.id, me);
+  if (local.ok && local.value) {
+    setEcon((e) => ({ ...e, tradeTasks: local.value!.book }));
+    if (local.value.refundTo?.playerId === me.playerId && local.value.refundAmount > 0) mutate((x) => { x.money += local.value!.refundAmount; });
+  }
+  try { await api.cancelTradeTask({ playerId: profile.playerId, taskId: t.id }); } catch { /* local copy already cancelled */ }
+  if (local.ok && local.value) showToast(local.value.refundAmount > 0 ? `交易取消，托管的 ${fmt(local.value.refundAmount)} 已退回。` : "交易取消了。");
+  else showToast(local.error ?? "");
+  void tradeQuery.refetch();
+};
+const tradeDispute = async (t: TradeTask) => {
+  if (!profile) return;
+  const local = disputeTradeTaskLocal(econ.tradeTasks, t.id, me, "对方没按约定交货 / 收货");
+  if (local.ok && local.value) setEcon((e) => ({ ...e, tradeTasks: local.value!.book }));
+  try { await api.disputeTradeTask({ playerId: profile.playerId, taskId: t.id, reason: "对方没按约定交货 / 收货" }); } catch { /* local dispute already recorded */ }
+  showToast(local.ok ? "已发起争议：托管的钱冻结了，等双方协商或管理员处理。" : (local.error ?? ""));
+  void tradeQuery.refetch();
+};
+const buyOverseas = async (itemId: string) => {
+  if (!profile) return;
+  const r = placeOverseasOrderLocal(econ.overseas, me, itemId, 1, s.day);
+  if (!r.ok || !r.value) { showToast(r.error ?? "下单失败。"); return; }
+  if (s.money < r.value.chargeNow) { showToast("钱不够买这件海淘。"); return; }
+  setEcon((e) => ({ ...e, overseas: r.value!.book }));
+  mutate((x) => { x.money -= r.value!.chargeNow; });
+  try { await api.placeOverseasOrder({ playerId: profile.playerId, itemId, qty: 1 }); } catch { /* local order already placed */ }
+  for (const l of r.events) showToast(l);
+  void overseasQuery.refetch();
+};
+const payDuty = async (orderId: string, serverSide: boolean) => {
+  if (!profile) return;
+  if (serverSide) {
+    try {
+      const r = await api.payOverseasDuty({ playerId: profile.playerId, orderId });
+      if (!r.ok) { showToast(r.error ?? ""); return; }
+      if (r.dutyPaid) mutate((x) => { x.money -= r.dutyPaid!; });
+      showToast(`关税 ${fmt(r.dutyPaid ?? 0)} 已付，包裹放行了。`);
+      void overseasQuery.refetch();
+    } catch { showToast("网络不太好"); }
+    return;
+  }
+  const r = payOverseasDutyLocal(econ.overseas, orderId);
+  if (!r.ok || !r.value) { showToast(r.error ?? ""); return; }
+  setEcon((e) => ({ ...e, overseas: r.value!.book }));
+  mutate((x) => { x.money -= r.value!.dutyPaid; });
+  for (const l of r.events) showToast(l);
+};
+return (
+<div>
+<div className="mb-3 flex gap-2">
+<button type="button" onClick={() => setTradeTab("board")} className={`rounded-full px-3 py-2 text-xs font-black ${tradeTab === "board" ? "bg-[var(--text)] text-[var(--bg)]" : "border border-[var(--line)]"}`}>🛒 交易板</button>
+<button type="button" onClick={() => setTradeTab("overseas")} className={`rounded-full px-3 py-2 text-xs font-black ${tradeTab === "overseas" ? "bg-[var(--text)] text-[var(--bg)]" : "border border-[var(--line)]"}`}>🌏 海淘</button>
+</div>
+{tradeTab === "board" ? (
+<div>
+<div className="mb-3 rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
+<p className="text-sm font-black">发个交易贴</p>
+<p className="text-[11px] text-[var(--dim)]">想买想卖想换、找人帮忙，都可以挂出来。接单后可以托管钱，确认收货才放款；有争议先冻结，等协商。</p>
+<div className="mt-2 flex gap-2">
+<select value={tradeKind} onChange={(e) => setTradeKind(e.target.value as typeof tradeKind)} className="rounded-full border border-[var(--line)] bg-[var(--bg)] px-2 py-2 text-xs font-black">
+<option value="sell">出售</option><option value="buy">求购</option><option value="swap">交换</option><option value="service">服务</option><option value="other">其他</option>
+</select>
+<input value={tradeTitle} onChange={(e) => setTradeTitle(e.target.value)} placeholder="标题：比如「出闲置电饭煲，九成新」" className="min-w-0 flex-1 rounded-full border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-xs" />
+<input value={tradePrice} onChange={(e) => setTradePrice(e.target.value)} placeholder="价格（留空面议）" inputMode="numeric" className="w-24 rounded-full border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-xs" />
+</div>
+<textarea value={tradeBody} onChange={(e) => setTradeBody(e.target.value)} placeholder="详情：成色、位置、怎么交货……" rows={2} className="mt-2 w-full rounded-[12px] border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-xs" />
+<button type="button" onClick={() => void postTrade()} disabled={!tradeTitle.trim()} className="mt-2 w-full rounded-full bg-[var(--accent)] py-2.5 text-sm font-black text-white disabled:opacity-40">发布交易贴</button>
+</div>
+{shown.length === 0 && <p className="text-xs text-[var(--dim)]">现在没人挂单，你发第一贴吧。下面这些是街坊常挂的例子：</p>}
+{shown.length === 0 && TRADE_TASK_EXAMPLES.map((t, i) => (
+<div key={i} className="mt-2 rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
+<p className="text-sm font-bold">📌 {t.title}</p><p className="text-xs text-[var(--dim)]">{t.body}</p>
+</div>
+))}
+{shown.map((t) => {
+const mine = t.poster.playerId === me.playerId;
+const involved = mine || t.accepter?.playerId === me.playerId;
+return (
+<div key={t.id} className="mt-2 rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
+<p className="text-sm font-bold">{kindLabel(t.kind)} · {t.title} {t.price ? <span className="text-[var(--accent)]">{fmt(t.price)}{t.negotiable ? "（可议）" : ""}</span> : <span className="text-[var(--dim)]">面议</span>}</p>
+<p className="text-xs text-[var(--dim)]">{t.body}</p>
+<p className="mt-1 text-[11px] text-[var(--dim)]">{t.poster.name}{t.accepter ? ` → 已接：${t.accepter.name}` : ""} · {t.status === "open" ? "待接单" : t.status === "accepted" ? "进行中" : t.status === "disputed" ? "争议中（钱已冻结）" : t.status === "completed" ? "已完成" : "已取消"}{t.escrowHeld > 0 ? ` · 已托管 ${fmt(t.escrowHeld)}` : ""}</p>
+<div className="mt-2 flex flex-wrap gap-2">
+{t.status === "open" && !mine && <button type="button" onClick={() => void tradeAccept(t)} className="rounded-full bg-[var(--text)] px-3 py-2 text-xs font-black text-[var(--bg)]">接下这单</button>}
+{t.status === "accepted" && involved && t.escrowHeld === 0 && t.price && <button type="button" onClick={() => void tradeEscrow(t)} className="rounded-full bg-[var(--text)] px-3 py-2 text-xs font-black text-[var(--bg)]">托管 {fmt(t.price)}</button>}
+{t.status === "accepted" && involved && <button type="button" onClick={() => void tradeComplete(t)} className="rounded-full bg-[var(--accent)] px-3 py-2 text-xs font-black text-white">确认完成</button>}
+{t.status === "accepted" && involved && <button type="button" onClick={() => void tradeDispute(t)} className="rounded-full border border-[var(--accent)] px-3 py-2 text-xs font-black text-[var(--accent)]">有争议</button>}
+{(t.status === "open" || t.status === "accepted") && involved && <button type="button" onClick={() => void tradeCancel(t)} className="rounded-full border border-[var(--line)] px-3 py-2 text-xs font-black">取消</button>}
+</div>
+</div>
+);
+})}
+</div>
+) : (
+<div>
+<p className="text-sm font-black">🌏 海淘 <span className="font-normal text-[var(--dim)]">· 运费 ¥25 一单，到海关可能补关税</span></p>
+{OVERSEAS_CATALOG.map((item) => (
+<div key={item.id} className="mt-2 flex items-center gap-3 rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
+<div className="text-2xl">{item.emoji}</div>
+<div className="min-w-0 flex-1">
+<p className="text-sm font-bold">{item.name} <span className="text-[var(--accent)]">{fmt(item.price)}</span></p>
+<p className="text-xs text-[var(--dim)]">{item.origin} · 约 {item.shipDaysMin}–{item.shipDaysMax} 天 · 关税约 {Math.round(item.dutyRate * 100)}%</p>
+</div>
+<button type="button" onClick={() => void buyOverseas(item.id)} className="shrink-0 rounded-full bg-[var(--text)] px-3 py-2 text-xs font-black text-[var(--bg)]">买 1 件</button>
+</div>
+))}
+<p className="mt-4 text-xs font-black text-[var(--dim)]">我的海淘单</p>
+{(overseasQuery.data?.orders ?? []).map((o) => (
+<div key={o.id} className="mt-2 rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
+<p className="text-sm font-bold">{o.item.emoji} {o.item.name} ×{o.qty} · {o.status === "arrived" ? "已到货" : o.status === "customs" ? "在海关，等补关税" : o.status === "held" ? "海关抽查中" : o.status === "shipped" ? "在路上了" : "已下单"}</p>
+<p className="text-xs text-[var(--dim)]">预计第 {o.etaDay} 天到 · 已付 {fmt(o.paidTotal)}{o.dutyDue > 0 ? ` · 关税 ${fmt(o.dutyDue)}（已付 ${fmt(o.dutyPaid)}）` : ""}</p>
+{(o.status === "customs" || o.status === "held") && o.dutyDue - o.dutyPaid > 0 && <button type="button" onClick={() => void payDuty(o.id, true)} className="mt-2 rounded-full bg-[var(--text)] px-3 py-2 text-xs font-black text-[var(--bg)]">补关税 {fmt(o.dutyDue - o.dutyPaid)}</button>}
+</div>
+))}
+{econ.overseas.orders.filter((o) => !(overseasQuery.data?.orders ?? []).some((x) => x.id === o.id)).map((o) => (
+<div key={o.id} className="mt-2 rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
+<p className="text-sm font-bold">{o.item.emoji} {o.item.name} ×{o.qty} · {o.status === "arrived" ? "已到货" : o.status === "customs" ? "在海关，等补关税" : o.status === "held" ? "海关抽查中" : o.status === "shipped" ? "在路上了" : "已下单"}</p>
+<p className="text-xs text-[var(--dim)]">预计第 {o.etaDay} 天到 · 已付 {fmt(o.paidTotal)}{o.dutyDue > 0 ? ` · 关税 ${fmt(o.dutyDue)}（已付 ${fmt(o.dutyPaid)}）` : ""}</p>
+{(o.status === "customs" || o.status === "held") && o.dutyDue - o.dutyPaid > 0 && <button type="button" onClick={() => void payDuty(o.id, false)} className="mt-2 rounded-full bg-[var(--text)] px-3 py-2 text-xs font-black text-[var(--bg)]">补关税 {fmt(o.dutyDue - o.dutyPaid)}</button>}
+</div>
+))}
+</div>
+)}
+</div>
+);
+}
 case "taxi":
 return (
 <div className="grid max-h-[46vh] gap-2 overflow-y-auto pr-1">
@@ -4157,6 +4991,96 @@ return (
 ); })}
 </div>
 <p className="mt-3 text-[11px] leading-relaxed text-[var(--dim)]">他们每天还会在右侧「🧑‍🤝‍🧑 街坊墙」发动态、互相评论——天气、峰会、你升职这种大事，他们都会聊。聊天、帮忙、送礼物都会被记住，第二天打招呼就不一样。</p>
+{/* round-2 (c): community — strays, lost & found, snakes, fishing */}
+<div className="mt-4 border-t border-[var(--line)] pt-3">
+<p className="text-sm font-black">🐾 街坊互助 <span className="font-normal text-[var(--dim)]">· 流浪猫狗、寻物启事、蛇出没、钓点</span></p>
+{(straysQuery.data?.strays ?? []).map((stray) => (
+<div key={stray.id} className="mt-2 flex items-center gap-3 rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
+<div className="text-2xl">{stray.kind === "cat" ? "🐱" : "🐶"}</div>
+<div className="min-w-0 flex-1">
+<p className="text-sm font-bold">{stray.appearance} <span className="font-normal text-[var(--dim)]">· {stray.pin.locName} · 信任 {stray.trust}</span></p>
+<p className="text-xs text-[var(--dim)]">{stray.temper === "friendly" ? "很亲人" : stray.temper === "shy" ? "有点怕人" : "很警惕"} · 信任到 70 可以收养</p>
+</div>
+<button type="button" onClick={async () => { if (!profile) return; const local = feedStrayLocal(stray); try { const r = await api.feedStray({ playerId: profile.playerId, strayId: stray.id, gameDay: s.day }); showToast(r.note ?? local.note); } catch { showToast(local.note); } void straysQuery.refetch(); }} className="shrink-0 rounded-full border border-[var(--line)] px-3 py-2 text-xs font-black">🍗 喂食</button>
+{stray.trust >= 70 && !stray.adopted && <button type="button" onClick={async () => { if (!profile) return; const name = stray.kind === "cat" ? "橘子" : "阿黄"; const input = strayToAdoptInput(stray, name, s.day); if (!input) { showToast("还收养不了，再喂几天。"); return; } try { const r = await api.adoptStray({ playerId: profile.playerId, strayId: stray.id, petName: name, gameDay: s.day }); if (!r.ok) { showToast(r.error ?? ""); return; } } catch { /* server unreachable — keep the local adoption */ } const ar = adoptPet(pets, input); if (!ar.ok) { showToast(ar.error); return; } setPets({ ...pets, pets: [...pets.pets] }); syncPetsToServer(pets, stray.id); showToast(`🏠 ${name}跟你回家了！`); void straysQuery.refetch(); }} className="shrink-0 rounded-full bg-[var(--text)] px-3 py-2 text-xs font-black text-[var(--bg)]">🏠 收养</button>}
+</div>
+))}
+{(noticesQuery.data?.notices ?? []).slice(0, 5).map((n) => (
+<p key={n.id} className="mt-2 text-xs"><span className="font-black">{n.kind === "lost-pet" || n.kind === "lost-item" ? "🔍 寻" : "📦 拾"} {n.title}</span> · {n.body} <span className="text-[var(--dim)]">（{n.pin.locName} · {n.authorName}）</span></p>
+))}
+<div className="mt-2 rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
+<p className="text-sm font-black">贴个寻物 / 招领</p>
+<div className="mt-2 flex gap-2">
+<select value={noticeKind} onChange={(e) => setNoticeKind(e.target.value as typeof noticeKind)} className="rounded-full border border-[var(--line)] bg-[var(--bg)] px-2 py-2 text-xs font-black">
+<option value="lost-pet">丢了宠物</option><option value="lost-item">丢了东西</option><option value="found-pet">捡到宠物</option><option value="found-item">捡到东西</option>
+</select>
+<input value={noticeTitle} onChange={(e) => setNoticeTitle(e.target.value)} placeholder="标题（30 字内）" className="min-w-0 flex-1 rounded-full border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-xs" />
+</div>
+<input value={noticeBody} onChange={(e) => setNoticeBody(e.target.value)} placeholder="特征描述（200 字内）" className="mt-2 w-full rounded-full border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-xs" />
+<button type="button" onClick={async () => { if (!profile) return; const loc = locById(currentLoc); const v = validateNotice({ kind: noticeKind, title: noticeTitle, body: noticeBody, cityKey: s.cityKey, pin: { locId: currentLoc, locName: loc.name } }); if (!v.ok) { showToast(v.error ?? ""); return; } const notice = buildNotice({ kind: noticeKind, title: noticeTitle, body: noticeBody, cityKey: s.cityKey, pin: { locId: currentLoc, locName: loc.name } }, { id: profile.playerId, name: profile.name }); try { const r = await api.postNotice({ playerId: profile.playerId, kind: notice.kind, cityKey: s.cityKey, title: notice.title, body: notice.body, locId: notice.pin.locId, locName: notice.pin.locName }); if (!r.ok) { showToast(r.error ?? ""); return; } } catch { showToast("网络不太好"); return; } setNoticeTitle(""); setNoticeBody(""); showToast("启事贴出去了，全城都能看到。"); void noticesQuery.refetch(); }} disabled={!noticeTitle.trim()} className="mt-2 w-full rounded-full bg-[var(--accent)] py-2.5 text-sm font-black text-white disabled:opacity-40">贴出去（以你现在的位置为准）</button>
+</div>
+{(snakesQuery.data?.warnings ?? []).slice(0, 3).map((w) => (
+<p key={w.id} className="mt-2 text-xs">🐍 {w.speciesGuess || "蛇"} · {w.description} <span className="text-[var(--dim)]">（{w.pin.locName}）</span></p>
+))}
+<div className="mt-2 rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
+<p className="text-sm font-black">🐍 看到蛇了？报一下，提醒邻居</p>
+<div className="mt-2 flex gap-2">
+<input value={snakeSpecies} onChange={(e) => setSnakeSpecies(e.target.value)} placeholder="大概是什么蛇（可空）" className="w-32 rounded-full border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-xs" />
+<input value={snakeDesc} onChange={(e) => setSnakeDesc(e.target.value)} placeholder="大小、颜色、在哪儿" className="min-w-0 flex-1 rounded-full border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-xs" />
+</div>
+<button type="button" onClick={async () => { if (!profile) return; const loc = locById(currentLoc); const v = validateSnakeReport({ speciesGuess: snakeSpecies, description: snakeDesc, cityKey: s.cityKey, pin: { locId: currentLoc, locName: loc.name } }); if (!v.ok) { showToast(v.error ?? ""); return; } try { const r = await api.reportSnake({ playerId: profile.playerId, cityKey: s.cityKey, locId: currentLoc, locName: loc.name, x: loc.x, z: loc.z, speciesGuess: snakeSpecies, description: snakeDesc }); if (!r.ok) { showToast(r.error ?? ""); return; } } catch { showToast("网络不太好"); return; } setSnakeSpecies(""); setSnakeDesc(""); showToast("已上报，附近的人都会收到提醒。"); void snakesQuery.refetch(); }} disabled={!snakeDesc.trim() && !snakeSpecies.trim()} className="mt-2 w-full rounded-full bg-[var(--accent)] py-2.5 text-sm font-black text-white disabled:opacity-40">上报蛇出没（以你现在的位置为准）</button>
+</div>
+{(fishingQuery.data?.spots ?? []).slice(0, 3).map((f) => (
+<p key={f.id} className="mt-2 text-xs">🎣 {f.catchDesc} <span className="text-[var(--dim)]">（{f.pin.locName} · {f.reporterName}）</span></p>
+))}
+<div className="mt-2 rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
+<p className="text-sm font-black">🎣 分享个钓点</p>
+<input value={fishDesc} onChange={(e) => setFishDesc(e.target.value)} placeholder="钓到了什么？空军也可以写！" className="mt-2 w-full rounded-full border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-xs" />
+<button type="button" onClick={async () => { if (!profile) return; const loc = locById(currentLoc); const v = validateFishingSpot({ catchDesc: fishDesc, cityKey: s.cityKey, pin: { locId: currentLoc, locName: loc.name } }); if (!v.ok) { showToast(v.error ?? ""); return; } try { const r = await api.reportFishingSpot({ playerId: profile.playerId, cityKey: s.cityKey, locId: currentLoc, locName: loc.name, x: loc.x, z: loc.z, catchDesc: fishDesc }); if (!r.ok) { showToast(r.error ?? ""); return; } } catch { showToast("网络不太好"); return; } setFishDesc(""); showToast("钓点分享出去了。"); void fishingQuery.refetch(); }} disabled={!fishDesc.trim()} className="mt-2 w-full rounded-full bg-[var(--accent)] py-2.5 text-sm font-black text-white disabled:opacity-40">分享钓点（以你现在的位置为准）</button>
+</div>
+</div>
+{/* round-2 (d): black landlord / company jury + exposure */}
+<div className="mt-4 border-t border-[var(--line)] pt-3">
+<p className="text-sm font-black">⚖️ 黑房东 / 黑公司公示 <span className="font-normal text-[var(--dim)]">· 全城玩家陪审，属实就曝光</span></p>
+{(reportsQuery.data?.jury ?? []).map((r) => (
+<div key={r.id} className="mt-2 rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
+<p className="text-sm font-bold">{r.kind === "landlord" ? "🏠 房东" : "🏭 公司"} {r.targetName} <span className="font-normal text-[var(--dim)]">· {r.reporter.name} 举报</span></p>
+<p className="text-xs text-[var(--dim)]">{r.body}</p>
+<p className="mt-1 text-[11px]">{jurySummary(r.votes, en)}</p>
+{r.myVote ? <p className="text-[11px] font-bold">你已投：{r.myVote === "uphold" ? "属实" : "不属实"}</p> : (
+<div className="mt-2 flex gap-2">
+<button type="button" onClick={() => void voteBlack(r, "uphold")} className="rounded-full bg-[var(--text)] px-3 py-2 text-xs font-black text-[var(--bg)]">👍 属实</button>
+<button type="button" onClick={() => void voteBlack(r, "reject")} className="rounded-full border border-[var(--line)] px-3 py-2 text-xs font-black">👎 不属实</button>
+</div>
+)}
+</div>
+))}
+{(reportsQuery.data?.mine ?? []).filter((r) => r.status !== "open").map((r) => (
+<div key={r.id} className="mt-2 rounded-[12px] border border-[var(--accent)] bg-[var(--bg)] p-3">
+<p className="text-sm font-bold">我的举报：{r.targetName} · {r.status === "upheld" ? "✅ 陪审团判属实" : r.status === "rejected" ? "❌ 陪审团判不属实" : r.status}</p>
+<p className="text-xs text-[var(--dim)]">{jurySummary(r.votes, en)}</p>
+<button type="button" onClick={() => void claimBlack(r)} className="mt-2 rounded-full bg-[var(--accent)] px-3 py-2 text-xs font-black text-white">领取裁决结果</button>
+</div>
+))}
+{(reportsQuery.data?.exposed ?? []).slice(0, 5).map((r) => (
+<p key={r.id} className="mt-2 text-xs">⛔ 已曝光：{r.targetName}（{r.kind === "landlord" ? "黑房东" : "黑公司"}）· {jurySummary(r.votes, en)}</p>
+))}
+{(!reportsQuery.data || (reportsQuery.data.jury.length === 0 && reportsQuery.data.mine.length === 0 && reportsQuery.data.exposed.length === 0)) && <p className="mt-2 text-xs text-[var(--dim)]">现在没有待审的举报。房东乱涨租、公司拖欠加班费，都可以在住房面板 / 职业面板里举报。</p>}
+</div>
+{/* round-2 (g S7): police patrol — local-only this round (no server endpoint) */}
+<div className="mt-4 border-t border-[var(--line)] pt-3">
+<p className="text-sm font-black">👮 巡逻 <span className="font-normal text-[var(--dim)]">· 本轮只在本地生效</span></p>
+{isWatched(myId) && <p className="mt-1 text-xs font-bold text-[var(--accent)]">👁️ 有人在看着你（巡逻中的玩家）</p>}
+<button type="button" onClick={() => {
+  if (!profile) return;
+  if (patrolling) { stopPatrol(profile.playerId); setPatrolling(false); showToast("巡逻结束了。"); return; }
+  if (!startPatrol(profile.playerId, s.cityKey)) { showToast("巡逻开不起来（你的游戏 ID 不合规）。"); return; }
+  setPatrolling(true); showToast("👮 开始巡逻：在线玩家列表里可以盯人，盯上的人会看到 👁️。");
+}} className={`mt-2 rounded-full px-3 py-2 text-xs font-black ${patrolling ? "border border-[var(--accent)] text-[var(--accent)]" : "bg-[var(--text)] text-[var(--bg)]"}`}>{patrolling ? "结束巡逻" : "开始巡逻"}</button>
+{patrolling && onlineHere.filter((pl) => pl.id !== myId).map((pl) => (
+<p key={pl.id} className="mt-2 text-xs">{pl.emoji} {pl.name} · {locById(pl.locId).short} {isGameAvatarId(pl.id) ? <button type="button" onClick={() => { const rec = observe(pl.id); if (rec) showToast(`正在盯着 ${pl.name}，他/她会看到 👁️。`); else showToast("盯不上这个人。"); }} className="ml-1 font-black text-[var(--accent)]">👁️ 盯着</button> : null}</p>
+))}
+</div>
 </div>
 );
 case "cal": {
@@ -4601,12 +5525,12 @@ const phaseApec = apecPhase(s.day);
 const goalPct = clamp(Math.round((s.money / s.goal) * 100), 0, 100);
 const tt = (zh: string, e: string) => (en ? e : zh);
 const rentDue = rentDueNow;
-const VENUE_PLACE: Partial<Record<LifeSet, string>> = { restaurant: "food", mall: "mall", office: "work", gym: "gym", market: "market", electronics: "market", club: "fun", classroom: "learn", clinic: "health", bedroom: "lodging" };
-const MEET_IDS = new Set(["share", "coffee", "friend", "chat", "ask", "try", "classmate", "spot", "haggle", "fish"]);
+const VENUE_PLACE: Partial<Record<LifeSet, string>> = { restaurant: "food", mall: "mall", office: "work", gym: "gym", market: "market", electronics: "electronics", oilpainting: "oilpainting", secondhand: "secondhand", seafood: "seafood", oldtown: "oldtown", womensstreet: "womensstreet", museum: "museum", library: "library", factory: "factory", disney: "fun", tram: "transit", temple: "scenic", miniature: "fun", farm: "farm", watershow: "fun", boardwalk: "scenic", fishingport: "port", bikehub: "scenic", club: "fun", classroom: "learn", clinic: "health", bedroom: "lodging" };
+const MEET_IDS = new Set(["share", "coffee", "friend", "chat", "ask", "try", "classmate", "spot", "haggle", "fish", "paint", "frame", "dig", "boat", "snack", "clothes", "tour", "ride", "fortune", "buy", "eat", "milk"]);
 const regularHere = (set: LifeSet) => {
   const kind = VENUE_PLACE[set];
   if (!kind) return undefined;
-  const cast = npcsForCity(s.cityKey).filter((n) => (n.preferTypes as string[]).includes(kind));
+  const cast = npcsForCity(s.cityKey).filter((n) => npcAllowedAt(n, { id: venue3d?.id ?? "", type: kind as LocType }));
   return cast.length ? cast[s.day % cast.length] : undefined;
 };
 const runVenueTalk = (v: VenueTalk) => {
@@ -4616,16 +5540,17 @@ const runVenueTalk = (v: VenueTalk) => {
   if (s.money < cost) { showToast(en ? "Not enough money for that." : "钱不够。"); return; }
   mutate((x) => {
     x.money += v.money ?? 0; x.energy = clamp(x.energy + (v.energy ?? 0), 0, 100);
+    if (v.hunger) x.hunger = clamp100(x.hunger + v.hunger);
     if (v.id === "toilet") x.bladder = 100;
     if (v.id === "order" || v.id === "share") { x.hunger = clamp100(x.hunger + 28); x.fun = clamp100(x.fun + 8); }
     if (v.id === "milktea") { x.hunger = clamp100(x.hunger + 8); x.fun = clamp100(x.fun + 10); }
     if (["sing", "dance", "drink", "friend", "live", "try"].includes(v.id)) x.fun = clamp100(x.fun + 16);
-    if (["bench", "stroll", "photo", "waves", "shade", "climb", "view", "wait"].includes(v.id)) x.fun = clamp100(x.fun + (v.id === "waves" || v.id === "climb" || v.id === "stroll" ? 18 : 12));
+    if (["bench", "stroll", "photo", "waves", "shade", "climb", "view", "wait", "castle", "ride", "parade", "show", "pray", "fortune", "tour", "milk", "crab", "boat", "rent"].includes(v.id)) x.fun = clamp100(x.fun + (v.id === "waves" || v.id === "climb" || v.id === "stroll" ? 18 : 12));
     if (v.id === "water") { x.hunger = clamp100(x.hunger + 8); x.fun = clamp100(x.fun + 4); }
-    if (["share", "coffee", "friend", "chat", "ask", "try", "classmate", "spot"].includes(v.id)) x.social = clamp100(x.social + 8);
+    if (["share", "coffee", "friend", "chat", "ask", "try", "classmate", "spot", "paint", "frame", "dig", "snack", "clothes", "guide", "buy", "eat"].includes(v.id)) x.social = clamp100(x.social + 8);
     if (!(x.venueFx ?? []).includes(key)) { x.mood = clamp(x.mood + (v.mood ?? 0), 0, 100); x.network += v.network ?? 0; x.xp += v.xp ?? 0; x.venueFx = [...(x.venueFx ?? []).filter((k) => k.startsWith(`${x.day}:`)), key]; }
   });
-  if (["share", "coffee", "friend", "chat", "ask", "try", "classmate", "spot"].includes(v.id) && !(s.venueFx ?? []).includes(key)) {
+  if (["share", "coffee", "friend", "chat", "ask", "try", "classmate", "spot", "paint", "frame", "dig", "snack", "clothes", "guide", "buy", "eat"].includes(v.id) && !(s.venueFx ?? []).includes(key)) {
     const who = regularHere(venue3d.set);
     if (who) {
       let stage = "";
@@ -4698,6 +5623,7 @@ return (
 <button type="button" className="menu-item" onClick={() => setDmOpen(true)}>💬 {en ? "Messages" : "私信"}{unreadDm > 0 && <span className="red-dot static ml-auto" />}</button>
 <button type="button" className="menu-item" onClick={() => setCommitteeOpen(true)}>🏛️ {en ? "Estate committee" : "业委会选举"}</button>
 <button type="button" className="menu-item" onClick={() => setAdsOpen(true)}>📢 {en ? "Billboards" : "广告牌"}</button>
+<button type="button" className="menu-item" onClick={() => { setMenuOpen(false); setPhoneApp("trade"); setPhoneOpen(true); }}>🛒 {en ? "Trade board & overseas shopping" : "交易板 · 海淘"}</button>
 <button type="button" className="menu-item" onClick={() => setAccountOpen(true)}>👤 {en ? "Account" : "账号"}{!loggedIn && <span className="ml-auto text-[11px] text-[var(--accent)]">{en ? "Sign in" : "登录"}</span>}</button>
 <button type="button" className="menu-item" onClick={() => setDanmakuOn((v) => !v)}>💬 {en ? `Floating comments: ${danmakuOn ? "on" : "off"}` : `弹幕：${danmakuOn ? "开" : "关"}`}</button>
 <div className="compact-only my-1 h-px bg-[var(--line)]" />
@@ -5090,7 +6016,7 @@ return (
 <p className="mt-3.5 flex items-baseline justify-between gap-2"><span className="text-xs font-black tracking-wide">📍 在这里能做 · 常用操作</span><span className="text-[11px] font-bold text-[var(--dim)]">{arrived ? "点一下就行动" : "到了才能做"}</span></p>
 <div className="mt-2 grid gap-2">
 {actionsFor(selLoc, s).map((a) => { const own = a.kind.startsWith("__routine-") && (a.kind !== "__routine-wait" || routineRole(s.idenId) === "driver") || a.kind.startsWith("__rider-") || a.kind.startsWith("__scenic-") || a.kind === "__livehouse" || a.kind === "__venue3d"; /* the rider's own steps don't depend on the shop's hours; a taxi passenger waves from anywhere, any hour */ const tb = timeBlock(a.kind, s) ?? (a.kind === "__sleep" || a.kind === "rest" || own ? null : venueClosed(selLoc)); return (
-<button key={a.kind + (a.arg ?? 0)} type="button" disabled={!arrived || a.disabled || !!tb} onClick={() => { if (a.kind === "__sleep") playLifeAnim("sleep", () => doSleep()); else if (a.kind.startsWith("__gocity-")) setCrossTo(a.kind.slice("__gocity-".length) as CityKey); else if (a.kind.startsWith("__routine-")) doRoutine(a.kind.slice("__routine-".length)); else if (a.kind === "__rider-go") riderGo(); else if (a.kind === "__retrain") setRetrainOpen(true); else if (a.kind.startsWith("__scenic-")) startScenic(a.kind.slice("__scenic-".length)); else if (a.kind === "__livehouse") setLiveOpen(true); else if (a.kind === "__home3d") { publishHome(); setHomeGuest(null); setVisitHome(null); setHomePose("idle"); setHome3d(true); } else if (a.kind === "__venue3d") { const vs = venueFor(selLoc); if (vs) setVenueTalk(null), setVenue3d({ set: vs.set, name: en ? trText(selLoc.name) : selLoc.name, line: en ? vs.en : vs.zh, id: selLoc.id, emoji: selLoc.emoji, color: selLoc.color }); } else if (a.kind === "__rider-cancel") { const g0 = gsRef.current; if (g0) { const rd0 = routineToday(g0); mutate((x) => { x.routine = { ...rd0, order: null }; x.money -= 2; x.mood = clamp(x.mood - 3, 0, 100); }); showToast(en ? "Order cancelled (−¥2)." : "这单取消了，平台扣了 ¥2。"); } } else if (a.kind.startsWith("__cross-")) { const r = CROSS_ROUTES.find((x) => x.id === a.kind.slice("__cross-".length)); if (r) takeRoute(r); } else doAction(a.kind, a.arg ?? 0); }} className="act-btn">
+<button key={a.kind + (a.arg ?? 0)} type="button" disabled={!arrived || a.disabled || !!tb} onClick={() => { if (a.kind === "__sleep") playLifeAnim("sleep", () => doSleep()); else if (a.kind.startsWith("__gocity-")) setCrossTo(a.kind.slice("__gocity-".length) as CityKey); else if (a.kind.startsWith("__routine-")) doRoutine(a.kind.slice("__routine-".length)); else if (a.kind === "__rider-go") riderGo(); else if (a.kind === "__retrain") setRetrainOpen(true); else if (a.kind.startsWith("__scenic-")) startScenic(a.kind.slice("__scenic-".length)); else if (a.kind === "__livehouse") setLiveOpen(true); else if (a.kind === "__flea") { setFleaOpen(true); void fleaQuery.refetch(); } else if (a.kind === "__home3d") { publishHome(); setHomeGuest(null); setVisitHome(null); setHomePose("idle"); setHome3d(true); } else if (a.kind === "__venue3d") { const vs = venueFor(selLoc); if (vs) setVenueTalk(null), setVenue3d({ set: vs.set, name: en ? trText(selLoc.name) : selLoc.name, line: en ? vs.en : vs.zh, id: selLoc.id, emoji: selLoc.emoji, color: selLoc.color }); } else if (a.kind === "__rider-cancel") { const g0 = gsRef.current; if (g0) { const rd0 = routineToday(g0); mutate((x) => { x.routine = { ...rd0, order: null }; x.money -= 2; x.mood = clamp(x.mood - 3, 0, 100); }); showToast(en ? "Order cancelled (−¥2)." : "这单取消了，平台扣了 ¥2。"); } } else if (a.kind.startsWith("__cross-")) { const r = CROSS_ROUTES.find((x) => x.id === a.kind.slice("__cross-".length)); if (r) takeRoute(r); } else doAction(a.kind, a.arg ?? 0); }} className="act-btn">
 <span className="flex items-center justify-between text-sm font-black"><span>{a.title}</span><span>{a.emoji}</span></span>
 <span className="mt-0.5 block text-xs leading-relaxed text-[var(--dim)]">{a.desc}</span>
 <span className="mt-1 block text-xs font-bold text-[var(--accent2)]">{a.cost}{a.kind !== "__sleep" && ` · ⏳ ${realMinLabel(actionMinutes(a.kind))}`}</span>
@@ -5098,6 +6024,17 @@ return (
 </button>
 ); })}
 </div>
+{/* round-2: Sanhe board / job center / small joys / police patrol */}
+{arrived && (
+<div className="mt-3 flex flex-wrap gap-2">
+{adHere?.kind === "sanhe" && <button type="button" onClick={() => setSanheOpen(true)} className="rounded-full bg-[var(--text)] px-3 py-2 text-xs font-black text-[var(--bg)]">🏚️ 三和大神板 · 日结 / 床位 / 搭子</button>}
+{isJobCenterPlace(selLoc) && <button type="button" onClick={() => setJobCenterOpen(true)} className="rounded-full bg-[var(--text)] px-3 py-2 text-xs font-black text-[var(--bg)]">💼 就业服务中心</button>}
+{SMALL_JOYS.filter((j) => !j.at || j.at(selLoc)).map((j) => (
+<button key={j.id} type="button" disabled={s.energy < (j.energy ?? 0)} onClick={() => { const r = doSmallJoy(s.life ?? defaultLifestyleState(), j.id, s.day, selLoc, nowMin()); applyLife(r); }} className="rounded-full border border-[var(--line)] px-3 py-2 text-xs font-black disabled:opacity-40">{j.emoji} {j.name[0]} · {j.energy ? `能量 -${j.energy}` : "免费"}</button>
+))}
+{patrolling && <button type="button" onClick={() => { const rec = observe(selLoc.id); showToast(rec ? "已把这个地点记进巡逻日志。" : "盯不上这个地点（ID 不合规或没在巡逻）。"); }} className="rounded-full border border-[var(--accent)] px-3 py-2 text-xs font-black text-[var(--accent)]">👁️ 巡逻记录这里</button>}
+</div>
+)}
 {(() => { const acts = activitiesAt(selLoc); if (!acts.length) return null; const openHere = parties.filter((pt) => pt.locId === selLoc.id && pt.status === "open"); const cats = [...new Set(acts.map((a) => a.cat))] as ActCat[]; return (
 <div className="mt-4">
 <p className="flex items-baseline justify-between gap-2"><span className="text-xs font-black tracking-wide">{en ? `🎮 Things to do here · ${acts.length}` : `🎮 在这里能玩 · ${acts.length} 个`}</span><span className="text-[11px] font-bold text-[var(--dim)]">{en ? "Play solo, or open a party" : "自己玩，或者组局等人"}</span></p>
@@ -5843,7 +6780,13 @@ onLocate={(x, z, name) => { setMetroMapOpen(false); setMapFocus({ x, z, nonce: D
 </div>
 {(() => { const sp = lifeStageFor(lifeAnim.kind, lifeAnim.idx); const outfit = outfitOf(s.outfit); const stepNight = scene.tone === "night" && !step.dawn; return (
 <div key={`stage-${lifeAnim.kind}-${lifeAnim.idx}`} className={`life-stage life-fade mx-4 mt-3 h-60 sm:h-72 ${stepNight ? "night" : scene.tone === "indoor" ? "indoor" : ""}`}>
-<LifeStage3D key={`${lifeAnim.kind}-${lifeAnim.idx}`} setKind={sp.set} pose={sp.pose} shirt={outfit.shirt} pants={outfit.pants} night={stepNight} emoji={iden.emoji} />
+{CUTSCENE_ROAM[lifeAnim.kind] ? (
+  <LifeStage3D key={`roam-${lifeAnim.kind}-${lifeAnim.idx}`} setKind={CUTSCENE_ROAM[lifeAnim.kind]!} pose="idle" roam
+    shirt={outfit.shirt} pants={outfit.pants} night={stepNight} emoji={iden.emoji} en={en}
+    onSpot={() => { if (lifeAnim.idx + 1 >= scene.steps.length) finishLifeAnim(); else setLifeAnim({ kind: lifeAnim.kind, idx: lifeAnim.idx + 1 }); }} />
+) : (
+  <LifeStage3D key={`${lifeAnim.kind}-${lifeAnim.idx}`} setKind={sp.set} pose={sp.pose} shirt={outfit.shirt} pants={outfit.pants} night={stepNight} emoji={iden.emoji} />
+)}
 <div aria-hidden="true" className="cine-grade" />
 {rainyDay && lifeAnim.kind === "day" && <div className="life-rain" aria-hidden="true" />}
 </div> ); })()}
@@ -5968,6 +6911,267 @@ return (
 {bondsOpen && phase === "game" && profile && <BondsModal en={en} playerId={profile.playerId} bonds={bonds} onClose={() => setBondsOpen(false)} toast={showToast} refresh={() => void bondsQuery.refetch()} openCard={(pub) => { setBondsOpen(false); setCardOf(pub); }} />}
 {committeeOpen && phase === "game" && profile && <CommitteeModal en={en} playerId={profile.playerId} city={s.cityKey} cityName={en ? trText(CITIES[s.cityKey].name) : CITIES[s.cityKey].name} st={committeeQuery.data} onClose={() => setCommitteeOpen(false)} toast={showToast} refresh={() => void committeeQuery.refetch()} openAccount={() => { setCommitteeOpen(false); setAccountOpen(true); }} />}
 {adsOpen && phase === "game" && profile && <BillboardModal en={en} token={accountToken()} playerName={profile.name} city={s.cityKey} day={s.day} shop={shopLabel} spots={billboardSpots(s.cityKey).map((l) => (en ? trText(l.name) : l.name))} st={billboardsQuery.data} onClose={() => setAdsOpen(false)} toast={showToast} refresh={() => void billboardsQuery.refetch()} openAccount={() => { setAdsOpen(false); setAccountOpen(true); }} openStore={() => { setAdsOpen(false); setStoreOpen(true); }} />}
+{adsOpen && phase === "game" && <p className="fixed bottom-3 left-1/2 z-[70] -translate-x-1/2 rounded-full bg-black/70 px-3 py-1.5 text-[11px] font-bold text-white">🛒 想买卖二手、发交易贴？手机 →「交易」。</p>}
+{/* round-2 (d §5e): report composer */}
+{reportDraft && phase === "game" && (
+<div className="fixed inset-0 z-[85] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label="举报">
+<div className="rise max-h-[88vh] w-full max-w-md overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] p-4">
+<p className="flex items-center justify-between"><span className="font-display text-xl font-black">{reportDraft.kind === "landlord" ? "🚨 举报房东" : "🚨 举报公司"}</span><button type="button" onClick={() => setReportDraft(null)} className="rounded-full border px-3 py-1 text-xs font-black">✕</button></p>
+<p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">举报对象：{reportDraft.targetName} · 举报会公示给全城玩家陪审 24 小时：属实就曝光 + 退钱，诬告会扣你自己的信用。</p>
+{reportDraft.evidence?.kind === "rent" && <p className="mt-2 rounded-[12px] bg-[var(--surface2)] p-2 text-xs">📎 证据：基准租金 {fmt(reportDraft.evidence.baseRent)}/周 → 现在 {fmt(reportDraft.evidence.currentRent)}/周 · 已交 {fmt(reportDraft.evidence.rentPaid)}</p>}
+{reportDraft.evidence?.kind === "wage" && <p className="mt-2 rounded-[12px] bg-[var(--surface2)] p-2 text-xs">📎 证据：上班 {reportDraft.evidence.workCount} 天 · 加班 {reportDraft.evidence.otCount} 次</p>}
+<p className="mt-3 text-xs font-black">指控（点一个，自动写进正文）</p>
+<div className="mt-1.5 flex flex-wrap gap-1.5">
+{SUGGESTED_CHARGES[reportDraft.kind].map((c) => (
+<button key={c.key} type="button" onClick={() => setReportDraft((d) => d ? { ...d, body: d.body ? d.body : c.hint } : d)} className="rounded-full border border-[var(--line)] px-3 py-1.5 text-xs font-black">{c.label}</button>
+))}
+</div>
+<textarea value={reportDraft.body} onChange={(e) => setReportDraft((d) => d ? { ...d, body: e.target.value } : d)} placeholder="写清楚发生了什么（10–600 字），陪审团就看这段话和证据。" rows={4} className="mt-2 w-full rounded-[12px] border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm" />
+<button type="button" onClick={async () => { if (!profile) return; const d = reportDraft; const err = validateDraft(d); if (err) { showToast(err); return; } const gate = canFile(reportBook.state, d.kind, s.day); if (!gate.ok) { showToast(gate.reason); return; } try { const r = await reportApi.fileBlackReport({ playerId: profile.playerId, ...d }); if (!r.ok) { showToast(r.error ?? ""); return; } reportBook.noteFiled(d, s.day); showToast("举报发出去了，24 小时内全城陪审投票。"); setReportDraft(null); void reportsQuery.refetch(); } catch { showToast("网络不太好"); } }} disabled={reportDraft.body.trim().length < 10} className="mt-3 w-full rounded-full bg-[var(--accent)] py-3 text-sm font-black text-white disabled:opacity-40">提交举报（公示 24 小时）</button>
+</div>
+</div>
+)}
+{/* round-2 (f): job center */}
+{jobCenterOpen && phase === "game" && (
+<div className="fixed inset-0 z-[85] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label="就业服务中心">
+<div className="rise max-h-[88vh] w-full max-w-md overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] p-4">
+<p className="flex items-center justify-between"><span className="font-display text-xl font-black">💼 就业服务中心</span><button type="button" onClick={() => setJobCenterOpen(false)} className="rounded-full border px-3 py-1 text-xs font-black">✕</button></p>
+<p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">失业不是终点：这里有阶梯岗位、免费培训、模拟面试和真人辅导。{s.life ? flatStatusLine(s.life, lifeProfile(s))[0] : ""}</p>
+<div className="mt-3 flex flex-wrap gap-2">
+{JOB_CENTER_TABS.map((t) => <button key={t.id} type="button" onClick={() => setJobTab(t.id)} className={`rounded-full px-3 py-2 text-xs font-black ${jobTab === t.id ? "bg-[var(--text)] text-[var(--bg)]" : "border border-[var(--line)]"}`}>{t.label[0]}</button>)}
+</div>
+{jobTab === "jobs" && (
+<div className="mt-3 grid gap-2">
+{listingsFor(lifeProfile(s)).map(({ listing, available, missing, pay }) => {
+  const applied = (s.life?.flat.applications ?? []).some((a) => a.listingId === listing.id && (a.status === "applied" || a.status === "trial"));
+  const trial = s.life?.flat.trial?.listingId === listing.id;
+  const daysWorked = s.life?.flat.trial?.daysWorked ?? 0;
+  return (
+  <div key={listing.id} className="rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
+  <p className="text-sm font-bold">{listing.emoji} {listing.title[0]} <span className="text-[var(--accent)]">{fmt(pay)}/天</span></p>
+  <p className="text-xs text-[var(--dim)]">{listing.desc[0]}</p>
+  <p className="mt-1 text-[11px]">{listing.path[0]}</p>
+  {!available && <p className="mt-1 text-[11px] font-bold text-[var(--accent)]">还差：{missing.map((m) => m[0]).join("、")}</p>}
+  <div className="mt-2 flex flex-wrap gap-2">
+  {!applied && <button type="button" disabled={!available} onClick={() => { const r = applyForJob(s.life ?? defaultLifestyleState(), listing.id, s.day); applyLife(r); if (r.ok && profile) void api.applyJob({ playerId: profile.playerId, listingId: listing.id, day: s.day }).catch(() => {}); }} className="rounded-full bg-[var(--text)] px-3 py-2 text-xs font-black text-[var(--bg)] disabled:opacity-40">投简历</button>}
+  {applied && !trial && <button type="button" onClick={() => { const r = startTrial(s.life ?? defaultLifestyleState(), listing.id, s.day); applyLife(r); if (r.ok && profile) void api.startTrial({ playerId: profile.playerId, listingId: listing.id, day: s.day }).catch(() => {}); }} className="rounded-full bg-[var(--text)] px-3 py-2 text-xs font-black text-[var(--bg)]">去试工</button>}
+  {trial && daysWorked < 3 && <button type="button" onClick={() => { const r = trialWorkDay(s.life ?? defaultLifestyleState(), 75, s.cityKey); applyLife(r); }} className="rounded-full bg-[var(--accent)] px-3 py-2 text-xs font-black text-white">认真干一天试工（第 {daysWorked + 1}/3 天）</button>}
+  {trial && daysWorked >= 3 && <button type="button" onClick={() => { const r = resolveTrial(s.life ?? defaultLifestyleState()); applyLife(r); }} className="rounded-full bg-[var(--accent)] px-3 py-2 text-xs font-black text-white">结算试工（看录不录用）</button>}
+  </div>
+  </div>
+  );
+})}
+{(jobBoardQuery.data?.playerGigs ?? []).map((g) => (
+<p key={g.id} className="text-xs">🧑‍🤝‍🧑 玩家发的活：{g.title} · {fmt(g.pay)} · {g.employerName}</p>
+))}
+</div>
+)}
+{jobTab === "guide" && (
+<div className="mt-3">
+<p className="text-sm font-black">📚 免费培训 <span className="font-normal text-[var(--dim)]">· 每天补贴 ¥30，上完加技能</span></p>
+{COURSES.map((c) => { const done = (s.life?.flat.courses ?? []).some((x) => x.id === c.id && x.done); const active = (s.life?.flat.courses ?? []).some((x) => x.id === c.id && !x.done); return (
+<div key={c.id} className="mt-2 rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
+<p className="text-sm font-bold">{c.emoji} {c.name[0]} <span className="font-normal text-[var(--dim)]">· {c.days} 天 · 补贴 {fmt(c.allowanceDay)}/天 · 技能 +{c.skillGain}</span></p>
+<p className="text-xs text-[var(--dim)]">{c.desc[0]}</p>
+{done ? <p className="mt-1 text-xs font-bold text-[var(--accent)]">✅ 已结业</p> : active ? <p className="mt-1 text-xs font-bold">📖 正在上课（每天自动结算）</p> : <button type="button" onClick={() => { const r = enrollCourse(s.life ?? defaultLifestyleState(), c.id, s.day); applyLife(r); if (r.ok && profile) void api.enrollCourse({ playerId: profile.playerId, courseId: c.id, day: s.day }).catch(() => {}); }} className="mt-2 rounded-full bg-[var(--text)] px-3 py-2 text-xs font-black text-[var(--bg)]">报名</button>}
+</div>
+); })}
+{(() => { const route = suggestRoute(lifeProfile(s)); return (
+<div className="mt-3 rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
+<p className="text-sm font-black">🧭 职业辅导 · {route.emoji} {route.title[0]}</p>
+<p className="text-xs text-[var(--dim)]">{route.basedOn[0]}</p>
+{route.steps.map((st, i) => <p key={i} className="mt-1 text-xs">第{i + 1}步：{st[0]}</p>)}
+<button type="button" onClick={() => { const r = bookGuidance(s.life ?? defaultLifestyleState(), lifeProfile(s)); applyLife(r); if (r.ok && profile) void api.bookGuidance({ playerId: profile.playerId, routeId: route.id }).catch(() => {}); }} className="mt-2 rounded-full bg-[var(--text)] px-3 py-2 text-xs font-black text-[var(--bg)]">约一次辅导（免费）</button>
+</div>
+); })()}
+</div>
+)}
+{jobTab === "interview" && (
+<div className="mt-3">
+<p className="text-sm font-black">🎤 模拟面试 <span className="font-normal text-[var(--dim)]">· 练 3 道题，攒面试底气</span></p>
+{INTERVIEW_QUESTIONS.slice(0, 3).map((q, i) => (
+<div key={i} className="mt-2 rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
+<p className="text-sm font-bold">{q.q[0]}</p>
+{q.opts.map((o, j) => (
+<button key={j} type="button" onClick={() => { const picks = [0, 0, 0]; picks[i] = j; const r = mockInterview(s.life ?? defaultLifestyleState(), picks); applyLife(r); }} className="mt-1.5 block w-full rounded-full border border-[var(--line)] px-3 py-2 text-left text-xs font-bold">{o.t[0]}</button>
+))}
+</div>
+))}
+<p className="mt-2 text-xs text-[var(--dim)]">点一个答案就练一轮（每轮按 3 道题计分）。</p>
+</div>
+)}
+{jobTab === "help" && (
+<div className="mt-3">
+<p className="text-sm font-black">🤝 {REAL_HELP.title[0]}</p>
+<p className="text-xs text-[var(--dim)]">{REAL_HELP.updated[0]} · {REAL_HELP.disclaimer[0]}</p>
+{REAL_HELP.sections.map((sec, i) => (
+<div key={i} className="mt-2 rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
+<p className="text-sm font-bold">{sec.title[0]}</p>
+{sec.lines.map((ln, j) => <p key={j} className="mt-0.5 text-xs text-[var(--dim)]">{ln[0]}</p>)}
+{sec.tel && <p className="mt-1 text-xs font-bold">📞 {sec.tel}{sec.telNote ? ` · ${sec.telNote[0]}` : ""}</p>}
+</div>
+))}
+</div>
+)}
+</div>
+</div>
+)}
+{/* round-2 (f): Sanhe board */}
+{sanheOpen && phase === "game" && (
+<div className="fixed inset-0 z-[85] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label="三和大神板">
+<div className="rise max-h-[88vh] w-full max-w-md overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] p-4">
+<p className="flex items-center justify-between"><span className="font-display text-xl font-black">🏚️ 三和大神板</span><button type="button" onClick={() => setSanheOpen(false)} className="rounded-full border px-3 py-1 text-xs font-black">✕</button></p>
+<p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">做一天玩三天，日结现金不拖明天。这里的日子也能过得体面：先活下来，再慢慢找机会。</p>
+<p className="mt-3 text-xs font-black">🛠️ 今日日结</p>
+<div className="mt-2 grid gap-2">
+{SANHE_SHIFTS.map((sh) => (
+<div key={sh.id} className="flex items-center gap-3 rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
+<div className="min-w-0 flex-1">
+<p className="text-sm font-bold">{sh.emoji} {sh.name[0]} <span className="text-[var(--accent)]">{fmt(Math.round(sanhePay(s.cityKey) * sh.payMul))}</span></p>
+<p className="text-xs text-[var(--dim)]">{sh.desc[0]} · 能量 -{sh.energy}</p>
+</div>
+<button type="button" disabled={s.energy < sh.energy || (s.life?.sanhe.shiftDay ?? 0) === s.day} onClick={() => { const r = takeSanheShift(s.life ?? defaultLifestyleState(), sh.id, s.day, s.cityKey, s.energy); applyLife(r); if (r.ok && profile && r.delta.money) void api.sanheShiftLog({ playerId: profile.playerId, shiftId: sh.id, pay: r.delta.money, day: s.day }).catch(() => {}); }} className="shrink-0 rounded-full bg-[var(--text)] px-3 py-2 text-xs font-black text-[var(--bg)] disabled:opacity-40">{(s.life?.sanhe.shiftDay ?? 0) === s.day ? "今天结过了" : "接活"}</button>
+</div>
+))}
+</div>
+<p className="mt-3 text-xs font-black">🛏️ 今晚住哪儿</p>
+<div className="mt-2 grid gap-2">
+{SANHE_SLEEP.map((sl) => (
+<div key={sl.id} className="flex items-center gap-3 rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
+<div className="min-w-0 flex-1">
+<p className="text-sm font-bold">{sl.emoji} {sl.name[0]} <span className="text-[var(--accent)]">{sl.cost === 0 ? "免费" : fmt(sl.cost)}</span></p>
+<p className="text-xs text-[var(--dim)]">{sl.desc[0]}</p>
+</div>
+<button type="button" disabled={s.money < sl.cost} onClick={() => applyLife(sanheSleep(s.life ?? defaultLifestyleState(), sl.id, s.money))} className="shrink-0 rounded-full bg-[var(--text)] px-3 py-2 text-xs font-black text-[var(--bg)] disabled:opacity-40">住这儿</button>
+</div>
+))}
+</div>
+<p className="mt-3 text-xs font-black">🍜 吃点啥</p>
+<div className="mt-2 flex flex-wrap gap-2">
+{SANHE_EATS.map((e) => (
+<button key={e.id} type="button" disabled={s.money < e.cost} onClick={() => applyLife(sanheEat(s.life ?? defaultLifestyleState(), e.id, s.money))} className="rounded-full border border-[var(--line)] px-3 py-2 text-xs font-black disabled:opacity-40">{e.emoji} {e.name[0]} · {fmt(e.cost)}</button>
+))}
+</div>
+<p className="mt-3 text-xs font-black">🧑‍🤝‍🧑 搭子</p>
+<div className="mt-2 grid gap-2">
+{SANHE_MATES.map((m) => (
+<div key={m.id} className="rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
+<p className="text-sm font-bold">{m.emoji} {m.name[0]} <span className="font-normal text-[var(--dim)]">· {m.role[0]}</span></p>
+<button type="button" onClick={() => applyLife(chatMate(s.life ?? defaultLifestyleState(), m.id))} className="mt-1.5 rounded-full border border-[var(--line)] px-3 py-1.5 text-xs font-black">聊聊</button>
+</div>
+))}
+</div>
+<p className="mt-3 text-xs font-black">💬 跟房东谈谈房租</p>
+<div className="mt-2 flex flex-wrap gap-2">
+{RENT_TALKS.map((t) => (
+<button key={t.id} type="button" onClick={() => applyLife(negotiateRent(s.life ?? defaultLifestyleState(), t.id))} className="rounded-full border border-[var(--line)] px-3 py-2 text-xs font-black">{t.emoji} {t.name[0]}</button>
+))}
+</div>
+<p className="mt-3 text-xs font-black">🧺 旧物换钱 / 小摊</p>
+<div className="mt-2 flex flex-wrap gap-2">
+{SECONDHAND_FLOOR.map((it) => (
+<button key={it.id} type="button" onClick={() => applyLife(sellSecondHand(s.life ?? defaultLifestyleState(), it.id))} className="rounded-full border border-[var(--line)] px-3 py-2 text-xs font-black">{it.emoji} 卖{it.name[0]} · +{fmt(it.value)}</button>
+))}
+<button type="button" onClick={() => applyLife(subletBunk(s.life ?? defaultLifestyleState()))} className="rounded-full border border-[var(--line)] px-3 py-2 text-xs font-black">🛏️ 转租床位一周 · +¥150</button>
+{STALL_KINDS.map((k) => (
+<button key={k[0]} type="button" onClick={() => applyLife(openStall(s.life ?? defaultLifestyleState(), k[0], s.day))} className="rounded-full border border-[var(--line)] px-3 py-2 text-xs font-black">摆{k[0]}摊</button>
+))}
+</div>
+</div>
+</div>
+)}
+{/* round-2 (e S4): flea market */}
+{fleaOpen && phase === "game" && (
+<div className="fixed inset-0 z-[85] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label="二手家具市集">
+<div className="rise max-h-[88vh] w-full max-w-md overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] p-4">
+<p className="flex items-center justify-between"><span className="font-display text-xl font-black">🧺 二手家具市集</span><button type="button" onClick={() => setFleaOpen(false)} className="rounded-full border px-3 py-1 text-xs font-black">✕</button></p>
+<p className="mt-1 text-xs text-[var(--dim)]">每天换一批货：旧家具能直接摆进家里，贱买的东西修修能再卖。价格按当天行情走。</p>
+<p className="mt-3 text-xs font-black">🪑 今日二手家具（服务器库存）</p>
+{(fleaQuery.data?.usedFurniture ?? []).map((piece) => (
+<div key={piece.id} className="mt-2 flex items-center gap-3 rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
+<div className="text-2xl">{piece.emoji}</div>
+<div className="min-w-0 flex-1">
+<p className="text-sm font-bold">{piece.name} <span className="text-[var(--accent)]">{fmt(piece.price)}</span></p>
+<p className="text-xs text-[var(--dim)]">成色 {piece.condition}% · 原价 {fmt(piece.newPrice)} · {piece.note}</p>
+</div>
+<button type="button" disabled={s.money < piece.price || (econ.usedFurniture.owned ?? []).some((o) => o.id === piece.id)} onClick={async () => { if (!profile) return; const local = buyUsedFurnitureLocal(econ.usedFurniture, piece as unknown as Parameters<typeof buyUsedFurnitureLocal>[1]); if (!local.ok || !local.value) { showToast(local.error ?? ""); return; } try { const r = await api.buyUsedFurniture({ playerId: profile.playerId, pieceId: piece.id }); if (!r.ok) { showToast(r.error ?? ""); return; } } catch { showToast("网络不太好"); return; } setEcon((e) => ({ ...e, usedFurniture: local.value!.book })); mutate((x) => { x.money -= piece.price; if (!x.furniture.includes(local.value!.furnitureIdToAdd)) x.furniture = [...x.furniture, local.value!.furnitureIdToAdd]; }); showToast(`淘到了：${piece.emoji} ${piece.name}，已摆进家里。`); void fleaQuery.refetch(); }} className="shrink-0 rounded-full bg-[var(--text)] px-3 py-2 text-xs font-black text-[var(--bg)] disabled:opacity-40">买下</button>
+</div>
+))}
+{(econ.usedFurniture.owned ?? []).map((o) => (
+<div key={o.id} className="mt-2 flex items-center gap-3 rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
+<div className="text-2xl">{o.emoji}</div>
+<div className="min-w-0 flex-1">
+<p className="text-sm font-bold">{o.name} <span className="font-normal text-[var(--dim)]">· 成色 {o.condition}% · 买入价 {fmt(o.price)}</span></p>
+<p className="text-xs text-[var(--dim)]">家里已摆 · 想卖掉换钱点下面</p>
+</div>
+<button type="button" onClick={() => { const r = resellUsedFurnitureLocal(econ.usedFurniture, o.id, o.price, o.condition); if (!r.ok || !r.value) { showToast(r.error ?? ""); return; } setEcon((e) => ({ ...e, usedFurniture: r.value!.book })); mutate((x) => { x.money += r.value!.received; x.earned += r.value!.received; x.furniture = x.furniture.filter((f) => f !== r.value!.furnitureIdToRemove); }); showToast(`卖掉了 ${o.name}，+${fmt(r.value.received)}。`); }} className="shrink-0 rounded-full border border-[var(--line)] px-3 py-2 text-xs font-black">卖掉</button>
+</div>
+))}
+<p className="mt-3 text-xs font-black">📱 今日贱买（修修能加价卖）</p>
+{(fleaQuery.data?.cheap ?? []).map((good) => (
+<div key={good.id} className="mt-2 flex items-center gap-3 rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
+<div className="text-2xl">{good.emoji}</div>
+<div className="min-w-0 flex-1">
+<p className="text-sm font-bold">{good.name} <span className="text-[var(--accent)]">{fmt(good.buyPrice)}</span></p>
+<p className="text-xs text-[var(--dim)]">{good.note} · 修好能卖 {fmt(good.askPrice)}</p>
+</div>
+<button type="button" disabled={s.money < good.buyPrice} onClick={async () => { if (!profile) return; const local = buyCheapGoodLocal(econ.cheapFlip, { name: good.name, emoji: good.emoji, kind: good.kind as never, state: good.state as never, condition: good.condition, buyPrice: good.buyPrice, askPrice: good.askPrice, note: good.note }, s.day); if (!local.ok || !local.value) { showToast(local.error ?? ""); return; } try { const r = await api.buyCheapGood({ playerId: profile.playerId, goodId: good.id }); if (!r.ok) { showToast(r.error ?? ""); return; } } catch { showToast("网络不太好"); return; } setEcon((e) => ({ ...e, cheapFlip: local.value!.book })); mutate((x) => { x.money -= good.buyPrice; }); showToast(`贱买到手：${good.emoji} ${good.name}，修修再卖。`); void fleaQuery.refetch(); }} className="shrink-0 rounded-full bg-[var(--text)] px-3 py-2 text-xs font-black text-[var(--bg)] disabled:opacity-40">贱买</button>
+</div>
+))}
+{(econ.cheapFlip.stock ?? []).map((g) => (
+<p key={g.id} className="mt-2 text-xs">{g.emoji} {g.name} · 买入 {fmt(g.buyPrice)} · 标价 {fmt(g.askPrice)}{g.state === "plain" ? " · 已修好，可以卖了" : " · 还没修好"}</p>
+))}
+</div>
+</div>
+)}
+{/* round-2 (g S6): build your own house */}
+{buildOpen && phase === "game" && (
+<div className="fixed inset-0 z-[85] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label="自己盖房子">
+<div className="rise max-h-[88vh] w-full max-w-md overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] p-4">
+<p className="flex items-center justify-between"><span className="font-display text-xl font-black">🏗️ 自己盖房子</span><button type="button" onClick={() => { saveHouseLayout(houseLayout); setBuildOpen(false); }} className="rounded-full border px-3 py-1 text-xs font-black">✕</button></p>
+<p className="mt-1 text-xs text-[var(--dim)]">在 12×8 的地块上盖自己的房子：加房间、摆家具，发布后就能在地图上看到、走进去。今天能发布的家具只有 3 种（双人床、布沙发、橱柜），其余先摆着看。</p>
+<div className="relative mt-3 h-[260px] overflow-hidden rounded-[16px] border border-[var(--line)]">
+<LifeStage3D key={`build-${houseLayout.rooms.length}-${houseLayout.items.length}`} setKind="bedroom" pose="idle" houseLayout={houseLayout} shirt={outfitOf(s.outfit).shirt} pants={outfitOf(s.outfit).pants} night={false} emoji={iden.emoji} en={en} />
+</div>
+<p className="mt-3 text-xs font-black">加房间</p>
+<div className="mt-1.5 flex flex-wrap gap-1.5">
+{HOUSE_ROOM_KINDS.map((rk) => (
+<button key={rk.id} type="button" onClick={() => { const n = houseLayout.rooms.length; setHouseLayout((l) => addHouseRoom(l, { kind: rk.id, x: (n % 3) * 4 - 4, z: Math.floor(n / 3) * 4 - 2, w: rk.minW, d: rk.minD })); }} className="rounded-full border border-[var(--line)] px-3 py-1.5 text-xs font-black">＋ {rk.zh}</button>
+))}
+</div>
+{houseLayout.rooms.map((r) => (
+<p key={r.id} className="mt-1.5 text-xs">{HOUSE_ROOM_KINDS.find((k) => k.id === r.kind)?.zh ?? r.kind} · {r.w}×{r.d} 米 <button type="button" onClick={() => setHouseLayout((l) => removeHousePiece(l, r.id))} className="ml-1 font-black text-[var(--accent)]">删除</button></p>
+))}
+<p className="mt-3 text-xs font-black">摆家具（点一下摆进屋）</p>
+<div className="mt-1.5 flex flex-wrap gap-1.5">
+{HOUSE_FURN_CATALOG.filter((f) => f.inCatalog).map((f) => (
+<button key={f.id} type="button" onClick={() => { const n = houseLayout.items.length; setHouseLayout((l) => placeHouseFurniture(l, f.id, (n % 4) * 2 - 3, Math.floor(n / 4) * 2 - 2)); }} className="rounded-full border border-[var(--line)] px-3 py-1.5 text-xs font-black">＋ {f.zh}</button>
+))}
+</div>
+{houseLayout.items.map((it) => (
+<p key={it.id} className="mt-1.5 text-xs">{HOUSE_FURN_CATALOG.find((f) => f.id === it.furnId)?.zh ?? it.furnId} <button type="button" onClick={() => setHouseLayout((l) => removeHousePiece(l, it.id))} className="ml-1 font-black text-[var(--accent)]">删除</button></p>
+))}
+{validateHouseLayout(houseLayout).map((p) => <p key={p} className="mt-1 text-xs font-bold text-[var(--accent)]">⚠️ {p}</p>)}
+<div className="mt-3 flex gap-2">
+<button type="button" onClick={() => { saveHouseLayout(houseLayout); showToast("设计图存好了。"); }} className="flex-1 rounded-full border border-[var(--line)] py-2.5 text-sm font-black">存设计图</button>
+<button type="button" onClick={() => { const problems = validateHouseLayout(houseLayout); if (problems.length) { showToast(problems[0] ?? ""); return; } const { placed, dropped } = houseLayoutToPlacedFurn(houseLayout); mutate((x) => { for (const p of placed) if (!x.furniture.includes(p.id)) x.furniture = [...x.furniture, p.id]; }); saveHouseLayout(houseLayout); publishHome(); setBuildOpen(false); setHome3d(true); showToast(dropped.length ? `房子发布了！${placed.length} 件家具摆进了家，${dropped.length} 件今天还发布不了（${dropped[0]?.reason ?? ""}）。` : `房子发布了！${placed.length} 件家具摆进了家，可以走进去看看。`); }} className="flex-1 rounded-full bg-[var(--accent)] py-2.5 text-sm font-black text-white">发布房子</button>
+</div>
+</div>
+</div>
+)}
+{/* round-2 (f): someone comes to check on you */}
+{checkinOpen && phase === "game" && s.life && (
+<div className="fixed inset-0 z-[85] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label="有人来敲门">
+<div className="rise w-full max-w-md rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] p-4">
+<p className="font-display text-xl font-black">🚪 有人来敲门</p>
+<p className="mt-1 text-sm leading-relaxed">失业第 {flatDays(s.life, s.day)} 天了，街坊来看看你。不是来催你的，就是问问你最近怎么样、需不需要搭把手。</p>
+<div className="mt-3 flex gap-2">
+<button type="button" onClick={() => { applyLife(doCheckin(s.life!, true, s.day)); setCheckinOpen(false); }} className="flex-1 rounded-full bg-[var(--text)] py-2.5 text-sm font-black text-[var(--bg)]">进来坐坐，聊聊</button>
+<button type="button" onClick={() => { applyLife(doCheckin(s.life!, false, s.day)); setCheckinOpen(false); }} className="flex-1 rounded-full border border-[var(--line)] py-2.5 text-sm font-black">谢谢，我还行</button>
+</div>
+</div>
+</div>
+)}
 {gigsOpen && phase === "game" && profile && <GigsModal prime={isPrime()} npcGigs={npcGigsToday(s).map((g) => ({ id: g.id, who: `${g.whoEmoji} ${en ? trText(g.who) : g.who}`, emoji: g.emoji, title: en ? g.en : g.zh, pay: fmt(Math.round(g.pay * (isPrime() ? 1.5 : 1)), s.cityKey), cost: en ? `energy −${g.energy}` : `能量 −${g.energy}`, done: (s.npcGigs ?? []).includes(`${s.day}:${g.id}`) }))} onNpcGig={(id) => { const g = npcGigsToday(s).find((x) => x.id === id); if (!g) return; if (s.energy < g.energy) { showToast(en ? "Too tired for that one." : "太累了，干不动。"); return; } const pay = Math.round(g.pay * (isPrime() ? 1.5 : 1)); mutate((x) => { x.money += pay; x.earned += pay; x.energy -= g.energy; x.mood = clamp(x.mood + 3, 0, 100); x.network += 1; x.npcGigs = [...(x.npcGigs ?? []).filter((k) => k.startsWith(`${x.day}:`)), `${x.day}:${g.id}`]; const m = x.npcMem?.[g.who]; if (m) x.npcMem = { ...x.npcMem, [g.who]: { ...m, rel: (m.rel ?? 0) + 3 } }; }); sfx("coin"); showToast(en ? `Helped ${trText(g.who)}: +${fmt(pay, s.cityKey)}, contacts +1, and they like you more.` : `帮了${g.who}一把：+${fmt(pay, s.cityKey)}，人脉 +1，关系更近了。`); }} en={en} playerId={profile.playerId} city={s.cityKey} money={s.money} st={gigsQuery.data} onClose={() => setGigsOpen(false)} toast={showToast} refresh={() => void gigsQuery.refetch()} onHeld={(n) => mutate((x) => { x.money -= n; })} onDeliver={() => { const g = gsRef.current; if (!g || g.energy < 8) { showToast(en ? "Too tired to deliver — rest first." : "太累了，先休息一下再交付。"); return false; } mutate((x) => { x.energy -= 8; }); return true; }} openAccount={() => { setGigsOpen(false); setAccountOpen(true); }} />}
 {scenicMoment && phase === "game" && (() => { const m = scenicMoment.m; const ln = m.lines[Math.min(scenicLine, m.lines.length - 1)]!; return (
 <div className="pointer-events-none fixed inset-0 z-[70]" role="dialog" aria-label={en ? m.en : m.zh}>
@@ -5993,12 +7197,20 @@ return (
 </ul>
 </details>
 <button type="button" onClick={() => { setMusicOpen(false); setLiveOpen(true); }} className="menu-item">🎧 {en ? "Musicians' originals (Livehouse)" : "听音乐人的原创（Livehouse）"}</button>
+{/* round-2 (g S9): NPC voice mode + karaoke language */}
+<p className="px-2.5 pb-1 pt-2 text-[11px] font-black text-[var(--dim)]">🗣️ {en ? "NPC voices — everyone talks in a different tone" : "NPC 说话声调 · 每个人都不一样"}</p>
+{VOICE_MODES.map((v) => <button key={v.id} type="button" onClick={() => { setVoiceMode(v.id); showToast(en ? `Voice: ${v.en}` : `说话声：${v.zh}`); }} className={`menu-item ${voiceMode() === v.id ? "bg-[var(--surface2)]" : ""}`}>{en ? v.en : v.zh}{voiceMode() === v.id && <span className="ml-auto">✓</span>}</button>)}
+<p className="px-2.5 pb-1 pt-2 text-[11px] font-black text-[var(--dim)]">🎤 {en ? "Karaoke lyrics" : "K 歌歌词语言"}</p>
+<div className="flex gap-1 px-2.5 pb-2">
+<button type="button" onClick={() => { setKaraokeLang("cn"); showToast("K 歌歌词：中文"); }} className="flex-1 rounded-full border border-[var(--line)] py-1.5 text-xs font-black">中文歌词</button>
+<button type="button" onClick={() => { setKaraokeLang("en"); showToast("Karaoke lyrics: English"); }} className="flex-1 rounded-full border border-[var(--line)] py-1.5 text-xs font-black">English</button>
+</div>
 </div></>}
 {venue3d && phase === "game" && (
 <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/70 p-3 sm:items-center" role="dialog" aria-label={venue3d.name}>
 <div className="rise max-h-[94vh] w-full max-w-lg overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)]">
 <div className="relative h-[52vh] min-h-[300px]">
-<LifeStage3D key={`venue-${venue3d.id ?? venue3d.set}-${venueTalk?.id ?? ""}-${s.accessory}`} sign={{ text: venue3d.name, emoji: venue3d.emoji, color: venue3d.color }} seed={[...(venue3d.id ?? venue3d.name)].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 100003, 7)} wall={venue3d.color !== undefined ? mixHex(venue3d.color, 0xf6efe2, 0.82) : undefined} setKind={venue3d.set} pose={venueTalk?.pose ?? "idle"} partner={(() => { const host = regularHere(venue3d.set); const meeting = !!(venueTalk && host && MEET_IDS.has(venueTalk.id)); if (meeting && host) return { shirt: host.shirt, pants: host.pants, accessory: host.accessory }; if (venueTalk?.partner) return { shirt: venueTalk.partner[0], pants: venueTalk.partner[1] }; if (host && !venueTalk) return { shirt: host.shirt, pants: host.pants, accessory: host.accessory }; return undefined; })()} shirt={outfitOf(s.outfit).shirt} pants={outfitOf(s.outfit).pants} accessory={ACCESSORIES[s.accessory ?? 0]?.id} night={nowMin() >= 18 * 60 || nowMin() < 6 * 60} emoji={iden.emoji} en={en} roam={!venueTalk} onSpot={(id) => { const v = (VENUE_TALK[venue3d.set] ?? []).find((t) => t.id === id); if (v) runVenueTalk(v); }} />
+<LifeStage3D key={`venue-${venue3d.id ?? venue3d.set}-${venueTalk?.id ?? ""}-${s.accessory}`} sign={{ text: venue3d.name, emoji: venue3d.emoji, color: venue3d.color }} seed={[...(venue3d.id ?? venue3d.name)].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 100003, 7)} wall={venue3d.color !== undefined ? mixHex(venue3d.color, 0xf6efe2, 0.82) : undefined} setKind={venue3d.set} pose={venueTalk?.pose ?? "idle"} faceId={profile?.playerId ?? `player-${iden.emoji}`} partnerFaceId={regularHere(venue3d.set)?.name ?? venueTalk?.who} talkText={venueTalk ? (en ? venueTalk.sayEn : venueTalk.say) : undefined} talkVoiceId={regularHere(venue3d.set)?.name ?? venueTalk?.who} partner={(() => { const host = regularHere(venue3d.set); const meeting = !!(venueTalk && host && MEET_IDS.has(venueTalk.id)); if (meeting && host) return { shirt: host.shirt, pants: host.pants, accessory: host.accessory }; if (venueTalk?.partner) return { shirt: venueTalk.partner[0], pants: venueTalk.partner[1] }; if (host && !venueTalk) return { shirt: host.shirt, pants: host.pants, accessory: host.accessory }; return undefined; })()} shirt={outfitOf(s.outfit).shirt} pants={outfitOf(s.outfit).pants} accessory={ACCESSORIES[s.accessory ?? 0]?.id} night={nowMin() >= 18 * 60 || nowMin() < 6 * 60} emoji={iden.emoji} en={en} roam={!venueTalk} onSpot={(id) => { const v = (VENUE_TALK[venue3d.set] ?? []).find((t) => t.id === id); if (v) runVenueTalk(v); }} />
 <div className="cine-grade" />
 {(() => { const host = regularHere(venue3d.set); const meeting = !!(venueTalk && host && MEET_IDS.has(venueTalk.id)); return <>
 {!venueTalk && host && <p className="absolute bottom-3 left-3 rounded-full bg-black/55 px-3 py-1 text-xs font-black text-white">{host.emoji} {en ? `${host.name} is here` : `${host.name}在这儿`}</p>}
@@ -6394,16 +7606,17 @@ return (
 {/* phone modal */}
 {phoneOpen && (
 <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/55 p-3 sm:items-center" role="dialog" aria-label="手机">
-<div className="rise max-h-[86vh] w-full max-w-md overflow-y-auto rounded-[24px] border-2 border-[var(--border)] bg-[var(--surface)] p-5">
+<div ref={phoneSheetRef} className={`rise w-full max-w-md overflow-y-auto rounded-[24px] border-2 border-[var(--border)] bg-[var(--surface)] p-5 ${phoneFull ? "max-h-[96vh] h-[96vh] max-w-2xl" : "max-h-[86vh]"}`}>
 <div className="flex items-center gap-2">
 {phoneApp && <button type="button" aria-label="返回手机桌面" onClick={() => setPhoneApp(null)} className="rounded-full bg-[var(--surface2)] px-3 py-1.5 text-sm font-black">←</button>}
-<h3 className="font-display text-xl font-black">{phoneApp ? (phoneApp === "metro" && s.cityKey === "hz" ? "城轨通" : phoneApp === "metro" && s.cityKey === "hk" ? "港铁通" : APPS.find((a) => a.id === phoneApp)?.n ?? "手机") : "📱 我的手机"}</h3>
-<button type="button" aria-label="关闭手机" onClick={() => setPhoneOpen(false)} className="ml-auto rounded-full bg-[var(--surface2)] px-3 py-1.5 text-sm font-black">✕</button>
+<h3 className="font-display text-xl font-black">{phoneApp ? (phoneApp === "metro" && s.cityKey === "hz" ? "城轨通" : phoneApp === "metro" && s.cityKey === "hk" ? "港铁通" : PHONE_APPS.find((a) => a.id === phoneApp)?.n ?? "手机") : "📱 我的手机"}</h3>
+<button type="button" aria-label={phoneFull ? "退出全屏" : "手机全屏"} title={phoneFull ? "退出全屏" : "手机全屏"} onClick={() => { void togglePhoneFullscreen(phoneSheetRef.current).then((full) => setPhoneFull(full)); }} className="ml-auto rounded-full bg-[var(--surface2)] px-3 py-1.5 text-sm font-black">⛶</button>
+<button type="button" aria-label="关闭手机" onClick={() => setPhoneOpen(false)} className="rounded-full bg-[var(--surface2)] px-3 py-1.5 text-sm font-black">✕</button>
 </div>
 <div className="mt-4">
 {!phoneApp ? (
 <div className="grid grid-cols-4 gap-3">
-{APPS.map((a) => (
+{PHONE_APPS.map((a) => (
 <button key={a.id} type="button" aria-label={`打开${a.id === "metro" && s.cityKey === "hz" ? "城轨通" : a.id === "metro" && s.cityKey === "hk" ? "港铁通" : a.n}`} onClick={() => setPhoneApp(a.id)} className="grid place-items-center gap-1 rounded-[14px] bg-[var(--surface2)] px-1 py-3">
 <span className="text-2xl">{a.id === "metro" && s.cityKey === "hz" ? "🚆" : a.e}</span>
 <span className="text-[11px] font-bold">{a.id === "metro" && s.cityKey === "hz" ? "城轨通" : a.id === "metro" && s.cityKey === "hk" ? "港铁通" : a.n}</span>

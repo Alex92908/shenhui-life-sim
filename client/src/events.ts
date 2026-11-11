@@ -17,6 +17,8 @@ export interface FxState {
 export interface EventChoice {
   t: string;
   s: string;
+  /** round-2 (d): opens the black-landlord / black-company report composer. */
+  report?: "landlord" | "employer";
   apply: (S: FxState) => string;
 }
 
@@ -32,6 +34,7 @@ export const EVENTS: GameEvent[] = [
   { ctx: "any", tag: "房东来了", title: "房东阿姨敲门：下月可能涨租", desc: "房东站在门口，笑眯眯地说最近行情好，隔壁都涨了。你心里一紧——这握手楼/老房子，真值这个价吗？", choices: [
     { t: "好声好气商量", s: "夸阿姨人好、做饭香，争取不涨", apply: (S) => { S.mood += 4; return "你一顿彩虹屁，房东被哄开心了：行吧，你这间先不涨。心情 +4。"; } },
     { t: "硬刚：涨就搬走", s: "赌一把，大不了搬去更远的地方", apply: (S) => { if (Math.random() < 0.5) { S.mood += 6; return "房东反而怂了：哎别搬别搬，不涨了。心情 +6，爽！"; } S.money -= 120; S.mood -= 8; return "房东没挽留，你连夜看房花了 ¥120 中介咨询费，心情 -8。"; } },
+    { t: "举报房东乱涨租", s: "黑房东公示，邻居们一起作证", report: "landlord", apply: (S) => { S.mood += 2; return "你把这次涨租记了下来：写进举报，公示给全城邻居评理。"; } },
   ] },
   { ctx: "sz", tag: "深圳地铁", title: "早高峰地铁，鞋被挤掉了一只", desc: "早高峰人贴人。你的一只鞋被踩掉，在人海里漂移了三站才找回来。", choices: [
     { t: "光脚也要准时打卡", s: "全勤奖比脸面重要", apply: (S) => { S.money += 50; S.mood -= 6; return "你光着一只脚打上卡，全勤奖 +¥50 保住了，但心情 -6。"; } },

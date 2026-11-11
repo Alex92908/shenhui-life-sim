@@ -13,8 +13,11 @@ import { useEffect, useRef, useState, type MutableRefObject, type PointerEvent a
 import { SCENE_PHOTOS } from "./experience";
 import * as THREE from "three";
 import { makePostFx, type PostFx } from "./postfx";
+import { attachKeyboardRoam, KEYBOARD_HINTS } from "./round2/controls";
+import { playNpcVoice, stopNpcVoice } from "./round2/sounds";
+import type { HouseLayout } from "./round2/house";
 
-export type LifeSet = "flat" | "station" | "metro" | "train" | "bus" | "taxi" | "drive" | "concourse" | "platform" | "office" | "restaurant" | "market" | "electronics" | "mall" | "kitchen" | "bedroom" | "bathroom" | "gym" | "park" | "home" | "cruise" | "wheel" | "aquarium" | "turtle" | "coaster" | "safari" | "hike" | "beach" | "cablecar" | "club" | "clinic" | "classroom";
+export type LifeSet = "flat" | "station" | "metro" | "train" | "bus" | "taxi" | "drive" | "concourse" | "platform" | "office" | "restaurant" | "market" | "electronics" | "mall" | "kitchen" | "bedroom" | "bathroom" | "gym" | "park" | "home" | "cruise" | "wheel" | "aquarium" | "turtle" | "coaster" | "safari" | "hike" | "beach" | "cablecar" | "club" | "clinic" | "classroom" | "oilpainting" | "secondhand" | "seafood" | "oldtown" | "womensstreet" | "museum" | "library" | "factory" | "disney" | "tram" | "temple" | "miniature" | "farm" | "watershow" | "boardwalk" | "fishingport" | "bikehub" | "buildplot";
 export type LifePose = "walk" | "idle" | "sit" | "drive" | "type" | "cook" | "eat" | "sleep" | "wash" | "lift" | "stretch" | "talk" | "dance" | "sing";
 
 interface Props {
@@ -37,6 +40,16 @@ interface Props {
   seed?: number;
   /** someone who walks up and talks with the player (shop clerk, doctor, friend) */
   partner?: { shirt: number; pants: number; accessory?: string };
+  /** stable id of the partner (NPC name/id) — drives their distinct face + voice */
+  partnerFaceId?: string;
+  /** stable id of the player — drives the player's distinct face */
+  faceId?: string;
+  /** "buildplot": the layout to render on the empty plot */
+  houseLayout?: HouseLayout;
+  /** dialogue line currently shown above the stage — LifeStage blips it in the speaker's voice */
+  talkText?: string;
+  /** who is speaking (NPC name/id) — drives the voice profile; omit for the narrator */
+  talkVoiceId?: string;
   /** kids already in the flat, drawn smaller and left standing */
   household?: { shirt: number; pants: number }[];
   /** bag / cap / tie, the same piece the map draws, so the person matches */
@@ -62,21 +75,55 @@ const ROAM_SPOTS: Partial<Record<LifeSet, { id: string; emoji: string; zh: strin
   club: [{ id: "sing", emoji: "🎤", zh: "上台唱一首", en: "Sing", x: 0.5, z: 0.15 }, { id: "dance", emoji: "🕺", zh: "挤到台前跳", en: "Dance", x: -2.1, z: 0.75 }, { id: "drink", emoji: "🍹", zh: "吧台点一杯", en: "Get a drink", x: -4.5, z: 0.4 }, { id: "friend", emoji: "🙌", zh: "聊乐队", en: "Talk music", x: 3.3, z: 0.8 }, { id: "live", emoji: "🎧", zh: "听原创", en: "Live music", x: 1.7, z: 0.35 }],
   clinic: [{ id: "see", emoji: "🩺", zh: "挂号看病", en: "See a doctor", x: 2.15, z: 0.25 }, { id: "nurse", emoji: "💉", zh: "问医保", en: "Ask insurance", x: -1.6, z: 0.55 }],
   classroom: [{ id: "class", emoji: "📖", zh: "听一节课", en: "Sit in", x: -0.6, z: 1.15 }, { id: "classmate", emoji: "🤝", zh: "加个微信", en: "Swap WeChat", x: 2.1, z: 1.2 }],
-  bedroom: [{ id: "desk", emoji: "🛎️", zh: "问前台", en: "Ask the desk", x: 0.2, z: 0.85 }],
+  bedroom: [{ id: "desk", emoji: "🛎️", zh: "问前台", en: "Ask the desk", x: 0.2, z: 0.85 }, { id: "sleep", emoji: "🛏️", zh: "躺下睡觉", en: "Lie down", x: -1.1, z: -1.05 }, { id: "wake", emoji: "🌅", zh: "起床伸懒腰", en: "Stretch awake", x: 0.2, z: 0.3 }],
   concourse: [{ id: "toilet", emoji: "🚻", zh: "去洗手间", en: "Restroom", x: 4.4, z: 1.05 }, { id: "wait", emoji: "🪑", zh: "坐一会儿", en: "Sit", x: 3.1, z: 0.55 }, { id: "water", emoji: "🧴", zh: "买瓶水", en: "Buy water", x: -3.5, z: 0.75 }],
   park: [{ id: "bench", emoji: "🪑", zh: "坐长椅", en: "Bench", x: 2.2, z: 0.15 }, { id: "stroll", emoji: "🚶", zh: "沿园路走", en: "Walk the path", x: -2.2, z: 0.65 }, { id: "photo", emoji: "📸", zh: "拍一张", en: "Photo", x: 0.2, z: 1.1 }],
   beach: [{ id: "waves", emoji: "🌊", zh: "踩进浪里", en: "Into the wash", x: 0.3, z: 0.8 }, { id: "shade", emoji: "⛱️", zh: "伞下歇着", en: "Shade", x: -2.5, z: 0.5 }],
   hike: [{ id: "climb", emoji: "🥾", zh: "再往上走", en: "Climb on", x: 0.1, z: 0.65 }, { id: "view", emoji: "🏙️", zh: "看一眼城", en: "Look out", x: 2.5, z: 1.0 }],
+  /* walkable daily-life cutscenes (round-2): the same joystick as venue
+     roam, so sleeping / cooking / washing become places you walk around
+     in instead of static animations. App advances the cutscene step from
+     onSpot — see ROUND2-LOG-g.md. */
+  kitchen: [{ id: "cook", emoji: "🍳", zh: "下锅做饭", en: "Cook", x: -1.0, z: -1.0 }, { id: "eat", emoji: "🍽️", zh: "坐下吃饭", en: "Sit and eat", x: 2.7, z: 1.5 }, { id: "wash", emoji: "🚿", zh: "洗菜洗碗", en: "Wash up", x: 0.2, z: 1.2 }],
+  bathroom: [{ id: "wash", emoji: "🪥", zh: "刷牙洗脸", en: "Brush up", x: 0.2, z: -2.05 }, { id: "shower", emoji: "🚿", zh: "冲个热水澡", en: "Shower", x: -2.2, z: -1.2 }],
+  /* audit venue sets (round-2, tables 1–3): one interior per real place,
+     so Dafen is no longer a wet market and Victoria Park is no longer a
+     gym. Spot ids double as VENUE_TALK ids in App.tsx (see LOG-g). */
+  oilpainting: [{ id: "buy", emoji: "🖼️", zh: "买幅画挂家里", en: "Buy a painting", x: 1.9, z: -0.1 }, { id: "paint", emoji: "🎨", zh: "看画家作画", en: "Watch the painter", x: -2.6, z: -0.2 }, { id: "frame", emoji: "🪟", zh: "装裱一幅画", en: "Frame a painting", x: 3.6, z: 0.6 }],
+  secondhand: [{ id: "browse", emoji: "📻", zh: "淘旧货", en: "Browse the stalls", x: 0.15, z: -0.2 }, { id: "haggle", emoji: "💬", zh: "跟摊主讲价", en: "Haggle", x: -3.6, z: 0.85 }],
+  seafood: [{ id: "buy", emoji: "🦐", zh: "挑海鲜", en: "Pick seafood", x: 0.15, z: -0.2 }, { id: "eat", emoji: "🍲", zh: "大排档代加工", en: "Cook it at the dai pai dong", x: 3.4, z: 0.6 }, { id: "boat", emoji: "⛵", zh: "跟渔民出海", en: "Go out with a fisherman", x: -4.1, z: -0.15 }],
+  oldtown: [{ id: "snack", emoji: "🍢", zh: "吃客家小吃", en: "Try a Hakka snack", x: 0.15, z: -0.2 }, { id: "stroll", emoji: "🚶", zh: "逛骑楼老街", en: "Walk the old street", x: -2.2, z: 0.65 }],
+  womensstreet: [{ id: "clothes", emoji: "👗", zh: "淘衣服鞋袜", en: "Browse clothes", x: 0.15, z: -0.2 }, { id: "fish", emoji: "🐠", zh: "买条金鱼", en: "Buy a goldfish", x: -3.6, z: 0.85 }, { id: "flower", emoji: "🌸", zh: "买束花", en: "Buy flowers", x: 2.4, z: 0.6 }],
+  museum: [{ id: "exhibit", emoji: "🏺", zh: "看展", en: "See the exhibit", x: 0.15, z: -0.2 }, { id: "guide", emoji: "🎧", zh: "听讲解", en: "Hear the guide", x: -2.6, z: 0.85 }],
+  library: [{ id: "borrow", emoji: "📚", zh: "借本书", en: "Borrow a book", x: 0.15, z: -0.2 }, { id: "study", emoji: "📖", zh: "坐下自修", en: "Sit and study", x: 2.4, z: 0.6 }],
+  factory: [{ id: "tour", emoji: "🏭", zh: "看产线", en: "See the line", x: 0.15, z: -0.2 }, { id: "ask", emoji: "🙋", zh: "问问三班倒", en: "Ask about shifts", x: -2.6, z: 0.85 }],
+  disney: [{ id: "castle", emoji: "🏰", zh: "去城堡前拍照", en: "Photo at the castle", x: 0.15, z: -0.2 }, { id: "ride", emoji: "🎢", zh: "玩游乐设施", en: "Ride something", x: -2.6, z: 0.85 }, { id: "parade", emoji: "🎭", zh: "看花车", en: "Watch the parade", x: 2.8, z: 0.6 }],
+  tram: [{ id: "ride", emoji: "🚋", zh: "上车坐一程", en: "Ride the tram", x: 0.15, z: -0.2 }, { id: "photo", emoji: "📸", zh: "拍叮叮车", en: "Photo the tram", x: -2.6, z: 0.85 }],
+  temple: [{ id: "pray", emoji: "🙏", zh: "上香祈福", en: "Offer incense", x: 0.15, z: -0.2 }, { id: "fortune", emoji: "🎋", zh: "求一支签", en: "Draw a fortune stick", x: -2.6, z: 0.85 }],
+  miniature: [{ id: "tour", emoji: "🗼", zh: "环游世界地标", en: "Tour the landmarks", x: 0.15, z: -0.2 }, { id: "photo", emoji: "📸", zh: "拍一张", en: "Take a photo", x: -2.6, z: 0.85 }],
+  farm: [{ id: "milk", emoji: "🐄", zh: "挤牛奶", en: "Milk a cow", x: 0.15, z: -0.2 }, { id: "pick", emoji: "🌽", zh: "摘玉米", en: "Pick corn", x: -2.6, z: 0.85 }, { id: "crab", emoji: "🦀", zh: "摸鱼抓蟹", en: "Catch fish and crabs", x: 2.8, z: 0.6 }],
+  watershow: [{ id: "show", emoji: "⛲", zh: "看水秀", en: "Watch the water show", x: 0.15, z: -0.2 }, { id: "mall", emoji: "🛍️", zh: "逛滨海商场", en: "Browse the mall", x: -2.6, z: 0.85 }],
+  boardwalk: [{ id: "stroll", emoji: "🚶", zh: "沿栈道走", en: "Walk the boardwalk", x: 0.15, z: -0.2 }, { id: "view", emoji: "🌅", zh: "看海看日落", en: "Watch the sea", x: -2.6, z: 0.85 }],
+  fishingport: [{ id: "buy", emoji: "🐟", zh: "买刚上岸的海鲜", en: "Buy the fresh catch", x: 0.15, z: -0.2 }, { id: "boat", emoji: "⛵", zh: "跟船出海", en: "Go out on a boat", x: -3.6, z: 0.85 }],
+  bikehub: [{ id: "rent", emoji: "🚲", zh: "租辆车骑绿道", en: "Rent a bike", x: 0.15, z: -0.2 }, { id: "ride", emoji: "🛤️", zh: "骑上 18 公里绿道", en: "Ride the greenway", x: -2.6, z: 0.85 }],
+  buildplot: [{ id: "view", emoji: "👀", zh: "四处看看", en: "Look around the plot", x: 0.15, z: 0.3 }],
 };
 
-/** Left-stick input for venue roam. x is strafe right, y is forward, each −1…1. */
+/** Left-stick input for venue roam. x is strafe right, y is forward, each −1…1.
+ *  Round-2: the base is DYNAMIC — it appears where the thumb touches
+ *  (inside the bottom-left touch zone) instead of sitting at a fixed spot,
+ *  so the stick is always under the player's thumb. Release snaps it back
+ *  to the default corner. Push-to-run (mag > 0.9) is unchanged. */
 function MoveStick({ stick }: { stick: MutableRefObject<{ x: number; y: number }> }) {
   const [k, setK] = useState({ x: 0, y: 0 });
+  const [base, setBase] = useState<{ x: number; y: number } | null>(null);
   const R = 36;
-  const place = (e: ReactPointerEvent<HTMLDivElement>) => {
+  const update = (e: ReactPointerEvent<HTMLDivElement>) => {
     const b = e.currentTarget.getBoundingClientRect();
-    let x = e.clientX - (b.left + b.width / 2);
-    let y = e.clientY - (b.top + b.height / 2);
+    const bx = base?.x ?? 68;
+    const by = base?.y ?? b.height - 68;
+    let x = e.clientX - (b.left + bx);
+    let y = e.clientY - (b.top + by);
     const m = Math.hypot(x, y);
     if (m > R) { x = (x / m) * R; y = (y / m) * R; }
     setK({ x, y });
@@ -87,18 +134,29 @@ function MoveStick({ stick }: { stick: MutableRefObject<{ x: number; y: number }
     e.preventDefault();
     e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
-    place(e);
-  };
-  const move = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
-    place(e);
-  };
-  const up = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+    const b = e.currentTarget.getBoundingClientRect();
+    // plant the base under the thumb, clamped so the whole circle stays in the zone
+    const bx = Math.min(Math.max(e.clientX - b.left, 56), Math.max(56, b.width - 56));
+    const by = Math.min(Math.max(e.clientY - b.top, 56), Math.max(56, b.height - 56));
+    setBase({ x: bx, y: by });
     setK({ x: 0, y: 0 });
     stick.current.x = 0;
     stick.current.y = 0;
   };
+  const move = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+    update(e);
+  };
+  const up = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+    setK({ x: 0, y: 0 });
+    setBase(null);
+    stick.current.x = 0;
+    stick.current.y = 0;
+  };
+  const baseStyle: React.CSSProperties = base
+    ? { left: base.x, top: base.y, transform: "translate(-50%, -50%)" }
+    : { left: 68, bottom: 68, transform: "translate(-50%, 50%)" };
   return (
     <div
       aria-label="移动摇杆"
@@ -106,10 +164,10 @@ function MoveStick({ stick }: { stick: MutableRefObject<{ x: number; y: number }
       onPointerMove={move}
       onPointerUp={up}
       onPointerCancel={up}
-      className="absolute bottom-3 left-3 z-20 h-[112px] w-[112px] touch-none select-none"
+      className="absolute bottom-0 left-0 z-20 h-[55%] w-[45%] touch-none select-none"
     >
-      <div className="absolute inset-0 rounded-full border border-white/45 bg-black/30 shadow-[inset_0_0_0_12px_rgba(255,255,255,0.07)] backdrop-blur-[2px]" />
-      <div className="pointer-events-none absolute left-1/2 top-1/2 h-[54px] w-[54px] rounded-full border border-white/80 bg-white/88 shadow-[0_6px_16px_rgba(0,0,0,0.35)]" style={{ transform: `translate(calc(-50% + ${k.x}px), calc(-50% + ${k.y}px))` }} />
+      <div className="pointer-events-none absolute h-[112px] w-[112px] rounded-full border border-white/45 bg-black/30 shadow-[inset_0_0_0_12px_rgba(255,255,255,0.07)] backdrop-blur-[2px]" style={baseStyle} />
+      <div className="pointer-events-none absolute h-[54px] w-[54px] rounded-full border border-white/80 bg-white/88 shadow-[0_6px_16px_rgba(0,0,0,0.35)]" style={base ? { left: base.x + k.x, top: base.y + k.y, transform: "translate(-50%, -50%)" } : { left: 68 + k.x, bottom: 68 - k.y, transform: "translate(-50%, 50%)" }} />
     </div>
   );
 }
@@ -384,7 +442,93 @@ function wearAccessory(g: THREE.Group, id: string | undefined) {
   }
 }
 
-function makeFigure(mat: (c: number, r?: number) => THREE.MeshStandardMaterial, shirt: number, pants: number, skin = 0xf2c79b): Figure {
+/* ---------------- distinct faces (round-2) ----------------
+   The close-up complaint (2026-11-11): interior characters had NO eyes or
+   mouth at all. Every figure now gets real face geometry — eyes, brows,
+   nose hint, mouth — parameterized by a stable seed (NPC id/name, or the
+   player's id), so every person reads as a different face at close-up
+   distance. The seed is hashed (FNV), so the same person always has the
+   same face and two people never share one by accident.
+   Face features are children of the head mesh, so they turn with it when
+   a pose rotates the head. Front is +z (the fringe sits there too). */
+interface FaceSpec {
+  eyeGap: number; eyeSize: number; eyeShape: "round" | "narrow" | "wide";
+  browAngle: number; browThick: number;
+  mouth: "smile" | "flat" | "open" | "smirk"; mouthSize: number;
+  nose: boolean; faceWidth: number; skin: number; hair: number;
+}
+const FACE_SKINS = [0xf2c79b, 0xe8b88a, 0xd9a06f, 0xc98d5f, 0xf6d7b0];
+const FACE_HAIRS = [0x2b2118, 0x2b2118, 0x4a3226, 0x6b6b6b, 0x8a5a2e, 0x1a1a22];
+function faceSpecFor(seed: string): FaceSpec {
+  let h = 2166136261;
+  const s = seed || "???";
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  const u = (n: number) => ((h >>> (n % 24)) & 0xff) / 255;
+  const eyeShape = (["round", "narrow", "wide"] as const)[Math.floor(u(2) * 3) % 3]!;
+  const mouth = (["smile", "flat", "open", "smirk"] as const)[Math.floor(u(14) * 4) % 4]!;
+  return {
+    eyeGap: 0.095 + u(0) * 0.04, // 0.095…0.135 — close-set vs wide-set
+    eyeSize: 0.034 + u(4) * 0.016, // 0.034…0.05
+    eyeShape,
+    browAngle: (u(8) - 0.5) * 0.5, // −0.25…0.25 — angled brows read as moods
+    browThick: 0.7 + u(10) * 0.8,
+    mouth,
+    mouthSize: 0.8 + u(16) * 0.5,
+    nose: u(18) > 0.3,
+    faceWidth: 0.92 + u(20) * 0.12,
+    skin: FACE_SKINS[Math.floor(u(22) * FACE_SKINS.length) % FACE_SKINS.length]!,
+    hair: FACE_HAIRS[Math.floor(u(6) * FACE_HAIRS.length) % FACE_HAIRS.length]!,
+  };
+}
+function addFaceFeatures(head: THREE.Mesh, spec: FaceSpec, mat: (c: number, r?: number) => THREE.MeshStandardMaterial) {
+  const dark = mat(0x241a12, 0.55);
+  const white = mat(0xfdfdf8, 0.4);
+  const mouthDark = mat(0x7a2e2a, 0.6);
+  const eyeScale: [number, number, number] =
+    spec.eyeShape === "narrow" ? [1, 0.62, 0.7] : spec.eyeShape === "wide" ? [1.3, 0.95, 0.7] : [1, 1, 0.7];
+  for (const side of [-1, 1]) {
+    const white_m = new THREE.Mesh(new THREE.SphereGeometry(spec.eyeSize, 10, 8), white);
+    white_m.position.set(side * spec.eyeGap, 0.05, 0.26);
+    white_m.scale.set(...eyeScale);
+    head.add(white_m);
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(spec.eyeSize * 0.55, 8, 6), dark);
+    pupil.position.set(side * spec.eyeGap, 0.05, 0.285);
+    pupil.scale.set(eyeScale[0], eyeScale[1], 0.7);
+    head.add(pupil);
+    const brow = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.022 * spec.browThick, 0.02), dark);
+    brow.position.set(side * spec.eyeGap, 0.11, 0.315);
+    brow.rotation.z = -side * spec.browAngle;
+    head.add(brow);
+  }
+  if (spec.nose) {
+    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.055, 0.03), mat(new THREE.Color(spec.skin).multiplyScalar(0.88).getHex(), 0.62));
+    nose.position.set(0, -0.05, 0.3);
+    head.add(nose);
+  }
+  const my = -0.155, mz = 0.285;
+  if (spec.mouth === "smile") {
+    const smile = new THREE.Mesh(new THREE.TorusGeometry(0.05 * spec.mouthSize, 0.011, 6, 14, Math.PI), mouthDark);
+    smile.position.set(0, my + 0.02, mz);
+    smile.rotation.z = Math.PI; // arc opens upward = a smile
+    head.add(smile);
+  } else if (spec.mouth === "flat") {
+    const flat = new THREE.Mesh(new THREE.BoxGeometry(0.09 * spec.mouthSize, 0.013, 0.015), mouthDark);
+    flat.position.set(0, my, mz);
+    head.add(flat);
+  } else if (spec.mouth === "smirk") {
+    const smirk = new THREE.Mesh(new THREE.BoxGeometry(0.085 * spec.mouthSize, 0.013, 0.015), mouthDark);
+    smirk.position.set(0.015, my, mz);
+    smirk.rotation.z = 0.18;
+    head.add(smirk);
+  } else {
+    const open = new THREE.Mesh(new THREE.SphereGeometry(0.042 * spec.mouthSize, 10, 8), mouthDark);
+    open.position.set(0, my, mz);
+    open.scale.set(1, 0.72, 0.45);
+    head.add(open);
+  }
+}
+
+function makeFigure(mat: (c: number, r?: number) => THREE.MeshStandardMaterial, shirt: number, pants: number, skin = 0xf2c79b, faceSeed?: string): Figure {
   // Detailed figure (PC high-end pass — no longer plain low-poly blocks):
   // rounded high-segment head with ears and a jaw taper, a neck, layered
   // hair with a fringe, a torso with collar / placket / belt, arms ending
@@ -444,15 +588,18 @@ function makeFigure(mat: (c: number, r?: number) => THREE.MeshStandardMaterial, 
   const armR = mkArm(0.42);
   const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 0.16, 12), skinMat);
   neck.position.y = 1.66; g.add(neck);
+  // distinct face: same seed always builds the same eyes/brows/mouth
+  const spec = faceSpecFor(faceSeed ?? `${shirt}-${pants}`);
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.31, 24, 18), skinMat);
-  head.position.y = 1.88; head.scale.set(0.94, 1.05, 0.98); head.castShadow = true; g.add(head);
+  head.position.y = 1.88; head.scale.set(0.94 * spec.faceWidth, 1.05, 0.98); head.castShadow = true; g.add(head);
+  addFaceFeatures(head, spec, mat);
   for (const side of [-1, 1]) {
     const ear = new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 8), skinMat);
     ear.position.set(side * 0.29, 1.88, 0);
     ear.scale.set(0.5, 0.8, 0.7);
     g.add(ear);
   }
-  const hairMat = mat(0x2b2118, 0.92);
+  const hairMat = mat(spec.hair, 0.92);
   const hair = new THREE.Mesh(new THREE.SphereGeometry(0.325, 24, 16), hairMat);
   hair.position.y = 1.99; hair.scale.set(1, 0.72, 1); g.add(hair);
   const fringe = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.13, 0.1), hairMat);
@@ -478,11 +625,22 @@ export function LifeStage3D(p: Props) {
   const setNearRef = useRef(setNearId);
   setNearRef.current = setNearId;
   const [glFailed, setGlFailed] = useState(false);
+  /** desktop keyboard in use — the joystick hides and WASD hints show */
+  const [kbUsed, setKbUsed] = useState(false);
+  const desktop = typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(pointer: fine)").matches;
+
+  /* dialogue voice (round-2): when the bubble line changes, blip it in
+     the speaker's own voice — same NPC, same tone, every time. */
+  useEffect(() => {
+    if (!p.talkText) return;
+    playNpcVoice(p.talkVoiceId ?? "narrator", p.talkText, p.en ? "en-US" : "zh-CN");
+    return () => { stopNpcVoice(); };
+  }, [p.talkText, p.talkVoiceId]);
 
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
-    const { setKind, pose, shirt, pants, night, emoji, cur, tier, furn, wall, partner, sign, seed } = propsRef.current;
+    const { setKind, pose, shirt, pants, night, emoji, cur, tier, furn, wall, partner, sign, seed, faceId, partnerFaceId, houseLayout } = propsRef.current;
     // Same WebGL guard as the main map: a refused context degrades to the
     // emoji fallback below instead of crashing the animation overlay.
     let renderer: THREE.WebGLRenderer;
@@ -503,7 +661,7 @@ export function LifeStage3D(p: Props) {
     mount.appendChild(renderer.domElement);
     renderer.domElement.style.cssText = "position:absolute;inset:0;width:100%;height:100%;display:block;";
 
-    const indoor = setKind === "flat" || setKind === "office" || setKind === "kitchen" || setKind === "bathroom" || setKind === "bedroom" || setKind === "home" || setKind === "restaurant" || setKind === "gym" || setKind === "concourse" || setKind === "platform" || setKind === "club" || setKind === "clinic" || setKind === "classroom";
+    const indoor = setKind === "flat" || setKind === "office" || setKind === "kitchen" || setKind === "bathroom" || setKind === "bedroom" || setKind === "home" || setKind === "restaurant" || setKind === "gym" || setKind === "concourse" || setKind === "platform" || setKind === "club" || setKind === "clinic" || setKind === "classroom" || setKind === "oilpainting" || setKind === "secondhand" || setKind === "seafood" || setKind === "oldtown" || setKind === "womensstreet" || setKind === "museum" || setKind === "library" || setKind === "factory" || setKind === "disney" || setKind === "tram" || setKind === "temple" || setKind === "miniature";
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(night ? 0x1d3454 : indoor ? 0xf7e3bd : 0xffd9a0);
     scene.fog = new THREE.Fog(scene.background as THREE.Color, 17, 32);
@@ -587,8 +745,11 @@ export function LifeStage3D(p: Props) {
         steamSprites.push(sp);
       }
     };
-    const extraFigure = (fx: number, fy: number, fz: number, ry: number, fShirt: number, fPants: number, seated = false) => {
-      const f = makeFigure(mat, fShirt, fPants);
+    const extraFigure = (fx: number, fy: number, fz: number, ry: number, fShirt: number, fPants: number, seated = false, faceSeed?: string) => {
+      // every background person gets their own face: seed from their spot +
+      // shirt, so the same venue never shows two identical faces
+      const seed = faceSeed ?? `npc-${fx}-${fz}-${fShirt}`;
+      const f = makeFigure(mat, fShirt, fPants, faceSpecFor(seed).skin, seed);
       f.g.position.set(fx, fy, fz);
       f.g.rotation.y = ry;
       if (seated) { f.legL.rotation.x = -1.35; f.legR.rotation.x = -1.3; }
@@ -598,7 +759,7 @@ export function LifeStage3D(p: Props) {
     };
 
     /* ---- floor ---- */
-    const floorKind = setKind === "bathroom" || setKind === "kitchen" || setKind === "concourse" ? "tile" : setKind === "station" || setKind === "platform" ? "concrete" : setKind === "metro" || setKind === "train" || setKind === "bus" || setKind === "taxi" || setKind === "drive" ? "carriage" : setKind === "park" ? "grass" : setKind === "mall" || setKind === "electronics" ? "tile" : "wood";
+    const floorKind = setKind === "bathroom" || setKind === "kitchen" || setKind === "concourse" ? "tile" : setKind === "station" || setKind === "platform" ? "concrete" : setKind === "metro" || setKind === "train" || setKind === "bus" || setKind === "taxi" || setKind === "drive" ? "carriage" : setKind === "park" || setKind === "farm" || setKind === "bikehub" ? "grass" : setKind === "mall" || setKind === "electronics" || setKind === "museum" || setKind === "library" || setKind === "temple" || setKind === "oilpainting" ? "tile" : "wood";
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(22, 14), new THREE.MeshStandardMaterial({ map: floorTex(floorKind), roughness: 0.95 }));
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
@@ -1414,6 +1575,405 @@ export function LifeStage3D(p: Props) {
       }
       box(2.4, 0.8, 1.05, 0x243044, -4.7, 0.4, -1.9, 0.7);
       box(2.5, 0.05, 1.15, 0x67e8f9, -4.7, 0.82, -1.9, 0.2, { emissive: 0x22d3ee, emissiveIntensity: 0.35 });
+    } else if (setKind === "oilpainting") {
+      // 大芬油画村: a whole wall of oil paintings, easels, a painter at
+      // work, a gallery corner and a framing shop — NOT a wet market
+      box(20, 5.5, 0.3, 0xf3e6cf, 0, 2.75, -3.9, 1);
+      box(4.2, 0.95, 0.08, 0x7c2d12, -2.6, 3.6, -3.7, 0.6);
+      plane(4.1, 0.88, boardTex("#7c2d12", [{ t: "大 芬 油 画 村", s: 58, c: "#fde68a" }, { t: "原创油画 · 临摹 · 装裱", s: 30, c: "#ffffff" }]), -2.6, 3.6, -3.65);
+      const paints = [0x2b5ea7, 0xd9534a, 0x65a30d, 0xf5b942, 0x8b5cf6, 0x0ea5e9, 0xe8862e, 0x3f6d8e];
+      for (let i = 0; i < 8; i++) {
+        const px = -5.6 + (i % 4) * 2.9;
+        const py = i < 4 ? 2.5 : 1.35;
+        box(1.15, 0.85, 0.06, 0x6b4a2f, px, py, -3.68, 0.6);
+        box(1.0, 0.7, 0.07, paints[i]!, px, py, -3.68, 0.9);
+        box(0.7, 0.08, 0.08, 0xf3ead8, px - 0.1, py + 0.1, -3.64, 0.9);
+      }
+      // easel + canvas + a painter mid-brushstroke
+      box(0.08, 1.7, 0.08, 0x8a5a3b, -2.75, 0.85, -1.2, 0.8);
+      box(0.08, 1.7, 0.08, 0x8a5a3b, -2.25, 0.85, -1.2, 0.8);
+      box(0.62, 0.08, 0.08, 0x8a5a3b, -2.5, 1.05, -1.2, 0.8);
+      box(1.0, 1.15, 0.05, 0xfdf6da, -2.5, 1.9, -1.18, 0.9);
+      box(0.55, 0.4, 0.06, 0x2b5ea7, -2.55, 2.0, -1.14, 0.9);
+      box(0.3, 0.22, 0.06, 0xf5b942, -2.35, 1.65, -1.14, 0.9);
+      const painter = extraFigure(-2.5, 0, -0.55, Math.PI, 0xe8e2d4, 0x374151, false, "dafen-painter");
+      painter.armR.rotation.x = -0.9;
+      box(0.06, 0.5, 0.06, 0x8a5a3b, -2.2, 1.25, -0.75, 0.7);
+      // gallery corner: framed pieces on a stand + framing-shop counter
+      box(1.6, 0.9, 0.7, 0x74522f, 3.9, 0.45, -1.9, 0.9);
+      box(1.5, 0.06, 0.6, 0xc9a06a, 3.9, 0.93, -1.9, 0.8);
+      for (let i = 0; i < 3; i++) { box(0.4, 0.55, 0.05, paints[(i + 3) % paints.length]!, 3.4 + i * 0.5, 1.3, -1.9, 0.9); }
+      extraFigure(3.9, 0, -2.7, 0, 0x7c3aed, 0x1f2937, false, "dafen-gallery");
+      box(0.62, 0.55, 0.03, 0x3f6212, 3.9, 1.0, -2.42, 0.9);
+    } else if (setKind === "secondhand") {
+      // 桥东二手市集: ground mats of old phones, old furniture, vinyl
+      box(20, 5.5, 0.3, 0xd8cdb8, 0, 2.75, -3.9, 1);
+      box(3.6, 0.9, 0.08, 0x3f6212, -2.4, 3.55, -3.7, 0.6);
+      plane(3.5, 0.82, boardTex("#3f6212", [{ t: "桥 东 二 手 市 集", s: 52, c: "#fde68a" }, { t: "旧手机 · 旧家具 · 黑胶", s: 30, c: "#ffffff" }]), -2.4, 3.55, -3.65);
+      box(2.6, 0.02, 1.6, 0xb3552e, -2.2, 0.012, 0.2, 1);
+      box(2.2, 0.02, 1.4, 0x3f6d8e, 1.6, 0.012, 0.6, 1);
+      box(2.0, 0.02, 1.3, 0x65a30d, -4.6, 0.012, 0.5, 1);
+      for (let i = 0; i < 5; i++) box(0.28, 0.02, 0.5, [0x111827, 0xe8eef2, 0x1d4ed8, 0x0f172a, 0xf8fafc][i]!, -3.0 + i * 0.45, 0.05, 0.1, 0.35, { metalness: 0.4 });
+      for (let i = 0; i < 4; i++) {
+        const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.02, 18), mat(0x14181d, 0.4));
+        disc.position.set(1.0 + i * 0.5, 0.05, 0.5); disc.castShadow = true; scene.add(disc);
+        const hole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.03, 8), mat(0xf5b942, 0.4));
+        hole.position.set(1.0 + i * 0.5, 0.06, 0.5); scene.add(hole);
+      }
+      box(1.1, 0.7, 0.6, 0x8a5a3b, -4.6, 0.36, -0.6, 0.9);
+      box(0.9, 0.6, 0.5, 0x74522f, -4.6, 1.05, -0.6, 0.9);
+      box(0.7, 0.35, 0.4, 0x3f6d8e, 4.3, 0.19, -0.5, 0.8);
+      extraFigure(0.4, 0, -2.7, 0, 0x78716c, 0x2f333a, false, "qiaodong-stall");
+      extraFigure(-3.4, 0, 1.0, Math.PI * 0.8, 0xec4899, 0x374151, false, "qiaodong-browser");
+    } else if (setKind === "seafood") {
+      // 霞涌 / 西贡海鲜街: tanks of live fish and shrimp, seafood stalls,
+      // a dai pai dong that cooks what you just bought
+      box(20, 5.5, 0.3, 0x1d4e5f, 0, 2.75, -3.9, 1);
+      box(3.6, 0.9, 0.08, 0x0e7490, -2.4, 3.55, -3.7, 0.6);
+      plane(3.5, 0.82, boardTex("#0e7490", [{ t: "海 鲜 街", s: 58, c: "#ffffff" }, { t: "活鱼活虾 · 代加工大排档", s: 30, c: "#bae6fd" }]), -2.4, 3.55, -3.65);
+      for (let i = 0; i < 3; i++) {
+        const tx = -3.4 + i * 2.2;
+        box(1.9, 0.9, 0.9, 0x2a3340, tx, 0.45, -1.9, 0.7);
+        box(1.8, 0.7, 0.8, 0x38bdf8, tx, 0.55, -1.9, 0.15, { transparent: true, opacity: 0.5, metalness: 0.2 });
+        for (let f = 0; f < 3; f++) {
+          const fish = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), mat([0xe8862e, 0xd9d9d9, 0xf5b942][f]!, 0.6));
+          fish.scale.set(1.8, 0.6, 0.6);
+          fish.position.set(tx - 0.5 + f * 0.5, 0.55 + (f % 2) * 0.15, -1.9);
+          scene.add(fish);
+        }
+      }
+      // dai pai dong: folding table, stools, steamer baskets
+      box(1.4, 0.06, 0.9, 0xd8d2c4, 3.6, 0.8, -0.5, 0.6);
+      box(0.52, 0.5, 0.52, 0xb3552e, 3.6, 0.25, 0.3, 0.8);
+      box(0.52, 0.5, 0.52, 0xb3552e, 4.4, 0.25, -0.9, 0.8);
+      cyl(0.26, 0.22, 0.28, 0x8a5a3b, 3.6, 1.0, -0.5, 0.7);
+      addSteam(3.6, 1.2, -0.5);
+      extraFigure(0.4, 0, -2.7, 0, 0x0e7490, 0x1f2937, false, "seafood-ahai");
+      extraFigure(4.3, 0, -2.7, 0, 0x7a9a4d, 0x44403c, false, "seafood-cook");
+    } else if (setKind === "oldtown") {
+      // 淡水老城 / 元朗大马路 / 大鹏所城 / 中英街: qilou arcade, Hakka
+      // snack stalls, wife-cake and cheung fun, an old-street sign
+      box(20, 5.5, 0.3, 0xe0cfa8, 0, 2.75, -3.9, 1);
+      box(3.8, 0.9, 0.08, 0x7c2d12, -2.2, 3.55, -3.7, 0.6);
+      plane(3.7, 0.82, boardTex("#7c2d12", [{ t: "老 街", s: 58, c: "#fde68a" }, { t: "骑楼 · 客家小吃 · 老字号", s: 30, c: "#ffffff" }]), -2.2, 3.55, -3.65);
+      for (const cx of [-5.2, -1.8, 1.6, 5.0]) {
+        box(0.5, 3.2, 0.5, 0xc9a06a, cx, 1.6, -2.9, 0.8);
+        box(0.62, 0.3, 0.62, 0x8a5a3b, cx, 3.35, -2.9, 0.8);
+      }
+      box(11.5, 0.5, 0.9, 0xd8cdb8, 0, 3.6, -2.9, 0.9);
+      box(3.2, 0.85, 1.1, 0x74522f, -3.4, 0.43, -1.6, 0.9);
+      box(2.6, 0.02, 1.0, 0xb3552e, -3.4, 0.9, -1.6, 1);
+      for (let i = 0; i < 5; i++) {
+        const cake = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 6), mat(0xe0aa5e, 0.8));
+        cake.scale.y = 0.55; cake.position.set(-4.4 + i * 0.5, 0.98, -1.6); cake.castShadow = true; scene.add(cake);
+      }
+      box(2.4, 0.85, 1.0, 0x8a5a3b, 3.2, 0.43, -1.6, 0.9);
+      cyl(0.3, 0.26, 0.3, 0x3c4148, 3.2, 1.05, -1.6, 0.35, { metalness: 0.5 });
+      addSteam(3.2, 1.25, -1.6);
+      extraFigure(-3.4, 0, -2.4, 0, 0x7a9a4d, 0x44403c, false, "oldtown-snack");
+      extraFigure(3.2, 0, -2.4, 0, 0xd9534a, 0x2f333a, false, "oldtown-cheungfun");
+    } else if (setKind === "womensstreet") {
+      // 旺角女人街: clothing and shoe stalls, goldfish bowls, flower stall
+      box(20, 5.5, 0.3, 0xbe185d, 0, 2.75, -3.9, 1);
+      box(3.6, 0.9, 0.08, 0x831843, -2.4, 3.55, -3.7, 0.6);
+      plane(3.5, 0.82, boardTex("#831843", [{ t: "女 人 街", s: 58, c: "#fbcfe8" }, { t: "服装鞋袜 · 金鱼 · 花档", s: 30, c: "#ffffff" }]), -2.4, 3.55, -3.65);
+      cyl(0.03, 0.03, 1.55, 0x8a8f96, -3.6, 0.78, -1.6, 0.3, { metalness: 0.7 });
+      cyl(0.03, 0.03, 1.55, 0x8a8f96, -1.9, 0.78, -1.6, 0.3, { metalness: 0.7 });
+      const rackBarW = cyl(0.025, 0.025, 1.8, 0x8a8f96, -2.75, 1.58, -1.6, 0.3, { metalness: 0.7 });
+      rackBarW.rotation.z = Math.PI / 2;
+      for (let i = 0; i < 5; i++) box(0.26, 0.75, 0.05, [0xec4899, 0xf5b942, 0x3f6d8e, 0x65a30d, 0xd9534a][i]!, -3.35 + i * 0.32, 1.18, -1.6, 0.9);
+      box(1.6, 0.85, 0.9, 0x74522f, 0.6, 0.43, -1.8, 0.9);
+      for (let i = 0; i < 3; i++) {
+        const bowl = new THREE.Mesh(new THREE.SphereGeometry(0.24, 12, 10), mat(0x7dd3fc, 0.2, { transparent: true, opacity: 0.45 }));
+        bowl.position.set(0.0 + i * 0.6, 1.05, -1.8); scene.add(bowl);
+        const gold = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), mat(0xf59e0b, 0.6));
+        gold.scale.set(1.6, 0.7, 0.7); gold.position.set(0.0 + i * 0.6, 1.0, -1.8); scene.add(gold);
+      }
+      box(1.4, 0.85, 0.8, 0x74522f, 3.8, 0.43, -1.7, 0.8);
+      for (let fIdx = 0; fIdx < 6; fIdx++) {
+        const fl = new THREE.Mesh(new THREE.SphereGeometry(0.09, 7, 6), mat([0xec4899, 0xf5b942, 0xd93a2c, 0xffffff][fIdx % 4]!, 0.7));
+        fl.position.set(3.4 + (fIdx % 3) * 0.4, 1.0 + Math.floor(fIdx / 3) * 0.22, -1.7);
+        scene.add(fl);
+      }
+      extraFigure(-2.75, 0, -2.5, 0, 0xec4899, 0x2f333a, false, "womensstreet-clothes");
+      extraFigure(3.8, 0, -2.5, 0, 0x65a30d, 0x374151, false, "womensstreet-flower");
+    } else if (setKind === "museum") {
+      // 深圳 / 惠州博物馆 + 海上世界艺术中心: galleries, glass cases,
+      // exhibit panels — not a night-school classroom
+      roomShell(0xe9e2d4, 0x4a3a28, { clock: true });
+      box(4.6, 0.9, 0.08, 0x14202b, -1.2, 3.6, -3.7, 0.5);
+      plane(4.5, 0.82, boardTex("#14202b", [{ t: "改 革 开 放 史 展", s: 48, c: "#ffffff" }, { t: "东江历史 · 城市记忆", s: 30, c: "#7dd3fc" }]), -1.2, 3.6, -3.65);
+      for (let i = 0; i < 3; i++) {
+        const cx = -3.6 + i * 3.4;
+        box(2.2, 0.9, 0.9, 0x2a3340, cx, 0.45, -1.9, 0.7);
+        box(2.1, 0.7, 0.8, 0xbfd9ea, cx, 0.85, -1.9, 0.12, { transparent: true, opacity: 0.35, metalness: 0.3 });
+        const relic = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, 0.5, 10), mat([0x8a5a3b, 0x3f6d8e, 0xd9534a][i]!, 0.6));
+        relic.position.set(cx, 1.1, -1.9); relic.castShadow = true; scene.add(relic);
+      }
+      box(1.6, 1.1, 0.06, 0x1f2937, 4.6, 2.2, -3.56, 0.6);
+      plane(1.5, 1.0, boardTex("#1f2937", [{ t: "展品说明", s: 40, c: "#f5b942" }, { t: "请勿触摸展品", s: 28, c: "#e2e8f0", bold: false }]), 4.6, 2.2, -3.52);
+      extraFigure(-1.2, 0, -0.6, Math.PI, 0x0ea5e9, 0x1f2937, false, "museum-guide");
+      extraFigure(2.6, 0, 0.3, Math.PI * 0.8, 0xf59e0b, 0x374151, false, "museum-visitor");
+    } else if (setKind === "library") {
+      // 香港中央图书馆: shelves, reading tables, lamps — not night school
+      roomShell(0xead9b8, 0x5a4632, { windowX: -3.4, windowW: 2.4 });
+      for (let i = 0; i < 3; i++) {
+        const sx = -4.6 + i * 2.6;
+        box(2.2, 2.4, 0.5, 0x6b4a2f, sx, 1.2, -2.9, 0.8);
+        for (let r = 0; r < 3; r++) for (let b = 0; b < 8; b++) {
+          box(0.2, 0.5, 0.3, [0xd9534a, 0x3f6d8e, 0x65a30d, 0xf5b942, 0x8b5cf6][(r * 8 + b) % 5]!, sx - 0.9 + b * 0.24, 0.45 + r * 0.7, -2.9, 0.9);
+        }
+      }
+      box(2.6, 0.08, 1.1, 0x8a5a3b, 1.8, 0.75, -0.4, 0.7);
+      box(0.08, 0.75, 0.08, 0x5a4632, 0.7, 0.37, -0.8); box(0.08, 0.75, 0.08, 0x5a4632, 2.9, 0.37, -0.8);
+      box(0.08, 0.75, 0.08, 0x5a4632, 0.7, 0.37, 0.0); box(0.08, 0.75, 0.08, 0x5a4632, 2.9, 0.37, 0.0);
+      const lampL = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), mat(0xfff2d8, 0.4, { emissive: 0xffe9b8, emissiveIntensity: 1.2 }));
+      lampL.position.set(1.8, 0.95, -0.4); scene.add(lampL);
+      addGlow(1.8, 0.95, -0.4, 1.4, 0xffe9b8, 0.4);
+      for (let i = 0; i < 3; i++) box(0.4, 0.06, 0.3, [0xe8e2d4, 0xbfd9ea, 0xf5d98a][i]!, 1.2 + i * 0.6, 0.83, -0.4, 0.9);
+      extraFigure(1.8, -0.42, -0.9, 0, 0x3b82f6, 0x2b2b33, true, "library-reader");
+      extraFigure(-1.2, 0, 0.4, Math.PI * 0.7, 0x78716c, 0x374151, false, "library-librarian");
+    } else if (setKind === "factory") {
+      // 中海油大亚湾石化区 / 亿纬锂能产业园: sheds, a production line,
+      // tanks and towers outside — not an office floor
+      box(22, 8, 0.3, 0x9aa3ad, 0, 4, -3.9, 0.9);
+      box(4.4, 0.9, 0.08, 0x7c2d12, -1.6, 3.55, -3.7, 0.6);
+      plane(4.3, 0.82, boardTex("#7c2d12", [{ t: "产 业 园 · 厂 区", s: 50, c: "#fde68a" }, { t: "产线 · 三班倒 · 注意安全", s: 30, c: "#ffffff" }]), -1.6, 3.55, -3.65);
+      box(8.5, 0.25, 1.1, 0x3c4654, 0, 0.35, -1.9, 0.6);
+      for (let i = 0; i < 4; i++) {
+        box(1.4, 0.9, 0.9, [0xf5b942, 0x3f6d8e, 0xd9534a, 0x65a30d][i]!, -3.4 + i * 2.2, 1.0, -1.9, 0.6);
+        cyl(0.05, 0.05, 0.5, 0x8a8f96, -3.4 + i * 2.2, 1.7, -1.9, 0.4, { metalness: 0.6 });
+      }
+      for (let i = 0; i < 5; i++) box(0.5, 0.25, 0.4, 0x2e3440, -3.6 + i * 1.8, 0.6, -1.9, 0.6);
+      cyl(0.9, 0.9, 2.2, 0xd8d2c4, -5.6, 1.1, -2.6, 0.7, { metalness: 0.4 });
+      cyl(0.5, 0.7, 2.8, 0x8fa3b5, 5.8, 1.4, -2.8, 0.7, { metalness: 0.5 });
+      box(0.5, 0.4, 0.06, 0x1f2937, 5.8, 1.9, -2.35, 0.6);
+      plane(0.46, 0.34, boardTex("#1f2937", [{ t: "安全第一", s: 34, c: "#f5b942" }]), 5.8, 1.9, -2.31);
+      extraFigure(-1.4, 0, -0.6, Math.PI, 0xf5b301, 0x2e3440, false, "factory-worker");
+      extraFigure(2.2, 0, 0.4, Math.PI * 0.8, 0x2563eb, 0x1f2937, false, "factory-foreman");
+    } else if (setKind === "disney") {
+      // 香港迪士尼乐园: castle, flags, balloons, a ride — not a park bench
+      box(20, 5.5, 0.3, 0x7c3aed, 0, 2.75, -3.9, 1);
+      box(4.2, 0.9, 0.08, 0x4c1d95, -1.2, 3.55, -3.7, 0.6);
+      plane(4.1, 0.82, boardTex("#4c1d95", [{ t: "迪 士 尼 乐 园", s: 54, c: "#fde68a" }, { t: "城堡 · 游乐设施 · 花车", s: 30, c: "#ffffff" }]), -1.2, 3.55, -3.65);
+      for (const [tx, th] of [[-3.6, 3.4], [-2.6, 2.6], [-1.6, 3.0]] as const) {
+        cyl(0.28, 0.38, th, 0xf3ead8, tx, th / 2, -2.6, 0.8);
+        const roof = new THREE.Mesh(new THREE.ConeGeometry(0.42, 0.9, 8), mat(0x3b82f6, 0.7));
+        roof.position.set(tx, th + 0.45, -2.6); roof.castShadow = true; scene.add(roof);
+      }
+      box(2.6, 1.6, 0.5, 0xf3ead8, -2.6, 0.8, -2.6, 0.8);
+      for (let i = 0; i < 6; i++) {
+        const flag = box(0.04, 0.7, 0.5, [0xec4899, 0xf5b942, 0x22c55e, 0x0ea5e9][i % 4]!, -5.2 + i * 1.9, 2.9, -1.2, 0.8);
+        flag.rotation.y = 0.3;
+        cyl(0.03, 0.03, 1.6, 0x8a8f96, -5.2 + i * 1.9, 2.1, -1.2, 0.4, { metalness: 0.5 });
+      }
+      for (let i = 0; i < 4; i++) {
+        const balloon = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), mat([0xec4899, 0xf5b942, 0x3b82f6, 0x22c55e][i]!, 0.6));
+        balloon.position.set(-4.4 + i * 2.6, 3.1 + (i % 2) * 0.3, -0.6);
+        balloon.scale.y = 1.15; scene.add(balloon);
+      }
+      box(2.2, 0.5, 1.0, 0xd9534a, 3.6, 0.25, -1.4, 0.7);
+      box(1.8, 0.35, 0.8, 0xf5b942, 3.6, 0.75, -1.4, 0.7);
+      extraFigure(0.4, 0, -0.6, Math.PI, 0xec4899, 0x2f333a, false, "disney-guest");
+      extraFigure(2.8, 0, 0.5, Math.PI * 0.8, 0x22c55e, 0x374151, false, "disney-cast");
+    } else if (setKind === "tram") {
+      // 湾仔电车路: tracks, a green-and-cream ding-ding tram, a stop sign
+      box(20, 5.5, 0.3, 0x5a6a78, 0, 2.75, -3.9, 1);
+      box(3.8, 0.9, 0.08, 0x14532d, -2.2, 3.55, -3.7, 0.6);
+      plane(3.7, 0.82, boardTex("#14532d", [{ t: "叮 叮 电 车", s: 56, c: "#ffffff" }, { t: "湾仔电车路 · 请排队上车", s: 30, c: "#bbf7d0" }]), -2.2, 3.55, -3.65);
+      box(11, 0.04, 0.12, 0x2e3440, 0, 0.02, -1.3, 0.6);
+      box(11, 0.04, 0.12, 0x2e3440, 0, 0.02, -0.7, 0.6);
+      box(5.4, 1.7, 1.3, 0x65a30d, -0.6, 1.35, -1.0, 0.5);
+      box(5.5, 0.5, 1.34, 0xf3ead8, -0.6, 2.35, -1.0, 0.5);
+      for (let i = 0; i < 5; i++) box(0.7, 0.65, 0.06, 0xffd98a, -2.9 + i * 1.15, 1.6, -0.32, 0.3, { emissive: 0xffc873, emissiveIntensity: 0.6 });
+      box(0.5, 0.4, 0.06, 0x2b2118, -3.2, 1.5, -0.32, 0.4);
+      const wheelT1 = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.08, 8, 14), mat(0x14181d, 0.6));
+      wheelT1.position.set(-2.6, 0.28, -0.3); wheelT1.rotation.y = Math.PI / 2; scene.add(wheelT1);
+      const wheelT2 = wheelT1.clone(); wheelT2.position.x = 1.4; scene.add(wheelT2);
+      box(0.35, 1.9, 0.35, 0x3f6212, 4.6, 0.95, -2.4, 0.7);
+      box(0.9, 0.6, 0.06, 0x14532d, 4.6, 2.1, -2.2, 0.6);
+      plane(0.84, 0.54, boardTex("#14532d", [{ t: "电车站", s: 40, c: "#ffffff" }]), 4.6, 2.1, -2.16);
+      extraFigure(-0.6, 0, 0.6, Math.PI, 0x78716c, 0x2f333a, false, "tram-rider");
+      extraFigure(3.4, 0, 0.4, Math.PI * 0.8, 0xf97316, 0x374151, false, "tram-queue");
+    } else if (setKind === "temple") {
+      // 黄大仙祠 / 昂坪天坛大佛: red pillars, incense burner, fortune sticks
+      box(20, 5.5, 0.3, 0x8c2b2e, 0, 2.75, -3.9, 1);
+      box(3.8, 0.9, 0.08, 0x7c2d12, -2.2, 3.55, -3.7, 0.6);
+      plane(3.7, 0.82, boardTex("#7c2d12", [{ t: "黄 大 仙 祠", s: 56, c: "#fde68a" }, { t: "上香祈福 · 求签", s: 30, c: "#ffffff" }]), -2.2, 3.55, -3.65);
+      for (const px of [-3.4, 3.4]) {
+        cyl(0.22, 0.26, 3.4, 0xb45309, px, 1.7, -2.6, 0.7);
+        box(0.6, 0.25, 0.6, 0xf5b942, px, 3.5, -2.6, 0.6);
+      }
+      box(7.6, 0.35, 1.2, 0x14532d, 0, 3.85, -2.6, 0.8);
+      const roofT = box(8.2, 0.18, 1.5, 0xf5b942, 0, 4.15, -2.6, 0.7);
+      roofT.rotation.x = 0.12;
+      cyl(0.55, 0.45, 0.7, 0x8a5a3b, 0, 0.55, -1.6, 0.6);
+      cyl(0.62, 0.62, 0.08, 0x3c4148, 0, 0.95, -1.6, 0.5);
+      for (let i = 0; i < 9; i++) {
+        cyl(0.015, 0.015, 0.7, 0xd9534a, -0.4 + (i % 3) * 0.4, 1.35, -1.75 + Math.floor(i / 3) * 0.25, 0.7);
+      }
+      addSteam(0, 1.5, -1.6);
+      box(1.1, 1.0, 0.5, 0x8a5a3b, 3.6, 0.5, -1.9, 0.8);
+      for (let i = 0; i < 8; i++) box(0.05, 0.55, 0.05, 0xe0aa5e, 3.25 + (i % 4) * 0.24, 1.3, -1.9, 0.7);
+      extraFigure(-1.4, 0, -0.4, Math.PI * 0.9, 0x7c3aed, 0x2f333a, false, "temple-worshipper");
+      extraFigure(2.2, 0, 0.5, Math.PI, 0x78716c, 0x374151, false, "temple-fortune");
+    } else if (setKind === "miniature") {
+      // 世界之窗 / 锦绣中华民俗村: mini Eiffel Tower, pyramid, tiny landmarks
+      box(20, 5.5, 0.3, 0x3f6d8e, 0, 2.75, -3.9, 1);
+      box(3.8, 0.9, 0.08, 0x14202b, -2.2, 3.55, -3.7, 0.6);
+      plane(3.7, 0.82, boardTex("#14202b", [{ t: "世 界 之 窗", s: 56, c: "#ffffff" }, { t: "微缩世界 · 一天环游地球", s: 30, c: "#7dd3fc" }]), -2.2, 3.55, -3.65);
+      const eiffel = new THREE.Mesh(new THREE.ConeGeometry(0.9, 2.8, 4), mat(0x8a8f96, 0.5, { metalness: 0.5 }));
+      eiffel.position.set(-3.4, 1.4, -2.2); eiffel.castShadow = true; scene.add(eiffel);
+      box(0.5, 0.3, 0.5, 0x8a8f96, -3.4, 0.15, -2.2, 0.5);
+      const pyramid = new THREE.Mesh(new THREE.ConeGeometry(1.1, 1.5, 4), mat(0xe0aa5e, 0.9));
+      pyramid.position.set(-0.6, 0.75, -2.4); pyramid.rotation.y = Math.PI / 4; pyramid.castShadow = true; scene.add(pyramid);
+      box(0.9, 1.3, 0.9, 0xf3ead8, 1.8, 0.65, -2.4, 0.8);
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(0.55, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), mat(0x2b5ea7, 0.6));
+      dome.position.set(1.8, 1.3, -2.4); scene.add(dome);
+      cyl(0.18, 0.22, 1.1, 0xd8d2c4, 4.2, 0.55, -2.4, 0.8);
+      box(0.5, 0.5, 0.08, 0x65a30d, 4.2, 1.35, -2.4, 0.7);
+      box(11, 0.03, 1.15, 0xd9c9a8, 0, 0.015, 0.35, 1);
+      extraFigure(0.4, 0, -0.6, Math.PI, 0x0ea5e9, 0x2f333a, false, "miniature-tourist");
+      extraFigure(-1.8, 0, 0.5, Math.PI * 0.8, 0xf59e0b, 0x374151, false, "miniature-guide");
+    } else if (setKind === "farm") {
+      // 光明农场 / 海上田园 / 青青世界: fences, a cow, corn, milk churns
+      box(18, 0.8, 0.5, 0x3d7a44, 0, 0.4, -3.6, 1);
+      for (let i = 0; i < 6; i++) box(0.12, 0.9, 0.12, 0x8a5a3b, -5.4 + i * 2.1, 0.45, -2.6, 0.8);
+      box(11, 0.08, 0.08, 0x8a5a3b, 0, 0.75, -2.6, 0.8);
+      box(11, 0.08, 0.08, 0x8a5a3b, 0, 0.4, -2.6, 0.8);
+      box(1.6, 0.9, 0.9, 0xf3ead8, -3.2, 0.45, -1.4, 0.9);
+      box(0.5, 0.5, 0.6, 0xf3ead8, -2.2, 1.05, -1.4, 0.9);
+      box(0.12, 0.5, 0.12, 0xf3ead8, -2.35, 0.6, -1.1, 0.9);
+      box(0.12, 0.5, 0.12, 0xf3ead8, -2.05, 0.6, -1.1, 0.9);
+      for (let i = 0; i < 8; i++) {
+        const corn = new THREE.Mesh(new THREE.ConeGeometry(0.22, 1.1, 6), mat(0x65a30d, 1, { flatShading: true }));
+        corn.position.set(1.6 + (i % 4) * 0.8, 0.55, -2.2 - Math.floor(i / 4) * 0.8);
+        corn.castShadow = true; scene.add(corn);
+      }
+      cyl(0.28, 0.24, 0.6, 0x9aa3ad, 4.2, 0.3, -1.2, 0.4, { metalness: 0.6 });
+      cyl(0.24, 0.2, 0.55, 0x9aa3ad, 4.8, 0.28, -0.7, 0.4, { metalness: 0.6 });
+      box(1.9, 0.12, 0.52, 0x8a5a3b, -0.6, 0.52, 1.0, 0.9);
+      extraFigure(-3.2, 0, -0.4, Math.PI * 0.7, 0x65a30d, 0x374151, false, "farm-farmer");
+      extraFigure(2.6, 0, 0.5, Math.PI, 0xec4899, 0x2f333a, false, "farm-visitor");
+    } else if (setKind === "watershow") {
+      // 欢乐海岸: fountain water show, stage, mall frontage
+      box(20, 5.5, 0.3, 0x0c4a6e, 0, 2.75, -3.9, 1);
+      box(3.8, 0.9, 0.08, 0x082f49, -2.2, 3.55, -3.7, 0.6);
+      plane(3.7, 0.82, boardTex("#082f49", [{ t: "欢 乐 海 岸", s: 56, c: "#7dd3fc" }, { t: "水秀 · 滨海商业", s: 30, c: "#ffffff" }]), -2.2, 3.55, -3.65);
+      cyl(1.9, 2.1, 0.25, 0x9aa3ad, 0, 0.12, -1.2, 0.7);
+      cyl(1.7, 1.7, 0.06, 0x38bdf8, 0, 0.28, -1.2, 0.2, { metalness: 0.3 });
+      for (let i = 0; i < 5; i++) {
+        const jet = cyl(0.05, 0.09, 1.1 + (i % 3) * 0.4, 0x7dd3fc, -1.2 + i * 0.6, 0.9, -1.2, 0.15, { transparent: true, opacity: 0.55 });
+        jet.castShadow = false;
+      }
+      const jetGlow = addGlow(0, 1.6, -1.2, 2.6, 0x7dd3fc, 0.5);
+      void jetGlow;
+      box(4.2, 0.45, 1.6, 0x23233a, -3.6, 0.23, 1.1, 0.6);
+      box(4.2, 0.05, 0.08, 0xff3ea5, -3.6, 0.47, 0.32, 0.3, { emissive: 0xff3ea5, emissiveIntensity: 2 });
+      box(5.2, 2.6, 0.15, 0xffe2b0, 4.6, 1.6, -3.55, 0.6, { emissive: 0xffc98a, emissiveIntensity: 0.3 });
+      box(5.4, 0.6, 0.1, 0x111827, 4.6, 3.2, -3.5, 0.5);
+      plane(5.2, 0.52, boardTex("#111827", [{ t: "滨海商场 · 新品上市", s: 40, c: "#f9a8d4" }]), 4.6, 3.2, -3.44);
+      extraFigure(0.6, 0, 0.4, Math.PI, 0x0ea5e9, 0x2f333a, false, "watershow-viewer");
+      extraFigure(-1.6, 0, 0.6, Math.PI * 0.8, 0xf59e0b, 0x374151, false, "watershow-viewer2");
+    } else if (setKind === "boardwalk") {
+      // 盐田海滨栈道 / 尖沙咀海滨 / 将军澳海滨: wooden boardwalk, rails,
+      // the sea and the skyline across the water — not a beach
+      box(11, 0.06, 2.2, 0x8a6f4d, 0, 0.03, 0.4, 1);
+      for (let i = 0; i < 12; i++) box(0.06, 0.03, 2.2, 0x6b4630, -5 + i * 0.92, 0.07, 0.4, 1);
+      for (const rz of [-0.6, 1.4]) {
+        box(11, 0.05, 0.06, 0x5a6a78, 0, 1.05, rz, 0.4, { metalness: 0.5 });
+        for (let i = 0; i < 8; i++) cyl(0.035, 0.035, 1.05, 0x5a6a78, -5 + i * 1.45, 0.52, rz, 0.4, { metalness: 0.5 });
+      }
+      const sea = new THREE.Mesh(new THREE.PlaneGeometry(30, 8), mat(0x3b8fc4, 0.25));
+      sea.rotation.x = -Math.PI / 2; sea.position.set(0, -0.12, -6.5); scene.add(sea);
+      const skylineB = plane(14, 2.2, skylineTex(night), 0, 1.6, -9.5);
+      void skylineB;
+      box(1.9, 0.12, 0.52, 0x8a5a3b, 2.4, 0.52, 0.9, 0.9);
+      box(0.12, 0.52, 0.12, 0x6b4630, 1.65, 0.26, 0.9); box(0.12, 0.52, 0.12, 0x6b4630, 3.15, 0.26, 0.9);
+      extraFigure(-2.2, 0, 0.4, Math.PI * 0.6, 0x22c55e, 0x374151, false, "boardwalk-walker");
+      extraFigure(2.4, -0.3, 0.85, Math.PI, 0xec4899, 0x3a3f4a, true, "boardwalk-sitter");
+    } else if (setKind === "fishingport") {
+      // 巽寮湾渔港 / 大澳渔村: pier, fishing boats, nets, the fresh catch
+      box(11, 0.06, 2.4, 0x8a6f4d, 0, 0.03, 0.4, 1);
+      const seaF = new THREE.Mesh(new THREE.PlaneGeometry(30, 10), mat(0x2e7fb8, 0.25));
+      seaF.rotation.x = -Math.PI / 2; seaF.position.set(0, -0.15, -7); scene.add(seaF);
+      box(3.2, 0.5, 1.4, 0x8a5a3b, -3.0, 0.35, -2.6, 0.8);
+      box(1.0, 0.7, 1.0, 0xf3ead8, -3.6, 1.05, -2.6, 0.8);
+      cyl(0.04, 0.04, 1.6, 0x8a5a3b, -3.0, 1.5, -2.6, 0.6);
+      box(3.8, 0.45, 1.5, 0x3f6d8e, 2.6, 0.3, -2.8, 0.8);
+      box(0.9, 0.6, 0.9, 0xe8e2d4, 2.0, 0.95, -2.8, 0.8);
+      cyl(0.04, 0.04, 1.4, 0x8a5a3b, 2.6, 1.4, -2.8, 0.6);
+      for (let i = 0; i < 3; i++) {
+        box(1.0, 0.3, 0.8, 0x74522f, -0.6 + i * 1.4, 0.18, -1.2, 0.9);
+        for (let si = 0; si < 4; si++) {
+          const fish = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), mat(0xd9d9d9, 0.6));
+          fish.scale.set(1.8, 0.6, 0.6);
+          fish.position.set(-0.85 + i * 1.4 + (si % 2) * 0.5, 0.38, -1.35 + Math.floor(si / 2) * 0.3);
+          scene.add(fish);
+        }
+      }
+      box(2.2, 0.02, 1.4, 0x65a30d, 4.6, 0.05, 0.6, 1);
+      extraFigure(-3.0, 0.35, -2.6, Math.PI * 0.7, 0x0e7490, 0x1f2937, false, "fishingport-ahai");
+      extraFigure(1.2, 0, -0.6, Math.PI, 0x7a9a4d, 0x44403c, false, "fishingport-seller");
+    } else if (setKind === "bikehub") {
+      // 红花湖骑行站 / 将军澳单车径: rental bikes, a greenway sign
+      box(18, 0.8, 0.5, 0x3d7a44, 0, 0.4, -3.6, 1);
+      box(11.5, 0.03, 1.15, 0xd9c9a8, 0, 0.015, 0.35, 1);
+      box(3.0, 0.9, 0.08, 0x14532d, -2.4, 3.4, -3.7, 0.6);
+      plane(2.9, 0.82, boardTex("#14532d", [{ t: "骑 行 站", s: 58, c: "#ffffff" }, { t: "18 公里绿道 · 租车还车", s: 28, c: "#bbf7d0" }]), -2.4, 3.4, -3.65);
+      for (let i = 0; i < 3; i++) {
+        const bx = -3.2 + i * 2.4;
+        const w1 = new THREE.Mesh(new THREE.TorusGeometry(0.26, 0.04, 8, 16), mat(0x14181d, 0.6));
+        w1.position.set(bx - 0.55, 0.26, -1.4); scene.add(w1);
+        const w2 = w1.clone(); w2.position.x = bx + 0.55; scene.add(w2);
+        const frame = box(1.1, 0.05, 0.05, [0xd9534a, 0x3f6d8e, 0x65a30d][i]!, bx, 0.62, -1.4, 0.6);
+        frame.rotation.z = 0.12;
+        box(0.35, 0.05, 0.05, 0x2e3440, bx + 0.45, 0.85, -1.4, 0.6);
+      }
+      for (let i = 0; i < 4; i++) {
+        const tx = -4.4 + i * 2.7;
+        cyl(0.1, 0.14, 0.9, 0x7a4b2d, tx, 0.45, -2.5 - (i % 2) * 0.5, 1);
+        const fol = new THREE.Mesh(new THREE.ConeGeometry(0.95, 2.1, 7), mat(0x4d9b5f, 1, { flatShading: true }));
+        fol.position.set(tx, 1.95, -2.5 - (i % 2) * 0.5);
+        fol.castShadow = true;
+        scene.add(fol);
+      }
+      const cyclist = extraFigure(1.8, 0, 0.35, -Math.PI / 2, 0xec4899, 0x2b2b33, false, "bikehub-cyclist");
+      cyclist.legL.rotation.x = 0.5; cyclist.legR.rotation.x = -0.45;
+      extraFigure(-2.4, 0, -0.6, Math.PI, 0x2563eb, 0x1f2937, false, "bikehub-rental");
+    } else if (setKind === "buildplot") {
+      // build-your-own-house (round-2, house.ts): an empty 12×8 plot with
+      // a grid, the player's own walls / rooms / furniture on top of it.
+      // The editor UI is App-side; this set is the walkable 3D preview.
+      box(20, 5.5, 0.3, 0xe9e2d4, 0, 2.75, -3.9, 1);
+      box(3.6, 0.9, 0.08, 0x3f6212, -2.4, 3.55, -3.7, 0.6);
+      plane(3.5, 0.82, boardTex("#3f6212", [{ t: "我 的 地 块", s: 56, c: "#fde68a" }, { t: "12 × 8 米 · 自己盖房子", s: 30, c: "#ffffff" }]), -2.4, 3.55, -3.65);
+      for (let i = 0; i <= 12; i++) box(0.03, 0.01, 8, 0x8a8f96, -6 + i, 0.005, 0, 1);
+      for (let i = 0; i <= 8; i++) box(12, 0.01, 0.03, 0x8a8f96, 0, 0.005, -4 + i, 1);
+      box(12.2, 0.08, 0.08, 0x3f6212, 0, 0.04, -4.05, 0.8);
+      box(12.2, 0.08, 0.08, 0x3f6212, 0, 0.04, 4.05, 0.8);
+      box(0.08, 0.08, 8.2, 0x3f6212, -6.05, 0.04, 0, 0.8);
+      box(0.08, 0.08, 8.2, 0x3f6212, 6.05, 0.04, 0, 0.8);
+      const layout = houseLayout ?? { wallColor: 0xf6efe2, floorColor: 0x9a6b40, rooms: [], walls: [], items: [] };
+      for (const r of layout.rooms) {
+        box(r.w, 0.04, r.d, r.kind === "bathroom" ? 0x7ec2ee : r.kind === "kitchen" ? 0xe0aa5e : r.kind === "balcony" ? 0x65a30d : 0xd9c9a8, r.x, 0.02, r.z, 1);
+        box(r.w, 1.0, 0.12, layout.wallColor, r.x, 0.5, r.z - r.d / 2, 0.9);
+        box(r.w, 1.0, 0.12, layout.wallColor, r.x, 0.5, r.z + r.d / 2, 0.9);
+        box(0.12, 1.0, r.d, layout.wallColor, r.x - r.w / 2, 0.5, r.z, 0.9);
+        box(0.12, 1.0, r.d, layout.wallColor, r.x + r.w / 2, 0.5, r.z, 0.9);
+      }
+      for (const w of layout.walls) {
+        const wallMesh = box(w.rot === 0 ? w.len : 0.14, 1.1, w.rot === 0 ? 0.14 : w.len, layout.wallColor, w.x, 0.55, w.z, 0.9);
+        void wallMesh;
+      }
+      for (const it of layout.items) {
+        const furn = box(0.9, 0.55, 0.6, it.furnId === "bed-double" ? 0xd9534a : it.furnId === "sofa-fabric" ? 0x3f6d8e : it.furnId === "kitchen-cabinet" ? 0x8a5a3b : 0x78716c, it.x, 0.28, it.z, 0.8);
+        furn.rotation.y = it.ry;
+      }
+      if (layout.rooms.length === 0 && layout.walls.length === 0 && layout.items.length === 0) {
+        box(1.2, 0.9, 0.8, 0xd8d2c4, -4.5, 0.45, -2.5, 0.8);
+        box(1.2, 0.12, 0.8, 0x3f6212, -4.5, 0.96, -2.5, 0.8);
+      }
     } else if (setKind === "mall") {
       box(22, 8, 0.3, 0xe9e2d4, 0, 4, -3.75, 1);
       // storefront: glowing interior behind glass panels + sign
@@ -1776,18 +2336,18 @@ export function LifeStage3D(p: Props) {
         { x: -2.0, y: -0.2, z: -1.45, ry: 0.08 },
       ][tr] ?? { x: -2.95, y: -0.12, z: -2.45, ry: 0.15 };
       if (partner) {
-        const seated = extraFigure(seat.x, seat.y, seat.z, seat.ry, partner.shirt, partner.pants, true);
+        const seated = extraFigure(seat.x, seat.y, seat.z, seat.ry, partner.shirt, partner.pants, true, partnerFaceId ?? "partner");
         wearAccessory(seated.g, partner.accessory);
         bobbers.splice(bobbers.findIndex((b) => b.g === seated.g), 1);
         talker = seated;
       }
       (propsRef.current.household ?? []).slice(0, 3).forEach((k, i) => {
-        const f = extraFigure(seat.x + 0.9 + i * 0.62, seat.y, seat.z + 0.15, seat.ry + 0.15, k.shirt, k.pants, true);
+        const f = extraFigure(seat.x + 0.9 + i * 0.62, seat.y, seat.z + 0.15, seat.ry + 0.15, k.shirt, k.pants, true, `kid-${i}`);
         f.g.scale.setScalar(0.62);
         bobbers.splice(bobbers.findIndex((b) => b.g === f.g), 1);
       });
     } else if (partner) {
-      const stood = extraFigure(1.05, 0, 0.6, -Math.PI / 2, partner.shirt, partner.pants);
+      const stood = extraFigure(1.05, 0, 0.6, -Math.PI / 2, partner.shirt, partner.pants, false, partnerFaceId ?? "partner");
       wearAccessory(stood.g, partner.accessory);
       bobbers.splice(bobbers.findIndex((b) => b.g === stood.g), 1);
       talker = stood;
@@ -2025,7 +2585,7 @@ export function LifeStage3D(p: Props) {
     }
 
     /* ---- the actor ---- */
-    const actor = makeFigure(mat, shirt, pants);
+    const actor = makeFigure(mat, shirt, pants, 0xf2c79b, faceId ?? `player-${emoji}`);
     wearAccessory(actor.g, propsRef.current.accessory);
     const face = faceSprite(emoji);
     face.position.y = 2.42;
@@ -2147,7 +2707,7 @@ export function LifeStage3D(p: Props) {
        dragging the view orbits, and a button appears when you reach a spot */
     const roaming = !!propsRef.current.roam && pose === "idle";
     const pinSprites: { sp: THREE.Sprite; ring: THREE.Object3D; x: number; z: number; id: string }[] = [];
-    const nav = { x: 0.15, z: 1.15, tx: 0.15, tz: 1.15, yaw: Math.PI, dist: 0 };
+    const nav = { x: 0.15, z: 1.15, tx: 0.15, tz: 1.15, yaw: Math.PI, dist: 0, vx: 0, vz: 0 };
     let camYaw = 0;
     let camPitch = 0.18;
     let lookHold = 0;
@@ -2221,11 +2781,19 @@ export function LifeStage3D(p: Props) {
       renderer.domElement.addEventListener("pointermove", onMove);
       renderer.domElement.addEventListener("pointerup", onUp);
       renderer.domElement.addEventListener("pointercancel", onUp);
+      // desktop keyboard (round-2, controls.ts): WASD/arrows + Shift-run +
+      // E/Space to trigger the near spot — same stick ref as the joystick
+      const detachKeys = attachKeyboardRoam({
+        stick: stickRef,
+        onInteract: () => { if (lastNear) propsRef.current.onSpot?.(lastNear); },
+        onFirstKey: () => setKbUsed(true),
+      });
       detachRoam = () => {
         renderer.domElement.removeEventListener("pointerdown", onDown);
         renderer.domElement.removeEventListener("pointermove", onMove);
         renderer.domElement.removeEventListener("pointerup", onUp);
         renderer.domElement.removeEventListener("pointercancel", onUp);
+        detachKeys();
         stickRef.current.x = 0; stickRef.current.y = 0;
         setNearRef.current("");
       };
@@ -2310,8 +2878,14 @@ export function LifeStage3D(p: Props) {
           const ml = Math.hypot(mx, mz) || 1;
           mx /= ml; mz /= ml;
           const sprint = mag > 0.9;
-          const step = (sprint ? 2.45 : 1.05 + mag * 0.85) * dt;
-          const c = clampWalk(nav.x + mx * step, nav.z + mz * step);
+          // smooth acceleration (round-2): velocity eases toward the
+          // stick's target instead of snapping, so starts/stops feel soft
+          const speed = sprint ? 2.45 : 1.05 + mag * 0.85;
+          const vk = 1 - Math.exp(-10 * dt);
+          nav.vx += (mx * speed - nav.vx) * vk;
+          nav.vz += (mz * speed - nav.vz) * vk;
+          const step = Math.hypot(nav.vx, nav.vz) * dt;
+          const c = clampWalk(nav.x + nav.vx * dt, nav.z + nav.vz * dt);
           nav.x = c.x; nav.z = c.z; nav.tx = c.x; nav.tz = c.z; nav.dist += step;
           face(mx, mz);
           const swing = Math.sin(nav.dist * (sprint ? 2.55 : 2.15)) * (sprint ? 0.78 : 0.62);
@@ -2335,11 +2909,27 @@ export function LifeStage3D(p: Props) {
             A.legL.rotation.x = swing; A.legR.rotation.x = -swing;
             A.armL.rotation.x = -swing * 0.75; A.armR.rotation.x = swing * 0.75;
           } else {
-            A.g.position.set(nav.x, Math.sin(t * 1.6) * 0.015, nav.z);
-            A.g.rotation.y = nav.yaw;
-            const swayA = Math.sin(t * 1.6) * 0.045;
-            A.armL.rotation.x = swayA; A.armR.rotation.x = -swayA;
-            A.head.rotation.y = Math.sin(t * 0.45) * 0.18;
+            // glide on release: leftover stick velocity decays over a few
+            // frames instead of stopping dead, then the idle sway resumes
+            const gk = 1 - Math.exp(-8 * Math.max(dt, 0.016));
+            nav.vx *= 1 - gk; nav.vz *= 1 - gk;
+            if (Math.hypot(nav.vx, nav.vz) > 0.05 && dt > 0) {
+              const gc = clampWalk(nav.x + nav.vx * dt, nav.z + nav.vz * dt);
+              nav.x = gc.x; nav.z = gc.z; nav.dist += Math.hypot(nav.vx, nav.vz) * dt;
+              face(nav.vx, nav.vz);
+              const gswing = Math.sin(nav.dist * 2.15) * 0.62;
+              A.g.position.set(nav.x, Math.abs(Math.cos(nav.dist * 2.15)) * 0.06, nav.z);
+              A.g.rotation.y = nav.yaw;
+              A.g.rotation.x = 0.04;
+              A.legL.rotation.x = gswing; A.legR.rotation.x = -gswing;
+              A.armL.rotation.x = -gswing * 0.75; A.armR.rotation.x = gswing * 0.75;
+            } else {
+              A.g.position.set(nav.x, Math.sin(t * 1.6) * 0.015, nav.z);
+              A.g.rotation.y = nav.yaw;
+              const swayA = Math.sin(t * 1.6) * 0.045;
+              A.armL.rotation.x = swayA; A.armR.rotation.x = -swayA;
+              A.head.rotation.y = Math.sin(t * 0.45) * 0.18;
+            }
           }
         }
         let best = "", bestD = 1.15;
@@ -2514,7 +3104,7 @@ export function LifeStage3D(p: Props) {
       } else {
         // idle: placed per set, breathing + an occasional glance around
         if (setKind === "office") { A.g.position.set(2.05, 0, 0.95); A.g.rotation.y = Math.PI * 0.92; }
-        else if (setKind === "market" || setKind === "electronics") { A.g.position.set(0.2, 0, 0.25); A.g.rotation.y = Math.PI; }
+        else if (setKind === "market" || setKind === "electronics" || setKind === "oilpainting" || setKind === "secondhand" || setKind === "seafood" || setKind === "oldtown" || setKind === "womensstreet" || setKind === "museum" || setKind === "library" || setKind === "factory" || setKind === "disney" || setKind === "tram" || setKind === "temple" || setKind === "miniature") { A.g.position.set(0.2, 0, 0.25); A.g.rotation.y = Math.PI; }
         else if (setKind === "station") { A.g.position.set(0.2, 0, 0.55); A.g.rotation.y = Math.PI; }
         else if (setKind === "concourse") { A.g.position.set(-0.05, 0, 0.55); A.g.rotation.y = Math.PI / 2; }
         else if (setKind === "platform") { A.g.position.set(0.2, 0, 0.55); A.g.rotation.y = Math.PI; }
@@ -2621,7 +3211,12 @@ export function LifeStage3D(p: Props) {
   return (
     <>
       <div ref={mountRef} className="absolute inset-0" aria-hidden="true" />
-      {p.roam && !glFailed && <MoveStick stick={stickRef} />}
+      {p.roam && !glFailed && !kbUsed && <MoveStick stick={stickRef} />}
+      {p.roam && !glFailed && desktop && (
+        <div className="pointer-events-none absolute left-3 top-3 z-20 rounded-full bg-black/55 px-3 py-1 text-[11px] font-bold text-white">
+          {p.en ? KEYBOARD_HINTS.en : KEYBOARD_HINTS.zh}
+        </div>
+      )}
       {p.roam && !glFailed && near && (
         <button type="button" onClick={() => propsRef.current.onSpot?.(near.id)} className="absolute bottom-4 right-3 z-20 flex items-center gap-2 rounded-full border border-white/70 bg-white/95 py-2 pl-2.5 pr-3.5 text-[13px] font-black text-[#14202b] shadow-[0_8px_20px_rgba(0,0,0,0.28)]">
           <span className="grid h-9 w-9 place-items-center rounded-full bg-[#14202b] text-lg">{near.emoji}</span>
