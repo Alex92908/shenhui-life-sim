@@ -1316,6 +1316,26 @@ export function MapView(p: Props) {
     );
     land.receiveShadow = true;
     scene.add(land);
+    // hinterland: neighbouring land continuing off the map edge (Dongguan /
+    // Huizhou / Hong Kong New Territories) — solid land, same height and
+    // colour as our own, so the city no longer reads as an island. It is
+    // NOT in TERRAIN LAND, so isLand / nearestLand / click-to-walk stay
+    // inside the city (visual only, you cannot walk off into Dongguan).
+    // +0.02 lift: it overlaps the faded ACROSS where the two meet (the NT),
+    // and a coplanar deck would z-fight with it.
+    if (TERRAIN[cityKey].HINTERLAND.length) {
+      const toShapeH = (ring: [number, number][]) => { const sh = new THREE.Shape(); ring.forEach(([x, z], i) => (i ? sh.lineTo(x, -z) : sh.moveTo(x, -z))); return sh; };
+      const hShapes = TERRAIN[cityKey].HINTERLAND.map((poly) => { const sh = toShapeH(poly[0]!); for (const hole of poly.slice(1)) sh.holes.push(toShapeH(hole)); return sh; });
+      const hGeo = new THREE.ExtrudeGeometry(hShapes, { depth: LAND, bevelEnabled: false });
+      hGeo.rotateX(-Math.PI / 2);
+      const hinter = new THREE.Mesh(
+        hGeo,
+        new THREE.MeshStandardMaterial({ color: cityKey === "sz" ? 0xd9cfae : 0xcfd6a8, roughness: 1 }),
+      );
+      hinter.position.y = 0.02;
+      hinter.receiveShadow = true;
+      scene.add(hinter);
+    }
     // the neighbour across the border (Hong Kong from Shenzhen and vice versa): seen, not walked
     if (TERRAIN[cityKey].ACROSS.length) {
       const toShape2 = (ring: [number, number][]) => { const sh = new THREE.Shape(); ring.forEach(([x, z], i) => (i ? sh.lineTo(x, -z) : sh.moveTo(x, -z))); return sh; };
