@@ -10,7 +10,8 @@
 // a real-time water shader (waves + ripples + Fresnel + foam), refined
 // traffic (headlights / brake lights / wheels / suspension bob), and live
 // ambient life — circling birds, park butterflies, schooling fish, swaying
-// trees — plus consistent map-character badges that bob while walking.
+// trees — plus the 3D figures themselves as the characters (no floating
+// avatar badges; the standard is the figure + a small name label).
 // Clicking a building (or its label chip) walks there.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import * as THREE from "three";
@@ -327,6 +328,28 @@ export function isLand(cityKey: CityKey, x: number, z: number, margin = 0): bool
   return margin <= 0 || [[margin, 0], [-margin, 0], [0, margin], [0, -margin]].every(([dx, dz]) => landAt(cityKey, x + dx!, z + dz!));
 }
 
+/** Nearest dry land to (x, z): the point itself if it is land, else the
+    closest point on an expanding ring (step 0.5, out to 10 units). The
+    waterfront promenade / beach at the Shenzhen Bay coast renders as a
+    walkable-looking strip but sits outside the terrain LAND polygons, so a
+    click there used to be silently dropped; clamping walks the player to
+    the nearest shore instead. Null when there is no land within 10 units
+    (e.g. clicked far out in the sea) — the click stays a no-op. */
+export function nearestLand(cityKey: CityKey, x: number, z: number, maxR = 10, step = 0.5): { x: number; z: number } | null {
+  if (isLand(cityKey, x, z)) return { x, z };
+  for (let r = step; r <= maxR + 1e-9; r += step) {
+    // samples ~step apart along the ring, at least 8 so small rings are covered
+    const n = Math.max(8, Math.ceil((2 * Math.PI * r) / step));
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const sx = x + Math.cos(a) * r;
+      const sz = z + Math.sin(a) * r;
+      if (isLand(cityKey, sx, sz)) return { x: sx, z: sz };
+    }
+  }
+  return null;
+}
+
 function hash(s: string): number {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
@@ -437,29 +460,6 @@ function emojiSprite(emoji: string, ring: number, self = false): THREE.Sprite {
   sp.scale.set(1.3, 1.3, 1); // a small badge, not bigger than the person under it
   sp.renderOrder = 20;
   return sp;
-}
-
-/* The head badge must always be a FACE, never a role object. The badge
-   used to show the person's role/identity emoji straight (a.emoji), and
-   most identities and NPCs carry an OBJECT for that — delivery rider 🛵,
-   taxi driver 🚕, salesperson 🛍️, 惠州躺平青年 🛋️, student 🎒 — so the
-   badge floating above the head read as a scooter / taxi / backpack
-   sitting ON the person's head. The role is not lost: the name chip
-   already carries it (`${name}·${job}`) and the detail panel shows it.
-   Person/face emojis that the game actually uses stay as-is; anything
-   else gets a stable face from the palette, picked by the actor's seed
-   (hash of name/id), so the same person always shows the same face.
-   No per-player face/avatar choice exists (RemotePlayer and the self
-   record carry only the identity emoji + hair + accessory), so players
-   get a neutral face from the same palette. */
-const BADGE_FACES = ["🧑", "👩", "👨", "👵", "👴", "👧", "👦", "🙂"];
-const FACE_EMOJIS = new Set([
-  "🧑‍🏭", "👨‍💻", "🧑‍🏫", "👷", "👨‍🍳", "👩‍⚕️", "💆", "🏋️", "💂", "👩‍💻",
-  "🧑‍💼", "🤰", "🧑", "👩", "👨", "👵", "👴", "👧", "👦", "👶", "🙂",
-]);
-function badgeFaceEmoji(emoji: string, seed: number): string {
-  if (FACE_EMOJIS.has(emoji)) return emoji;
-  return BADGE_FACES[Math.abs(seed) % BADGE_FACES.length] ?? "🧑";
 }
 
 /* The pet model's moving parts, kept on the group so the frame loop can
@@ -714,6 +714,11 @@ export function MapView(p: Props) {
      The ring mesh lives in the scene effect (next to pinRing). */
   const clickWalkRef = useRef<{ x: number; z: number } | null>(null);
   const clickMarkerRef = useRef<THREE.Mesh | null>(null);
+  /* LoL-style move-click ripple: performance.now() of the last click-to-walk
+     click (-1 = none). The frame loop expands + fades the ring for ~500ms
+     from this timestamp, then the ring settles into the faint persistent
+     destination marker while the player walks there. */
+  const clickRippleAtRef = useRef<number>(-1);
   /* a trip or teleport cancels any click-walk, so the figure never walks
      back to a stale point after arriving somewhere else */
   useEffect(() => {
@@ -943,7 +948,11 @@ export function MapView(p: Props) {
       const preferred = locs.filter((l) => npcAllowedAt(n, l));
       const pool = preferred.length > 0 ? preferred : locs;
       const loc = pool[(hash(n.name) + i) % pool.length];
-      const speed = n.behavior === "commute" ? 5.6 : n.behavior === "patrol" ? 3.4 : n.behavior === "stay" ? 2 : 4.2;
+      /* 路人走路的速度：不能比玩家步行（2.6）快，不然满街都是跑步的人。
+         普通路人 1.8 是散步，通勤族 2.6 是赶路的快走（等于玩家步行），
+         巡逻 2.0 是稳步，守摊/守工位 1.4 是慢挪。之前 wander 4.2 =
+         玩家跑步速度、commute 5.6 比玩家跑步还快，所以看着像在 sprint。 */
+      const speed = n.behavior === "commute" ? 2.6 : n.behavior === "patrol" ? 2.0 : n.behavior === "stay" ? 1.4 : 1.8;
       upsert({ key: `npc-${n.name}`, name: `${n.name}·${n.job}${p.npcMoodEmoji?.[n.name] ? ` ${p.npcMoodEmoji[n.name]}` : ""}`, emoji: n.emoji, color: n.color, wander: true, seed: hash(n.name), heading: 0, phase: hash(n.name) % 6, blend: 0, startLoc: loc?.id ?? "home", shirt: n.shirt, pants: n.pants, accessory: n.accessory, hair: hash(n.name) % 4, behavior: n.behavior, speed });
     });
     // NPC schedules: the beat changes with the real hour, and when it does
@@ -2684,17 +2693,10 @@ export function MapView(p: Props) {
         mkAcc("bag", (g) => { const m = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.44, 0.16), new THREE.MeshStandardMaterial({ color: 0x54432e, roughness: 0.85 })); m.position.set(0, 1.18, -0.22); m.castShadow = true; g.add(m); });
         body.add(accGroup);
         (v.userData as { acc?: THREE.Group }).acc = accGroup;
-        // round-9: the badge is a FACE, never the role emoji — a 🛵/🚕/🎒
-        // badge reads as a vehicle or a backpack sitting on the head.
-        const sp = emojiSprite(badgeFaceEmoji(a.emoji, a.seed), a.color, !!a.isSelf);
-        // ROUND-2 (a): one consistent badge size at map scale — NPCs 1.45,
-        // self 2.1 — instead of the default 1.3 that drowned at city zoom.
-        // The sprite approach stays; only the sizing/bob changes.
-        if (a.isSelf) { sp.scale.set(2.1, 2.1, 1); sp.position.y = 2.7; sp.renderOrder = 25; }
-        else { sp.scale.set(1.45, 1.45, 1); sp.position.y = 2.45; }
-        (v.userData as { badge?: THREE.Sprite; badgeBaseY?: number }).badge = sp;
-        (v.userData as { badgeBaseY?: number }).badgeBaseY = a.isSelf ? 2.7 : 2.45;
-        body.add(sp);
+        // No floating avatar badge above the head (round-9 removed it):
+        // the standard way is the 3D figure itself (it already has a face)
+        // plus the small DOM name chip. A big circular portrait dwarfs the
+        // character and covers the map at close zoom.
         if (a.isSelf) {
           const ring = new THREE.Mesh(
             new THREE.RingGeometry(0.65, 0.85, 28),
@@ -2969,11 +2971,21 @@ export function MapView(p: Props) {
         // ROUND-8 click-to-walk (mouse only — touch keeps its tap-to-select):
         // no building hit, so raycast the ground plane and walk there.
         // A trip in progress wins; a new click retargets, arrival clears.
+        // Clicked water / off-land (e.g. the Shenzhen Bay promenade, which
+        // looks walkable but sits outside the terrain LAND polygons): walk
+        // to the nearest dry land instead of silently doing nothing. The
+        // blue ring marker follows clickWalkRef, so it shows at the clamped
+        // point. No land within 10 units (far out in the sea): no-op.
         if (e.pointerType === "mouse" && !propsRef.current.selfEtaAt) {
           const ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), -LAND);
           const pt = new THREE.Vector3();
-          if (rc.ray.intersectPlane(ground, pt) && isLand(cityKey, pt.x, pt.z)) {
-            clickWalkRef.current = { x: pt.x, z: pt.z };
+          if (rc.ray.intersectPlane(ground, pt)) {
+            const dest = nearestLand(cityKey, pt.x, pt.z);
+            if (dest) {
+              clickWalkRef.current = dest;
+              // LoL-style move-click ripple: (re)start the expanding ring
+              clickRippleAtRef.current = performance.now();
+            }
           }
         }
       }
@@ -3592,10 +3604,6 @@ export function MapView(p: Props) {
           limbs.armL.rotation.x = -swing * 0.8 + idleSway;
           limbs.armR.rotation.x = swing * 0.8 - idleSway;
         }
-        // ROUND-2 (a): the emoji badge bobs with the walk cycle (and idles
-        // with the breathing), so a walking person reads as walking
-        const actorBadge = (view.userData as { badge?: THREE.Sprite; badgeBaseY?: number }).badge;
-        if (actorBadge) actorBadge.position.y = ((view.userData as { badgeBaseY?: number }).badgeBaseY ?? 2.45) + Math.sin(a.phase) * 0.07 * a.blend;
         if (a.isSelf) playerLight.position.set(a.x, LAND + 3.2, a.z);
         if (a.isSelf) {
           // ride the chosen vehicle while moving — and SIT on it: the pose
@@ -3614,12 +3622,9 @@ export function MapView(p: Props) {
             const rb = a.rideBlend ?? 0;
             const rm = a.rideMode ?? "bike";
             veh.visible = rb > 0.03;
-            // riding: the whole rig (vehicle + you) grows a touch so the car / bus / scooter reads on the map,
-            // and your badge floats above the roof instead of covering the vehicle
+            // riding: the whole rig (vehicle + you) grows a touch so the car / bus / scooter reads on the map
             const grow = rm === "bike" ? 0.25 : 0.5;
             view.scale.setScalar(1 + grow * rb);
-            const bdg = (view.userData as { badge?: THREE.Sprite }).badge;
-            if (bdg) bdg.position.y = 2.7 + (rm === "bus" ? 1.1 : 0.6) * rb;
             const limbs0 = (view.userData as { limbs?: ActorLimbs }).limbs;
             if (veh.visible && limbs0) {
               for (const child of veh.children) child.visible = child.name === `veh-${rm}`;
@@ -3667,8 +3672,6 @@ export function MapView(p: Props) {
           }
           if (moving && Math.hypot(a.x - trailLast.x, a.z - trailLast.z) > 0.7) pushTrail(a.x, a.z);
         }
-        const badge = (view.userData as { badge?: THREE.Sprite }).badge;
-        if (badge) { const k = 2.1 * (1 + Math.sin(tSec * 3) * 0.06); badge.scale.set(k, k, 1); badge.visible = !scenicRef.current; }
         const ring = (view.userData as { ring?: THREE.Mesh }).ring;
         if (ring) {
           const s = 1 + Math.sin(tSec * 3) * 0.12;
@@ -4072,16 +4075,36 @@ export function MapView(p: Props) {
           const k = 1 + Math.sin(performance.now() / 260) * 0.18; pinRing.scale.set(k, k, k);
         }
       }
-      // ROUND-8 click-to-walk marker: show the ring on the target while the
-      // player walks there, pulsing gently; hidden otherwise
+      // ROUND-8 click-to-walk marker: LoL-style move-click ripple on each
+      // click (the ring spreads outward and fades over ~500ms), then a faint
+      // persistent ring at the destination while the player walks there.
+      // One ring mesh, reused per click; hidden when there is no target.
       {
         const cw = clickWalkRef.current;
         const mk = clickMarkerRef.current;
         if (mk) {
-          mk.visible = !!cw;
-          if (cw) {
+          if (!cw) {
+            mk.visible = false;
+          } else {
+            mk.visible = true;
             mk.position.set(cw.x, LAND + 0.08, cw.z);
-            const k = 1 + Math.sin(performance.now() / 300) * 0.15; mk.scale.set(k, k, k);
+            const now = performance.now();
+            const RIPPLE_MS = 500;
+            const t0 = clickRippleAtRef.current;
+            const mat = mk.material as THREE.MeshBasicMaterial;
+            if (t0 >= 0 && now - t0 < RIPPLE_MS) {
+              // expanding ripple: small -> ~2.4x, fading to transparent
+              const u = (now - t0) / RIPPLE_MS; // 0..1
+              const ease = 1 - Math.pow(1 - u, 2); // easeOutQuad: fast start
+              const s = 0.5 + ease * 1.9;
+              mk.scale.set(s, s, s);
+              mat.opacity = 0.95 * (1 - u);
+            } else {
+              // ripple done: faint persistent ring at the destination
+              const k = 1 + Math.sin(now / 300) * 0.15;
+              mk.scale.set(k, k, k);
+              mat.opacity = 0.55;
+            }
           }
         }
       }
