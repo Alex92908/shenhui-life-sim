@@ -17,6 +17,7 @@ import { attachKeyboardRoam, KEYBOARD_HINTS } from "./round2/controls";
 import { playNpcVoice, stopNpcVoice } from "./round2/sounds";
 import type { HouseLayout } from "./round2/house";
 import { PET_MODEL, type Pet } from "./round2/pets";
+import { floorDef, floorSpots, hasFloors, STAIR_DOWN_ID, STAIR_UP_ID } from "./round2/floors";
 
 export type LifeSet = "flat" | "station" | "metro" | "train" | "bus" | "taxi" | "drive" | "concourse" | "platform" | "office" | "restaurant" | "market" | "electronics" | "mall" | "kitchen" | "bedroom" | "bathroom" | "gym" | "park" | "home" | "cruise" | "wheel" | "aquarium" | "turtle" | "coaster" | "safari" | "hike" | "beach" | "cablecar" | "club" | "clinic" | "classroom" | "oilpainting" | "secondhand" | "seafood" | "oldtown" | "womensstreet" | "museum" | "library" | "factory" | "disney" | "tram" | "temple" | "miniature" | "farm" | "watershow" | "boardwalk" | "fishingport" | "bikehub" | "buildplot";
 export type LifePose = "walk" | "idle" | "sit" | "drive" | "type" | "cook" | "eat" | "sleep" | "wash" | "lift" | "stretch" | "talk" | "dance" | "sing";
@@ -59,6 +60,10 @@ interface Props {
   accessory?: string;
   /** venue interiors: joystick to walk, drag to look, a button to talk. Off for acted beats. */
   roam?: boolean;
+  /** round-4 multi-floor: which floor of the building to render (default 1) */
+  floor?: number;
+  /** round-4 multi-floor: which building of the venue (floors.ts building id; first building when omitted) */
+  building?: string;
   /** English labels on the in-world interact button */
   en?: boolean;
   onSpot?: (id: string) => void;
@@ -132,6 +137,13 @@ const ROAM_SPOTS: Partial<Record<LifeSet, { id: string; emoji: string; zh: strin
   bikehub: [{ id: "rent", emoji: "🚲", zh: "租辆车骑绿道", en: "Rent a bike", x: 0.15, z: -0.2 }, { id: "ride", emoji: "🛤️", zh: "骑上 18 公里绿道", en: "Ride the greenway", x: -2.6, z: 0.85 }],
   buildplot: [{ id: "view", emoji: "👀", zh: "四处看看", en: "Look around the plot", x: 0.15, z: 0.3 }],
 };
+
+/** Round-4: the pins for one floor of a multi-floor building, else the set's
+    ROAM_SPOTS. The pin loop in the effect and the near-spot button in the
+    render MUST both use this, or the pin and the button will disagree. */
+function spotsFor(setKind: LifeSet, building: string | undefined, floor: number) {
+  return floorSpots(setKind, building ?? null, floor) ?? ROAM_SPOTS[setKind] ?? [];
+}
 
 /** Left-stick input for venue roam. x is strafe right, y is forward, each −1…1.
  *  Round-2: the base is DYNAMIC — it appears where the thumb touches
@@ -799,19 +811,38 @@ export function LifeStage3D(p: Props) {
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
-    const { setKind, pose, shirt, pants, night, emoji, cur, tier, furn, wall, partner, sign, seed, faceId, partnerFaceId, houseLayout } = propsRef.current;
+    const { setKind, pose, shirt, pants, night, emoji, cur, tier, furn, wall, partner, sign, seed, faceId, partnerFaceId, houseLayout, floor: floorProp, building: buildingProp } = propsRef.current;
+    /* round-4 multi-floor: the floor def for this visit (undefined when the
+       set has no floor plan — then everything below falls back to the
+       existing single-room dressing and ROAM_SPOTS). `floor` is already the
+       floor mesh further down, hence the renamed destructure. */
+    const floorN = Math.max(1, Math.floor(floorProp ?? 1) || 1);
+    const fDef = floorDef(setKind, buildingProp ?? null, floorN);
+    const floorAccent = fDef?.accent;
     // Same WebGL guard as the main map: a refused context degrades to the
     // emoji fallback below instead of crashing the animation overlay.
     let renderer: THREE.WebGLRenderer;
     try {
-      renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+      // antialias:true covers the plain-renderer fallback (fx === null):
+      // under the post chain the composer renders into its own target, so
+      // canvas MSAA never touches the scene — the pixel ratio below is
+      // what sharpens it. See postfx.ts header.
+      renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     } catch {
       setGlFailed(true);
       return;
     }
-    // 1.5x cap: on Retina (dpr 2) the full post chain at 2x is 4x the pixels
-    // of 1x — the single biggest per-frame GPU cost. 1.5x stays crisp.
-    renderer.setPixelRatio(Math.min(1.5, window.devicePixelRatio || 1));
+    /* Adaptive resolution, same ladder as the map (MapView): start sharp —
+       a desktop at up to 2× (native on a Retina MacBook), a phone at up to
+       3× — then step down (2× → 1.5× → 1×) only if the frame rate drops,
+       or back up once when it runs smoothly. The old hard 1.5× cap made
+       Retina interiors soft and jagged. Never above the device's own dpr. */
+    const dpr = window.devicePixelRatio || 1;
+    const phoneLike = window.innerWidth < 768 || (typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches);
+    const prTop = Math.min(phoneLike ? 3 : 2, dpr);
+    const prLadder = [prTop, 2, 1.5, 1].filter((v, i, a) => v <= prTop && a.indexOf(v) === i);
+    let prIdx = 0;
+    renderer.setPixelRatio(prLadder[0]!);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -1718,9 +1749,9 @@ export function LifeStage3D(p: Props) {
         const px = -2.1 + (i % 3) * 0.7;
         const pz = -2.05 + Math.floor(i / 3) * 0.55;
         box(0.28, 0.02, 0.5, phones[i]!, px, 0.98, pz, 0.35, { metalness: 0.4 });
-        box(0.22, 0.012, 0.38, 0x38bdf8, px, 1.0, pz, 0.2, { emissive: 0x0ea5e9, emissiveIntensity: night ? 0.7 : 0.25 });
+        box(0.22, 0.012, 0.38, floorAccent ?? 0x38bdf8, px, 1.0, pz, 0.2, { emissive: floorAccent ?? 0x0ea5e9, emissiveIntensity: night ? 0.7 : 0.25 });
       }
-      for (let i = 0; i < 4; i++) box(0.42, 0.16, 0.32, i % 2 ? 0xf59e0b : 0x334155, 1.55 + (i % 2) * 0.5, 1.05, -2.0 + Math.floor(i / 2) * 0.45, 0.6);
+      for (let i = 0; i < 4; i++) box(0.42, 0.16, 0.32, i % 2 ? (floorAccent ?? 0xf59e0b) : 0x334155, 1.55 + (i % 2) * 0.5, 1.05, -2.0 + Math.floor(i / 2) * 0.45, 0.6);
       cyl(0.03, 0.03, 0.7, 0x94a3b8, -2.35, 1.7, -1.35, 0.4, { metalness: 0.7 });
       cyl(0.16, 0.12, 0.05, 0xe2e8f0, -2.35, 1.32, -1.35, 0.3, { metalness: 0.6 });
       extraFigure(0.4, 0, -2.7, 0, 0x0e7490, 0x1f2937);
@@ -2150,8 +2181,9 @@ export function LifeStage3D(p: Props) {
       cyl(0.03, 0.03, 1.55, 0x8a8f96, 3.6, 0.78, -1.0, 0.3, { metalness: 0.7 });
       const rackBar = cyl(0.025, 0.025, 1.8, 0x8a8f96, 2.75, 1.58, -1.0, 0.3, { metalness: 0.7 });
       rackBar.rotation.z = Math.PI / 2;
+      const rackCols = floorAccent ? [floorAccent, 0xd9534a, 0x3f6d8e, 0xf5b942, 0x65a30d] : [0xd9534a, 0x3f6d8e, 0xf5b942, 0x65a30d, 0xec4899];
       for (let i = 0; i < 5; i++) {
-        const cloth = box(0.26, 0.75, 0.05, [0xd9534a, 0x3f6d8e, 0xf5b942, 0x65a30d, 0xec4899][i]!, 2.15 + i * 0.32, 1.18, -1.0, 0.9);
+        const cloth = box(0.26, 0.75, 0.05, rackCols[i]!, 2.15 + i * 0.32, 1.18, -1.0, 0.9);
         cloth.rotation.y = (i % 2 ? 1 : -1) * 0.08;
       }
       // display table with folded stacks + shoes
@@ -2486,6 +2518,51 @@ export function LifeStage3D(p: Props) {
       for (let i = 0; i < people; i++) { const sp = spots[Math.floor(rnd() * spots.length)]!; extraFigure(sp[0], 0, sp[1], rnd() * Math.PI * 2, cols[Math.floor(rnd() * cols.length)]!, 0x1f2937); }
       if (rnd() < 0.7) { const px = rnd() < 0.5 ? -6.4 : 6.2; cyl(0.28, 0.22, 0.4, 0xb0653a, px, 0.2, -3.0, 0.8); const lf = new THREE.Mesh(new THREE.SphereGeometry(0.55, 8, 7), mat(0x4d9b5f, 1, { flatShading: true })); lf.position.set(px, 0.85, -3.0); lf.castShadow = true; scene.add(lf); }
       if (rnd() < 0.6) { const c = cols[Math.floor(rnd() * cols.length)]!; box(1.0, 1.3, 0.05, c, -6.9 + 0.2, 2.6, -1.2, 0.8).rotation.y = Math.PI / 2; }
+    }
+    /* round-4 multi-floor: floor banner, elevator/stair doorway and walk-in
+       booths for venues with a floor plan. The effect is mount-only, so App
+       remounts LifeStage (via key) when the building or floor changes. */
+    if (fDef && hasFloors(setKind)) {
+      const accentHex = "#" + fDef.accent.toString(16).padStart(6, "0");
+      // floor banner, high on the back wall (y 4.95, spans 4.45–5.45) —
+      // above the set's own sign boards (y 3.4–3.75) and the venue sign
+      // (y 3.05); fits under the 5.5-tall electronics back wall too
+      box(4.8, 1.0, 0.08, fDef.accent, 0.2, 4.95, -3.62, 0.5);
+      plane(4.6, 0.96, boardTex(accentHex, [
+        { t: fDef.label, s: 58, c: "#ffffff" },
+        { t: propsRef.current.en ? fDef.en : fDef.zh, s: 40, c: "#ffffff" },
+      ], 768, 160), 0.2, 4.95, -3.57);
+      // elevator / stair doorway at each stairs spot on this floor: two
+      // side posts + lintel + a door panel in the floor accent colour,
+      // standing just behind the spot (toward the back wall)
+      for (const s of fDef.spots) {
+        if (s.id !== STAIR_UP_ID && s.id !== STAIR_DOWN_ID) continue;
+        const dz = s.z - 0.45;
+        box(1.0, 2.0, 0.06, fDef.accent, s.x, 1.0, dz, 0.5);
+        box(0.12, 2.2, 0.12, 0x2a3340, s.x - 0.56, 1.1, dz, 0.6);
+        box(0.12, 2.2, 0.12, 0x2a3340, s.x + 0.56, 1.1, dz, 0.6);
+        box(1.24, 0.14, 0.14, 0x2a3340, s.x, 2.26, dz, 0.6);
+        addGlow(s.x, 1.6, dz + 0.1, 1.2, fDef.accent, 0.25);
+      }
+      // walk-in booths: a low U-shaped stall, open toward the room (+z) —
+      // low back wall (h 1.1) + two low side walls + a counter inside with
+      // goods on top + a label board on the back wall. The interact spot
+      // sits at (b.x, b.z), inside the footprint. Visual framing only:
+      // there is no collision system, so the walls stay low and the camera
+      // sees over them.
+      for (const b of fDef.booths ?? []) {
+        const bz = b.z - b.d / 2;
+        box(b.w + 0.08, 1.1, 0.08, b.color, b.x, 0.55, bz, 0.8);
+        box(0.08, 1.1, b.d, b.color, b.x - b.w / 2, 0.55, b.z, 0.8);
+        box(0.08, 1.1, b.d, b.color, b.x + b.w / 2, 0.55, b.z, 0.8);
+        box(b.w * 0.7, 0.8, 0.45, 0x2a3340, b.x, 0.4, bz + 0.3, 0.7);
+        const bHex = "#" + b.color.toString(16).padStart(6, "0");
+        plane(Math.min(b.w * 0.75, 2.0), 0.36, boardTex(bHex, [{ t: propsRef.current.en ? b.labelEn : b.label, s: 40, c: "#ffffff" }], 768, 128), b.x, 0.78, bz + 0.06);
+        b.goods.forEach((g, i) => {
+          const gx = b.x + (i - (b.goods.length - 1) / 2) * 0.32;
+          box(0.22, 0.12, 0.28, g, gx, 0.86, bz + 0.3, 0.5);
+        });
+      }
     }
     let talker: Figure | null = null;
     if (setKind === "flat") {
@@ -2895,7 +2972,7 @@ export function LifeStage3D(p: Props) {
     if (roaming) {
       renderer.domElement.style.touchAction = "none";
       renderer.domElement.style.cursor = "crosshair";
-      for (const s of ROAM_SPOTS[setKind] ?? []) {
+      for (const s of spotsFor(setKind, buildingProp, floorN)) {
         const sp = faceSprite(s.emoji);
         sp.scale.set(0.92, 0.92, 1);
         sp.position.set(s.x, 2.25, s.z);
@@ -3001,8 +3078,29 @@ export function LifeStage3D(p: Props) {
 
     let raf = 0;
     const start = performance.now();
+    // adaptive resolution bookkeeping (see prLadder above — same as MapView)
+    let prLast = start, prFrames = 0, prTime = 0, prWindows = 0, prSmooth = 0, prChanges = 0;
+    const applyPixelRatio = () => {
+      const pr = prLadder[prIdx]!;
+      renderer.setPixelRatio(pr);
+      fx?.setPixelRatio(pr);
+      resize();
+      prChanges += 1;
+    };
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
+      const rawDt = (now - prLast) / 1000;
+      prLast = now;
+      if (!document.hidden && rawDt < 1) { prFrames += 1; prTime += rawDt; }
+      if (prTime >= 2.5 && prChanges < 3) {
+        const fps = prFrames / prTime;
+        prFrames = 0; prTime = 0; prWindows += 1;
+        if (prWindows > 1) { // the first window is loading noise
+          if (fps < 32 && prIdx < prLadder.length - 1) { prIdx += 1; prSmooth = 0; prWindows = 0; applyPixelRatio(); }
+          else if (fps >= 57 && prIdx > 0) { prSmooth += 1; if (prSmooth >= 3) { prIdx -= 1; prSmooth = 0; prWindows = 0; applyPixelRatio(); } }
+          else prSmooth = 0;
+        }
+      }
       const t = (now - start) / 1000;
       for (const tick of ticks) tick(t);
       // camera: eased push-in that completes inside the step + gentle drift
@@ -3383,7 +3481,7 @@ export function LifeStage3D(p: Props) {
       </div>
     );
   }
-  const near = p.roam ? (ROAM_SPOTS[p.setKind] ?? []).find((s) => s.id === nearId) : undefined;
+  const near = p.roam ? spotsFor(p.setKind, p.building, p.floor ?? 1).find((s) => s.id === nearId) : undefined;
   return (
     <>
       <div ref={mountRef} className="absolute inset-0" aria-hidden="true" />

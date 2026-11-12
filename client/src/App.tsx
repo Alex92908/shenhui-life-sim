@@ -37,6 +37,7 @@ import { npcAllowedAt, type LocType, type VenueSetId, type AnimKindId } from "./
 import { vendorSellFor } from "./routines";
 /* ---- round-2 feature modules (see ROUND2-LOG-*.md for the integration snippets) ---- */
 import { venueSetFor, animFor } from "./round2/venues";
+import { hasFloors, buildingsFor, buildingDef, floorDef, floorTalks, maxFloor, STAIR_UP_ID, STAIR_DOWN_ID } from "./round2/floors";
 import { adoptPet, interactWithPet, homecomingGreeting, tickPetDay, getActivePet, PET_STORAGE_KEY, serializePets, deserializePets, type PetsState, type InteractionKind } from "./round2/pets";
 import { buildNotice, feedStrayLocal, strayToAdoptInput, validateNotice, validateSnakeReport, validateFishingSpot, toMapMarkers } from "./round2/community";
 import { emptyEconomyState, economyDailyTick, buyUsedFurniture as buyUsedFurnitureLocal, buyCheapGood as buyCheapGoodLocal, resellUsedFurniture as resellUsedFurnitureLocal, postSubletListing, acceptSublet as acceptSubletLocal, postTradeTask as postTradeTaskLocal, searchTradeTasks, acceptTradeTask as acceptTradeTaskLocal, escrowTradeTask as escrowTradeTaskLocal, completeTradeTask as completeTradeTaskLocal, cancelTradeTask as cancelTradeTaskLocal, disputeTradeTask as disputeTradeTaskLocal, OVERSEAS_CATALOG, placeOverseasOrder as placeOverseasOrderLocal, payOverseasDuty as payOverseasDutyLocal, USED_FURNITURE, TRADE_TASK_EXAMPLES, type EconomyState, type TradeTask, type TradeTaskKind, type PlayerRef } from "./round2/economy";
@@ -219,6 +220,15 @@ const QINGQING_TALK: VenueTalk[] = [
 ];
 const venueTalksFor = (set: LifeSet, locId?: string): VenueTalk[] =>
   locId === "qingqing" ? [...(VENUE_TALK[set] ?? []), ...QINGQING_TALK] : (VENUE_TALK[set] ?? []);
+
+/* ---- round-4 multi-floor buildings: floor 1 keeps the existing
+   VENUE_TALK[set] entries (so verified actions keep working); higher
+   floors show only their own floorTalks. FloorTalk is structurally a
+   VenueTalk (its `open` is optional), so the merged list is VenueTalk[]. ---- */
+const venueTalksForFloor = (set: LifeSet, locId: string | undefined, building: string | null, floor: number): VenueTalk[] => {
+  if (!hasFloors(set)) return venueTalksFor(set, locId);
+  return [...(floor === 1 ? venueTalksFor(set, locId) : []), ...floorTalks(set, building, floor)];
+};
 
 /* ---- round-2 (b+g): venueSet → LifeSet. Area (b)'s VenueSetId names
    cycle/gallery/nature/wetland have no LifeSet in LifeStage (area (g)
@@ -1123,6 +1133,9 @@ const [homePose, setHomePose] = useState<"idle" | "sit" | "sleep">("idle");
 const [furnSel, setFurnSel] = useState<string | null>(null);
 const [venue3d, setVenue3d] = useState<{ set: LifeSet; name: string; line: string; id?: string; emoji?: string; color?: number } | null>(null);
 const [venueTalk, setVenueTalk] = useState<VenueTalk | null>(null);
+/* round-4 multi-floor buildings: which building + floor of the open venue */
+const [venueFloor, setVenueFloor] = useState(1);
+const [venueBuilding, setVenueBuilding] = useState<string | null>(null);
 /* compact screens: the right-hand panel rail folds behind one ☰ button */
 /* Map fullscreen: the map shell becomes a fixed full-viewport stage
    (plus the native Fullscreen API when the browser allows it). */
@@ -5870,7 +5883,8 @@ const regularHere = (set: LifeSet) => {
 };
 const runVenueTalk = (v: VenueTalk) => {
   if (!venue3d) return;
-  const key = `${s.day}:${venue3d.set}:${v.id}`;
+  /* round-4: floor-qualified so an action done on 1F is not "done" on 2F */
+  const key = hasFloors(venue3d.set) ? `${s.day}:${venue3d.set}:${venueBuilding}:${venueFloor}:${v.id}` : `${s.day}:${venue3d.set}:${v.id}`;
   const cost = -(v.money ?? 0);
   if (s.money < cost) { showToast(en ? "Not enough money for that." : "钱不够。"); return; }
   mutate((x) => {
@@ -5909,6 +5923,10 @@ const runVenueTalk = (v: VenueTalk) => {
   setVenueTalk(v);
 };
 const feedKindEmoji: Record<string, string> = { join: "👋", career: "📈", apec: "🌐", home: "🏠", money: "💰", finish: "🏁", life: "✨" };
+/* round-4: the floor def of the open venue (undefined when unfloored) —
+   drives the wall sign, panel line and idle floor host below. */
+const venueFloorDef = venue3d ? floorDef(venue3d.set, venueBuilding, venueFloor) : undefined;
+const venueFloored = venue3d ? hasFloors(venue3d.set) : false;
 
 return (
 <div className="min-h-screen overflow-x-clip bg-[var(--bg)] text-[var(--text)]">
@@ -6351,7 +6369,7 @@ return (
 <p className="mt-3.5 flex items-baseline justify-between gap-2"><span className="text-xs font-black tracking-wide">📍 在这里能做 · 常用操作</span><span className="text-[11px] font-bold text-[var(--dim)]">{arrived ? "点一下就行动" : "到了才能做"}</span></p>
 <div className="mt-2 grid gap-2">
 {actionsFor(selLoc, s).map((a) => { const own = a.kind.startsWith("__routine-") && (a.kind !== "__routine-wait" || routineRole(s.idenId) === "driver") || a.kind.startsWith("__rider-") || a.kind.startsWith("__scenic-") || a.kind === "__livehouse" || a.kind === "__venue3d"; /* the rider's own steps don't depend on the shop's hours; a taxi passenger waves from anywhere, any hour */ const tb = timeBlock(a.kind, s) ?? (a.kind === "__sleep" || a.kind === "rest" || own ? null : venueClosed(selLoc)); return (
-<button key={a.kind + (a.arg ?? 0)} type="button" disabled={!arrived || a.disabled || !!tb} onClick={() => { if (a.kind === "__sleep") playLifeAnim("sleep", () => doSleep()); else if (a.kind.startsWith("__gocity-")) setCrossTo(a.kind.slice("__gocity-".length) as CityKey); else if (a.kind.startsWith("__routine-")) doRoutine(a.kind.slice("__routine-".length)); else if (a.kind === "__rider-go") riderGo(); else if (a.kind === "__retrain") setRetrainOpen(true); else if (a.kind.startsWith("__scenic-")) startScenic(a.kind.slice("__scenic-".length)); else if (a.kind === "__livehouse") setLiveOpen(true); else if (a.kind === "__flea") { setFleaOpen(true); void fleaQuery.refetch(); } else if (a.kind === "__home3d") { publishHome(); setHomeGuest(null); setVisitHome(null); setHomePose("idle"); setHome3d(true); } else if (a.kind === "__venue3d") { const vs = venueFor(selLoc); if (vs) setVenueTalk(null), setVenue3d({ set: vs.set, name: en ? trText(selLoc.name) : selLoc.name, line: en ? vs.en : vs.zh, id: selLoc.id, emoji: selLoc.emoji, color: selLoc.color }); } else if (a.kind === "__rider-cancel") { const g0 = gsRef.current; if (g0) { const rd0 = routineToday(g0); mutate((x) => { x.routine = { ...rd0, order: null }; x.money -= 2; x.mood = clamp(x.mood - 3, 0, 100); }); showToast(en ? "Order cancelled (−¥2)." : "这单取消了，平台扣了 ¥2。"); } } else if (a.kind.startsWith("__cross-")) { const r = CROSS_ROUTES.find((x) => x.id === a.kind.slice("__cross-".length)); if (r) takeRoute(r); } else doAction(a.kind, a.arg ?? 0); }} className="act-btn">
+<button key={a.kind + (a.arg ?? 0)} type="button" disabled={!arrived || a.disabled || !!tb} onClick={() => { if (a.kind === "__sleep") playLifeAnim("sleep", () => doSleep()); else if (a.kind.startsWith("__gocity-")) setCrossTo(a.kind.slice("__gocity-".length) as CityKey); else if (a.kind.startsWith("__routine-")) doRoutine(a.kind.slice("__routine-".length)); else if (a.kind === "__rider-go") riderGo(); else if (a.kind === "__retrain") setRetrainOpen(true); else if (a.kind.startsWith("__scenic-")) startScenic(a.kind.slice("__scenic-".length)); else if (a.kind === "__livehouse") setLiveOpen(true); else if (a.kind === "__flea") { setFleaOpen(true); void fleaQuery.refetch(); } else if (a.kind === "__home3d") { publishHome(); setHomeGuest(null); setVisitHome(null); setHomePose("idle"); setHome3d(true); } else if (a.kind === "__venue3d") { const vs = venueFor(selLoc); if (vs) setVenueTalk(null), setVenue3d({ set: vs.set, name: en ? trText(selLoc.name) : selLoc.name, line: en ? vs.en : vs.zh, id: selLoc.id, emoji: selLoc.emoji, color: selLoc.color }), setVenueFloor(1), setVenueBuilding(buildingsFor(vs.set)[0]?.id ?? null); } else if (a.kind === "__rider-cancel") { const g0 = gsRef.current; if (g0) { const rd0 = routineToday(g0); mutate((x) => { x.routine = { ...rd0, order: null }; x.money -= 2; x.mood = clamp(x.mood - 3, 0, 100); }); showToast(en ? "Order cancelled (−¥2)." : "这单取消了，平台扣了 ¥2。"); } } else if (a.kind.startsWith("__cross-")) { const r = CROSS_ROUTES.find((x) => x.id === a.kind.slice("__cross-".length)); if (r) takeRoute(r); } else doAction(a.kind, a.arg ?? 0); }} className="act-btn">
 <span className="flex items-center justify-between text-sm font-black"><span>{a.title}</span><span>{a.emoji}</span></span>
 <span className="mt-0.5 block text-xs leading-relaxed text-[var(--dim)]">{a.desc}</span>
 <span className="mt-1 block text-xs font-bold text-[var(--accent2)]">{a.cost}{a.kind !== "__sleep" && ` · ⏳ ${realMinLabel(actionMinutes(a.kind))}`}</span>
@@ -6835,7 +6853,7 @@ return (
 {!arrived && <button type="button" onClick={() => walkTo(selectedLoc)} className="pc-btn pc-primary">🚶 {en ? "Go here" : "去这里"}</button>}
 {arrived && sm && <button type="button" onClick={() => startScenic(sm.id)} className="pc-btn">{sm.emoji} {en ? "View" : "观景"}</button>}
 {arrived && selLoc.type === "home" && <button type="button" onClick={() => { publishHome(); setHomeGuest(null); setVisitHome(null); setHomePose("idle"); setHome3d(true); }} className="pc-btn">🚪 {en ? "Go inside" : "走进屋里"}</button>}
-{arrived && vs && <button type="button" onClick={() => { setVenueTalk(null); setVenue3d({ set: vs.set, name: en ? trText(selLoc.name) : selLoc.name, line: en ? vs.en : vs.zh, id: selLoc.id, emoji: selLoc.emoji, color: selLoc.color }); }} className="pc-btn">🚪 {en ? "Step inside" : "走进去"}</button>}
+{arrived && vs && <button type="button" onClick={() => { setVenueTalk(null); setVenue3d({ set: vs.set, name: en ? trText(selLoc.name) : selLoc.name, line: en ? vs.en : vs.zh, id: selLoc.id, emoji: selLoc.emoji, color: selLoc.color }); setVenueFloor(1); setVenueBuilding(buildingsFor(vs.set)[0]?.id ?? null); }} className="pc-btn">🚪 {en ? "Step inside" : "走进去"}</button>}
 {arrived && selLoc.type === "social" && <button type="button" onClick={() => setLiveOpen(true)} className="pc-btn">🎶 {en ? "Live" : "听歌"}</button>}
 {adHere?.kind === "hire" && adHere.go && currentLoc !== adHere.go && <button type="button" onClick={() => walkTo(adHere.go!)} className="pc-btn">{en ? "Interview" : "去面试"}</button>}
 {adHere?.kind === "hire" && arrived && companyAt(s.cityKey, selLoc.id) && <button type="button" disabled={s.energy < 12} onClick={() => doAction("interview")} className="pc-btn pc-primary">{en ? "Apply" : "投简历"}</button>}
@@ -7545,17 +7563,25 @@ return (
 <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/70 p-3 sm:items-center" role="dialog" aria-label={venue3d.name}>
 <div className="rise max-h-[94vh] w-full max-w-lg overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)]">
 <div className="relative h-[52vh] min-h-[300px]">
-<LifeStage3D key={`venue-${venue3d.id ?? venue3d.set}-${venueTalk?.id ?? ""}-${s.accessory}`} sign={{ text: venue3d.name, emoji: venue3d.emoji, color: venue3d.color }} seed={[...(venue3d.id ?? venue3d.name)].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 100003, 7)} wall={venue3d.color !== undefined ? mixHex(venue3d.color, 0xf6efe2, 0.82) : undefined} setKind={venue3d.set} pose={venueTalk?.pose ?? "idle"} faceId={profile?.playerId ?? `player-${iden.emoji}`} partnerFaceId={regularHere(venue3d.set)?.name ?? venueTalk?.who} talkText={venueTalk ? (en ? venueTalk.sayEn : venueTalk.say) : undefined} talkVoiceId={regularHere(venue3d.set)?.name ?? venueTalk?.who} partner={(() => { const host = regularHere(venue3d.set); const meeting = !!(venueTalk && host && MEET_IDS.has(venueTalk.id)); if (meeting && host) return { shirt: host.shirt, pants: host.pants, accessory: host.accessory }; if (venueTalk?.partner) return { shirt: venueTalk.partner[0], pants: venueTalk.partner[1] }; if (host && !venueTalk) return { shirt: host.shirt, pants: host.pants, accessory: host.accessory }; return undefined; })()} shirt={outfitOf(s.outfit).shirt} pants={outfitOf(s.outfit).pants} accessory={ACCESSORIES[s.accessory ?? 0]?.id} night={nowMin() >= 18 * 60 || nowMin() < 6 * 60} emoji={iden.emoji} en={en} roam={!venueTalk} onSpot={(id) => { const v = venueTalksFor(venue3d.set, venue3d.id).find((t) => t.id === id); if (v) runVenueTalk(v); }} />
+<LifeStage3D key={`venue-${venue3d.id ?? venue3d.set}-${venueTalk?.id ?? ""}-${s.accessory}-${venueBuilding ?? ""}-${venueFloor}`} sign={{ text: venueFloored ? (venueFloorDef?.sign ?? venue3d.name) : venue3d.name, emoji: venue3d.emoji, color: venueFloored ? (venueFloorDef?.signColor ?? venue3d.color) : venue3d.color }} seed={[...(venue3d.id ?? venue3d.name)].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 100003, 7)} wall={venue3d.color !== undefined ? mixHex(venue3d.color, 0xf6efe2, 0.82) : undefined} setKind={venue3d.set} floor={venueFloor} building={venueBuilding ?? undefined} pose={venueTalk?.pose ?? "idle"} faceId={profile?.playerId ?? `player-${iden.emoji}`} partnerFaceId={venueFloored && !venueTalk && venueFloorDef?.npc ? venueFloorDef.npc.faceId : (regularHere(venue3d.set)?.name ?? venueTalk?.who)} talkText={venueTalk ? (en ? venueTalk.sayEn : venueTalk.say) : undefined} talkVoiceId={regularHere(venue3d.set)?.name ?? venueTalk?.who} partner={(() => { const host = regularHere(venue3d.set); const meeting = !!(venueTalk && host && MEET_IDS.has(venueTalk.id)); if (meeting && host) return { shirt: host.shirt, pants: host.pants, accessory: host.accessory }; if (venueTalk?.partner) return { shirt: venueTalk.partner[0], pants: venueTalk.partner[1] }; if (!venueTalk && venueFloorDef?.npc) return { shirt: venueFloorDef.npc.shirt, pants: venueFloorDef.npc.pants }; if (host && !venueTalk) return { shirt: host.shirt, pants: host.pants, accessory: host.accessory }; return undefined; })()} shirt={outfitOf(s.outfit).shirt} pants={outfitOf(s.outfit).pants} accessory={ACCESSORIES[s.accessory ?? 0]?.id} night={nowMin() >= 18 * 60 || nowMin() < 6 * 60} emoji={iden.emoji} en={en} roam={!venueTalk} onSpot={(id) => { if (id === STAIR_UP_ID) { sfx("click"); setVenueFloor((f) => Math.min(maxFloor(venue3d.set, venueBuilding), f + 1)); return; } if (id === STAIR_DOWN_ID) { sfx("click"); setVenueFloor((f) => Math.max(1, f - 1)); return; } const v = venueTalksForFloor(venue3d.set, venue3d.id, venueBuilding, venueFloor).find((t) => t.id === id); if (v) runVenueTalk(v); }} />
 <div className="cine-grade" />
 {(() => { const host = regularHere(venue3d.set); const meeting = !!(venueTalk && host && MEET_IDS.has(venueTalk.id)); return <>
 {!venueTalk && host && <p className="absolute bottom-3 left-3 rounded-full bg-black/55 px-3 py-1 text-xs font-black text-white">{host.emoji} {en ? `${host.name} is here` : `${host.name}在这儿`}</p>}
 {venueTalk && <div key={venueTalk.id} className="rise pointer-events-none absolute inset-x-3 top-3 mr-10 rounded-[14px] bg-white/92 px-3 py-2 text-[13px] font-bold leading-snug text-black shadow-lg"><span className="text-[11px] font-black text-[#b45309]">{meeting && host ? `${host.emoji} ${host.name}` : (en ? venueTalk.whoEn : venueTalk.who)}</span><br />{en ? venueTalk.sayEn : venueTalk.say}<button type="button" onClick={() => setVenueTalk(null)} className="pointer-events-auto mt-1.5 block text-[11px] font-black text-[#b45309]">{en ? "Keep walking →" : "接着逛 →"}</button></div>}
 </>; })()}
-<button type="button" onClick={() => { setVenue3d(null); setVenueTalk(null); }} className="absolute right-3 top-3 rounded-full bg-black/55 px-3 py-1 text-xs font-black text-white">✕</button>
+<button type="button" onClick={() => { setVenue3d(null); setVenueTalk(null); setVenueFloor(1); setVenueBuilding(null); }} className="absolute right-3 top-3 rounded-full bg-black/55 px-3 py-1 text-xs font-black text-white">✕</button>
 </div>
-<div className="p-4"><p className="font-display text-xl font-black">{venue3d.name}</p><p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">{venue3d.line}</p>
+<div className="p-4"><p className="font-display text-xl font-black">{venue3d.name}</p><p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">{venueFloored ? (en ? (venueFloorDef?.copyEn ?? venue3d.line) : (venueFloorDef?.copy ?? venue3d.line)) : venue3d.line}</p>
 <p className="mt-1 text-[11px] font-bold text-[var(--accent)]">{en ? "Left stick to walk — push it all the way to jog. Drag the picture to look around. Walk up to a gold ring, then tap Interact." : "左手摇杆走路，推满会小跑。按住画面拖动转镜头。走近金色光柱，点右边的「互动」。"}</p>
-<div className="mt-3 grid gap-1.5">{venueTalksFor(venue3d.set, venue3d.id).map((v) => { const key = `${s.day}:${venue3d.set}:${v.id}`; const done = (s.venueFx ?? []).includes(key); const cost = -(v.money ?? 0); const fx = [cost > 0 ? fmt(-cost, s.cityKey) : "", v.energy ? `${en ? "energy" : "能量"} ${v.energy > 0 ? "+" : ""}${v.energy}` : "", !done && v.mood ? `${en ? "mood" : "心情"} +${v.mood}` : "", !done && v.network ? `${en ? "contacts" : "人脉"} +${v.network}` : "", !done && v.xp ? `${en ? "XP" : "经验"} +${v.xp}` : "", v.id === "toilet" ? (en ? "feel better" : "内急好了") : ""].filter(Boolean).join(" · "); return (
+{venueFloored && (
+<div className="mt-3">
+{buildingsFor(venue3d.set).length > 1 && (
+<div className="flex flex-wrap gap-1.5">{buildingsFor(venue3d.set).map((b) => <button key={b.id} type="button" onClick={() => { setVenueBuilding(b.id); setVenueFloor(1); }} className={`rounded-full border px-3 py-1.5 text-xs font-black ${(venueBuilding ?? buildingsFor(venue3d.set)[0]?.id) === b.id ? "border-[var(--accent)] bg-[var(--accent)] text-white" : "border-[var(--line)]"}`}>{en ? b.en : b.zh}</button>)}</div>
+)}
+<div className="mt-1.5 flex flex-wrap gap-1.5">{(buildingDef(venue3d.set, venueBuilding)?.floors ?? []).map((f) => <button key={f.floor} type="button" onClick={() => setVenueFloor(f.floor)} className={`rounded-full border px-3 py-1.5 text-xs font-black ${venueFloor === f.floor ? "border-[var(--accent)] bg-[var(--accent)] text-white" : "border-[var(--line)]"}`}>{f.label} {en ? f.en : f.zh}</button>)}</div>
+</div>
+)}
+<div className="mt-3 grid gap-1.5">{venueTalksForFloor(venue3d.set, venue3d.id, venueBuilding, venueFloor).map((v) => { const key = hasFloors(venue3d.set) ? `${s.day}:${venue3d.set}:${venueBuilding}:${venueFloor}:${v.id}` : `${s.day}:${venue3d.set}:${v.id}`; const done = (s.venueFx ?? []).includes(key); const cost = -(v.money ?? 0); const fx = [cost > 0 ? fmt(-cost, s.cityKey) : "", v.energy ? `${en ? "energy" : "能量"} ${v.energy > 0 ? "+" : ""}${v.energy}` : "", !done && v.mood ? `${en ? "mood" : "心情"} +${v.mood}` : "", !done && v.network ? `${en ? "contacts" : "人脉"} +${v.network}` : "", !done && v.xp ? `${en ? "XP" : "经验"} +${v.xp}` : "", v.id === "toilet" ? (en ? "feel better" : "内急好了") : ""].filter(Boolean).join(" · "); return (
 <button key={v.id} type="button" disabled={s.money < cost} onClick={() => runVenueTalk(v)} className={`flex items-center gap-2 rounded-[12px] border px-3 py-2 text-left ${venueTalk?.id === v.id ? "border-[var(--accent)]" : "border-[var(--line)]"} bg-[var(--bg)] disabled:opacity-40`}>
 <span className="text-xl">{v.emoji}</span><span className="min-w-0 flex-1"><span className="block text-[13px] font-black">{en ? v.en : v.zh}{(() => { const host = regularHere(venue3d.set); return host && MEET_IDS.has(v.id) ? ` · ${host.name}` : ""; })()}</span><span className="block text-[11px] text-[var(--dim)]">{v.open === "live" ? (en ? "Free · open the Livehouse and listen together" : "免费 · 打开 Livehouse 一起听") : fx || (en ? "done today" : "今天聊过了")}</span></span></button> ); })}</div>
 </div>
