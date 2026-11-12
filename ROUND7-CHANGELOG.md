@@ -1,6 +1,8 @@
 # ROUND-7 — Desktop-only visual upgrade （桌面端视觉升级）
 
-Date: 2026-11-11 · Branch: `feature/round-2` · NOT pushed (parent verifies + pushes)
+Date: 2026-11-11 · Branch: `feature/round-2` · Pushed @ 0053bed0 (with round-8)
+
+> **Night-haze revert (2026-11-11 ~23:0x PST, lee's feedback):** lee said the night scene looked WORSE than before — the sky/fog outside the map turned muddy reddish-brown. Cause: the warm night haze (`C_HAZE_WARM` 0xff9a5c lerped into `scene.background` + `scene.fog` at night, plus `hazeD` pulling fog near/far closer). Fix: the haze tint and the fog-distance terms are removed entirely (MapView.tsx + desktopfx.ts `hazeF` removed); the night sky/fog are back to the pre-round-7 cool dark blue, and fog distance is restored. The neon/window brightness boost is KEPT (buildings still glow). Typecheck 0 errors, vite build 10.68s. Pushed as round-7b (see below).
 
 lee: "帮我不设置限制去实现真实的湾区生活" / "我想电脑体验足够棒" —
 go all-in on the desktop experience, no artificial limits on visual quality.

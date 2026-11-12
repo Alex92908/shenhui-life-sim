@@ -214,20 +214,17 @@ export interface DesktopFx {
   neonTex: THREE.CanvasTexture;
   /** feed a completed FPS window (MapView's 2.5s measurement) */
   noteFps: (fps: number) => void;
-  /** per-frame: ease wetness, remember night factor for haze */
+  /** per-frame: ease wetness toward the weather */
   update: (o: { raining: boolean; storm: boolean; nightF: number; duskF: number; dt: number }) => void;
   /** multiplier for neon emissive on desktop (1 when off) */
   neonBoost: () => number;
   /** multiplier for window / bulb emissive on desktop (1 when off) */
   windowBoost: () => number;
-  /** warm night-haze strength 0..1 (already includes nightF) */
-  hazeF: () => number;
 }
 
 export function makeDesktopFx(): DesktopFx {
   let level = 2;
   let goodStreak = 0;
-  let nightF = 0;
   const wet = { value: 0 };
   const asphaltTex = makeAsphaltTexture();
   const concreteTex = makeConcreteTexture();
@@ -255,7 +252,6 @@ export function makeDesktopFx(): DesktopFx {
       }
     },
     update(o: { raining: boolean; storm: boolean; nightF: number; duskF: number; dt: number }) {
-      nightF = o.nightF;
       const cap = level === 0 ? 0 : level === 1 ? 0.6 : 1;
       const target = (o.raining || o.storm ? 1 : 0) * cap;
       // soak fast when rain starts, dry slowly so streets stay glossy
@@ -269,9 +265,6 @@ export function makeDesktopFx(): DesktopFx {
     },
     windowBoost() {
       return level === 0 ? 1 : level === 1 ? 1.25 : 1.5;
-    },
-    hazeF() {
-      return level === 0 ? 0 : nightF * (level === 1 ? 0.5 : 1);
     },
   };
 }

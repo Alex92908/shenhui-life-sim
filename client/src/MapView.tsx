@@ -2959,8 +2959,6 @@ export function MapView(p: Props) {
     const C_CLOUD_DUSK = new THREE.Color(0xffb37a);
     const C_CLOUD_GREY = new THREE.Color(0x707c85);
     const C_MOTE_NIGHT = new THREE.Color(0xffd98a);
-    // ROUND-7 desktop: warm amber the night sky/fog lean toward (night haze)
-    const C_HAZE_WARM = new THREE.Color(0xff9a5c);
     const carMat4 = new THREE.Matrix4();
     const carQuat = new THREE.Quaternion();
     const carScl = new THREE.Vector3(1, 1, 1);
@@ -3052,23 +3050,19 @@ export function MapView(p: Props) {
         rainPts.position.x = Math.sin(tSec * 0.7) * 0.6;
       }
       const nightF = 1 - dayF;
-      // ROUND-7 desktop: ease the street wetness toward the weather, then
-      // lean the sky/fog warm amber after dark (warm night haze)
+      // ROUND-7 desktop: ease the street wetness toward the weather.
+      // (The warm night-haze tint on sky/fog was reverted: it dragged the
+      // cool dark-blue night sky toward amber and turned it muddy
+      // reddish-brown, which looked worse than before.)
       if (dfx) {
         dfx.update({ raining, storm: wk === "storm", nightF, duskF, dt });
-        const hz = dfx.hazeF();
-        if (hz > 0) {
-          (scene.background as THREE.Color).lerp(C_HAZE_WARM, hz * 0.16);
-          scene.fog!.color.lerp(C_HAZE_WARM, hz * 0.16);
-        }
       }
       waterMat.color.setHex(0x2e7fb8).lerp(C_WATER_NIGHT, nightF * 0.8);
       waterMat.roughness = 0.35 - dayF * 0.12 + nightF * 0.1;
       // ---- drive every animated material off the day cycle ----
       renderer.toneMappingExposure = 1.08 - nightF * 0.16 + duskF * 0.04;
-      const hazeD = dfx ? dfx.hazeF() : 0;
-      (scene.fog as THREE.Fog).near = 120 - nightF * 32 - hazeD * 14 - (wk === "fog" ? 55 : wk === "storm" ? 30 : wk === "rain" ? 18 : 0);
-      (scene.fog as THREE.Fog).far = 240 - nightF * 45 - hazeD * 28 - (wk === "fog" ? 95 : wk === "storm" ? 55 : wk === "rain" ? 35 : 0);
+      (scene.fog as THREE.Fog).near = 120 - nightF * 32 - (wk === "fog" ? 55 : wk === "storm" ? 30 : wk === "rain" ? 18 : 0);
+      (scene.fog as THREE.Fog).far = 240 - nightF * 45 - (wk === "fog" ? 95 : wk === "storm" ? 55 : wk === "rain" ? 35 : 0);
       moon.intensity = nightF * 0.55;
       playerLight.intensity = nightF * 26 + duskF * 8;
       // ROUND-7 desktop: windows / bulbs / neon burn brighter after dark
