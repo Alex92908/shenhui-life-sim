@@ -19,6 +19,48 @@ import type { HouseLayout } from "./round2/house";
 import { PET_MODEL, type Pet } from "./round2/pets";
 import { floorDef, floorSpots, hasFloors, STAIR_DOWN_ID, STAIR_UP_ID } from "./round2/floors";
 import { makeFigure, faceSpecFor, addAccessory, type Figure, type FaceSpec } from "./figure";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+
+/* ---- ROUND-10 (home-designer): runtime GLB furniture ---- */
+/** One GLTFLoader + cache for the whole file (same pattern as MapView's
+    loadModel). Models live in client/public/models/furniture/<id>.glb —
+    lee copies the home-designer GLB he wants under that name; a missing
+    file resolves null and the primitive box furniture stays. */
+const furnGltfLoader = new GLTFLoader();
+const furnModelCache = new Map<string, Promise<THREE.Object3D | null>>();
+function loadFurnModel(path: string): Promise<THREE.Object3D | null> {
+  let p = furnModelCache.get(path);
+  if (!p) {
+    p = new Promise((res) => furnGltfLoader.load(`./models/${path}`, (g) => {
+      g.scene.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; } });
+      res(g.scene);
+    }, undefined, () => res(null)));
+    furnModelCache.set(path, p);
+  }
+  return p;
+}
+/** home-designer contain-fit (GltfFurniture, RoomCanvas:2530-2630): measure
+    the GLB, scale it uniformly so it fits inside the target box, recenter
+    the footprint on the target centre and drop its base to the target base. */
+function fitFurnGlb(src: THREE.Object3D, target: THREE.Box3): THREE.Group {
+  const inner = src.clone(true);
+  const g = new THREE.Group();
+  g.add(inner);
+  const box = new THREE.Box3().setFromObject(inner);
+  const size = box.getSize(new THREE.Vector3());
+  const tSize = target.getSize(new THREE.Vector3());
+  const k = Math.min(
+    tSize.x / Math.max(1e-3, size.x),
+    tSize.y / Math.max(1e-3, size.y),
+    tSize.z / Math.max(1e-3, size.z),
+  ) || 1;
+  inner.scale.setScalar(k);
+  const box2 = new THREE.Box3().setFromObject(inner);
+  const c2 = box2.getCenter(new THREE.Vector3());
+  const tc = target.getCenter(new THREE.Vector3());
+  inner.position.set(tc.x - c2.x, target.min.y - box2.min.y, tc.z - c2.z);
+  return g;
+}
 
 export type LifeSet = "flat" | "station" | "metro" | "train" | "bus" | "taxi" | "drive" | "concourse" | "platform" | "office" | "restaurant" | "market" | "electronics" | "mall" | "kitchen" | "bedroom" | "bathroom" | "gym" | "park" | "home" | "cruise" | "wheel" | "aquarium" | "turtle" | "coaster" | "safari" | "hike" | "beach" | "cablecar" | "club" | "clinic" | "classroom" | "oilpainting" | "secondhand" | "seafood" | "oldtown" | "womensstreet" | "museum" | "library" | "factory" | "disney" | "tram" | "temple" | "miniature" | "farm" | "watershow" | "boardwalk" | "fishingport" | "bikehub" | "buildplot" | "service" | "police" | "bank" | "pharmacy" | "info";
 export type LifePose = "walk" | "idle" | "sit" | "drive" | "type" | "cook" | "eat" | "sleep" | "wash" | "lift" | "stretch" | "talk" | "dance" | "sing";
@@ -634,6 +676,8 @@ export function LifeStage3D(p: Props) {
     const mount = mountRef.current;
     if (!mount) return;
     const { setKind, pose, shirt, pants, night, emoji, cur, tier, furn, wall, partner, sign, seed, faceId, faceSpec, partnerFaceId, houseLayout, floor: floorProp, building: buildingProp } = propsRef.current;
+    // ROUND-10: an async GLB that resolves after unmount must not touch the disposed scene
+    let alive = true;
     /* round-4 multi-floor: the floor def for this visit (undefined when the
        set has no floor plan — then everything below falls back to the
        existing single-room dressing and ROAM_SPOTS). `floor` is already the
@@ -674,6 +718,8 @@ export function LifeStage3D(p: Props) {
     renderer.domElement.style.cssText = "position:absolute;inset:0;width:100%;height:100%;display:block;";
 
     const indoor = setKind === "flat" || setKind === "office" || setKind === "kitchen" || setKind === "bathroom" || setKind === "bedroom" || setKind === "home" || setKind === "restaurant" || setKind === "gym" || setKind === "concourse" || setKind === "platform" || setKind === "club" || setKind === "clinic" || setKind === "classroom" || setKind === "oilpainting" || setKind === "secondhand" || setKind === "seafood" || setKind === "oldtown" || setKind === "womensstreet" || setKind === "museum" || setKind === "library" || setKind === "factory" || setKind === "disney" || setKind === "tram" || setKind === "temple" || setKind === "miniature" || setKind === "service" || setKind === "police" || setKind === "bank" || setKind === "pharmacy" || setKind === "info";
+    // ROUND-10: interiors get the home-designer exposure (1.2), outdoors keep 1.15
+    renderer.toneMappingExposure = indoor ? 1.2 : 1.15;
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(night ? 0x1d3454 : indoor ? 0xf7e3bd : 0xffd9a0);
     scene.fog = new THREE.Fog(scene.background as THREE.Color, 17, 32);
@@ -683,17 +729,33 @@ export function LifeStage3D(p: Props) {
     // reference video's film look. Null = plain-renderer fallback.
     const fx: PostFx | null = makePostFx(renderer, scene, camera, { bloomStrength: 0.38, bloomThreshold: 0.72, blur: 0.0052 });
 
-    const hemi = new THREE.HemisphereLight(night ? 0x8fb6ff : 0xfff2d8, 0x8a5a3b, night ? 0.5 : 0.85);
-    scene.add(hemi);
-    const sun = new THREE.DirectionalLight(night ? 0xffc98a : 0xffdfae, night ? 1.1 : 2.1);
+    /* ROUND-10 (home-designer RoomCanvas recipe): interiors are lit by one
+       shadowed key + a cool fill + low flat ambient — NO hemisphere bounce
+       and NO IBL indoors (home-designer learned both blow out white walls
+       and clip detail past the ACES knee; their day sun is ~1.14, not 2.5).
+       Outdoor acted scenes keep the old bright sun + hemi. */
+    if (indoor) {
+      scene.add(new THREE.AmbientLight(0xffffff, night ? 0.2 : 0.38));
+    } else {
+      const hemi = new THREE.HemisphereLight(night ? 0x8fb6ff : 0xfff2d8, 0x8a5a3b, night ? 0.5 : 0.85);
+      scene.add(hemi);
+    }
+    const sun = new THREE.DirectionalLight(night ? 0xb8c4d8 : 0xfff6e8, indoor ? (night ? 0.45 : 0.85) : (night ? 1.1 : 2.1));
     sun.position.set(4, 7, 5);
     sun.castShadow = true;
     sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.bias = indoor ? -0.001 : -0.0006;
     sun.shadow.normalBias = 0.02;
     sun.shadow.camera.left = -8; sun.shadow.camera.right = 8;
     sun.shadow.camera.top = 8; sun.shadow.camera.bottom = -8;
     sun.shadow.radius = 5;
     scene.add(sun);
+    if (indoor) {
+      // cool fill from the opposite side (RoomCanvas: fill 0.28 #D8E4F4)
+      const fill = new THREE.DirectionalLight(0xd8e4f4, 0.28);
+      fill.position.set(-5, 4, -4);
+      scene.add(fill);
+    }
     const warm = new THREE.PointLight(0xffb35c, night ? 22 : 9, 13, 1.8);
     warm.position.set(-2.5, 3, 2.5);
     scene.add(warm);
@@ -1364,19 +1426,52 @@ export function LifeStage3D(p: Props) {
         box(1.1, 2.4, 0.08, 0x8a6a44, -6.4, 1.2, -1.2, 0.8);
       } else if (tr === 2) {
         roomShell(0xf5ead6, 0xc9a877, { windowX: 2.6, windowW: 2.6 });
-        // living room: sofa, TV glow, coffee table, rug, plants, picture
+        // ROUND-10 (home-designer template): a 一房 flat is two zones in
+        // one 14x7 stage — bedroom W, living E — instead of a sofa and a
+        // TV on a diagonal ~7 m apart. Sofa front -> TV face is ~2.5 m
+        // (home-designer's living-room rule is ~3.0 m), coffee table dead
+        // centre between them, rug under it, pendant above it, armchair
+        // at 90 degrees facing the TV, plants only in the far corners.
+        // -- bedroom (W): bed centred on the N wall, nightstands flanking
+        // at equal gaps, wardrobe on the W wall, rug at the foot of the bed
+        box(2.0, 0.35, 2.3, 0x9c7a52, -4.5, 0.175, -2.45, 0.8); // bed frame
+        box(1.9, 0.22, 2.2, 0xf6efe0, -4.5, 0.47, -2.43, 0.95); // mattress
+        box(2.0, 0.9, 0.12, 0x8a6a44, -4.5, 0.45, -3.55, 0.8); // headboard
+        box(0.7, 0.14, 0.4, 0xffffff, -4.95, 0.65, -3.15, 0.95); // pillows
+        box(0.7, 0.14, 0.4, 0xffffff, -4.05, 0.65, -3.15, 0.95);
+        box(1.9, 0.08, 1.2, 0x7ea6c9, -4.5, 0.6, -2.0, 0.95); // blanket
+        for (const nx of [-5.9, -3.1]) {
+          box(0.5, 0.55, 0.4, 0x8a6a44, nx, 0.28, -2.9, 0.8); // nightstand
+          cyl(0.04, 0.05, 0.3, 0x6b543a, nx, 0.7, -2.9, 0.6); // lamp stem
+          const nl = cyl(0.14, 0.18, 0.18, 0xf5b942, nx, 0.92, -2.9, 0.5, { emissive: 0xffc873, emissiveIntensity: night ? 1.8 : 0.6 }); nl.castShadow = false;
+        }
+        box(0.65, 2.3, 1.8, 0x9c7a52, -6.7, 1.15, -1.0, 0.8); // wardrobe, W wall
+        for (const dz of [-0.3, 0.3]) box(0.03, 2.1, 0.02, 0x8a6a44, -6.36, 1.15, -1.0 + dz, 0.7);
+        const rugB = box(2.0, 0.02, 1.4, 0xc9a877, -4.5, 0.012, -0.85, 1); rugB.castShadow = false; // rug at the foot of the bed
+        box(0.9, 0.55, 0.45, 0xb08a5c, -4.5, 0.28, -0.35, 0.8); // dresser facing the bed
+        addPicture(-4.5, 2.6, 1.4, 0.9, night ? 0x33507c : 0x9fc8e8); // art above the bed
+        // -- living (E): sofa, TV unit + TV, coffee table, rug, armchair
         // (round-9: sofa + armrests sit ON the floor — the seat base was 0.2 up)
-        box(3.0, 0.5, 1.0, 0x6b8f71, -2.6, 0.25, -2.6, 0.9); box(3.0, 1.0, 0.25, 0x5f8065, -2.6, 0.5, -3.05, 0.9);
-        for (const ax of [-4.05, -1.15]) box(0.25, 0.7, 1.0, 0x5f8065, ax, 0.35, -2.6, 0.9);
-        const tv = box(2.0, 1.1, 0.06, 0x0b0f19, 2.4, 1.6, 2.6, 0.3, { emissive: 0x3060c0, emissiveIntensity: night ? 1.2 : 0.4 }); tv.rotation.y = Math.PI; tv.castShadow = false;
-        box(1.4, 0.06, 0.7, 0xb08a5c, -2.6, 0.45, -1.2, 0.6);
-        // coffee-table legs — the top was floating with no support
-        for (const [lx, lz] of [[-3.2, -1.45], [-2.0, -1.45], [-3.2, -0.95], [-2.0, -0.95]] as const)
+        box(3.0, 0.5, 1.0, 0x6b8f71, -0.6, 0.25, -0.4, 0.9); box(3.0, 1.0, 0.25, 0x5f8065, -0.6, 0.5, -0.85, 0.9);
+        for (const ax of [-2.05, 0.85]) box(0.25, 0.7, 1.0, 0x5f8065, ax, 0.35, -0.4, 0.9);
+        box(2.2, 0.45, 0.45, 0xb08a5c, -0.6, 0.23, 2.6, 0.7); // TV unit
+        const tv = box(2.0, 1.1, 0.06, 0x0b0f19, -0.6, 1.0, 2.6, 0.3, { emissive: 0x3060c0, emissiveIntensity: night ? 1.2 : 0.4 }); tv.rotation.y = Math.PI; tv.castShadow = false;
+        box(1.4, 0.06, 0.7, 0xb08a5c, -0.6, 0.45, 0.9, 0.6); // coffee table
+        for (const [lx, lz] of [[-1.2, 0.65], [-0.0, 0.65], [-1.2, 1.15], [-0.0, 1.15]] as const)
           box(0.06, 0.42, 0.06, 0x8a6a44, lx, 0.21, lz, 0.7);
-        const rug2 = cyl(1.6, 1.6, 0.02, 0xd9a05b, -2.4, 0.012, -1.4, 1, {}, 24); rug2.castShadow = false;
+        const rug2 = cyl(1.6, 1.6, 0.02, 0xd9a05b, -0.6, 0.012, 0.9, 1, {}, 24); rug2.castShadow = false;
+        // armchair at 90 degrees to the sofa, facing the TV
+        box(0.8, 0.45, 0.8, 0x6b8f71, 1.3, 0.225, 1.6, 0.9); box(0.8, 0.9, 0.2, 0x5f8065, 1.3, 0.45, 1.25, 0.9);
+        // pendant over the coffee table (home-designer: one per table)
+        cyl(0.02, 0.02, 1.5, 0x3a3a3a, -0.6, 3.85, 0.9, 0.6);
+        const pshade = cyl(0.2, 0.26, 0.26, 0xf5b942, -0.6, 3.05, 0.9, 0.4, { emissive: 0xffc873, emissiveIntensity: night ? 1.6 : 0.5 }); pshade.castShadow = false;
+        addGlow(-0.6, 2.95, 0.9, 1.8, 0xffc98a, night ? 0.6 : 0.3);
+        const pend = new THREE.PointLight(0xffe8a0, 10, 5, 2); pend.position.set(-0.6, 2.9, 0.9); scene.add(pend);
+        // plants only in the far corners
         cyl(0.24, 0.19, 0.32, 0xb0653a, 5.4, 0.16, -3.0, 0.8);
         const leaves = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 7), mat(0x4d9b5f, 1, { flatShading: true })); leaves.position.set(5.4, 0.75, -3.0); scene.add(leaves);
-        addPicture(-2.6, 2.6, 1.4, 0.9, night ? 0x33507c : 0x9fc8e8);
+        cyl(0.24, 0.19, 0.32, 0xb0653a, 5.4, 0.16, 3.0, 0.8);
+        const leaves2 = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 7), mat(0x4d9b5f, 1, { flatShading: true })); leaves2.position.set(5.4, 0.75, 3.0); scene.add(leaves2);
       } else {
         roomShell(0xefe9df, 0xd8cfc0);
         // floor-to-ceiling glass onto the Nanshan skyline
@@ -1400,8 +1495,9 @@ export function LifeStage3D(p: Props) {
       for (const it of furn ?? []) {
         const sl = FURN_SLOTS[it.slot]; if (!sl) continue;
         const g = new THREE.Group(); g.position.set(sl.x, 0, sl.z); g.rotation.y = sl.ry; g.userData.furnUse = it.id; scene.add(g);
-        const gb = (w: number, h: number, d: number, c: number, x: number, y: number, z: number, rough = 0.8, extra: Partial<THREE.MeshStandardMaterialParameters> = {}) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(c, rough, extra)); m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; g.add(m); return m; };
-        const gc = (r: number, h: number, c: number, x: number, y: number, z: number) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 18), mat(c, 0.6)); m.position.set(x, y, z); m.castShadow = true; g.add(m); return m; };
+        const prims: THREE.Mesh[] = [];
+        const gb = (w: number, h: number, d: number, c: number, x: number, y: number, z: number, rough = 0.8, extra: Partial<THREE.MeshStandardMaterialParameters> = {}) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(c, rough, extra)); m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; g.add(m); prims.push(m); return m; };
+        const gc = (r: number, h: number, c: number, x: number, y: number, z: number) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 18), mat(c, 0.6)); m.position.set(x, y, z); m.castShadow = true; g.add(m); prims.push(m); return m; };
         const c = it.color; const dark = new THREE.Color(c).multiplyScalar(0.8).getHex();
         const kind = it.id.split("-")[0];
         if (kind === "sofa") {
@@ -1441,6 +1537,32 @@ export function LifeStage3D(p: Props) {
           gb(1.8, 0.6, 0.85, c, 0, 0.3, 0, 0.2); gb(1.6, 0.05, 0.65, 0x7dd3fc, 0, 0.55, 0, 0.1, { transparent: true, opacity: 0.8 });
         } else { gb(0.8, 0.8, 0.8, c, 0, 0.4, 0); }
         g.traverse((o) => { o.userData.furnUse = it.id; });
+        // ROUND-10 (home-designer): a real GLB model for this piece, if lee
+        // has copied it to client/public/models/furniture/<id>.glb
+        // (home-designer catalog: sofa-fabric <- sofa_03_1k.glb,
+        // bed-double <- bed_07.glb, tv-cabinet <- tv_stand_modern.glb,
+        // wardrobe <- wardrobe_dylanheyes.glb, desk <- office_desk.glb,
+        // dining-table <- round_wooden_table_01_1k.glb,
+        // kitchen-cabinet <- cabinet_base_drawers.glb,
+        // bookshelf <- steel_frame_shelves_01_1k.glb,
+        // nightstand <- side_table_01_1k.glb). Fitted to the primitive's
+        // footprint (contain-fit); no file -> the primitive stays.
+        if (prims.length > 0) {
+          const target = new THREE.Box3();
+          for (const p of prims) {
+            p.updateMatrix();
+            const geo = p.geometry as THREE.BufferGeometry;
+            if (!geo.boundingBox) geo.computeBoundingBox();
+            if (geo.boundingBox) target.union(geo.boundingBox.clone().applyMatrix4(p.matrix));
+          }
+          void loadFurnModel(`furniture/${it.id}.glb`).then((m) => {
+            if (!m || !alive || !g.parent) return;
+            const fitted = fitFurnGlb(m, target);
+            for (const p of prims) { p.removeFromParent(); p.geometry.dispose(); }
+            fitted.traverse((o) => { o.userData.furnUse = it.id; });
+            g.add(fitted);
+          });
+        }
       }
       /* the room's own bed, sofa and stove — tappable even before a catalogue piece is placed */
       const tap = (id: string, x: number, y: number, z: number, w: number, h: number, d: number) => {
@@ -1449,7 +1571,7 @@ export function LifeStage3D(p: Props) {
       };
       if (tr === 0) tap("bed-double", -3.5, 1.3, -2.3, 4.4, 3.0, 2.8);
       else if (tr === 1) { tap("bed-double", -3.6, 0.7, -2.9, 2.4, 1.0, 1.4); tap("desk", 0.6, 1.1, -3.2, 1.7, 1.0, 0.8); }
-      else if (tr === 2) tap("sofa-fabric", -2.6, 0.8, -2.6, 3.2, 1.2, 1.2);
+      else if (tr === 2) { tap("sofa-fabric", -0.6, 0.7, -0.4, 3.2, 1.2, 1.2); tap("bed-double", -4.5, 1.3, -2.45, 2.2, 1.0, 2.5); }
       else { tap("sofa-fabric", -3.2, 0.7, -1.6, 4.4, 1.2, 1.4); tap("kitchen-cabinet", 3.4, 0.8, -0.6, 2.9, 1.3, 1.1); }
     } else if (setKind === "bedroom") {
       roomShell(0xf3e6cf, 0xc9a877, { windowX: 3.9, windowW: 1.9 });
@@ -3370,6 +3492,7 @@ export function LifeStage3D(p: Props) {
     };
     raf = requestAnimationFrame(frame);
     return () => {
+      alive = false;
       detachRoam();
       detachFurn();
       cancelAnimationFrame(raf);

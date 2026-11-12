@@ -215,7 +215,7 @@ export interface DesktopFx {
   /** feed a completed FPS window (MapView's 2.5s measurement) */
   noteFps: (fps: number) => void;
   /** per-frame: ease wetness toward the weather */
-  update: (o: { raining: boolean; storm: boolean; nightF: number; duskF: number; dt: number }) => void;
+  update: (o: { raining: boolean; storm: boolean; nightF: number; duskF: number; dt: number; street?: boolean }) => void;
   /** multiplier for neon emissive on desktop (1 when off) */
   neonBoost: () => number;
   /** multiplier for window / bulb emissive on desktop (1 when off) */
@@ -251,9 +251,12 @@ export function makeDesktopFx(): DesktopFx {
         goodStreak = 0;
       }
     },
-    update(o: { raining: boolean; storm: boolean; nightF: number; duskF: number; dt: number }) {
+    update(o: { raining: boolean; storm: boolean; nightF: number; duskF: number; dt: number; street?: boolean }) {
       const cap = level === 0 ? 0 : level === 1 ? 0.6 : 1;
-      const target = (o.raining || o.storm ? 1 : 0) * cap;
+      // ROUND-10: in street mode the road keeps a humid sheen even on a dry
+      // day (Sleeping Dogs Hong Kong streets stay glossy) — a floor of 0.35
+      // under the weather-driven target, never above the rain target.
+      const target = Math.max((o.raining || o.storm ? 1 : 0) * cap, o.street ? 0.35 : 0);
       // soak fast when rain starts, dry slowly so streets stay glossy
       // for a while after the rain stops
       const rate = target > wet.value ? 0.55 : 0.02;

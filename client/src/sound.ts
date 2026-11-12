@@ -492,7 +492,14 @@ function ambiencePlan(): { url: string; gain: number }[] {
   if (world.sceneSfx) return one2(SCENE_SFX_FILE[world.sceneSfx], 0.4);
   // real rain (sounds2) instead of the old synth wind when it storms
   if (world.storm) return one2("sfx/nature/rain-real.mp3", 0.5);
-  if (travel === "walk") return one("sfx/city/footsteps.mp3", 0.42);
+  if (travel === "walk") {
+    // ROUND-10 street mode: walking a real street you hear BOTH the
+    // traffic hum and your own footsteps (two beds, not one or the
+    // other); same for a crowd — murmur under the footsteps.
+    if (place === "street") return [{ url: soundUrl("sfx/city/traffic-ambience.mp3"), gain: 0.26 }, { url: soundUrl("sfx/city/footsteps.mp3"), gain: 0.42 }];
+    if (place === "crowd" || place === "social") return [{ url: soundUrl("sfx/voices/crowd-murmur.mp3"), gain: 0.3 }, { url: soundUrl("sfx/city/footsteps.mp3"), gain: 0.38 }];
+    return one("sfx/city/footsteps.mp3", 0.42);
+  }
   if (place === "sea") return [{ url: soundUrl("sfx/nature/ocean-waves.mp3"), gain: 0.62 }, { url: soundUrl("sfx/nature/seagulls.mp3"), gain: 0.34 }];
   // real wet-market voices (sounds2) — the old file was a supermarket
   if (place === "market") return one2("sfx/market/market-wet.mp3", 0.45);

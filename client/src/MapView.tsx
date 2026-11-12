@@ -96,6 +96,10 @@ interface Props {
   onSelect: (locId: string) => void;
   /** Tapped a person on the map: an NPC (by name) or another player (by public id). */
   onPickActor?: (who: { npc: string } | { player: string }) => void;
+  /** Round-10 street mode: reports { active, walking } when it changes, so
+      App can switch the ambience bed (traffic + footsteps) and so the map
+      button can read as the minimap layer. */
+  onStreetState?: (s: { active: boolean; walking: boolean }) => void;
   /** Round-3 (C): community pins for this city — the return value of
       toMapMarkers() (round2/community.ts) over App's server queries
       (strays / notices / snake warnings / fishing spots). Absent or empty
@@ -375,6 +379,30 @@ export function nearestLand(cityKey: CityKey, x: number, z: number, maxR = 10, s
   return null;
 }
 
+/** ROUND-10 street mode: the street / place name for the HUD pill —
+    nearest named road within ~4 units, else the nearest place within ~5,
+    else the city name. Real road names come from roads.ts (深南大道,
+    弥敦道, 惠州大道 …). */
+export function streetNameAt(cityKey: CityKey, x: number, z: number): string {
+  let bestRoad: { d: number; name: string } | null = null;
+  for (const r of REAL_ROADS[cityKey]) {
+    if (!r.name) continue;
+    const dx = r.x2 - r.x1, dz = r.z2 - r.z1;
+    const len2 = dx * dx + dz * dz || 1;
+    const t = Math.max(0, Math.min(1, ((x - r.x1) * dx + (z - r.z1) * dz) / len2));
+    const d = Math.hypot(x - (r.x1 + dx * t), z - (r.z1 + dz * t));
+    if (d < 4 && (!bestRoad || d < bestRoad.d)) bestRoad = { d, name: r.name };
+  }
+  let bestLoc: { d: number; name: string } | null = null;
+  for (const l of getLocations(cityKey)) {
+    const d = Math.hypot(x - l.x, z - l.z);
+    if (d < 5 && (!bestLoc || d < bestLoc.d)) bestLoc = { d, name: l.name };
+  }
+  if (bestRoad && (!bestLoc || bestRoad.d <= bestLoc.d + 1)) return bestRoad.name;
+  if (bestLoc) return bestLoc.name;
+  return CITIES[cityKey].name;
+}
+
 function hash(s: string): number {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
@@ -442,6 +470,76 @@ function windowsTexture(): THREE.Texture {
   }
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/** ROUND-10 street mode: a one-floor facade tile (warm-white wall, two
+    glass windows, a floor line) used as the `map` of nearby buildings
+    while the player walks the street, so a flat box reads as a real
+    frontage. The building's own colour tints the near-white wall.
+    Applied only in street mode; the map keeps its clean look. */
+function facadeTexture(): THREE.Texture {
+  const c = document.createElement("canvas");
+  c.width = 128;
+  c.height = 128;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#f2ede2";
+  g.fillRect(0, 0, 128, 128);
+  // faint vertical bay joints
+  g.fillStyle = "rgba(0,0,0,0.05)";
+  g.fillRect(0, 0, 2, 128);
+  g.fillRect(126, 0, 2, 128);
+  // two windows per bay: dark glass, a sky glint, one in five lit warm
+  const rnd = mulberry(7);
+  for (const wx of [16, 72]) {
+    const lit = rnd() > 0.8;
+    g.fillStyle = "#232c38";
+    g.fillRect(wx, 24, 40, 56);
+    g.fillStyle = lit ? "#ffd98a" : "#7fa8c8";
+    g.fillRect(wx + 3, 27, 34, 12);
+    g.fillStyle = lit ? "#ffedb5" : "#33465c";
+    g.fillRect(wx + 3, 42, 34, 35);
+    // mullion cross
+    g.fillStyle = "rgba(242,237,226,0.85)";
+    g.fillRect(wx + 18, 24, 4, 56);
+    g.fillRect(wx, 50, 40, 4);
+  }
+  // floor slab line at the bottom of the tile
+  g.fillStyle = "#d8d0bd";
+  g.fillRect(0, 118, 128, 5);
+  g.fillStyle = "rgba(0,0,0,0.10)";
+  g.fillRect(0, 123, 128, 5);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+
+/** Companion to facadeTexture: the same window layout on a black field,
+    so the facade's lit windows glow at night in exactly the same places
+    as the daylight windows. Same seed (7) and window order as the map. */
+function facadeEmissiveTexture(): THREE.Texture {
+  const c = document.createElement("canvas");
+  c.width = 128;
+  c.height = 128;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#000000";
+  g.fillRect(0, 0, 128, 128);
+  const rnd = mulberry(7);
+  for (const wx of [16, 72]) {
+    const lit = rnd() > 0.8;
+    g.fillStyle = lit ? "#ffd98a" : "#141c26";
+    g.fillRect(wx, 24, 40, 56);
+    // mullion cross stays dark, matching the map
+    g.fillStyle = "#000000";
+    g.fillRect(wx + 18, 24, 4, 56);
+    g.fillRect(wx, 50, 40, 4);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
   return tex;
 }
 
@@ -690,6 +788,12 @@ export function MapView(p: Props) {
   const playerPickMeshesRef = useRef<THREE.Object3D[]>([]);
   const propsRef = useRef(p);
   propsRef.current = p;
+  /* ROUND-10: street mode is the primary play view; the top-down map is
+     the navigation / minimap layer ("这个反而有点像是小地图"). Desktop
+     starts on the street (the player lives there); phones and lite mode
+     keep the map as the default, where touch steering is weaker. One
+     constant to flip if the default ever wants to change. */
+  const streetDefault = !p.lite && typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(pointer:fine)").matches;
   const camRef = useRef({ az: 0, pol: CAM_POL, dist: 46, distCur: 46, tx: LAND_CX, tz: LAND_CZ, lastUser: 0, cut: 0 });
   /* Distance that fills the current canvas, recomputed on every resize;
      while autoFit is on (initially, after ⌂ reset, and whenever the
@@ -698,7 +802,7 @@ export function MapView(p: Props) {
      the window, or any other size change. Manual wheel/button zoom turns
      autoFit off until the next reset or fullscreen toggle. */
   const fitDistRef = useRef(46);
-  const autoFitRef = useRef(true);
+  const autoFitRef = useRef(!streetDefault);
   const [zoomPct, setZoomPct] = useState(100);
   const [glFailed, setGlFailed] = useState(false);
   const [cine, setCine] = useState(true);
@@ -720,9 +824,29 @@ export function MapView(p: Props) {
   cineRef.current = cine;
   /* Street-level camera: drops the lens to the pavement behind the player
      so the miniature stops reading as a model — shopfronts, crossings,
-     signals, traffic and pedestrians at eye height, true-scale streets. */
-  const [streetCam, setStreetCam] = useState(false);
-  const streetRef = useRef(false);
+     signals, traffic and pedestrians at eye height, true-scale streets.
+     ROUND-10: this is now the PRIMARY view (Sleeping Dogs style). The
+     player walks the street with WASD; the camera sits over the shoulder
+     and swings in behind the heading; nearby buildings get lit facades;
+     the street name shows on screen. The map is the minimap layer. */
+  const [streetCam, setStreetCam] = useState(streetDefault);
+  const streetRef = useRef(streetDefault);
+  /** keys held for street steering (WASD / arrows + Shift) */
+  const streetKeysRef = useRef<Set<string>>(new Set());
+  /** the current click-walk target was set by street steering (not a mouse click) */
+  const streetWalkRef = useRef(false);
+  const streetNameRef = useRef("");
+  const [streetName, setStreetName] = useState("");
+  /** buildings currently wearing a street facade (mesh + original material + created materials) */
+  const streetFacadeRef = useRef<{ mesh: THREE.Mesh; orig: THREE.Material | THREE.Material[]; mats: THREE.Material[] }[]>([]);
+  /** every generic building body that can wear a facade (captured at build) */
+  const streetFacadeTargetsRef = useRef<{ mesh: THREE.Mesh; w: number; h: number }[]>([]);
+  const streetFacadeTexRef = useRef<THREE.Texture | null>(null);
+  const streetFacadeEmTexRef = useRef<THREE.Texture | null>(null);
+  /** facade materials, driven with the day cycle like buildingMats */
+  const streetFacadeMatsRef = useRef<THREE.MeshStandardMaterial[]>([]);
+  const streetReportedRef = useRef({ active: false, walking: false });
+  const toggleStreetCamRef = useRef<() => void>(() => {});
   const focusRef = useRef(0);
   const lookRef = useRef<{ x: number; z: number; until: number } | null>(null);
   /* a spot picked on the minimap stays the camera's centre until the player
@@ -730,7 +854,7 @@ export function MapView(p: Props) {
   const anchorRef = useRef<{ x: number; z: number } | null>(null);
   /* tap-yourself: keep the lens on the live player, even in whole-city view
      where an idle camera would otherwise settle on the city centre */
-  const trackSelfRef = useRef(false);
+  const trackSelfRef = useRef(streetDefault);
   /* the searched place, pinned until the next search or ✕ */
   const pinRef = useRef<{ id: string; x: number; z: number; name: string } | null>(null);
   /* ROUND-8 click-to-walk (desktop mouse): the ground point the player
@@ -1027,6 +1151,11 @@ export function MapView(p: Props) {
     if (!mount || !labels) return;
     const cityKey = propsRef.current.cityKey;
     const locs = getLocations(cityKey);
+    // ROUND-10: scene rebuild (city change) drops the old facade targets;
+    // the street-mode refresh loop re-applies facades for the new city.
+    streetFacadeTargetsRef.current = [];
+    streetFacadeRef.current = [];
+    streetFacadeMatsRef.current = [];
     /* ROUND-2 (a) wider streets: the map's roads read cramped ("太急了").
        Safest fix — do NOT rescale the canvas / move any place: widen every
        road at the source (×1.35, so 深南大道 2.8 → 3.8). Every downstream
@@ -1786,6 +1915,10 @@ export function MapView(p: Props) {
        instead of the generic box + roof. Label height follows the model. */
     const landmarks = createLandmarks(winTex);
     const labelTop = new Map<string, number>();
+    // ROUND-10 (Three-Live): the 平安金融中心 group, captured below and kept
+    // out of the city-wide merge so a compiled .glb can replace the
+    // miniature in place (see the loadModel call after mergeStatic)
+    let pinganRoot: THREE.Group | null = null;
     const decorSpots = landmarks.decor(cityKey);
     const landmarkRoots: THREE.Object3D[] = [];
     const pickMat = new THREE.MeshBasicMaterial({ visible: false });
@@ -1796,6 +1929,7 @@ export function MapView(p: Props) {
         g.add(built.group);
         wheelGroups.push(...built.spin);
         landmarkRoots.push(g);
+        if (l.id === "bank" && cityKey === "sz") pinganRoot = g;
         // the model itself gets merged city-wide below; clicks hit this
         // invisible box (raycasting ignores visibility)
         const pick = new THREE.Mesh(new THREE.BoxGeometry(l.w, built.top, l.w), pickMat);
@@ -1847,6 +1981,8 @@ export function MapView(p: Props) {
       body.userData.locId = l.id;
       g.add(body);
       pickMeshes.push(body);
+      // ROUND-10: a street-mode facade candidate (lit windows at eye level)
+      streetFacadeTargetsRef.current.push({ mesh: body, w: l.w * 0.82, h });
       const roof = new THREE.Mesh(
         new THREE.ConeGeometry(l.w * 0.66, Math.min(1.6, h * 0.22 + 0.5), 4),
         new THREE.MeshStandardMaterial({ color: new THREE.Color(l.color).multiplyScalar(0.72), roughness: 0.9, flatShading: true }),
@@ -1923,9 +2059,54 @@ export function MapView(p: Props) {
       scene.add(d.group);
       wheelGroups.push(...d.spin);
     }
-    mergeStatic([...landmarkRoots, ...decorSpots.map((d) => d.group)], scene, new Set(wheelGroups));
+    mergeStatic([...landmarkRoots, ...decorSpots.map((d) => d.group)], scene, new Set([...wheelGroups, ...(pinganRoot ? [pinganRoot] : [])]));
     buildingMats.push(...landmarks.litMats);
     neonMats.push(...landmarks.neonMats);
+    // ROUND-10 (Three-Live): 平安金融中心 — if the compiled .glb is present
+    // (built on a Mac from client/public/models-src/pingan-scene.js:
+    //   npm i -g three-live@1.4.0
+    //   three-live-cli convert pingan-scene.js -o pingan.glb
+    //   cp pingan.glb <game-repo>/client/public/models/pingan.glb
+    // binaries can't ride the snapshot push, so the .glb itself is NOT in
+    // the repo). It replaces the landmarks.ts miniature in place. No .glb
+    // -> the miniature stays; nothing breaks.
+    if (pinganRoot) {
+      const root = pinganRoot;
+      void loadModel("pingan.glb").then((m) => {
+        if (!m || !root.parent) return;
+        const inner = m.clone(true);
+        // drop the 16-wide plaza slab (GLB units: wider than 10, flatter
+        // than 0.5) — it would pave over the road beside the plot
+        const plaza: THREE.Mesh[] = [];
+        inner.traverse((o) => {
+          const me = o as THREE.Mesh;
+          if (!me.isMesh) return;
+          const b = new THREE.Box3().setFromObject(me);
+          const s = b.getSize(new THREE.Vector3());
+          if (s.x > 10 && s.z > 10 && s.y < 0.5) plaza.push(me);
+        });
+        for (const me of plaza) { me.removeFromParent(); me.geometry.dispose(); }
+        // fit by height: the GLB is 62.56 units tall at 1 unit = 10 m;
+        // ~19 units keeps the tower the tallest on the map, with a
+        // ~3.3-wide podium that fits the plot
+        const box = new THREE.Box3().setFromObject(inner);
+        const size = box.getSize(new THREE.Vector3());
+        inner.scale.setScalar(19 / Math.max(1e-3, size.y));
+        const box2 = new THREE.Box3().setFromObject(inner);
+        const c2 = box2.getCenter(new THREE.Vector3());
+        inner.position.set(-c2.x, -box2.min.y, -c2.z);
+        // clear the miniature (dispose its geometries; the materials are
+        // shared with the other landmarks, so they stay) and keep the
+        // invisible click box
+        for (const ch of root.children.slice()) {
+          if ((ch as THREE.Mesh).userData?.locId) continue;
+          ch.traverse((o) => { const me = o as THREE.Mesh; if (me.isMesh) me.geometry.dispose(); });
+          root.remove(ch);
+        }
+        root.add(inner);
+        labelTop.set("bank", 19);
+      });
+    }
     if (cityKey === "sz") {
       // (平安金融中心 is now the 平安金融中心 location's own model)
       // (深圳湾大桥 and 深中通道 are decor landmarks in landmarks.ts)
@@ -2100,6 +2281,8 @@ export function MapView(p: Props) {
             bodyS.castShadow = true;
             bodyS.receiveShadow = true;
             g.add(bodyS);
+            // ROUND-10: a street-mode facade candidate (shopfront windows)
+            streetFacadeTargetsRef.current.push({ mesh: bodyS, w: gw, h: gh });
             // awning + sign strip on the road-facing side: with the group
             // rotation chosen below, the street face is local +z for both
             // sides of the road
@@ -3086,6 +3269,7 @@ export function MapView(p: Props) {
             const dest = nearestLand(cityKey, pt.x, pt.z);
             if (dest) {
               clickWalkRef.current = dest;
+              streetWalkRef.current = false; // a mouse click, not street steering — the keys-up branch must not clear it
               // LoL-style move-click ripple: (re)start the expanding ring
               clickRippleAtRef.current = performance.now();
             }
@@ -3184,6 +3368,7 @@ export function MapView(p: Props) {
     const v3 = new THREE.Vector3();
     let raf = 0;
     let declutterTick = 0;
+    let streetTick = 0;
     let greetTick = 0;
     let last = performance.now();
     const clockStart = performance.now();
@@ -3260,7 +3445,7 @@ export function MapView(p: Props) {
       // cool dark-blue night sky toward amber and turned it muddy
       // reddish-brown, which looked worse than before.)
       if (dfx) {
-        dfx.update({ raining, storm: wk === "storm", nightF, duskF, dt });
+        dfx.update({ raining, storm: wk === "storm", nightF, duskF, dt, street: streetRef.current });
       }
       waterMat.color.setHex(0x2e7fb8).lerp(C_WATER_NIGHT, nightF * 0.8);
       waterMat.roughness = 0.35 - dayF * 0.12 + nightF * 0.1;
@@ -3273,8 +3458,12 @@ export function MapView(p: Props) {
       // ROUND-7 desktop: windows / bulbs / neon burn brighter after dark
       // (the bloom pass turns the extra emissive into real glow)
       const winB = dfx ? dfx.windowBoost() : 1;
-      const neoB = dfx ? dfx.neonBoost() : 1;
+      // ROUND-10: on the street the neon signs stay loud even in daylight
+      // (Sleeping Dogs Hong Kong), instead of only burning after dark
+      const neoB = (dfx ? dfx.neonBoost() : 1) * (streetRef.current ? 1.4 : 1);
       for (const m of buildingMats) m.emissiveIntensity = (nightF * 0.95 + duskF * 0.3) * winB;
+      // ROUND-10: street facades glow with the same day cycle as the buildings
+      for (const m of streetFacadeMatsRef.current) m.emissiveIntensity = (nightF * 0.95 + duskF * 0.3) * winB;
       if (fillerMat) fillerMat.emissiveIntensity = nightF * 0.5 * winB;
       if (bulbMat) bulbMat.emissiveIntensity = (0.15 + nightF * 2.4) * winB;
       if (glowMat) glowMat.opacity = nightF * 0.75;
@@ -3653,8 +3842,52 @@ export function MapView(p: Props) {
               // clamp to the nearest land so a person at the water/road edge
               // doesn't strand you; if unreachable, keep the last target
               const dest = nearestLand(cityKey, target.x, target.z);
-              if (dest) clickWalkRef.current = dest;
+              if (dest) { clickWalkRef.current = dest; streetWalkRef.current = false; }
             }
+          }
+          // ROUND-10 street mode: WASD / arrows steer the player directly
+          // (camera-relative, Sleeping Dogs on foot). Reuses the same tx/tz
+          // + speed path as click-to-walk, so the walk cycle, heading and
+          // the player light all just work. Shift = run. Blocked by
+          // building footprints and water — slides along them instead.
+          if (streetRef.current && !propsRef.current.selfEtaAt && !trainPos.active) {
+            const keys = streetKeysRef.current;
+            const fwd = (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0) - (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0);
+            const str = (keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0) - (keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0);
+            if (fwd !== 0 || str !== 0) {
+              const az = camRef.current.az;
+              const fx = -Math.sin(az), fz = -Math.cos(az);
+              const rx = Math.cos(az), rz = -Math.sin(az);
+              let mx = fx * fwd + rx * str, mz = fz * fwd + rz * str;
+              const ml = Math.hypot(mx, mz) || 1; mx /= ml; mz /= ml;
+              const run = keys.has("ShiftLeft") || keys.has("ShiftRight");
+              a.speed = run ? 4.2 : 2.6;
+              followActorRef.current = null;
+              pendingActorRef.current = null;
+              const step = 4;
+              let tx = a.x + mx * step, tz = a.z + mz * step;
+              const blocked = (x: number, z: number) => !isLand(cityKey, x, z, 0.3) || locsNow.some((l) => Math.abs(x - l.x) < l.w / 2 + 0.4 && Math.abs(z - l.z) < l.w / 2 + 0.4);
+              if (blocked(tx, tz)) {
+                const ax2 = a.x + mx * step, az2 = a.z;
+                const ax3 = a.x, az3 = a.z + mz * step;
+                if (!blocked(ax2, az2)) { tx = ax2; tz = az2; }
+                else if (!blocked(ax3, az3)) { tx = ax3; tz = az3; }
+                else { tx = a.x; tz = a.z; }
+              }
+              clickWalkRef.current = { x: tx, z: tz };
+              streetWalkRef.current = true;
+            } else {
+              // keys up: stop — but only clear a target street steering set
+              // itself, never a mouse click-walk or a walk-to-person
+              if (streetWalkRef.current && !followActorRef.current) {
+                clickWalkRef.current = null;
+                if (clickMarkerRef.current) clickMarkerRef.current.visible = false;
+              }
+              streetWalkRef.current = false;
+              a.speed = modeById((propsRef.current.travelModeId ?? "walk") as TransportModeId).mapSpeed;
+            }
+          } else if (streetWalkRef.current) {
+            streetWalkRef.current = false;
           }
           if (clickWalkRef.current) {
             a.tx = clickWalkRef.current.x;
@@ -3947,12 +4180,22 @@ export function MapView(p: Props) {
       const tripDist = tripping && !userZoomedRecently ? Math.min(cam.dist, (fitDistRef.current || 46) * 0.42) : cam.dist;
       const wantDist = tripDist * (1 - pulse * 0.16) * (1 - cutEase * 0.1);
       cam.distCur += (wantDist - cam.distCur) * Math.min(1, dt * 3.2);
-      if (streetRef.current) {
+      if (streetRef.current && !trainPos.active && !propsRef.current.selfEtaAt) {
         // street level: near-horizontal lens, close behind the player —
         // the follow logic above already tracks the figure, so the world
-        // streams past at eye height like walking the real street
+        // streams past at eye height like walking the real street.
+        // Sleeping Dogs: while you walk, the camera swings in behind your
+        // heading (unless you just dragged it somewhere yourself).
         cam.pol += (1.47 - cam.pol) * Math.min(1, dt * 3);
-        cam.distCur += (9.5 - cam.distCur) * Math.min(1, dt * 3);
+        cam.distCur += (7.5 - cam.distCur) * Math.min(1, dt * 3);
+        const selfA = actorsRef.current.get("self");
+        if (selfA && selfA.blend > 0.25 && performance.now() - cam.lastUser > 1500) {
+          const wantAz = selfA.heading + Math.PI;
+          let dAz = wantAz - cam.az;
+          while (dAz > Math.PI) dAz -= Math.PI * 2;
+          while (dAz < -Math.PI) dAz += Math.PI * 2;
+          cam.az += dAz * Math.min(1, dt * 1.1);
+        }
       }
       const sc = scenicRef.current;
       if (sc) {
@@ -3976,11 +4219,34 @@ export function MapView(p: Props) {
       const cy = Math.cos(polNow) * distNow + 2;
       const cz = cam.tz + Math.cos(azNow) * Math.sin(polNow) * distNow;
       camera.position.set(cx, Math.max(4, cy), cz);
-      camera.lookAt(cam.tx, LAND, cam.tz);
-      const targetFov = cineRef.current && self ? 42 + self.blend * 2.5 : 42;
+      // street mode looks at chest height, so the horizon sits mid-frame
+      // and the player is centred instead of sunk to the bottom edge
+      camera.lookAt(cam.tx, LAND + (streetRef.current ? 1.3 : 0), cam.tz);
+      const targetFov = streetRef.current ? 48 : cineRef.current && self ? 42 + self.blend * 2.5 : 42;
       if (Math.abs(camera.fov - targetFov) > 0.05) {
         camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 3);
         camera.updateProjectionMatrix();
+      }
+
+      // ROUND-10 street mode, throttled to ~4 Hz so React state doesn't
+      // churn every frame: street name, facade refresh, state report.
+      streetTick += dt;
+      if (streetTick > 0.25) {
+        streetTick = 0;
+        if (streetRef.current) {
+          const s = actorsRef.current.get("self");
+          if (s) {
+            const nm = streetNameAt(propsRef.current.cityKey, s.x, s.z);
+            if (nm !== streetNameRef.current) { streetNameRef.current = nm; setStreetName(nm); }
+            syncStreetFacades(s.x, s.z);
+          }
+        }
+        const walking = streetWalkRef.current || (streetRef.current && !!clickWalkRef.current);
+        const rep = streetReportedRef.current;
+        if (rep.active !== streetRef.current || rep.walking !== walking) {
+          streetReportedRef.current = { active: streetRef.current, walking };
+          propsRef.current.onStreetState?.({ active: streetRef.current, walking });
+        }
       }
 
       // labels — decluttered. Every chip used to be drawn at once, so at the
@@ -4412,6 +4678,78 @@ export function MapView(p: Props) {
     camRef.current.dist = baseDist();
     reportZoom();
   };
+  /* ---- ROUND-10 street facades ---- */
+  /** Nearest buildings wear lit facades while on the street; the map keeps
+      its clean look. Synced on entry and refreshed as you walk (the frame
+      loop calls this ~4 Hz). At most 12 buildings, within 16 units. */
+  const syncStreetFacades = (px: number, pz: number) => {
+    if (!streetRef.current) return;
+    const mapTex = streetFacadeTexRef.current ?? (streetFacadeTexRef.current = facadeTexture());
+    const emTex = streetFacadeEmTexRef.current ?? (streetFacadeEmTexRef.current = facadeEmissiveTexture());
+    const scored: { t: { mesh: THREE.Mesh; w: number; h: number }; d: number }[] = [];
+    for (const t of streetFacadeTargetsRef.current) {
+      const gp = t.mesh.parent?.position;
+      if (!gp) continue;
+      const d = Math.hypot(gp.x - px, gp.z - pz);
+      if (d < 16) scored.push({ t, d });
+    }
+    scored.sort((a, b) => a.d - b.d);
+    const near = scored.slice(0, 12);
+    const want = new Set(near.map((s) => s.t.mesh));
+    const have = new Set(streetFacadeRef.current.map((e) => e.mesh));
+    for (let i = streetFacadeRef.current.length - 1; i >= 0; i--) {
+      const e = streetFacadeRef.current[i]!;
+      if (want.has(e.mesh)) continue;
+      e.mesh.material = e.orig;
+      for (const m of e.mats) {
+        const sm = m as THREE.MeshStandardMaterial;
+        (sm.map as THREE.Texture | null)?.dispose?.();
+        (sm.emissiveMap as THREE.Texture | null)?.dispose?.();
+        m.dispose();
+      }
+      const mi = streetFacadeMatsRef.current.indexOf(e.mats[0] as THREE.MeshStandardMaterial);
+      if (mi >= 0) streetFacadeMatsRef.current.splice(mi, 1);
+      streetFacadeRef.current.splice(i, 1);
+    }
+    for (const { t } of near) {
+      if (have.has(t.mesh)) continue;
+      const mesh = t.mesh;
+      const orig = mesh.material as THREE.Material | THREE.Material[];
+      const base = (Array.isArray(orig) ? orig[0] : orig) as THREE.MeshStandardMaterial;
+      const rx = Math.max(1, Math.round(t.w / 2.6));
+      const ry = Math.max(1, Math.round(t.h / 2.6));
+      const mapTile = mapTex.clone();
+      mapTile.needsUpdate = true;
+      mapTile.repeat.set(rx, ry);
+      const emTile = emTex.clone();
+      emTile.needsUpdate = true;
+      emTile.repeat.set(rx, ry);
+      const side = new THREE.MeshStandardMaterial({
+        color: base.color.clone(), roughness: 0.85, metalness: 0.05,
+        map: mapTile, emissive: 0xffc873, emissiveMap: emTile, emissiveIntensity: 0,
+      });
+      const plain = new THREE.MeshStandardMaterial({ color: base.color.clone(), roughness: 0.9 });
+      // BoxGeometry groups: +x, -x, +y (roof), -y, +z, -z — only the four
+      // sides wear the facade; the roof stays plain.
+      mesh.material = [side, side, plain, plain, side, side];
+      streetFacadeMatsRef.current.push(side);
+      streetFacadeRef.current.push({ mesh, orig, mats: [side, plain] });
+    }
+  };
+  const removeStreetFacades = () => {
+    for (const e of streetFacadeRef.current) {
+      e.mesh.material = e.orig;
+      for (const m of e.mats) {
+        const sm = m as THREE.MeshStandardMaterial;
+        (sm.map as THREE.Texture | null)?.dispose?.();
+        (sm.emissiveMap as THREE.Texture | null)?.dispose?.();
+        m.dispose();
+      }
+    }
+    streetFacadeRef.current = [];
+    streetFacadeMatsRef.current = [];
+  };
+
   const toggleStreetCam = () => {
     const next = !streetRef.current;
     streetRef.current = next;
@@ -4423,11 +4761,55 @@ export function MapView(p: Props) {
       trackSelfRef.current = true;
       autoFitRef.current = false;
       setCine(true);
+      // facades come on with the street: the nearest buildings get lit
+      // windows (refreshed as you walk); the map keeps its clean look
+      const s = actorsRef.current.get("self");
+      if (s) syncStreetFacades(s.x, s.z);
     } else {
       camRef.current.pol = CAM_POL;
+      removeStreetFacades();
+      streetWalkRef.current = false;
+      streetKeysRef.current.clear();
+      clickWalkRef.current = null;
+      const s = actorsRef.current.get("self");
+      if (s) s.speed = modeById((propsRef.current.travelModeId ?? "walk") as TransportModeId).mapSpeed;
       resetCam();
     }
+    const rep = streetReportedRef.current;
+    streetReportedRef.current = { active: next, walking: false };
+    if (rep.active !== next || rep.walking) propsRef.current.onStreetState?.({ active: next, walking: false });
   };
+  useEffect(() => { toggleStreetCamRef.current = toggleStreetCam; });
+
+  /* ROUND-10: WASD / arrows steer in street mode; V toggles street/map,
+     M goes back to the map. Ignored while typing, while a trip runs, or
+     while the map is paused under a full-screen scene. */
+  useEffect(() => {
+    const isTyping = (t: EventTarget | null) => {
+      const el = t as HTMLElement | null;
+      return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || isTyping(e.target)) return;
+      if (e.code === "KeyV" && !e.repeat) { toggleStreetCamRef.current(); return; }
+      if (e.code === "KeyM" && !e.repeat) { if (streetRef.current) toggleStreetCamRef.current(); return; }
+      if (!streetRef.current || propsRef.current.paused) return;
+      if (["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight"].includes(e.code)) {
+        streetKeysRef.current.add(e.code);
+        if (e.code.startsWith("Arrow")) e.preventDefault();
+      }
+    };
+    const onKeyUp = (e: KeyboardEvent) => { streetKeysRef.current.delete(e.code); };
+    const onBlur = () => { streetKeysRef.current.clear(); };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, []);
 
   /* ---- minimap: world bounds shared by the draw + click mapping ---- */
   const MINI = { xMin: -40, xMax: 40, zMin: -25, zMax: 19 };
@@ -4626,7 +5008,7 @@ export function MapView(p: Props) {
         <button type="button" aria-label="跳到夜晚" data-tip={tt("跳到夜晚", "Jump to night")} onClick={() => jumpToPhase(0.93)} className={`tipbtn grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow${viewMenu ? "" : " compact-hide"}`}>🌙</button>
         <button type="button" aria-label="回到真实时间：天色按深圳/惠州当地此刻走" data-tip={tt("回到真实时间", "Back to real time")} onClick={backToRealTime} className={`tipbtn grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow${viewMenu ? "" : " compact-hide"}`}>🕐</button>
         <button type="button" aria-label={demo ? "停止延时演示" : "延时演示：一昼夜30秒，看昼夜光影全程"} aria-pressed={demo} data-tip={demo ? tt("停止延时演示", "Stop time-lapse") : tt("延时演示：一昼夜 30 秒", "Time-lapse: a day in 30 s")} onClick={toggleDemo} className={`tipbtn grid h-9 w-9 place-items-center rounded-full border text-base shadow ${demo ? "border-[var(--accent)] bg-[#14202b]/95" : "border-black/40 bg-[#fffdf8]/95"}${viewMenu ? "" : " compact-hide"}`}>🎥</button>
-        <button type="button" aria-label={streetCam ? "回到全景视角" : "街景视角：贴到街面上，站在街道里看车流、红绿灯和行人"} aria-pressed={streetCam} data-tip={streetCam ? tt("回到全景", "Back to overview") : tt("街景视角：贴到街面", "Street view")} onClick={toggleStreetCam} className={`tipbtn grid h-9 w-9 place-items-center rounded-full border text-base shadow ${streetCam ? "border-[var(--accent)] bg-[#14202b]/95" : "border-black/40 bg-[#fffdf8]/95"}${viewMenu ? "" : " compact-hide"}`}>🚶</button>
+        <button type="button" aria-label={streetCam ? "打开地图（小地图/导航）" : "下到街上走（街景，WASD 移动，V 切换）"} aria-pressed={streetCam} data-tip={streetCam ? tt("打开地图 · M", "Open map · M") : tt("下到街上走 · V", "Walk the street · V")} onClick={toggleStreetCam} className={`tipbtn flex h-9 items-center gap-1 rounded-full border px-3 text-xs font-black shadow ${streetCam ? "border-[var(--accent)] bg-[#14202b]/95 text-white" : "border-black/40 bg-[#fffdf8]/95 text-[#14202b]"}`}>{streetCam ? "🗺️ 地图" : "🚶 街景"}</button>
         <button type="button" aria-label={cine ? "关闭电影镜头" : "开启电影镜头"} aria-pressed={cine} data-tip={cine ? tt("关闭电影镜头", "Cinematic off") : tt("电影镜头", "Cinematic camera")} onClick={() => setCine((c) => !c)} className={`tipbtn grid h-9 w-9 place-items-center rounded-full border text-base shadow ${cine ? "border-[var(--accent)] bg-[#14202b]/95" : "border-black/40 bg-[#fffdf8]/95"}${viewMenu ? "" : " compact-hide"}`}>🎬</button>
         <span tabIndex={0} className={`tipbtn grid h-9 min-w-9 place-items-center rounded-full border border-black/40 bg-[#14202b]/90 px-2 text-[11px] font-black text-white shadow${viewMenu ? "" : " compact-hide"}`} aria-label={`当前缩放 ${zoomPct}%`} data-tip={tt("拖动旋转 · 滚轮或双指缩放", "Drag to rotate · scroll or pinch to zoom")} title="当前缩放比例（⌂ 回到 100%）">{zoomPct}%</span>
         <button type="button" aria-label="放大地图" data-tip={tt("放大", "Zoom in")} onClick={() => zoomBy(0.78)} className="tipbtn grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base font-black text-[#14202b] shadow">＋</button>
@@ -4659,6 +5041,14 @@ export function MapView(p: Props) {
           <button type="button" aria-label="展开小地图" onClick={() => setMiniOpen(true)} className="rounded-full border border-black/50 bg-[#0b1622]/85 px-3.5 py-2 text-xs font-black text-white shadow-xl transition hover:bg-[#0b1622]">🗺️<span className="compact-hide"> 小地图 ▸</span></button>
         )}
       </div>
+      {streetCam && (
+        <div className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2">
+          <div className="flex max-w-[calc(100vw-32px)] items-center gap-2 rounded-full border border-black/40 bg-[#0b1622]/85 px-3.5 py-1.5 text-xs font-black text-white shadow-xl">
+            <span className="truncate">📍 {streetName || CITIES[p.cityKey].name}</span>
+            <span className="hidden font-bold text-white/60 sm:inline">WASD 走 · Shift 跑 · 拖动看四周 · V 回地图</span>
+          </div>
+        </div>
+      )}
       {p.navOverlay}
     </div>
   );
