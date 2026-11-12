@@ -20,7 +20,7 @@ import { PET_MODEL, type Pet } from "./round2/pets";
 import { floorDef, floorSpots, hasFloors, STAIR_DOWN_ID, STAIR_UP_ID } from "./round2/floors";
 import { makeFigure, faceSpecFor, addAccessory, type Figure, type FaceSpec } from "./figure";
 
-export type LifeSet = "flat" | "station" | "metro" | "train" | "bus" | "taxi" | "drive" | "concourse" | "platform" | "office" | "restaurant" | "market" | "electronics" | "mall" | "kitchen" | "bedroom" | "bathroom" | "gym" | "park" | "home" | "cruise" | "wheel" | "aquarium" | "turtle" | "coaster" | "safari" | "hike" | "beach" | "cablecar" | "club" | "clinic" | "classroom" | "oilpainting" | "secondhand" | "seafood" | "oldtown" | "womensstreet" | "museum" | "library" | "factory" | "disney" | "tram" | "temple" | "miniature" | "farm" | "watershow" | "boardwalk" | "fishingport" | "bikehub" | "buildplot" | "service";
+export type LifeSet = "flat" | "station" | "metro" | "train" | "bus" | "taxi" | "drive" | "concourse" | "platform" | "office" | "restaurant" | "market" | "electronics" | "mall" | "kitchen" | "bedroom" | "bathroom" | "gym" | "park" | "home" | "cruise" | "wheel" | "aquarium" | "turtle" | "coaster" | "safari" | "hike" | "beach" | "cablecar" | "club" | "clinic" | "classroom" | "oilpainting" | "secondhand" | "seafood" | "oldtown" | "womensstreet" | "museum" | "library" | "factory" | "disney" | "tram" | "temple" | "miniature" | "farm" | "watershow" | "boardwalk" | "fishingport" | "bikehub" | "buildplot" | "service" | "police" | "bank" | "pharmacy" | "info";
 export type LifePose = "walk" | "idle" | "sit" | "drive" | "type" | "cook" | "eat" | "sleep" | "wash" | "lift" | "stretch" | "talk" | "dance" | "sing";
 
 interface Props {
@@ -87,14 +87,21 @@ const ROAM_SPOTS: Partial<Record<LifeSet, { id: string; emoji: string; zh: strin
   flat: [{ id: "bed", emoji: "🛏️", zh: "上床躺一会儿", en: "Lie down", x: -2.4, z: -0.85 }, { id: "sit", emoji: "🛋️", zh: "在沙发坐下", en: "Sit", x: 0.2, z: 0.55 }, { id: "cook", emoji: "🍳", zh: "用灶台做饭", en: "Cook", x: 3.1, z: -0.15 }, { id: "wash", emoji: "🚿", zh: "洗一下", en: "Wash", x: 4.5, z: 1.05 }],
   gym: [{ id: "coach", emoji: "🏋️", zh: "让教练看动作", en: "Check form", x: 0.15, z: 0.55 }, { id: "spot", emoji: "🤝", zh: "帮人保护", en: "Spot a set", x: 2.5, z: 0.35 }],
   club: [{ id: "sing", emoji: "🎤", zh: "上台唱一首", en: "Sing", x: 0.5, z: 0.15 }, { id: "dance", emoji: "🕺", zh: "挤到台前跳", en: "Dance", x: -2.1, z: 0.75 }, { id: "drink", emoji: "🍹", zh: "吧台点一杯", en: "Get a drink", x: -4.5, z: 0.4 }, { id: "friend", emoji: "🙌", zh: "聊乐队", en: "Talk music", x: 3.3, z: 0.8 }, { id: "live", emoji: "🎧", zh: "听原创", en: "Live music", x: 1.7, z: 0.35 }],
-  clinic: [{ id: "see", emoji: "🩺", zh: "挂号看病", en: "See a doctor", x: 2.15, z: 0.25 }, { id: "nurse", emoji: "💉", zh: "问医保", en: "Ask insurance", x: -1.6, z: 0.55 }],
-  classroom: [{ id: "class", emoji: "📖", zh: "听一节课", en: "Sit in", x: -0.6, z: 1.15 }, { id: "classmate", emoji: "🤝", zh: "加个微信", en: "Swap WeChat", x: 2.1, z: 1.2 }],
+  clinic: [{ id: "register", emoji: "🎫", zh: "挂号", en: "Register", x: -3.9, z: 0.8 }, { id: "see", emoji: "🩺", zh: "挂号看病", en: "See a doctor", x: 2.15, z: 0.25 }, { id: "checkup", emoji: "🔬", zh: "做检查", en: "Check-up", x: 4.5, z: 1.0 }, { id: "medicine", emoji: "💊", zh: "拿药", en: "Pick up medicine", x: 0.6, z: 1.4 }, { id: "bp", emoji: "🩺", zh: "量血压", en: "Blood pressure", x: -0.8, z: -0.4 }, { id: "nurse", emoji: "💉", zh: "问医保", en: "Ask insurance", x: -1.6, z: 0.55 }],
+  classroom: [{ id: "class", emoji: "📖", zh: "听一节课", en: "Sit in", x: -0.6, z: 1.15 }, { id: "askTeacher", emoji: "🙋", zh: "问老师", en: "Ask the teacher", x: 1.7, z: -1.2 }, { id: "classmate", emoji: "🤝", zh: "加个微信", en: "Swap WeChat", x: 2.1, z: 1.2 }, { id: "study", emoji: "📝", zh: "自习", en: "Study", x: -2.5, z: 1.5 }, { id: "club", emoji: "🏸", zh: "社团活动", en: "Club activity", x: 4.2, z: 0.6 }, { id: "exam", emoji: "📋", zh: "刷考证题", en: "Practice exam", x: -4.2, z: 1.5 }],
   bedroom: [{ id: "desk", emoji: "🛎️", zh: "问前台", en: "Ask the desk", x: 0.2, z: 0.85 }, { id: "sleep", emoji: "🛏️", zh: "躺下睡觉", en: "Lie down", x: -1.1, z: -1.05 }, { id: "wake", emoji: "🌅", zh: "起床伸懒腰", en: "Stretch awake", x: 0.2, z: 0.3 }],
   concourse: [{ id: "toilet", emoji: "🚻", zh: "去洗手间", en: "Restroom", x: 4.4, z: 1.05 }, { id: "wait", emoji: "🪑", zh: "坐一会儿", en: "Sit", x: 3.1, z: 0.55 }, { id: "water", emoji: "🧴", zh: "买瓶水", en: "Buy water", x: -3.5, z: 0.75 }],
   /* 办事大厅（警局/政务/银行）：柜台在后墙（z≈-1），取号机在左、填表台在
      右、三个窗口点在柜台前（z -0.5）。id 必须 exactly 对应 App.tsx
      VENUE_TALK.service 的条目 id（onSpot 按 id 查）。 */
   service: [{ id: "queue", emoji: "🎫", zh: "取号排队", en: "Take a number", x: -3.4, z: 0.85 }, { id: "form", emoji: "📝", zh: "填表", en: "Fill a form", x: 2.6, z: 0.6 }, { id: "consult", emoji: "🙋", zh: "窗口咨询", en: "Ask at the counter", x: 0.2, z: -0.5 }, { id: "business", emoji: "📋", zh: "办业务", en: "Handle business", x: -1.6, z: -0.5 }, { id: "replace", emoji: "🪪", zh: "补办证件", en: "Replace a document", x: 1.8, z: -0.5 }, { id: "toilet", emoji: "🚻", zh: "去洗手间", en: "Restroom", x: 4.6, z: 1.2 }],
+  /* 警局/银行/游客中心共用 service 大厅布景（柜台、取号机、等候椅），
+     所以点位坐标跟 service 一样，只是 id 换成各自 VENUE_TALK 的动作。
+     药店是自己的小间，点位按药架/柜台/血压仪摆。 */
+  police: [{ id: "report", emoji: "🚓", zh: "报案求助", en: "Report / help", x: 0.2, z: -0.5 }, { id: "violation", emoji: "📋", zh: "处理违章", en: "Settle a violation", x: -1.6, z: -0.5 }, { id: "docs", emoji: "🪪", zh: "办证补证", en: "Documents", x: 1.8, z: -0.5 }, { id: "consult", emoji: "🙋", zh: "问民警", en: "Ask an officer", x: -3.4, z: 0.85 }, { id: "toilet", emoji: "🚻", zh: "去洗手间", en: "Restroom", x: 4.6, z: 1.2 }],
+  bank: [{ id: "deposit", emoji: "💰", zh: "存钱", en: "Deposit", x: 0.2, z: -0.5 }, { id: "withdraw", emoji: "🏧", zh: "取钱", en: "Withdraw", x: -1.6, z: -0.5 }, { id: "exchange", emoji: "💱", zh: "换外汇", en: "Exchange currency", x: 1.8, z: -0.5 }, { id: "card", emoji: "💳", zh: "办新卡", en: "New card", x: -3.4, z: 0.85 }, { id: "wealth", emoji: "📈", zh: "问理财", en: "Wealth products", x: 2.6, z: 0.6 }, { id: "toilet", emoji: "🚻", zh: "去洗手间", en: "Restroom", x: 4.6, z: 1.2 }],
+  pharmacy: [{ id: "buyMed", emoji: "💊", zh: "买感冒药", en: "Buy cold medicine", x: 0.5, z: -0.2 }, { id: "askDose", emoji: "🧑‍⚕️", zh: "问怎么吃", en: "Ask how to take it", x: 1.6, z: -0.2 }, { id: "bp", emoji: "🩺", zh: "量血压", en: "Blood pressure", x: -2.4, z: 0.9 }, { id: "stock", emoji: "🧰", zh: "备常备药", en: "Stock up", x: -1.4, z: -1.0 }, { id: "vitamin", emoji: "🍊", zh: "买维生素", en: "Vitamins", x: 3.6, z: -1.0 }],
+  info: [{ id: "directions", emoji: "🗺️", zh: "问路", en: "Directions", x: 0.2, z: -0.5 }, { id: "transit", emoji: "🚇", zh: "问坐车", en: "How to get there", x: 1.8, z: -0.5 }, { id: "help", emoji: "🆘", zh: "问应急电话", en: "Emergency numbers", x: -1.6, z: -0.5 }, { id: "map", emoji: "🧭", zh: "拿地图", en: "Take a map", x: -3.4, z: 0.85 }, { id: "sights", emoji: "📍", zh: "问好玩的", en: "What's nearby", x: 2.6, z: 0.6 }],
   park: [{ id: "bench", emoji: "🪑", zh: "坐长椅", en: "Bench", x: 2.2, z: 0.15 }, { id: "stroll", emoji: "🚶", zh: "沿园路走", en: "Walk the path", x: -2.2, z: 0.65 }, { id: "photo", emoji: "📸", zh: "拍一张", en: "Photo", x: 0.2, z: 1.1 },
     /* round-3 (H): 蝴蝶谷光柱点 — id 必须 exactly "butterfly"，与 App.tsx
        QINGQING_TALK 的条目 id 一致（onSpot 按 venueTalksFor 查 id）。
@@ -123,8 +130,8 @@ const ROAM_SPOTS: Partial<Record<LifeSet, { id: string; emoji: string; zh: strin
   seafood: [{ id: "buy", emoji: "🦐", zh: "挑海鲜", en: "Pick seafood", x: 0.15, z: -0.2 }, { id: "eat", emoji: "🍲", zh: "大排档代加工", en: "Cook it at the dai pai dong", x: 3.4, z: 0.6 }, { id: "boat", emoji: "⛵", zh: "跟渔民出海", en: "Go out with a fisherman", x: -4.1, z: -0.15 }],
   oldtown: [{ id: "snack", emoji: "🍢", zh: "吃客家小吃", en: "Try a Hakka snack", x: 0.15, z: -0.2 }, { id: "stroll", emoji: "🚶", zh: "逛骑楼老街", en: "Walk the old street", x: -2.2, z: 0.65 }],
   womensstreet: [{ id: "clothes", emoji: "👗", zh: "淘衣服鞋袜", en: "Browse clothes", x: 0.15, z: -0.2 }, { id: "fish", emoji: "🐠", zh: "买条金鱼", en: "Buy a goldfish", x: -3.6, z: 0.85 }, { id: "flower", emoji: "🌸", zh: "买束花", en: "Buy flowers", x: 2.4, z: 0.6 }],
-  museum: [{ id: "exhibit", emoji: "🏺", zh: "看展", en: "See the exhibit", x: 0.15, z: -0.2 }, { id: "guide", emoji: "🎧", zh: "听讲解", en: "Hear the guide", x: -2.6, z: 0.85 }],
-  library: [{ id: "borrow", emoji: "📚", zh: "借本书", en: "Borrow a book", x: 0.15, z: -0.2 }, { id: "study", emoji: "📖", zh: "坐下自修", en: "Sit and study", x: 2.4, z: 0.6 }],
+  museum: [{ id: "exhibit", emoji: "🏺", zh: "看展", en: "See the exhibit", x: 0.15, z: -0.2 }, { id: "guide", emoji: "🎧", zh: "听讲解", en: "Hear the guide", x: -2.6, z: 0.85 }, { id: "special", emoji: "🖼️", zh: "看特展", en: "Special exhibition", x: 3.4, z: 0.6 }, { id: "souvenir", emoji: "🎁", zh: "买文创", en: "Museum souvenir", x: -4.2, z: 0.9 }],
+  library: [{ id: "borrow", emoji: "📚", zh: "借本书", en: "Borrow a book", x: 0.15, z: -0.2 }, { id: "return", emoji: "📥", zh: "还书", en: "Return a book", x: -2.6, z: 0.85 }, { id: "study", emoji: "📖", zh: "坐下自修", en: "Sit and study", x: 2.4, z: 0.6 }, { id: "search", emoji: "🔍", zh: "查资料", en: "Look something up", x: 0.15, z: 1.2 }, { id: "talk", emoji: "🎤", zh: "听讲座", en: "Attend a talk", x: 3.8, z: 0.9 }],
   factory: [{ id: "tour", emoji: "🏭", zh: "看产线", en: "See the line", x: 0.15, z: -0.2 }, { id: "ask", emoji: "🙋", zh: "问问三班倒", en: "Ask about shifts", x: -2.6, z: 0.85 },
     /* round-3 (H): 食堂光柱点 — id 必须 exactly "canteen"，与 App.tsx
        VENUE_TALK.factory 的 canteen 条目 id 一致（onSpot 按 id 查）。
@@ -666,7 +673,7 @@ export function LifeStage3D(p: Props) {
     mount.appendChild(renderer.domElement);
     renderer.domElement.style.cssText = "position:absolute;inset:0;width:100%;height:100%;display:block;";
 
-    const indoor = setKind === "flat" || setKind === "office" || setKind === "kitchen" || setKind === "bathroom" || setKind === "bedroom" || setKind === "home" || setKind === "restaurant" || setKind === "gym" || setKind === "concourse" || setKind === "platform" || setKind === "club" || setKind === "clinic" || setKind === "classroom" || setKind === "oilpainting" || setKind === "secondhand" || setKind === "seafood" || setKind === "oldtown" || setKind === "womensstreet" || setKind === "museum" || setKind === "library" || setKind === "factory" || setKind === "disney" || setKind === "tram" || setKind === "temple" || setKind === "miniature" || setKind === "service";
+    const indoor = setKind === "flat" || setKind === "office" || setKind === "kitchen" || setKind === "bathroom" || setKind === "bedroom" || setKind === "home" || setKind === "restaurant" || setKind === "gym" || setKind === "concourse" || setKind === "platform" || setKind === "club" || setKind === "clinic" || setKind === "classroom" || setKind === "oilpainting" || setKind === "secondhand" || setKind === "seafood" || setKind === "oldtown" || setKind === "womensstreet" || setKind === "museum" || setKind === "library" || setKind === "factory" || setKind === "disney" || setKind === "tram" || setKind === "temple" || setKind === "miniature" || setKind === "service" || setKind === "police" || setKind === "bank" || setKind === "pharmacy" || setKind === "info";
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(night ? 0x1d3454 : indoor ? 0xf7e3bd : 0xffd9a0);
     scene.fog = new THREE.Fog(scene.background as THREE.Color, 17, 32);
@@ -764,7 +771,7 @@ export function LifeStage3D(p: Props) {
     };
 
     /* ---- floor ---- */
-    const floorKind = setKind === "bathroom" || setKind === "kitchen" || setKind === "concourse" || setKind === "service" ? "tile" : setKind === "station" || setKind === "platform" ? "concrete" : setKind === "metro" || setKind === "train" || setKind === "bus" || setKind === "taxi" || setKind === "drive" ? "carriage" : setKind === "park" || setKind === "farm" || setKind === "bikehub" ? "grass" : setKind === "mall" || setKind === "electronics" || setKind === "museum" || setKind === "library" || setKind === "temple" || setKind === "oilpainting" ? "tile" : "wood";
+    const floorKind = setKind === "bathroom" || setKind === "kitchen" || setKind === "concourse" || setKind === "service" || setKind === "police" || setKind === "bank" || setKind === "pharmacy" || setKind === "info" ? "tile" : setKind === "station" || setKind === "platform" ? "concrete" : setKind === "metro" || setKind === "train" || setKind === "bus" || setKind === "taxi" || setKind === "drive" ? "carriage" : setKind === "park" || setKind === "farm" || setKind === "bikehub" ? "grass" : setKind === "mall" || setKind === "electronics" || setKind === "museum" || setKind === "library" || setKind === "temple" || setKind === "oilpainting" ? "tile" : "wood";
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(22, 14), new THREE.MeshStandardMaterial({ map: floorTex(floorKind), roughness: 0.95 }));
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
@@ -1134,9 +1141,12 @@ export function LifeStage3D(p: Props) {
       for (let sIdx = 0; sIdx < 3; sIdx++) for (let bIdx = 0; bIdx < 4; bIdx++) {
         box(0.16, 0.42 + (bIdx % 2) * 0.08, 0.24, [0xd9534a, 0x3f6d8e, 0x65a30d, 0xf5b942][(sIdx + bIdx) % 4]!, 5.5 + bIdx * 0.26, 0.55 + sIdx * 0.62, -3.3, 0.8);
       }
-    } else if (setKind === "service") {
+    } else if (setKind === "service" || setKind === "police" || setKind === "bank" || setKind === "info") {
       /* 办事大厅：长柜台 + 取号机 + 填表台 + 等候椅 + 叫号屏。玩家是来办事的
-         市民，柜台后站着窗口工作人员（藏青制服），不是工位上的同事。 */
+         市民，柜台后站着窗口工作人员（藏青制服），不是工位上的同事。
+         警局、银行、游客中心共用这间大厅——它们本来就是柜台 + 排队机 +
+         等候椅的地方，动作不同（VENUE_TALK 各自的 set），布景一样。
+         叫号屏写的是通用文案，不点名是哪家单位。 */
       roomShell(0xe8eef2, 0x5b7a99, { windowX: 4.2, windowW: 2.2, clock: true });
       // 叫号屏：背墙上，“请 A012 到 3 号窗口”
       box(2.3, 0.9, 0.06, 0x1f2937, 0, 2.6, -3.56, 0.35);
@@ -1171,6 +1181,33 @@ export function LifeStage3D(p: Props) {
         leaf.rotation.z = Math.sin(i * 1.26) * 0.4;
         scene.add(leaf);
       }
+    } else if (setKind === "pharmacy") {
+      /* 药店：靠墙三排药架 + 中间柜台 + 血压仪小桌。药师穿白大褂站在柜台
+         后，绿十字挂在墙上。没有哪间现成内景像药店（商场太大、电子柜台
+         是手机、菜市场是鱼档），所以单开一间，小而全。 */
+      roomShell(0xeef7f0, 0x2e7d5b, { windowX: 4.4, windowW: 1.8 });
+      // 绿十字招牌
+      box(1.0, 1.0, 0.08, 0xffffff, 3.6, 2.7, -3.55, 0.6);
+      box(0.6, 0.16, 0.09, 0x16a34a, 3.6, 2.7, -3.5, 0.5); box(0.16, 0.6, 0.09, 0x16a34a, 3.6, 2.7, -3.5, 0.5);
+      // 三排药架：架身 + 三层小药盒
+      for (let i = 0; i < 3; i++) {
+        const sx = -4.2 + i * 2.8;
+        box(2.4, 2.2, 0.5, 0x8a6f4d, sx, 1.1, -2.9, 0.8);
+        for (let r = 0; r < 3; r++) for (let b = 0; b < 6; b++) {
+          box(0.28, 0.4, 0.3, [0xffffff, 0x3f6d8e, 0xd9534a, 0x65a30d, 0xf5b942][(r * 6 + b) % 5]!, sx - 0.9 + b * 0.36, 0.5 + r * 0.65, -2.9, 0.9);
+        }
+      }
+      // 柜台 + 柜台后的药师（白大褂）+ 台面上的药盒
+      box(2.6, 1.0, 0.7, 0xe5e7eb, 0.5, 0.5, -1.0, 0.5);
+      box(2.7, 0.06, 0.8, 0x0d9488, 0.5, 1.03, -1.0, 0.4);
+      box(0.5, 0.3, 0.35, 0xffffff, 0.0, 1.2, -1.0, 0.9); box(0.4, 0.25, 0.3, 0x3f6d8e, 1.1, 1.18, -1.0, 0.9);
+      extraFigure(0.5, 0, -1.8, 0, 0xffffff, 0x0d9488, false);
+      // 血压仪小桌（左）：小桌 + 仪器 + 椅子
+      box(0.9, 0.08, 0.6, 0x8a6f4d, -3.2, 0.75, 0.4, 0.7);
+      box(0.08, 0.75, 0.08, 0x6b7280, -3.55, 0.37, 0.15, 0.5); box(0.08, 0.75, 0.08, 0x6b7280, -2.85, 0.37, 0.65, 0.5);
+      box(0.45, 0.35, 0.3, 0xf8fafc, -3.2, 0.95, 0.4, 0.6);
+      box(0.7, 0.08, 0.6, 0x60a5fa, -3.2, 0.5, 1.3, 0.5); box(0.7, 0.6, 0.07, 0x60a5fa, -3.2, 0.82, 1.6, 0.5);
+      addGlow(0.5, 3.9, -1, 2.2, 0xe0f2fe, 0.4);
     } else if (setKind === "restaurant") {
       roomShell(0xf7e8d0, 0x8a4a3a, { windowX: 4.1, windowW: 1.8 });
       box(1.15, 1.5, 0.07, 0xb3352c, -2.2, 2.5, -3.55, 0.7);

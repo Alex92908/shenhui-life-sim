@@ -23,7 +23,7 @@
 // Existing names reused as-is: coaster, safari, aquarium, cablecar, cruise,
 // beach, park, hike, market, electronics, wheel, turtle, stroll.
 
-import type { AnimKindId, VenueSetId } from "../data";
+import type { AnimKindId, PlaceKind, VenueSetId } from "../data";
 
 /** Cutscene animation per place id (audit table 4 — all 21 fall-throughs,
     plus the places the old `special` mapping already got right, so this
@@ -139,6 +139,13 @@ export const VENUE_SET_COPY: Record<string, { set: string; zh: string; en: strin
   nature: { set: "nature", zh: "雨林：热带植物、吊桥，蝴蝶落在肩膀上", en: "The rainforest: tropical plants, a rope bridge, butterflies on your shoulder" },
   // 办事大厅 — 警局/政务/银行柜台：玩家是来办事的市民，不是员工
   service: { set: "service", zh: "办事大厅：取号、填表、等叫号", en: "The service hall: take a number, fill a form, wait" },
+  // 每个公共场所自己的做法（lee：医院学校各有各的）— 警局/银行/药店/
+  // 游客中心各有自己的 set，不再共用上面那个 service 大厅。service 只
+  // 留作兜底：type 是 "service" 但 placeKind 不认得的政务大厅。
+  police: { set: "police", zh: "派出所 / 交警大队：值班台、报案窗口，民警在里头", en: "The police station: the duty desk, the report window, officers inside" },
+  bank: { set: "bank", zh: "银行大堂：柜台、取号机，柜员在窗口后", en: "The bank hall: counters, the queue machine, tellers behind the glass" },
+  pharmacy: { set: "pharmacy", zh: "药店：货架、柜台，药师在柜台后", en: "The pharmacy: shelves, the counter, the pharmacist behind it" },
+  info: { set: "info", zh: "游客服务中心：问路、拿地图，志愿者在柜台后", en: "The visitor centre: directions, maps, volunteers behind the counter" },
 };
 
 /** Table-driven replacement for App.tsx's venueFor(). Per-place venueSet
@@ -146,12 +153,21 @@ export const VENUE_SET_COPY: Record<string, { set: string; zh: string; en: strin
     covering museum/library/factory + the market subtypes); then the old
     scenic/fun beach-vs-park regex for places without a venueSet. */
 export function venueSetFor(loc: {
-  type: string; id: string; name: string; venueSet?: VenueSetId;
+  type: string; id: string; name: string; venueSet?: VenueSetId; placeKind?: PlaceKind;
 }): { set: string; zh: string; en: string } | null {
   if (loc.venueSet) {
     const copy = VENUE_SET_COPY[loc.venueSet];
     if (copy) return copy;
     return null;
+  }
+  /* 每个公共场所自己的做法：type "service" 底下按 placeKind 再分 —
+     警局、药店、游客中心各有自己的 set；placeKind 不认得的政务大厅
+     才落回通用的 service。银行自成一类（type "bank"）。 */
+  if (loc.type === "service") {
+    if (loc.placeKind === "police") return VENUE_SET_COPY.police!;
+    if (loc.placeKind === "pharmacy") return VENUE_SET_COPY.pharmacy!;
+    if (loc.placeKind === "info") return VENUE_SET_COPY.info!;
+    return VENUE_SET_COPY.service!;
   }
   const byType: Record<string, { set: string; zh: string; en: string }> = {
     food: { set: "restaurant", zh: "推门进去：烧腊、猪脚饭、街坊在聊天", en: "Push the door: roast meats, trotter rice, regulars chatting" },
@@ -168,16 +184,14 @@ export function venueSetFor(loc: {
     factory: { set: "factory", zh: "厂区：厂房、产线、宿舍和食堂，三班倒的灯火", en: "The plant: workshops, lines, dorms and the canteen, lit for three shifts" },
     work: { set: "office", zh: "看看工位：屏幕、咖啡、同事在敲代码", en: "See the office floor: screens, coffee, colleagues typing" },
     apec: { set: "office", zh: "会场里面：长桌、名牌、同传耳机", en: "Inside the venue: long tables, name cards, interpretation headsets" },
-    bank: { set: "service", zh: "柜台和排队机", en: "The counters and the queue machine" },
+    bank: { set: "bank", zh: "银行大堂：柜台、取号机、理财经理", en: "The bank hall: counters, the queue machine, the wealth desk" },
     gym: { set: "gym", zh: "跑步机、哑铃、镜子前自拍的人", en: "Treadmills, dumbbells, mirror selfies" },
     social: { set: "club", zh: "灯光、乐队、人群跟着节拍跳", en: "Lights, a band, a crowd bouncing to the beat" },
     health: { set: "clinic", zh: "候诊区、叫号屏、白大褂", en: "The waiting area, the queue screen, white coats" },
     learn: { set: "classroom", zh: "黑板、课桌、下班后来上夜校的人", en: "Blackboard, desks, people at night school after work" },
     lodging: { set: "bedroom", zh: "前台拿房卡，上楼看看房间", en: "Key card from the desk, a look at the room" },
-    /* 办事大厅（警局/政务/银行/药房/游客中心）：玩家是来办事的市民，
-       不是员工 — 动作是面向公众的（取号、填表、窗口咨询），不再复用
-       office 那套“茶水间聊同事、坐下敲代码、收拾东西下班”。 */
-    service: { set: "service", zh: "办事大厅：取号、填表、等叫号", en: "The service hall: take a number, fill a form, wait" },
+    /* type "service" 不再走 byType：上面按 placeKind 分流（警局/药店/
+       游客中心各有自己的 set，不认得的才落回通用 service 大厅）。 */
   };
   const fixed = byType[loc.type];
   if (fixed) return fixed;

@@ -35,7 +35,7 @@ type ChatAction, type MemMap, type NpcPost, type PlayerNews,
 } from "./npc";
 import { MapView } from "./MapView";
 import { setSound, soundWanted, wakeSound, setScene, setWorld, sfx, musicPick, setMusicPick, nowPlayingCredit, MUSIC_PICKS, MUSIC_CREDITS, EXTRA_CREDITS, setKaraokeLang, playFerryHorn, type SoundScene, type MusicPick, type PlaceTone, type TravelTone, type SceneSfxId } from "./sound";
-import { npcAllowedAt, type LocType, type VenueSetId, type AnimKindId } from "./data";
+import { npcAllowedAt, type LocType, type PlaceKind, type VenueSetId, type AnimKindId } from "./data";
 import { vendorSellFor } from "./routines";
 /* ---- round-2 feature modules (see ROUND2-LOG-*.md for the integration snippets) ---- */
 import { venueSetFor, animFor } from "./round2/venues";
@@ -101,6 +101,39 @@ const VENUE_TALK: Partial<Record<LifeSet, VenueTalk[]>> = {
     { id: "replace", emoji: "🪪", zh: "补办一个证件", en: "Replace a document", who: "窗口工作人员", whoEn: "The counter staff", say: "「填这张表，工本费二十，新证寄到你留的地址。」", sayEn: "“Fill this in — twenty for the fee, and the new one goes to your address.”", pose: "talk", partner: [0x1d4ed8, 0x1f2937], money: -20, mood: 2 },
     { id: "toilet", emoji: "🚻", zh: "去洗手间", en: "Use the restroom", who: "自己", whoEn: "You", say: "「好了。」", sayEn: "“That's better.”", pose: "idle" },
   ],
+  /* 每个公共场所自己的做法（lee：医院学校各有各的）— 警局/银行/药店/
+     游客中心各有自己的 set，不再共用上面那个 service 大厅。service 只
+     留作兜底：type 是 "service" 但 placeKind 不认得的政务大厅。对面是
+     各地的专人（民警/柜员/药师/志愿者），不是“同事/前辈”。 */
+  police: [
+    { id: "report", emoji: "🚓", zh: "报案 / 求助", en: "Report something / ask for help", who: "民警", whoEn: "The police officer", say: "「丢了东西、遇到麻烦都可以来报案，紧急情况直接打 110。」", sayEn: "“Lost something, in trouble — come and report it. Emergencies, call 110.”", pose: "talk", partner: [0x1d4ed8, 0x1f2937], mood: 3, network: 1 },
+    { id: "violation", emoji: "📋", zh: "处理交通违章", en: "Settle a traffic violation", who: "民警", whoEn: "The police officer", say: "「这单违停罚二百，记三分，交了就清了，下次别停这儿。」", sayEn: "“¥200 for the illegal stop, three points. Pay it and it's cleared — don't park here again.”", pose: "talk", partner: [0x1d4ed8, 0x1f2937], money: -200, xp: 1, mood: 2 },
+    { id: "docs", emoji: "🪪", zh: "办证件 / 补证", en: "Apply for / replace a document", who: "民警", whoEn: "The police officer", say: "「身份证丢了来补办，带户口本，工本费二十，新证寄到你家。」", sayEn: "“Lost your ID? Bring your household register — twenty for the fee, the new one goes to your address.”", pose: "talk", partner: [0x1d4ed8, 0x1f2937], money: -20, mood: 2 },
+    { id: "consult", emoji: "🙋", zh: "问民警", en: "Ask an officer", who: "民警", whoEn: "The police officer", say: "「这片归我们管，有事直接来找值班民警，别客气。」", sayEn: "“This patch is ours — come straight to the duty officer if anything happens.”", pose: "talk", partner: [0x1d4ed8, 0x1f2937], xp: 1, network: 1 },
+    { id: "toilet", emoji: "🚻", zh: "去洗手间", en: "Use the restroom", who: "自己", whoEn: "You", say: "「好了。」", sayEn: "“That's better.”", pose: "idle" },
+  ],
+  bank: [
+    { id: "deposit", emoji: "💰", zh: "存一笔钱", en: "Deposit some money", who: "柜员", whoEn: "The teller", say: "「存定期还是活期？定期利息高，急用钱可别存死期。」", sayEn: "“Fixed or current? Fixed pays more — but don't lock away money you might need.”", pose: "talk", partner: [0x1e3a8a, 0x1f2937], mood: 2, xp: 1 },
+    { id: "withdraw", emoji: "🏧", zh: "取一笔钱", en: "Withdraw some money", who: "柜员", whoEn: "The teller", say: "「取多少？大额得提前预约，身份证带着。」", sayEn: "“How much? Large amounts need booking ahead — bring your ID.”", pose: "talk", partner: [0x1e3a8a, 0x1f2937], mood: 2 },
+    { id: "exchange", emoji: "💱", zh: "换点外汇", en: "Exchange some foreign currency", who: "柜员", whoEn: "The teller", say: "「港币现钞今天这个价，换多少？要不要顺便办张境外卡。」", sayEn: "“Hong Kong dollars at today's rate — how much? Want an overseas card while you're here?”", pose: "talk", partner: [0x1e3a8a, 0x1f2937], xp: 1, mood: 2 },
+    { id: "card", emoji: "💳", zh: "办一张新卡", en: "Open a new card", who: "大堂经理", whoEn: "The floor manager", say: "「身份证给我，十分钟出卡，手机银行顺手给你开通。」", sayEn: "“Your ID, please — ten minutes for the card, and I'll set up mobile banking.”", pose: "talk", partner: [0x7c3aed, 0x1f2937], money: -10, xp: 1 },
+    { id: "wealth", emoji: "📈", zh: "问问理财 / 贷款", en: "Ask about wealth products / loans", who: "理财经理", whoEn: "The wealth manager", say: "「这款稳健型的一年期，收益三点几，保本不保息，你自己掂量。」", sayEn: "“This one-year steady product pays a bit over three percent — capital protected, returns not guaranteed.”", pose: "talk", partner: [0x92400e, 0x1f2937], xp: 2, network: 1 },
+    { id: "toilet", emoji: "🚻", zh: "去洗手间", en: "Use the restroom", who: "自己", whoEn: "You", say: "「好了。」", sayEn: "“That's better.”", pose: "idle" },
+  ],
+  pharmacy: [
+    { id: "buyMed", emoji: "💊", zh: "买盒感冒药", en: "Buy cold medicine", who: "药师", whoEn: "The pharmacist", say: "「这个一天三次，饭后吃，喝酒就别吃了。」", sayEn: "“Three times a day, after meals — and no drinking with it.”", pose: "talk", partner: [0xffffff, 0x0d9488], money: -25, energy: 8, mood: 2 },
+    { id: "askDose", emoji: "🧑‍⚕️", zh: "问药师怎么吃", en: "Ask the pharmacist how to take it", who: "药师", whoEn: "The pharmacist", say: "「一天两次，一次一片，睡前那顿别忘了。」", sayEn: "“Twice a day, one tablet — don't skip the bedtime one.”", pose: "talk", partner: [0xffffff, 0x0d9488], xp: 1, mood: 2 },
+    { id: "bp", emoji: "🩺", zh: "量个血压", en: "Check your blood pressure", who: "药师", whoEn: "The pharmacist", say: "「高压 128，低压 82，正常，少熬夜。」", sayEn: "“128 over 82 — normal. Fewer late nights.”", pose: "sit", partner: [0xffffff, 0x0d9488], energy: 4, mood: 3 },
+    { id: "stock", emoji: "🧰", zh: "备点常备药", en: "Stock up on everyday medicine", who: "药师", whoEn: "The pharmacist", say: "「创可贴、退烧药、肠胃药，家里备一套，半夜不慌。」", sayEn: "“Plasters, fever medicine, stomach medicine — keep a set at home and the middle of the night won't scare you.”", pose: "talk", partner: [0xffffff, 0x0d9488], money: -35, mood: 3 },
+    { id: "vitamin", emoji: "🍊", zh: "买瓶维生素", en: "Buy some vitamins", who: "药师", whoEn: "The pharmacist", say: "「这个补维生素 C，天天对着电脑的人都吃。」", sayEn: "“Vitamin C — everyone staring at a screen all day takes it.”", pose: "talk", partner: [0xffffff, 0x0d9488], money: -40, energy: 6, mood: 3 },
+  ],
+  info: [
+    { id: "directions", emoji: "🗺️", zh: "问个路", en: "Ask for directions", who: "志愿者", whoEn: "The volunteer", say: "「去地铁站往前走两个路口，看到麦当劳左转就是。」", sayEn: "“Two blocks ahead for the metro — left at the McDonald's.”", pose: "talk", partner: [0xef4444, 0x1f2937], mood: 3, network: 1 },
+    { id: "map", emoji: "🧭", zh: "拿张中英文地图", en: "Take a bilingual map", who: "志愿者", whoEn: "The volunteer", say: "「地铁图、景点、医院都在上面，拿回去慢慢看。」", sayEn: "“Metro map, sights, hospitals — all on there. Take it and look at your leisure.”", pose: "talk", partner: [0xef4444, 0x1f2937], mood: 4 },
+    { id: "sights", emoji: "📍", zh: "问附近有什么好玩", en: "Ask what's nearby", who: "志愿者", whoEn: "The volunteer", say: "「往海边走十五分钟就是栈道，日落的时候最漂亮。」", sayEn: "“Fifteen minutes to the seaside boardwalk — prettiest at sunset.”", pose: "talk", partner: [0xef4444, 0x1f2937], mood: 4, xp: 1 },
+    { id: "transit", emoji: "🚇", zh: "问怎么坐车去", en: "Ask how to get there", who: "志愿者", whoEn: "The volunteer", say: "「坐 1 号线三个站就到，末班车十一点半。」", sayEn: "“Line 1, three stops. Last train 11:30.”", pose: "talk", partner: [0xef4444, 0x1f2937], xp: 1, mood: 2 },
+    { id: "help", emoji: "🆘", zh: "问应急电话", en: "Ask the emergency numbers", who: "志愿者", whoEn: "The volunteer", say: "「110 报警、120 急救，记住了，出门在外别慌。」", sayEn: "“110 for police, 120 for an ambulance — remember them, and don't panic out there.”", pose: "talk", partner: [0xef4444, 0x1f2937], xp: 1, mood: 2 },
+  ],
   gym: [
     { id: "coach", emoji: "🏋️", zh: "让教练看看动作", en: "Ask the coach to check your form", who: "教练", whoEn: "The coach", say: "「核心收紧，背打直——对，就这样。办个私教课？」", sayEn: "“Brace your core, back straight — that's it. Fancy a PT package?”", pose: "lift", partner: [0xef4444, 0x111827], energy: -6, mood: 5 },
     { id: "spot", emoji: "🤝", zh: "帮别人保护一组", en: "Spot someone's set", who: "健身的小哥", whoEn: "A gym regular", say: "「谢了兄弟！下次我帮你。」", sayEn: "“Cheers! I'll spot you next time.”", pose: "talk", partner: [0x0ea5e9, 0x111827], mood: 4, network: 1 },
@@ -113,12 +146,20 @@ const VENUE_TALK: Partial<Record<LifeSet, VenueTalk[]>> = {
     { id: "friend", emoji: "🙌", zh: "跟旁边的人聊乐队", en: "Talk to someone about the band", who: "旁边的乐迷", whoEn: "A fan next to you", say: "「我追了他们三年，从二十个人看到现在满场。」", sayEn: "“Followed them three years — from twenty people to a full house.”", pose: "talk", partner: [0xf59e0b, 0x1f2937], mood: 6, network: 2 },
   ],
   clinic: [
+    { id: "register", emoji: "🎫", zh: "挂个号", en: "Register at the desk", who: "分诊台护士", whoEn: "The triage nurse", say: "「挂哪个科？内科在三楼，拿着号直接上去。」", sayEn: "“Which department? Internal medicine is on the third floor — take your number straight up.”", pose: "idle", partner: [0xf9a8d4, 0xffffff], mood: 2 },
     { id: "see", emoji: "🩺", zh: "挂个号看看", en: "See a doctor", who: "医生", whoEn: "The doctor", say: "「最近熬夜多吧？少喝冰的，早点睡。」", sayEn: "“Late nights lately? Fewer iced drinks, sleep earlier.”", pose: "talk", partner: [0xffffff, 0x1e3a8a], money: -60, energy: 10, mood: 4 },
+    { id: "checkup", emoji: "🔬", zh: "做个检查", en: "Get a check-up", who: "医生", whoEn: "The doctor", say: "「抽个血、拍个片，结果出来我再看。」", sayEn: "“Blood test and an X-ray — I'll look once the results are in.”", pose: "idle", partner: [0xffffff, 0x1e3a8a], money: -80, energy: 6, mood: 2 },
+    { id: "medicine", emoji: "💊", zh: "去药房拿药", en: "Pick up your medicine", who: "药房药师", whoEn: "The dispensary pharmacist", say: "「一天三次，饭后吃，这个药有点苦，忍一忍。」", sayEn: "“Three times a day, after meals — it's a bit bitter, bear with it.”", pose: "talk", partner: [0xffffff, 0x0d9488], money: -40, energy: 8, mood: 2 },
+    { id: "bp", emoji: "🩺", zh: "量个血压", en: "Check your blood pressure", who: "护士", whoEn: "The nurse", say: "「高压 120，低压 80，挺好的，继续保持。」", sayEn: "“120 over 80 — good. Keep it up.”", pose: "sit", partner: [0xf9a8d4, 0xffffff], energy: 4, mood: 3 },
     { id: "nurse", emoji: "💉", zh: "问护士怎么报医保", en: "Ask the nurse about insurance", who: "护士", whoEn: "The nurse", say: "「社保卡绑定了吗？门诊统筹能报一半。」", sayEn: "“Linked your social security card? Outpatient cover pays half.”", pose: "talk", partner: [0xf9a8d4, 0xffffff], xp: 1, mood: 2 },
   ],
   classroom: [
     { id: "class", emoji: "📖", zh: "坐下来听一节课", en: "Sit in on a class", who: "老师", whoEn: "The teacher", say: "「今天讲的这个，下个月考证一定考。」", sayEn: "“What we cover today is definitely on next month's exam.”", pose: "type", partner: [0x7c3aed, 0x374151], energy: -6, xp: 3 },
+    { id: "askTeacher", emoji: "🙋", zh: "问老师一个问题", en: "Ask the teacher a question", who: "老师", whoEn: "The teacher", say: "「这个问题问得好，下课来我办公室细说。」", sayEn: "“Good question — come to my office after class and we'll go through it.”", pose: "talk", partner: [0x7c3aed, 0x374151], xp: 2, network: 1 },
     { id: "classmate", emoji: "🤝", zh: "跟同学加个微信", en: "Swap WeChat with a classmate", who: "同学", whoEn: "A classmate", say: "「我在前海做跨境电商，有机会一起搞点事？」", sayEn: "“I do cross-border e-commerce in Qianhai — let's do something together sometime?”", pose: "talk", partner: [0x10b981, 0x1f2937], network: 2, mood: 3 },
+    { id: "study", emoji: "📝", zh: "自习一会儿", en: "Study on your own", who: "自己", whoEn: "You", say: "「翻开书，安静得能听见自己的想法。」", sayEn: "“Open the book — quiet enough to hear yourself think.”", pose: "sit", mood: 4, energy: 4, xp: 1 },
+    { id: "club", emoji: "🏸", zh: "参加社团活动", en: "Join a club activity", who: "社团负责人", whoEn: "The club organiser", say: "「今晚羽毛球社招新，来打两局？」", sayEn: "“Badminton club's recruiting tonight — fancy a game?”", pose: "talk", partner: [0x10b981, 0x1f2937], mood: 6, network: 1, energy: -4 },
+    { id: "exam", emoji: "📋", zh: "刷一套考证题", en: "Do a practice exam paper", who: "自己", whoEn: "You", say: "「错了三道，都是常考的，记住了。」", sayEn: "“Three wrong — all regulars on the exam. Remember them.”", pose: "type", xp: 3, energy: -4 },
   ],
   bedroom: [
     { id: "desk", emoji: "🛎️", zh: "问前台附近哪里好吃", en: "Ask the front desk where to eat", who: "前台", whoEn: "The receptionist", say: "「出门右转第二个路口，那家砂锅粥开到凌晨。」", sayEn: "“Right out the door, second corner — that claypot congee is open till late.”", pose: "talk", partner: [0x1f2937, 0x1f2937], mood: 4 },
@@ -176,10 +217,15 @@ const VENUE_TALK: Partial<Record<LifeSet, VenueTalk[]>> = {
   museum: [
     { id: "exhibit", emoji: "🏺", zh: "慢慢看展", en: "See the exhibit", who: "自己", whoEn: "You", say: "「原来这座城是这样长起来的。」", sayEn: "“So this is how the city grew.”", pose: "idle", mood: 6, xp: 1 },
     { id: "guide", emoji: "🎧", zh: "听讲解员讲", en: "Hear the guide", who: "讲解员", whoEn: "The guide", say: "「这件展品背后，是整整一代人的故事。」", sayEn: "“Behind this piece is a whole generation's story.”", pose: "talk", partner: [0x0ea5e9, 0x1f2937], mood: 5, xp: 2 },
+    { id: "special", emoji: "🖼️", zh: "看一场特展", en: "See the special exhibition", who: "讲解员", whoEn: "The guide", say: "「这次是故宫来的文物，就展三个月，错过就没了。」", sayEn: "“This one's on loan from the Palace Museum — three months only, then it's gone.”", pose: "talk", partner: [0x0ea5e9, 0x1f2937], mood: 6, xp: 2 },
+    { id: "souvenir", emoji: "🎁", zh: "买个文创", en: "Buy a museum souvenir", who: "文创店店员", whoEn: "The gift-shop assistant", say: "「这个冰箱贴是馆里的爆款，拿回去贴冰箱上。」", sayEn: "“This fridge magnet is our bestseller — take it home for the fridge.”", pose: "talk", partner: [0xf59e0b, 0x1f2937], money: -30, mood: 5 },
   ],
   library: [
     { id: "borrow", emoji: "📚", zh: "借本书回去", en: "Borrow a book", who: "图书管理员", whoEn: "The librarian", say: "「这本这个月借了十七次，你眼光不错。」", sayEn: "“This one's gone out seventeen times this month — good taste.”", pose: "talk", partner: [0x78716c, 0x374151], mood: 4, xp: 1 },
+    { id: "return", emoji: "📥", zh: "还一本书", en: "Return a book", who: "图书管理员", whoEn: "The librarian", say: "「还了，正好有人排队等这本。」", sayEn: "“Returned — someone's been queuing for this one.”", pose: "talk", partner: [0x78716c, 0x374151], mood: 3 },
     { id: "study", emoji: "📖", zh: "坐下自修一会儿", en: "Sit and study", who: "自己", whoEn: "You", say: "「安静得能听见自己的想法。」", sayEn: "“Quiet enough to hear yourself think.”", pose: "sit", mood: 5, energy: 4 },
+    { id: "search", emoji: "🔍", zh: "查点资料", en: "Look something up", who: "图书管理员", whoEn: "The librarian", say: "「三楼工具书区，电子检索机也能用。」", sayEn: "“Reference books on the third floor — the search terminals work too.”", pose: "talk", partner: [0x78716c, 0x374151], xp: 2, mood: 2 },
+    { id: "talk", emoji: "🎤", zh: "听一场讲座", en: "Attend a talk", who: "讲座嘉宾", whoEn: "The speaker", say: "「今天讲深圳四十年，坐满了，来晚了站着听。」", sayEn: "“Today it's forty years of Shenzhen — full house, latecomers stand.”", pose: "talk", partner: [0x0ea5e9, 0x1f2937], mood: 5, xp: 2 },
   ],
   factory: [
     { id: "tour", emoji: "🏭", zh: "看看产线", en: "See the production line", who: "班长", whoEn: "The shift lead", say: "「这条线一个班出三千件，安全帽戴好。」", sayEn: "“Three thousand a shift on this line. Helmet on.”", pose: "talk", partner: [0xf5b301, 0x2e3440], mood: 3, xp: 1 },
@@ -250,7 +296,7 @@ const venueTalksForFloor = (set: LifeSet, locId: string | undefined, building: s
    only place that may rename keys (App.tsx owns this mapping; data.ts
    and LifeStage.tsx are untouched). ---- */
 const VENUE_SET_ALIAS: Partial<Record<string, LifeSet>> = { cycle: "bikehub", gallery: "museum", nature: "park", wetland: "farm" };
-function venueFor(loc: { type: string; id: string; name: string; venueSet?: VenueSetId; animKind?: AnimKindId }): { set: LifeSet; zh: string; en: string } | null {
+function venueFor(loc: { type: string; id: string; name: string; venueSet?: VenueSetId; animKind?: AnimKindId; placeKind?: PlaceKind }): { set: LifeSet; zh: string; en: string } | null {
   // Round-2: per-place venueSet first (round2/venues.ts), then the type map
   // + regex fallbacks there. Aliased sets are mapped to the LifeSet (g) built.
   const r = venueSetFor(loc);

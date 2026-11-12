@@ -527,7 +527,11 @@ export type VenueSetId =
   | "fishingport"
   /** 办事大厅专用 — 警局/政务/银行柜台：取号、填表、等叫号。玩家是来办事的
       市民，不是员工，所以动作是面向公众的，不再复用 office 那套工位动作。 */
-  | "service";
+  | "service"
+  /** 每个公共场所自己的做法（lee：医院学校各有各的）— 警局/银行/药店/
+      游客中心不再共用一个 service 大厅；医院、学校、图书馆、博物馆的
+      动作也各自加满，不再两三个按钮打发人。 */
+  | "police" | "bank" | "pharmacy" | "info";
 /** Round-2 cutscene animation id (audit table 4). Reuses an existing LifeKind
     where one fits (coaster/wheel/aquarium/cablecar/cruise/beach/hike/turtle);
     a NEW name means area (g) still has to add that LifeKind + LifeStage scene
@@ -766,8 +770,8 @@ export const PLACE_KINDS: Record<PlaceKind, PlaceKindMeta> = {
   mall: { label: "商场", emoji: "🛍️", type: "mall", color: 0xf472b6 },
   hospital: { label: "医院", emoji: "🏥", type: "health", color: 0xef4444 },
   university: { label: "大学", emoji: "🎓", type: "learn", color: 0x6366f1 },
-  library: { label: "图书馆", emoji: "📚", type: "learn", color: 0x8b5cf6 },
-  museum: { label: "博物馆 / 美术馆", emoji: "🏛️", type: "fun", color: 0xd97706, funName: "看一场展览", funCost: 0, funMood: 14, funDesc: "深圳大部分公立博物馆、美术馆免费，提前在公众号预约" },
+  library: { label: "图书馆", emoji: "📚", type: "library", color: 0x8b5cf6 },
+  museum: { label: "博物馆 / 美术馆", emoji: "🏛️", type: "museum", color: 0xd97706, funName: "看一场展览", funCost: 0, funMood: 14, funDesc: "深圳大部分公立博物馆、美术馆免费，提前在公众号预约" },
   theatre: { label: "剧院 / 音乐厅", emoji: "🎭", type: "fun", color: 0xbe185d, funName: "看一场演出", funCost: 180, funMood: 26, funDesc: "话剧、音乐会、儿童剧，周末场次多，学生票更便宜" },
   stadium: { label: "体育场馆", emoji: "🏟️", type: "gym", color: 0x0ea5e9 },
   themepark: { label: "主题乐园", emoji: "🎢", type: "fun", color: 0xe879f9, funName: "玩一整天", funCost: 150, funMood: 30, funDesc: "排队、尖叫、拍照，玩到闭园" },
