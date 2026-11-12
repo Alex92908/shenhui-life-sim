@@ -468,3 +468,41 @@ lee：“是不是也可以支持用户自己创造形象呢，像和平精英�
 - 几何校验（shapely，读的是写进文件后的数据）：三城 HINTERLAND 多边形都合法（valid），和自家 LAND 的重叠只有上面说的 1.0 / 0 / 0.45 平方单位（同色自家陆地）；海点抽查全过——深圳湾、维港、大亚湾、珠江口、港岛以南海、红海湾、吐露港、大屿山西边海都没被盖成陆地；陆点抽查——新界、九龙北段、东莞北、惠州东、河源北、深圳西、汕尾东、深圳北都在 HINTERLAND 里；港岛 (0,18) 确认不在 HINTERLAND 里（还是岛）。
 - `bun x tsc --noEmit -p client/tsconfig.json` 只剩原有的 bun-types 报错；`npm run build`（standalone/）通过。
 - **还需 lee 在浏览器里看一眼**：地图缩到最小——北边、东边（深圳）、南边中新界是不是陆地连出去、不再像岛；西南深圳湾、西边珠江口、大鹏湾、大亚湾、南海是不是还是海；港岛、大屿山是不是还是岛；点市外陆地是不是走不到外面去（应贴到最近的市内岸边）。
+
+## 二十、首屏必崩修好了：`selfFaceId` 引用了还没声明的 `iden`（TDZ）
+
+### 问题
+
+lee 拉了第 16 次推送、重建重启后，游戏打不开，报错屏两个按钮（重新打开、清除本地存档）都不行。控制台报错：
+
+```
+ReferenceError: Cannot access 'ls' before initialization
+    at iz (index-B5j7wJP-.js:151:30202)
+```
+
+`ls` 是压缩后的 `iden`。根因在 `client/src/App.tsx`：第 12 次推送（人物统一）把 `selfFaceId` 加进了 “derived render data” 区（当时约 4749 行）：
+
+```js
+const selfFaceId = profile?.playerId ?? `player-${iden.emoji}`;
+```
+
+但 `iden` 只在后面的 GAME 区才声明（当时约 5990 行）：`const s = gs; const iden = idenOf(s);`。同一函数作用域里，先用后声明就是 TDZ（暂时性死区）——`const`/`let` 声明之前访问直接抛错，TypeScript 不拦（作用域里找得到名字），构建也照常过。
+
+为什么之前没崩、现在一拉就崩：之前没有 `selfFaceId` 这一行，`faceId` 是在 GAME 区里就地算的（`iden` 已经声明了）。首屏第一次渲染时 `profile` 还是 null（读存档的 effect 还没跑），`profile?.playerId` 是空，于是走到 `` `player-${iden.emoji}` ``，正撞上还没初始化的 `iden`——存档读不读、清不清都没关系，第一次渲染必崩。这也解释了为什么清存档也没用：不是存档的问题。
+
+### 改法
+
+把两行挪到 GAME 区 `iden` 声明的正后方（现在 5992–5993 行），其它不动：
+
+```js
+const selfFaceId = profile?.playerId ?? `player-${iden.emoji}`;
+const selfSeedFace = faceSpecFor(selfFaceId);
+```
+
+两个的用法都在 GAME 区（MapView 的 `selfFaceId`、捏脸弹窗的 `selfSeedFace`），都在声明之后，没别的地方用。`remotePlayers` / `onlineHere` / `timeStr` 还留在 derived render data 区，它们引用的 `myPub` / `world` / `cityKey` 都是在前面声明好的，没这个问题。
+
+### 验证
+
+- `bun x tsc --noEmit -p client/tsconfig.json` 只剩原有的 bun-types 报错；`npm run build`（standalone/）通过，新包 `index-BegPBJyv.js`。
+- 之前已排除的嫌疑：HINTERLAND 三城地形用 Three.js `ExtrudeGeometry` 实跑过，都能正常生成（无洞、无自交）；存档加载在 try/catch 里；`makeFigure` / `faceSpecFor` / `randomFaceSpec` / `outfitOf` 都有默认值和兜底。
+- **还需 lee 在浏览器里看一眼**：拉取重建重启后，游戏能不能打开（先别急着清存档——如果本地存档还在，进游戏看钱、糖水铺、捏的脸是不是都在；服务器上有钱的账本、店、脸，云存档码也能恢复）。

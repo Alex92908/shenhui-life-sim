@@ -4745,9 +4745,6 @@ playLifeAnim("shopping");
 
 /* ---------- derived render data ---------- */
 const myId = myPub;
-/* 捏脸：自己的脸种子（和 LifeStage 的 faceId 是同一个值）和系统脸 */
-const selfFaceId = profile?.playerId ?? `player-${iden.emoji}`;
-const selfSeedFace = faceSpecFor(selfFaceId);
 const remotePlayers = (world?.online ?? [])
 .filter((pl) => pl.cityKey === cityKey && pl.id !== myId)
 .map((pl) => ({ id: pl.id, name: pl.name, emoji: pl.emoji, color: pl.color, locId: pl.locId, hair: hairFromLook(pl.look) ?? undefined, accessory: accessoryFromLook(pl.look) ?? undefined, faceSpec: parseFaceSpec(pl.face) }));
@@ -5988,6 +5985,12 @@ return (
 /* ================= GAME ================= */
 const s = gs;
 const iden = idenOf(s);
+/* 捏脸：自己的脸种子（和 LifeStage 的 faceId 是同一个值）和系统脸——必须在
+   iden 之后算，之前放在 derived render data 里引用了还没声明的 iden，
+   首屏 profile 为空时直接 TDZ 崩掉（ReferenceError: Cannot access 'ls'
+   before initialization），连存档都来不及读。 */
+const selfFaceId = profile?.playerId ?? `player-${iden.emoji}`;
+const selfSeedFace = faceSpecFor(selfFaceId);
 const city = CITIES[s.cityKey];
 const career = CAREERS[s.careerIdx] ?? CAREERS[0]!;
 const selLoc = locById(selectedLoc);
