@@ -524,7 +524,10 @@ export type VenueSetId =
   | "factory" | "oilpainting" | "secondhand" | "seafood" | "womensstreet"
   /** Round-3: 渔港专用内景 — LifeStage 的 fishingport 3D 场景已建好
       （巽寮湾渔港 / 大澳渔村）；此前无任何地点用它，场景不可达。 */
-  | "fishingport";
+  | "fishingport"
+  /** 办事大厅专用 — 警局/政务/银行柜台：取号、填表、等叫号。玩家是来办事的
+      市民，不是员工，所以动作是面向公众的，不再复用 office 那套工位动作。 */
+  | "service";
 /** Round-2 cutscene animation id (audit table 4). Reuses an existing LifeKind
     where one fits (coaster/wheel/aquarium/cablecar/cruise/beach/hike/turtle);
     a NEW name means area (g) still has to add that LifeKind + LifeStage scene

@@ -137,6 +137,8 @@ export const VENUE_SET_COPY: Record<string, { set: string; zh: string; en: strin
   cycle: { set: "cycle", zh: "绿道骑行：租车点、单车径，风追着你跑", en: "The cycle greenway: bike hire, the cycle path, the wind at your back" },
   fishingport: { set: "fishingport", zh: "渔港码头：渔船、渔网、刚上岸的海鲜，鱼贩在码头边叫卖", en: "The fishing port: boats, nets, the fresh catch, fish sellers calling out on the pier" },
   nature: { set: "nature", zh: "雨林：热带植物、吊桥，蝴蝶落在肩膀上", en: "The rainforest: tropical plants, a rope bridge, butterflies on your shoulder" },
+  // 办事大厅 — 警局/政务/银行柜台：玩家是来办事的市民，不是员工
+  service: { set: "service", zh: "办事大厅：取号、填表、等叫号", en: "The service hall: take a number, fill a form, wait" },
 };
 
 /** Table-driven replacement for App.tsx's venueFor(). Per-place venueSet
@@ -166,13 +168,16 @@ export function venueSetFor(loc: {
     factory: { set: "factory", zh: "厂区：厂房、产线、宿舍和食堂，三班倒的灯火", en: "The plant: workshops, lines, dorms and the canteen, lit for three shifts" },
     work: { set: "office", zh: "看看工位：屏幕、咖啡、同事在敲代码", en: "See the office floor: screens, coffee, colleagues typing" },
     apec: { set: "office", zh: "会场里面：长桌、名牌、同传耳机", en: "Inside the venue: long tables, name cards, interpretation headsets" },
-    bank: { set: "office", zh: "柜台和排队机", en: "The counters and the queue machine" },
+    bank: { set: "service", zh: "柜台和排队机", en: "The counters and the queue machine" },
     gym: { set: "gym", zh: "跑步机、哑铃、镜子前自拍的人", en: "Treadmills, dumbbells, mirror selfies" },
     social: { set: "club", zh: "灯光、乐队、人群跟着节拍跳", en: "Lights, a band, a crowd bouncing to the beat" },
     health: { set: "clinic", zh: "候诊区、叫号屏、白大褂", en: "The waiting area, the queue screen, white coats" },
     learn: { set: "classroom", zh: "黑板、课桌、下班后来上夜校的人", en: "Blackboard, desks, people at night school after work" },
     lodging: { set: "bedroom", zh: "前台拿房卡，上楼看看房间", en: "Key card from the desk, a look at the room" },
-    service: { set: "office", zh: "办事大厅：取号、填表、等叫号", en: "The service hall: take a number, fill a form, wait" },
+    /* 办事大厅（警局/政务/银行/药房/游客中心）：玩家是来办事的市民，
+       不是员工 — 动作是面向公众的（取号、填表、窗口咨询），不再复用
+       office 那套“茶水间聊同事、坐下敲代码、收拾东西下班”。 */
+    service: { set: "service", zh: "办事大厅：取号、填表、等叫号", en: "The service hall: take a number, fill a form, wait" },
   };
   const fixed = byType[loc.type];
   if (fixed) return fixed;

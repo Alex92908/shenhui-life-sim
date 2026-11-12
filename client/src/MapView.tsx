@@ -739,6 +739,15 @@ export function MapView(p: Props) {
      The ring mesh lives in the scene effect (next to pinRing). */
   const clickWalkRef = useRef<{ x: number; z: number } | null>(null);
   const clickMarkerRef = useRef<THREE.Mesh | null>(null);
+  /* Walk-to-person: tapping an NPC / player walks you up to them (before
+     this, tapping only opened the chat/card and the player never moved).
+     The frame loop re-targets clickWalkRef to the person's current spot
+     each frame, so a wandering NPC is followed until close. followActorRef
+     = the actor being followed; pendingActorRef = the actor whose chat/card
+     opens on arrival (NPCs only — a remote player's card opens at once,
+     the walk just follows in the background). */
+  const followActorRef = useRef<string | null>(null);
+  const pendingActorRef = useRef<string | null>(null);
   /* LoL-style move-click ripple: performance.now() of the last click-to-walk
      click (-1 = none). The frame loop expands + fades the ring for ~500ms
      from this timestamp, then the ring settles into the faint persistent
@@ -748,6 +757,8 @@ export function MapView(p: Props) {
      back to a stale point after arriving somewhere else */
   useEffect(() => {
     clickWalkRef.current = null;
+    followActorRef.current = null;
+    pendingActorRef.current = null;
     if (clickMarkerRef.current) clickMarkerRef.current.visible = false;
   }, [p.selfLocId, p.cityKey]);
   useEffect(() => {
@@ -2625,6 +2636,40 @@ export function MapView(p: Props) {
     clickMarkerRef.current = clickMarker;
     scene.add(pinBeam, pinRing);
 
+    /* ---- walk-to-person: tap an NPC / player and you walk up to them ----
+       Arrived beside the followed person: stop, hide the marker, and open
+       the chat/card that was waiting (if any). */
+    const arriveAtFollowed = () => {
+      const key = pendingActorRef.current;
+      followActorRef.current = null;
+      pendingActorRef.current = null;
+      clickWalkRef.current = null;
+      if (clickMarkerRef.current) clickMarkerRef.current.visible = false;
+      if (key) propsRef.current.onPickActor?.(key.startsWith("npc-") ? { npc: key.slice(4) } : { player: key.slice(2) });
+    };
+    /* Tap a person: a remote player's card opens at once (inspect) and you
+       walk over in the background; an NPC's chat opens when you arrive
+       beside them — at once if you are already close, or the spot is
+       unreachable by land (so a tap never silently does nothing). */
+    const tapActor = (key: string) => {
+      if (key === "self") return;
+      const openNow = () => propsRef.current.onPickActor?.(key.startsWith("npc-") ? { npc: key.slice(4) } : { player: key.slice(2) });
+      const target = actorsRef.current.get(key);
+      if (key.startsWith("p-")) {
+        openNow();
+        if (target && !propsRef.current.selfEtaAt) { followActorRef.current = key; clickRippleAtRef.current = performance.now(); }
+        return;
+      }
+      if (!target || propsRef.current.selfEtaAt) { openNow(); return; }
+      const self = actorsRef.current.get("self");
+      if (!self) { openNow(); return; }
+      if (Math.hypot(target.x - self.x, target.z - self.z) <= 1.5) { openNow(); return; }
+      if (!nearestLand(cityKey, target.x, target.z)) { openNow(); return; }
+      followActorRef.current = key;
+      pendingActorRef.current = key;
+      clickRippleAtRef.current = performance.now();
+    };
+
     /* ---- 📢 billboards: a real button per spot. The 「广告」 badge stays;
        only the text span is rewritten each pass (textContent on the root
        would wipe the badge). Click walks to the place that hosts the slot. ---- */
@@ -2878,7 +2923,7 @@ export function MapView(p: Props) {
           chipEl.setAttribute("role", "button");
           const key = a.key;
           chipEl.addEventListener("pointerdown", (e) => e.stopPropagation());
-          chipEl.addEventListener("click", (e) => { e.stopPropagation(); propsRef.current.onPickActor?.(key.startsWith("npc-") ? { npc: key.slice(4) } : { player: key.slice(2) }); });
+          chipEl.addEventListener("click", (e) => { e.stopPropagation(); tapActor(key); });
         }
         actorChips.set(a.key, { el: chipEl, kind: "actor", self: !!a.isSelf, npc: a.key.startsWith("npc-"), w: 0, h: 0, lastText: "", visible: true, clampDx: 0, clampDy: 0, getPos: () => ({ x: a.x, y: LAND + 3.6, z: a.z }) });
         chips.push(actorChips.get(a.key)!);
@@ -2943,9 +2988,7 @@ export function MapView(p: Props) {
         const ndc = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
         const rc = new THREE.Raycaster();
         rc.setFromCamera(ndc, camera);
-        const pickActor = (key: string) => {
-          propsRef.current.onPickActor?.(key.startsWith("npc-") ? { npc: key.slice(4) } : { player: key.slice(2) });
-        };
+        const pickActor = (key: string) => { tapActor(key); };
         // 1) raycast the generous hit cylinders on every actor (not the thin
         //    character mesh). Nearest hit wins; yourself is never pickable.
         const hitMeshes: THREE.Object3D[] = [];
@@ -2977,8 +3020,11 @@ export function MapView(p: Props) {
         const hits = rc.intersectObjects([...pickMeshes, ...playerPickMeshesRef.current], false);
         const id = hits[0]?.object.userData.locId as string | undefined;
         if (id) {
-          // a building was picked: select it, and stop any click-walk
+          // a building was picked: select it, and stop any click-walk /
+          // walk-to-person (and its waiting chat)
           clickWalkRef.current = null;
+          followActorRef.current = null;
+          pendingActorRef.current = null;
           if (clickMarkerRef.current) clickMarkerRef.current.visible = false;
           propsRef.current.onSelect(id);
           return;
@@ -2992,6 +3038,10 @@ export function MapView(p: Props) {
         // blue ring marker follows clickWalkRef, so it shows at the clamped
         // point. No land within 10 units (far out in the sea): no-op.
         if (e.pointerType === "mouse" && !propsRef.current.selfEtaAt) {
+          // a new ground click retargets: cancel any walk-to-person and
+          // the chat waiting on it (the player changed their mind)
+          followActorRef.current = null;
+          pendingActorRef.current = null;
           const ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), -LAND);
           const pt = new THREE.Vector3();
           if (rc.ray.intersectPlane(ground, pt)) {
@@ -3549,7 +3599,26 @@ export function MapView(p: Props) {
               clickWalkRef.current = null;
               if (clickMarkerRef.current) clickMarkerRef.current.visible = false;
             }
-          } else if (clickWalkRef.current) {
+            followActorRef.current = null;
+            pendingActorRef.current = null;
+          } else if (followActorRef.current) {
+            // walk-to-person: re-target to the person's current spot each
+            // frame (they wander); stop beside them and open the chat/card
+            const target = actorsRef.current.get(followActorRef.current);
+            if (!target) {
+              // the person left the map: stop, don't open anything
+              followActorRef.current = null;
+              pendingActorRef.current = null;
+            } else if (Math.hypot(target.x - a.x, target.z - a.z) <= 1.5) {
+              arriveAtFollowed();
+            } else {
+              // clamp to the nearest land so a person at the water/road edge
+              // doesn't strand you; if unreachable, keep the last target
+              const dest = nearestLand(cityKey, target.x, target.z);
+              if (dest) clickWalkRef.current = dest;
+            }
+          }
+          if (clickWalkRef.current) {
             a.tx = clickWalkRef.current.x;
             a.tz = clickWalkRef.current.z;
           }
@@ -3561,6 +3630,16 @@ export function MapView(p: Props) {
         if (a.isSelf && clickWalkRef.current && dist <= 0.25) {
           clickWalkRef.current = null;
           if (clickMarkerRef.current) clickMarkerRef.current.visible = false;
+          // walked to the closest land beside the person (they may have
+          // drifted just out of reach): open the waiting chat/card
+          if (pendingActorRef.current) {
+            const key = pendingActorRef.current;
+            followActorRef.current = null;
+            pendingActorRef.current = null;
+            propsRef.current.onPickActor?.(key.startsWith("npc-") ? { npc: key.slice(4) } : { player: key.slice(2) });
+          } else {
+            followActorRef.current = null;
+          }
         }
         if (dist > 0.06) {
           const eta = a.isSelf ? propsRef.current.selfEtaAt : undefined;

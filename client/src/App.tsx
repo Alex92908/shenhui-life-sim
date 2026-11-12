@@ -90,6 +90,17 @@ const VENUE_TALK: Partial<Record<LifeSet, VenueTalk[]>> = {
     { id: "code", emoji: "💻", zh: "坐下来敲会儿代码", en: "Sit down and code a while", who: "自己", whoEn: "You", say: "「需求写完了，提测。」", sayEn: "“The feature's done — sending it to test.”", pose: "type", xp: 2 },
     { id: "leave", emoji: "🚪", zh: "收拾东西准备下班", en: "Pack up and head home", who: "自己", whoEn: "You", say: "「电脑锁屏，明天见。」", sayEn: "“Locking the screen — see you tomorrow.”", pose: "idle", mood: 2 },
   ],
+  /* 办事大厅（警局/政务/银行/药房/游客中心）：玩家是来办事的市民，不是
+     员工 — 没有“同事/前辈”，没有“敲代码/下班”。对面是窗口工作人员
+     （警局里就是民警），动作是取号、填表、咨询、办业务、补证件。 */
+  service: [
+    { id: "queue", emoji: "🎫", zh: "取个号排队", en: "Take a number and queue", who: "窗口工作人员", whoEn: "The counter staff", say: "「前面还有 7 位，叫到号再过来，窗口一直有人。」", sayEn: "“Seven ahead of you — come back when your number's called.”", pose: "idle", partner: [0x1d4ed8, 0x1f2937], mood: 2, network: 1 },
+    { id: "form", emoji: "📝", zh: "填一张表", en: "Fill out a form", who: "窗口工作人员", whoEn: "The counter staff", say: "「姓名、身份证号写清楚，勾错了得重填。」", sayEn: "“Name and ID number, clearly — a mistake means starting over.”", pose: "type", partner: [0x1d4ed8, 0x1f2937], xp: 1 },
+    { id: "consult", emoji: "🙋", zh: "到窗口问问怎么办", en: "Ask at the counter how it works", who: "窗口工作人员", whoEn: "The counter staff", say: "「带身份证和原件来，复印件这边能打，一块钱一张。」", sayEn: "“Bring your ID and the originals — copies are a yuan a page here.”", pose: "talk", partner: [0x1d4ed8, 0x1f2937], xp: 2, network: 1 },
+    { id: "business", emoji: "📋", zh: "办一笔业务", en: "Handle your business", who: "窗口工作人员", whoEn: "The counter staff", say: "「材料都齐了，这就给你办好，回去留意短信。」", sayEn: "“Everything's in order — done. Watch for the text message.”", pose: "talk", partner: [0x1d4ed8, 0x1f2937], mood: 3, xp: 1 },
+    { id: "replace", emoji: "🪪", zh: "补办一个证件", en: "Replace a document", who: "窗口工作人员", whoEn: "The counter staff", say: "「填这张表，工本费二十，新证寄到你留的地址。」", sayEn: "“Fill this in — twenty for the fee, and the new one goes to your address.”", pose: "talk", partner: [0x1d4ed8, 0x1f2937], money: -20, mood: 2 },
+    { id: "toilet", emoji: "🚻", zh: "去洗手间", en: "Use the restroom", who: "自己", whoEn: "You", say: "「好了。」", sayEn: "“That's better.”", pose: "idle" },
+  ],
   gym: [
     { id: "coach", emoji: "🏋️", zh: "让教练看看动作", en: "Ask the coach to check your form", who: "教练", whoEn: "The coach", say: "「核心收紧，背打直——对，就这样。办个私教课？」", sayEn: "“Brace your core, back straight — that's it. Fancy a PT package?”", pose: "lift", partner: [0xef4444, 0x111827], energy: -6, mood: 5 },
     { id: "spot", emoji: "🤝", zh: "帮别人保护一组", en: "Spot someone's set", who: "健身的小哥", whoEn: "A gym regular", say: "「谢了兄弟！下次我帮你。」", sayEn: "“Cheers! I'll spot you next time.”", pose: "talk", partner: [0x0ea5e9, 0x111827], mood: 4, network: 1 },
@@ -5965,7 +5976,7 @@ const phaseApec = apecPhase(s.day);
 const goalPct = clamp(Math.round((s.money / s.goal) * 100), 0, 100);
 const tt = (zh: string, e: string) => (en ? e : zh);
 const rentDue = rentDueNow;
-const VENUE_PLACE: Partial<Record<LifeSet, string>> = { restaurant: "food", mall: "mall", office: "work", gym: "gym", market: "market", electronics: "electronics", oilpainting: "oilpainting", secondhand: "secondhand", seafood: "seafood", oldtown: "oldtown", womensstreet: "womensstreet", museum: "museum", library: "library", factory: "factory", disney: "fun", tram: "transit", temple: "scenic", miniature: "fun", farm: "farm", watershow: "fun", boardwalk: "scenic", fishingport: "port", bikehub: "scenic", club: "fun", classroom: "learn", clinic: "health", bedroom: "lodging" };
+const VENUE_PLACE: Partial<Record<LifeSet, string>> = { restaurant: "food", mall: "mall", office: "work", gym: "gym", market: "market", electronics: "electronics", oilpainting: "oilpainting", secondhand: "secondhand", seafood: "seafood", oldtown: "oldtown", womensstreet: "womensstreet", museum: "museum", library: "library", factory: "factory", disney: "fun", tram: "transit", temple: "scenic", miniature: "fun", farm: "farm", watershow: "fun", boardwalk: "scenic", fishingport: "port", bikehub: "scenic", club: "fun", classroom: "learn", clinic: "health", bedroom: "lodging", service: "service" };
 const MEET_IDS = new Set(["share", "coffee", "friend", "chat", "ask", "try", "classmate", "spot", "haggle", "fish", "paint", "frame", "dig", "boat", "snack", "clothes", "tour", "ride", "fortune", "buy", "eat", "milk"]);
 const regularHere = (set: LifeSet) => {
   const kind = VENUE_PLACE[set];

@@ -20,7 +20,7 @@ import { PET_MODEL, type Pet } from "./round2/pets";
 import { floorDef, floorSpots, hasFloors, STAIR_DOWN_ID, STAIR_UP_ID } from "./round2/floors";
 import { makeFigure, faceSpecFor, addAccessory, type Figure, type FaceSpec } from "./figure";
 
-export type LifeSet = "flat" | "station" | "metro" | "train" | "bus" | "taxi" | "drive" | "concourse" | "platform" | "office" | "restaurant" | "market" | "electronics" | "mall" | "kitchen" | "bedroom" | "bathroom" | "gym" | "park" | "home" | "cruise" | "wheel" | "aquarium" | "turtle" | "coaster" | "safari" | "hike" | "beach" | "cablecar" | "club" | "clinic" | "classroom" | "oilpainting" | "secondhand" | "seafood" | "oldtown" | "womensstreet" | "museum" | "library" | "factory" | "disney" | "tram" | "temple" | "miniature" | "farm" | "watershow" | "boardwalk" | "fishingport" | "bikehub" | "buildplot";
+export type LifeSet = "flat" | "station" | "metro" | "train" | "bus" | "taxi" | "drive" | "concourse" | "platform" | "office" | "restaurant" | "market" | "electronics" | "mall" | "kitchen" | "bedroom" | "bathroom" | "gym" | "park" | "home" | "cruise" | "wheel" | "aquarium" | "turtle" | "coaster" | "safari" | "hike" | "beach" | "cablecar" | "club" | "clinic" | "classroom" | "oilpainting" | "secondhand" | "seafood" | "oldtown" | "womensstreet" | "museum" | "library" | "factory" | "disney" | "tram" | "temple" | "miniature" | "farm" | "watershow" | "boardwalk" | "fishingport" | "bikehub" | "buildplot" | "service";
 export type LifePose = "walk" | "idle" | "sit" | "drive" | "type" | "cook" | "eat" | "sleep" | "wash" | "lift" | "stretch" | "talk" | "dance" | "sing";
 
 interface Props {
@@ -91,6 +91,10 @@ const ROAM_SPOTS: Partial<Record<LifeSet, { id: string; emoji: string; zh: strin
   classroom: [{ id: "class", emoji: "📖", zh: "听一节课", en: "Sit in", x: -0.6, z: 1.15 }, { id: "classmate", emoji: "🤝", zh: "加个微信", en: "Swap WeChat", x: 2.1, z: 1.2 }],
   bedroom: [{ id: "desk", emoji: "🛎️", zh: "问前台", en: "Ask the desk", x: 0.2, z: 0.85 }, { id: "sleep", emoji: "🛏️", zh: "躺下睡觉", en: "Lie down", x: -1.1, z: -1.05 }, { id: "wake", emoji: "🌅", zh: "起床伸懒腰", en: "Stretch awake", x: 0.2, z: 0.3 }],
   concourse: [{ id: "toilet", emoji: "🚻", zh: "去洗手间", en: "Restroom", x: 4.4, z: 1.05 }, { id: "wait", emoji: "🪑", zh: "坐一会儿", en: "Sit", x: 3.1, z: 0.55 }, { id: "water", emoji: "🧴", zh: "买瓶水", en: "Buy water", x: -3.5, z: 0.75 }],
+  /* 办事大厅（警局/政务/银行）：柜台在后墙（z≈-1），取号机在左、填表台在
+     右、三个窗口点在柜台前（z -0.5）。id 必须 exactly 对应 App.tsx
+     VENUE_TALK.service 的条目 id（onSpot 按 id 查）。 */
+  service: [{ id: "queue", emoji: "🎫", zh: "取号排队", en: "Take a number", x: -3.4, z: 0.85 }, { id: "form", emoji: "📝", zh: "填表", en: "Fill a form", x: 2.6, z: 0.6 }, { id: "consult", emoji: "🙋", zh: "窗口咨询", en: "Ask at the counter", x: 0.2, z: -0.5 }, { id: "business", emoji: "📋", zh: "办业务", en: "Handle business", x: -1.6, z: -0.5 }, { id: "replace", emoji: "🪪", zh: "补办证件", en: "Replace a document", x: 1.8, z: -0.5 }, { id: "toilet", emoji: "🚻", zh: "去洗手间", en: "Restroom", x: 4.6, z: 1.2 }],
   park: [{ id: "bench", emoji: "🪑", zh: "坐长椅", en: "Bench", x: 2.2, z: 0.15 }, { id: "stroll", emoji: "🚶", zh: "沿园路走", en: "Walk the path", x: -2.2, z: 0.65 }, { id: "photo", emoji: "📸", zh: "拍一张", en: "Photo", x: 0.2, z: 1.1 },
     /* round-3 (H): 蝴蝶谷光柱点 — id 必须 exactly "butterfly"，与 App.tsx
        QINGQING_TALK 的条目 id 一致（onSpot 按 venueTalksFor 查 id）。
@@ -662,7 +666,7 @@ export function LifeStage3D(p: Props) {
     mount.appendChild(renderer.domElement);
     renderer.domElement.style.cssText = "position:absolute;inset:0;width:100%;height:100%;display:block;";
 
-    const indoor = setKind === "flat" || setKind === "office" || setKind === "kitchen" || setKind === "bathroom" || setKind === "bedroom" || setKind === "home" || setKind === "restaurant" || setKind === "gym" || setKind === "concourse" || setKind === "platform" || setKind === "club" || setKind === "clinic" || setKind === "classroom" || setKind === "oilpainting" || setKind === "secondhand" || setKind === "seafood" || setKind === "oldtown" || setKind === "womensstreet" || setKind === "museum" || setKind === "library" || setKind === "factory" || setKind === "disney" || setKind === "tram" || setKind === "temple" || setKind === "miniature";
+    const indoor = setKind === "flat" || setKind === "office" || setKind === "kitchen" || setKind === "bathroom" || setKind === "bedroom" || setKind === "home" || setKind === "restaurant" || setKind === "gym" || setKind === "concourse" || setKind === "platform" || setKind === "club" || setKind === "clinic" || setKind === "classroom" || setKind === "oilpainting" || setKind === "secondhand" || setKind === "seafood" || setKind === "oldtown" || setKind === "womensstreet" || setKind === "museum" || setKind === "library" || setKind === "factory" || setKind === "disney" || setKind === "tram" || setKind === "temple" || setKind === "miniature" || setKind === "service";
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(night ? 0x1d3454 : indoor ? 0xf7e3bd : 0xffd9a0);
     scene.fog = new THREE.Fog(scene.background as THREE.Color, 17, 32);
@@ -760,7 +764,7 @@ export function LifeStage3D(p: Props) {
     };
 
     /* ---- floor ---- */
-    const floorKind = setKind === "bathroom" || setKind === "kitchen" || setKind === "concourse" ? "tile" : setKind === "station" || setKind === "platform" ? "concrete" : setKind === "metro" || setKind === "train" || setKind === "bus" || setKind === "taxi" || setKind === "drive" ? "carriage" : setKind === "park" || setKind === "farm" || setKind === "bikehub" ? "grass" : setKind === "mall" || setKind === "electronics" || setKind === "museum" || setKind === "library" || setKind === "temple" || setKind === "oilpainting" ? "tile" : "wood";
+    const floorKind = setKind === "bathroom" || setKind === "kitchen" || setKind === "concourse" || setKind === "service" ? "tile" : setKind === "station" || setKind === "platform" ? "concrete" : setKind === "metro" || setKind === "train" || setKind === "bus" || setKind === "taxi" || setKind === "drive" ? "carriage" : setKind === "park" || setKind === "farm" || setKind === "bikehub" ? "grass" : setKind === "mall" || setKind === "electronics" || setKind === "museum" || setKind === "library" || setKind === "temple" || setKind === "oilpainting" ? "tile" : "wood";
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(22, 14), new THREE.MeshStandardMaterial({ map: floorTex(floorKind), roughness: 0.95 }));
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
@@ -1129,6 +1133,43 @@ export function LifeStage3D(p: Props) {
       box(1.3, 2.2, 0.35, 0x77603f, 5.9, 1.1, -3.3, 0.7);
       for (let sIdx = 0; sIdx < 3; sIdx++) for (let bIdx = 0; bIdx < 4; bIdx++) {
         box(0.16, 0.42 + (bIdx % 2) * 0.08, 0.24, [0xd9534a, 0x3f6d8e, 0x65a30d, 0xf5b942][(sIdx + bIdx) % 4]!, 5.5 + bIdx * 0.26, 0.55 + sIdx * 0.62, -3.3, 0.8);
+      }
+    } else if (setKind === "service") {
+      /* 办事大厅：长柜台 + 取号机 + 填表台 + 等候椅 + 叫号屏。玩家是来办事的
+         市民，柜台后站着窗口工作人员（藏青制服），不是工位上的同事。 */
+      roomShell(0xe8eef2, 0x5b7a99, { windowX: 4.2, windowW: 2.2, clock: true });
+      // 叫号屏：背墙上，“请 A012 到 3 号窗口”
+      box(2.3, 0.9, 0.06, 0x1f2937, 0, 2.6, -3.56, 0.35);
+      plane(2.2, 0.8, boardTex("#1f2937", [{ t: "请 A012 到 3 号窗口", s: 42, c: "#fbbf24", bold: true }, { t: "下一位 A013 · 请准备好证件", s: 28, c: "#e5e7eb", bold: false }]), 0, 2.6, -3.52);
+      // 长柜台：三个窗口，玻璃隔断分开
+      box(9.0, 1.05, 0.6, 0x8a6f4d, 0, 0.53, -1.0, 0.6);
+      box(9.2, 0.06, 0.75, 0xd9c9a8, 0, 1.08, -1.0, 0.5);
+      for (const dx of [-1.5, 1.5]) box(0.08, 0.8, 0.5, 0x9db4c6, dx, 1.48, -1.0, 0.7);
+      // 柜台后的工作人员（藏青制服，面朝办事的人）
+      extraFigure(0.2, 0, -1.6, 0, 0x1d4ed8, 0x1f2937);
+      extraFigure(-2.6, 0, -1.6, 0, 0x1d4ed8, 0x1f2937);
+      // 取号机（左）：立柱 + 亮着的屏幕
+      box(0.7, 1.5, 0.45, 0x2e3440, -3.4, 0.75, 0.85, 0.5);
+      box(0.55, 0.4, 0.05, 0x0ea5e9, -3.4, 1.25, 1.08, 0.3, { emissive: 0x0ea5e9, emissiveIntensity: 0.6 });
+      // 填表台（右）：站着填表的小桌 + 两张表
+      box(1.4, 0.08, 0.8, 0x8a6f4d, 2.6, 1.0, 0.6, 0.6);
+      box(0.08, 1.0, 0.08, 0x6b543a, 2.0, 0.5, 0.3, 0.7);
+      box(0.08, 1.0, 0.08, 0x6b543a, 3.2, 0.5, 0.9, 0.7);
+      box(0.5, 0.02, 0.36, 0xffffff, 2.5, 1.05, 0.5, 0.9);
+      const svcPaper = box(0.5, 0.02, 0.36, 0xf3ead8, 2.75, 1.05, 0.7, 0.9);
+      svcPaper.rotation.y = 0.35;
+      // 等候椅：一排四张，面朝柜台
+      for (const cx of [-2.4, -1.2, 0, 1.2]) {
+        box(0.55, 0.09, 0.5, 0x44586e, cx, 0.45, 1.6, 0.8);
+        box(0.55, 0.6, 0.08, 0x44586e, cx, 0.8, 1.88, 0.8);
+      }
+      // 角落一盆绿植
+      cyl(0.3, 0.24, 0.4, 0xb0653a, -5.2, 0.2, -2.7, 0.8);
+      for (let i = 0; i < 5; i++) {
+        const leaf = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.55, 6), mat(0x3f7d46, 0.9, { flatShading: true }));
+        leaf.position.set(-5.2 + Math.sin(i * 1.26) * 0.14, 0.65, -2.7 + Math.cos(i * 1.26) * 0.14);
+        leaf.rotation.z = Math.sin(i * 1.26) * 0.4;
+        scene.add(leaf);
       }
     } else if (setKind === "restaurant") {
       roomShell(0xf7e8d0, 0x8a4a3a, { windowX: 4.1, windowW: 1.8 });
