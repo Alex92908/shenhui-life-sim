@@ -114,6 +114,7 @@ export const VENUE_SET_COPY: Record<string, { set: string; zh: string; en: strin
   park: { set: "park", zh: "走进园子：树、长椅、风。", en: "Into the park: trees, a bench, the wind." },
   hike: { set: "hike", zh: "上山的路：石阶、树荫，走到能看见城的地方。", en: "The path up: stone steps and shade, until you can see the city." },
   // NEW — market subtypes (audit table 1)
+  electronics: { set: "electronics", zh: "一米柜台：手机、平板、配件，当场验机再付钱", en: "One-metre counters: phones, tablets and parts — check it before you pay" },
   oilpainting: { set: "oilpainting", zh: "满墙油画：画架、颜料、正在作画的画家，隔壁就是装裱店", en: "Walls of oil paintings: easels, paint, a painter at work, a framing shop next door" },
   secondhand: { set: "secondhand", zh: "二手市集：旧手机、旧家具、黑胶唱片，地摊一排排", en: "The second-hand market: used phones, old furniture, vinyl, stall after stall" },
   seafood: { set: "seafood", zh: "海鲜街：水箱里的活鱼活虾，现捞现称，隔壁大排档代加工", en: "The seafood street: live fish and prawns in tanks, weighed on the spot, cooked next door" },
