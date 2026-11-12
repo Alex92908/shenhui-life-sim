@@ -20,7 +20,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { createLandmarks, mergeStatic } from "./landmarks";
 import { AREA_LABELS } from "./areas";
 import { ACCESSORIES, HAIRS } from "./living";
-import { makeFigure, faceSpecFor, addAccessory } from "./figure";
+import { makeFigure, faceSpecFor, addAccessory, disposeGroup, type FaceSpec } from "./figure";
 import { activitiesAt } from "./activities";
 import { SKYLINE } from "./skyline";
 import * as TSZ from "./terrain-sz";
@@ -47,6 +47,14 @@ export interface RemotePlayer {
   hair?: number;
   /** accessory index into ACCESSORIES */
   accessory?: number;
+  /** character creator: the player's hand-picked face (null = seed face) */
+  faceSpec?: FaceSpec | null;
+}
+
+/** identity of the face an actor's 3D view should show: the custom spec
+    as JSON, or `seed:<faceSeed>` for a seed-derived face. */
+export function faceKeyFor(faceSpec: FaceSpec | null | undefined, faceSeed: string): string {
+  return faceSpec ? `c:${JSON.stringify(faceSpec)}` : `s:${faceSeed}`;
 }
 
 interface Props {
@@ -66,6 +74,8 @@ interface Props {
   /** the player's face seed (same value LifeStage gets as faceId) — so the
       player has the same face on the map and in interiors */
   selfFaceId?: string;
+  /** character creator: the player's hand-picked face (null = seed face) */
+  selfFaceSpec?: FaceSpec | null;
   selfColor: number;
   selfName: string;
   remotePlayers: RemotePlayer[];
@@ -199,6 +209,13 @@ interface Actor {
       uses for this person, so the face matches between map and interior:
       the player's faceId, an NPC's name, a remote player's id */
   faceSeed?: string;
+  /** character creator: a hand-picked face. When set it wins over the
+      seed face (same override LifeStage uses). */
+  faceSpec?: FaceSpec | null;
+  /** identity of the face currently built into this actor's 3D view —
+      custom spec JSON, or `seed:<faceSeed>`; when it changes, the view's
+      figure is rebuilt (a face is geometry, it can't be recoloured) */
+  faceKey?: string;
   heading: number;
   phase: number;
   blend: number;
@@ -887,7 +904,7 @@ export function MapView(p: Props) {
   // App rebuilds remotePlayers / npcMoodEmoji as fresh objects on EVERY
   // render, so depending on them by identity re-ran this sync constantly;
   // depend on their content instead.
-  const remoteKey = p.remotePlayers.map((rp) => `${rp.id}|${rp.name}|${rp.emoji}|${rp.color}|${rp.locId}|${rp.hair ?? ""}|${rp.accessory ?? ""}`).join(";");
+  const remoteKey = p.remotePlayers.map((rp) => `${rp.id}|${rp.name}|${rp.emoji}|${rp.color}|${rp.locId}|${rp.hair ?? ""}|${rp.accessory ?? ""}|${faceKeyFor(rp.faceSpec ?? null, rp.id)}`).join(";");
   const moodKey = p.npcMoodEmoji ? Object.entries(p.npcMoodEmoji).map(([k, v]) => `${k}=${v}`).join(";") : "";
   const cityRef = useRef(p.cityKey);
   useEffect(() => {
@@ -904,6 +921,8 @@ export function MapView(p: Props) {
       if (!cur) {
         actors.set(a.key, {
           ...a,
+          faceSpec: a.faceSpec ?? null,
+          faceKey: faceKeyFor(a.faceSpec ?? null, a.faceSeed ?? a.key),
           x: (loc?.x ?? 0) + ((a.seed % 5) - 2) * 0.35,
           z: (loc?.z ?? 0) + ((a.seed % 3) - 1) * 0.35,
           tx: loc?.x ?? 0,
@@ -919,6 +938,9 @@ export function MapView(p: Props) {
         cur.pants = a.pants;
         cur.accessory = a.accessory;
         cur.hair = a.hair;
+        cur.faceSeed = a.faceSeed;
+        cur.faceSpec = a.faceSpec ?? null;
+        cur.faceKey = faceKeyFor(a.faceSpec ?? null, a.faceSeed ?? a.key);
         cur.behavior = a.behavior;
         cur.speed = a.speed;
         if (!a.wander) {
@@ -941,9 +963,9 @@ export function MapView(p: Props) {
     // visibly slow, a taxi crosses the miniature ~3× faster, rail fastest.
     // App's trip timer derives from the same table, so arrival matches.
     const selfSpeed = modeById((p.travelModeId ?? "walk") as TransportModeId).mapSpeed;
-    upsert({ key: "self", name: p.selfName, emoji: p.selfEmoji, color: p.selfColor, isSelf: true, seed: 7, faceSeed: p.selfFaceId ?? `player-${p.selfEmoji}`, heading: 0, phase: 0, blend: 0, startLoc: p.selfLocId, shirt: selfOutfit.shirt, pants: selfOutfit.pants, accessory: p.selfAccessory && p.selfAccessory !== "none" ? p.selfAccessory : (selfOutfit.id === "formal" ? "tie" : "none"), hair: p.selfHair ?? 0, behavior: "self", speed: selfSpeed });
+    upsert({ key: "self", name: p.selfName, emoji: p.selfEmoji, color: p.selfColor, isSelf: true, seed: 7, faceSeed: p.selfFaceId ?? `player-${p.selfEmoji}`, faceSpec: p.selfFaceSpec ?? null, heading: 0, phase: 0, blend: 0, startLoc: p.selfLocId, shirt: selfOutfit.shirt, pants: selfOutfit.pants, accessory: p.selfAccessory && p.selfAccessory !== "none" ? p.selfAccessory : (selfOutfit.id === "formal" ? "tie" : "none"), hair: p.selfHair ?? 0, behavior: "self", speed: selfSpeed });
     for (const rp of p.remotePlayers) {
-      upsert({ key: `p-${rp.id}`, name: rp.name, emoji: rp.emoji, color: rp.color, seed: hash(rp.id), faceSeed: rp.id, heading: 0, phase: hash(rp.id) % 6, blend: 0, startLoc: rp.locId, shirt: rp.color, pants: 0x2e3440, accessory: ACCESSORIES[rp.accessory ?? 0]?.id ?? "none", hair: rp.hair ?? hash(rp.id) % 4, behavior: "wander", speed: 2.4 });
+      upsert({ key: `p-${rp.id}`, name: rp.name, emoji: rp.emoji, color: rp.color, seed: hash(rp.id), faceSeed: rp.id, faceSpec: rp.faceSpec ?? null, heading: 0, phase: hash(rp.id) % 6, blend: 0, startLoc: rp.locId, shirt: rp.color, pants: 0x2e3440, accessory: ACCESSORIES[rp.accessory ?? 0]?.id ?? "none", hair: rp.hair ?? hash(rp.id) % 4, behavior: "wander", speed: 2.4 });
     }
     /* NPCs keep a quiet city company: each real player in town sends one neighbour home
        (at least two stay), so the map belongs to real people as soon as they show up.
@@ -985,7 +1007,7 @@ export function MapView(p: Props) {
     for (const key of Array.from(actors.keys())) {
       if (!want.has(key)) actors.delete(key);
     }
-  }, [p.cityKey, p.selfLocId, p.selfEmoji, p.selfColor, p.selfName, remoteKey, p.selfOutfitId, p.selfHair, p.selfAccessory, moodKey, p.travelModeId]);
+  }, [p.cityKey, p.selfLocId, p.selfEmoji, p.selfColor, p.selfName, remoteKey, p.selfOutfitId, p.selfHair, p.selfAccessory, moodKey, p.travelModeId, faceKeyFor(p.selfFaceSpec ?? null, p.selfFaceId ?? `player-${p.selfEmoji}`)]);
 
   // Build/rebuild the whole 3D scene when the city changes.
   useEffect(() => {
@@ -2626,24 +2648,36 @@ export function MapView(p: Props) {
     const actorViews = new Map<string, THREE.Group>();
     const actorChips = new Map<string, Chip>();
     interface ActorLimbs { armL: THREE.Group; armR: THREE.Group; legL: THREE.Group; legR: THREE.Group }
+    /* Build one actor's body: the shared figure (./figure.ts) plus its
+       identity accessories. Split out of ensureActorView so a FACE change
+       can rebuild just the body — a face is geometry (eyes / mouth), it
+       can't be recoloured like a shirt. The hit cylinder, self ring and
+       vehicle live on the view group, not the body, so they survive a
+       rebuild untouched. */
+    const buildBody = (a: Actor) => {
+      const mat = (c: number, r = 0.85) => new THREE.MeshStandardMaterial({ color: c, roughness: r });
+      const faceSeed = a.faceSeed ?? a.key;
+      const spec = a.faceSpec ?? faceSpecFor(faceSeed);
+      // skin rule mirrors LifeStage: the player uses the fixed light skin,
+      // everyone else uses their face seed's skin tone — unless the creator
+      // picked a face, whose own skin tone wins (head and body must match)
+      const skin = a.faceSpec ? a.faceSpec.skin : (a.isSelf ? 0xf2c79b : spec.skin);
+      const fig = makeFigure(mat, a.shirt, a.pants, skin, faceSeed, a.faceSpec ?? undefined);
+      const body = fig.g;
+      // identity accessories, toggled by role/outfit: cap (保安), helmet (骑手),
+      // tie (正装/通勤), apron (摊主), reflective vest (保洁), bag (学生/白领).
+      // Geometry comes from the shared ./figure.ts addAccessory — the same
+      // definition LifeStage uses, so an accessory looks identical in both.
+      const accGroup = new THREE.Group();
+      const mkAcc = (name: string) => { const g = new THREE.Group(); g.name = `acc-${name}`; addAccessory(g, name); g.visible = false; accGroup.add(g); };
+      for (const accName of ["cap", "helmet", "tie", "apron", "vest", "bag"]) mkAcc(accName);
+      body.add(accGroup);
+      return { body, fig, accGroup };
+    };
     const ensureActorView = (a: Actor) => {
       let v = actorViews.get(a.key);
       if (!v) {
         v = new THREE.Group();
-        // One shared figure builder (./figure.ts): the map character is
-        // now the SAME detailed figure as in interiors (shoes, belt,
-        // hands, neck, ears, fringe, distinct face from the same seed),
-        // not a plain inline copy. The figure's own group IS the body
-        // subgroup, so riding a vehicle can lift it onto the seat.
-        const mat = (c: number, r = 0.85) => new THREE.MeshStandardMaterial({ color: c, roughness: r });
-        const faceSeed = a.faceSeed ?? a.key;
-        // skin rule mirrors LifeStage: the player uses the fixed light
-        // skin, everyone else uses their face seed's skin tone.
-        const skin = a.isSelf ? 0xf2c79b : faceSpecFor(faceSeed).skin;
-        const fig = makeFigure(mat, a.shirt, a.pants, skin, faceSeed);
-        const body = fig.g;
-        v.add(body);
-        (v.userData as { body?: THREE.Group }).body = body;
         // round-9: generous invisible hit target so a moving person is
         // tappable — the thin character mesh is nearly impossible to hit on
         // touch, and a tap that misses it falls through to the building
@@ -2657,17 +2691,6 @@ export function MapView(p: Props) {
           v.add(hit);
           (v.userData as { hit?: THREE.Mesh }).hit = hit;
         }
-        (v.userData as { limbs?: ActorLimbs }).limbs = { armL: fig.armL, armR: fig.armR, legL: fig.legL, legR: fig.legR };
-        (v.userData as { mats?: { shirt: THREE.MeshStandardMaterial; dark: THREE.MeshStandardMaterial; pants: THREE.MeshStandardMaterial; hair: THREE.MeshStandardMaterial; hairMesh: THREE.Mesh } }).mats = fig.mats;
-        // identity accessories, toggled by role/outfit: cap (保安), helmet (骑手),
-        // tie (正装/通勤), apron (摊主), reflective vest (保洁), bag (学生/白领).
-        // Geometry comes from the shared ./figure.ts addAccessory — the same
-        // definition LifeStage uses, so an accessory looks identical in both.
-        const accGroup = new THREE.Group();
-        const mkAcc = (name: string) => { const g = new THREE.Group(); g.name = `acc-${name}`; addAccessory(g, name); g.visible = false; accGroup.add(g); };
-        for (const accName of ["cap", "helmet", "tie", "apron", "vest", "bag"]) mkAcc(accName);
-        body.add(accGroup);
-        (v.userData as { acc?: THREE.Group }).acc = accGroup;
         // No floating avatar badge above the head (round-9 removed it):
         // the standard way is the 3D figure itself (it already has a face)
         // plus the small DOM name chip. A big circular portrait dwarfs the
@@ -2859,6 +2882,23 @@ export function MapView(p: Props) {
         }
         actorChips.set(a.key, { el: chipEl, kind: "actor", self: !!a.isSelf, npc: a.key.startsWith("npc-"), w: 0, h: 0, lastText: "", visible: true, clampDx: 0, clampDy: 0, getPos: () => ({ x: a.x, y: LAND + 3.6, z: a.z }) });
         chips.push(actorChips.get(a.key)!);
+      }
+      /* Face change? The body is rebuilt (and the old one disposed) — the
+         figure's own group IS the body subgroup, so riding a vehicle can
+         lift it onto the seat, and the frame loop reads body / limbs /
+         mats / acc fresh from userData every frame. Runs on first build
+         too (faceKey starts unset), so creation and rebuild share one path. */
+      const fk = a.faceKey ?? faceKeyFor(a.faceSpec ?? null, a.faceSeed ?? a.key);
+      if ((v.userData as { faceKey?: string }).faceKey !== fk) {
+        const oldBody = (v.userData as { body?: THREE.Group }).body;
+        if (oldBody) { v.remove(oldBody); disposeGroup(oldBody); }
+        const built = buildBody(a);
+        v.add(built.body);
+        (v.userData as { body?: THREE.Group }).body = built.body;
+        (v.userData as { limbs?: ActorLimbs }).limbs = { armL: built.fig.armL, armR: built.fig.armR, legL: built.fig.legL, legR: built.fig.legR };
+        (v.userData as { mats?: { shirt: THREE.MeshStandardMaterial; dark: THREE.MeshStandardMaterial; pants: THREE.MeshStandardMaterial; hair: THREE.MeshStandardMaterial; hairMesh: THREE.Mesh } }).mats = built.fig.mats;
+        (v.userData as { acc?: THREE.Group }).acc = built.accGroup;
+        (v.userData as { faceKey?: string }).faceKey = fk;
       }
       return v;
     };
@@ -3658,7 +3698,10 @@ export function MapView(p: Props) {
           mats.dark.color.copy(shirtTmp.setHex(a.shirt).multiplyScalar(0.78));
           mats.pants.color.setHex(a.pants);
           const look = HAIRS[(a.hair ?? 0) % HAIRS.length] ?? HAIRS[0]!;
-          if (mats.hair) mats.hair.color.setHex(look.color);
+          /* character creator: a hand-picked hair colour wins over the
+             hairstyle's own colour (the style still sets the silhouette
+             scale); without a custom face the style colour stands, as before */
+          if (mats.hair) mats.hair.color.setHex(a.faceSpec?.hair ?? look.color);
           if (mats.hairMesh) mats.hairMesh.scale.set(look.sx, look.sy, 1);
         }
         // your own car wears your identity colour

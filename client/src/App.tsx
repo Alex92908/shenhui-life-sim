@@ -4,6 +4,8 @@ import { SafeAreaTopScrim } from "@hatch/space-sdk/client";
 import { loadMeta, saveMeta, touchStreak, streakReward, bump, rollWeek, checkAchievements, dailyEvent, dateKey, ACHIEVEMENTS, WEEKLY_GOALS, type Meta, type CityEvent } from "./meta";
 import { api, type ApiResponse } from "./api";
 import { AREA_LABELS } from "./areas";
+import { CharacterCreatorModal, CreatorBody, type CreatorDraft } from "./CharacterCreator";
+import { faceSpecFor, sanitizeFaceSpec, parseFaceSpec, sameFaceSpec, randomFaceSpec, type FaceSpec } from "./figure";
 import { AccountModal, accountToken } from "./Account";
 import { StoreModal, LOOK_COLOR, LOOK_TITLE } from "./Store";
 import { UpdatesModal, BondsModal, CommitteeModal, GigsModal, BillboardModal, BOND_INFO, PLEDGE_INFO, policyMul, LATEST_UPDATE, type BondKind } from "./Social";
@@ -330,6 +332,10 @@ bladder: number;
 hair: number;
 /** index into ACCESSORIES. Bag, cap and tie stay visible from behind. */
 accessory: number;
+/** character creator: the player's hand-picked face. Null / missing =
+    the seed-derived face (old saves). Rides the local + cloud save, and
+    the heartbeat (players.face) so other players see it too. */
+face?: FaceSpec | null;
 spouse?: string;
 kids: { name: string; day: number }[];
 plots: { city: CityKey; paid: number; day: number }[];
@@ -1301,6 +1307,13 @@ const [storyOpen, setStoryOpen] = useState<string | null>(null);
 const [setupName, setSetupName] = useState("");
 const [setupCity, setSetupCity] = useState<CityKey>("sz");
 const [setupIden, setSetupIden] = useState(IDENTITIES[0]!.id);
+/* 捏脸 (character creator): the start screen IS the creator. A random face,
+   generated once, is the opening draft — whatever the preview shows when
+   the player hits "开始过日子" is the face they enter the city with. */
+const [setupSeedFace] = useState(() => randomFaceSpec());
+const [setupLook, setSetupLook] = useState<CreatorDraft>(() => ({ face: setupSeedFace, hair: 0, accessory: 0, outfit: "casual" }));
+/* in-game creator modal (HUD 🎨 button / 过日子 "换个形象") */
+const [creatorOpen, setCreatorOpen] = useState(false);
 /* 抽签投胎: the drawn origin, the slot-machine flicker while drawing, rerolls left */
 const [drawn, setDrawn] = useState<Origin | null>(null);
 const [shuffle, setShuffle] = useState<Origin | null>(null);
@@ -2028,6 +2041,9 @@ stamps: Math.min(999, metaRef.current.stamps.length),
 title: metaRef.current.title,
 hair: Math.max(0, Math.min(3, Math.round(s.hair ?? 0))),
 accessory: Math.max(0, Math.min(3, Math.round(s.accessory ?? 0))),
+/* 捏脸：自定义脸随心跳同步到 players.face（null = 清掉，回到系统脸），
+   全城的人在世界快照里看到它。 */
+face: s.face ? JSON.stringify(s.face) : null,
 /* round-9: my shop / flat ride the heartbeat so the server lists them for
    every player in the city (shops table / homes row). */
 shop: shopSyncPayload(s.shop, prof.name, "home", s.cityKey),
@@ -2162,6 +2178,9 @@ fun: clamp100(num(g.fun, 72)),
 bladder: clamp100(num(g.bladder, 84)),
 hair: Math.max(0, Math.min(HAIRS.length - 1, Math.round(num(g.hair, 0)))),
 accessory: Math.max(0, Math.min(ACCESSORIES.length - 1, Math.round(num(g.accessory, 0)))),
+/* character creator: a stored face is validated + clamped; anything
+   malformed falls back to the seed face (null). */
+face: sanitizeFaceSpec(g.face),
 sanheDay: Math.max(0, Math.round(num(g.sanheDay, 0))),
 /* round-2 (f): lifestyle state, sanitized (old saves get the default). */
 life: sanitizeLifestyleState(g.life),
@@ -3843,14 +3862,14 @@ addLog(`${text}`);
     const state: GameState = {
       cityKey: city, idenId: iden.id, day: 1,
       money: iden.money, energy: 88 + iden.energyBonus, mood: iden.mood,
-      hunger: 82, clean: 86, social: 64, fun: 72, bladder: 88, hair: 0, accessory: 0, sanheDay: 0, life: defaultLifestyleState(), delivery: emptyDeliveryState(), kids: [], plots: [],
+      hunger: 82, clean: 86, social: 64, fun: 72, bladder: 88, hair: setupLook.hair, accessory: setupLook.accessory, face: setupLook.face, sanheDay: 0, life: defaultLifestyleState(), delivery: emptyDeliveryState(), kids: [], plots: [],
       rent, baseRent: rent,
       goal: iden.id === "rich" ? 30000 : iden.id === "flat" ? 5000 : cityInfo.goal,
       earned: 0, rentPaid: 0, workCount: 0, otCount: 0, mealCount: 0,
       maxMoney: iden.money, homeStyle: null, furniture: [], homeSpent: 0,
       xp: 0, skill: 0, careerIdx: 0, network: 0, fit: 0, invest: 0, apecCount: 0,
       apecTasks: [], apecCheckins: [],
-      seenEvents: [], greeted: [], visitedScenic: [], album: [], tourIdx: 0, tourDone: false, metroRides: 0, outfit: "casual", ownedOutfits: ["casual", "pajamas"], groceries: 1,
+      seenEvents: [], greeted: [], visitedScenic: [], album: [], tourIdx: 0, tourDone: false, metroRides: 0, outfit: setupLook.outfit, ownedOutfits: ["casual", "pajamas"], groceries: 1,
       npcMem: day1Wall.mems, npcFeed: day1Wall.posts, npcNews: [],
       log: [{ day: 1, text: `来到${cityInfo.name}，住进${cityInfo.scene}。目标：30 天攒到 ${fmt(iden.id === "rich" ? 30000 : iden.id === "flat" ? 5000 : cityInfo.goal, city)}。` }],
       finished: false,
@@ -4669,9 +4688,12 @@ playLifeAnim("shopping");
 
 /* ---------- derived render data ---------- */
 const myId = myPub;
+/* 捏脸：自己的脸种子（和 LifeStage 的 faceId 是同一个值）和系统脸 */
+const selfFaceId = profile?.playerId ?? `player-${iden.emoji}`;
+const selfSeedFace = faceSpecFor(selfFaceId);
 const remotePlayers = (world?.online ?? [])
 .filter((pl) => pl.cityKey === cityKey && pl.id !== myId)
-.map((pl) => ({ id: pl.id, name: pl.name, emoji: pl.emoji, color: pl.color, locId: pl.locId, hair: hairFromLook(pl.look) ?? undefined, accessory: accessoryFromLook(pl.look) ?? undefined }));
+.map((pl) => ({ id: pl.id, name: pl.name, emoji: pl.emoji, color: pl.color, locId: pl.locId, hair: hairFromLook(pl.look) ?? undefined, accessory: accessoryFromLook(pl.look) ?? undefined, faceSpec: parseFaceSpec(pl.face) }));
 const onlineHere = (world?.online ?? []).filter((pl) => pl.cityKey === cityKey);
 const timeStr = (iso: string) => new Date(iso).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
 
@@ -5695,7 +5717,7 @@ return (
     <div className="mt-3 grid gap-2">
       {drawn && !shuffle ? (
         <>
-          <button type="button" onClick={() => { const nm = setupName.trim() || randomNick(setupCity); setSetupName(nm); setAgreedStored(true); startGame(nm, setupCity, drawn.iden, drawn.id); }} className="w-full rounded-full bg-[var(--accent)] py-4 text-base font-black text-white shadow-[5px_5px_0_var(--border)]">{en ? "This is me — move in →" : "就这个命，进城 →"}</button>
+          <button type="button" onClick={() => { const nm = setupName.trim() || randomNick(setupCity); setSetupName(nm); setAgreedStored(true); startGame(nm, setupCity, drawn.iden, drawn.id); }} className="w-full rounded-full bg-[var(--accent)] py-4 text-base font-black text-white shadow-[5px_5px_0_var(--border)]">{en ? "Start living →" : "开始过日子 →"}</button>
           <button type="button" disabled={rerolls <= 0} onClick={drawFate} className="w-full rounded-full border-2 border-[var(--border)] py-2.5 text-sm font-black disabled:opacity-40">{rerolls > 0 ? (en ? `🎲 Not having it — draw again (${rerolls} left)` : `🎲 不服，再抽一次（还剩 ${rerolls} 次）`) : (en ? "No more redraws — fate has spoken" : "抽完了，认命吧")}</button>
         </>
       ) : (
@@ -5707,6 +5729,16 @@ return (
   </section>
   );
 })()}
+{/* 捏脸：开始页本身就是形象设计——名字、脸、发型、衣服、实时 3D 预览都在
+    这一屏，点"开始过日子"直接进城，不用再找入口。草稿就是 setupLook，
+    进城按钮把它原样带进新存档；不动它就按预览里这张随机脸进城。 */}
+<section className="mt-4 rounded-[20px] border-2 border-[var(--border)] bg-[var(--surface)] p-4 shadow-[5px_5px_0_var(--border)]" aria-label={en ? "Create your look" : "捏个形象"}>
+<p className="font-display text-2xl font-black leading-snug">🎨 {en ? "This is you — make the face yours" : "捏个形象：这就是你"}</p>
+<p className="mt-1 text-sm text-[var(--dim)]">{en ? "Your face, hair and outfit — free, and everyone in the city sees it. Skip it and you keep the face in the preview." : "脸、发型、衣服都自己定，免费，全城的人都看得到。不想捏就直接进城，预览里这张脸就是你的。"}</p>
+<div className="mt-3">
+<CreatorBody draft={setupLook} onChange={setSetupLook} seedFace={setupSeedFace} outfits={["casual", "pajamas"]} />
+</div>
+</section>
 <p className="mt-3 text-sm leading-relaxed text-[var(--dim)]">
 30 天生活模拟：选一座城、一个身份，在 3D 地图上打工、升职、吃饭、装修、攒钱。这次是<b className="text-[var(--text)]">真的联机</b>——其他打开游戏的人会以真身出现在你的地图上，你们共享一个城市频道、一份动态墙和一张排行榜。三座城随时互通：坐高铁去惠州，过关去香港（罗湖、福田、深圳湾，或高铁直达西九龙站）。11 月 14–19 日是深圳湾区峰会周，三个真实会场等你打工。
 </p>
@@ -5998,6 +6030,8 @@ return (
 <span className="grid h-9 w-9 place-items-center rounded-full text-xl" style={{ background: hexCss(iden.color) + "33", boxShadow: `inset 0 0 0 2px ${hexCss(iden.color)}` }}>{iden.emoji}</span>
 <span className="flex flex-col items-start leading-tight"><span className="font-display text-[15px] font-black">{en ? `Day ${Math.min(s.day, seasonLen)}` : `第 ${Math.min(s.day, seasonLen)} 天`}</span><span className="text-[11px] font-bold text-[var(--dim)]">{clockStr(nowMin())} · {weekday(s.day)}</span></span>
 </button>
+{/* 捏脸：1 点直达 —— 顶栏头像旁边就是 🎨，点一下直接开捏脸，不用进菜单 / 过日子 */}
+<button type="button" onClick={() => setCreatorOpen(true)} aria-label={en ? "Change your look" : "换个形象"} title={en ? "Change your look" : "换个形象"} className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-[var(--line)] text-lg transition hover:border-[var(--border)] hover:bg-[var(--surface2)]">🎨</button>
 {/* resources: money toward the goal, energy, mood */}
 <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
 <span className="res-pill" title={en ? `Savings goal ${fmt(s.goal)} · ${goalPct}%` : `存钱目标 ${fmt(s.goal)} · ${goalPct}%`}><span aria-hidden="true">💰</span><span className="flex flex-col leading-none"><span className={`text-[13px] font-black ${s.money < 0 ? "text-[var(--accent)]" : ""}`}>{fmt(s.money)}</span><span className="mt-0.5 block h-1 w-full min-w-[40px] overflow-hidden rounded-full bg-[var(--surface2)]"><span className="block h-full rounded-full bg-[var(--accent)]" style={{ width: `${goalPct}%` }} /></span></span></span>
@@ -6290,7 +6324,7 @@ return (
 })()}
 </div>
 <MapView extraControls={<><button type="button" onClick={toggleSound} aria-pressed={soundIsOn} aria-label={soundIsOn ? (en ? "Mute" : "静音") : (en ? "Sound on" : "打开声音")} data-tip={soundIsOn ? (en ? "Sound on · tap to mute" : "声音开着 · 点一下静音") : (en ? "Muted · tap for music" : "已静音 · 点一下开声音")} className={`tipbtn grid h-9 w-9 place-items-center rounded-full border text-base shadow ${soundIsOn ? "border-black/40 bg-[#fffdf8]/95" : "border-[var(--accent)] bg-[#14202b]/95"}`}>{soundIsOn ? "🔊" : "🔇"}</button><span className="relative"><button type="button" onClick={() => setMusicOpen((o) => !o)} aria-expanded={musicOpen} aria-label={en ? "Change music" : "换背景音乐"} data-tip={en ? "Change music" : "换背景音乐"} className="tipbtn grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow">🎵</button>
-</span></>} lite={lite} pinLocId={pinLoc} onPinClear={() => setPinLoc(null)} scenic={scenicMoment ? (() => { const m = scenicMoment.m; const l = locById(currentLoc); /* look out past the spot (over the water for sea views), from a little above the rooftops */ const az = m.faceSea && !m.path ? seawardAz(s.cityKey, l.x, l.z, m.az) : m.az; const ox = -Math.sin(az) * m.dist * 0.75, oz = -Math.cos(az) * m.dist * 0.75; return { x: (m.path ? m.path[0]![0] : l.x) + ox, z: (m.path ? m.path[0]![1] : l.z) + oz, phase: m.phase, az, pol: m.path ? Math.min(m.pol, 1.08) : 0.9, dist: m.path ? m.dist : m.dist * 2.1, path: m.path, durMs: m.durMs, nonce: scenicMoment.nonce }; })() : null} mapMode={mapMode} onMapMode={setMapMode} fill paused={!!lifeAnim} train={carriage ? { pts: carriage.route.stations.map((st) => [st.x, st.z] as [number, number]), idx: carriage.stopIdx, stepMs: hopMs(carriage.route, carriage.stopIdx), color: (carriage.route.legs[carriage.legIdx]?.line ?? carriage.route.line).color, rail: carriage.route.legs.some((l) => ["szhz-rail", "guangshen", "hz-intercity", "ganshen-rail", "guangshan-rail", "hsr-hk"].includes(l.line.id)), hold: rideEntry !== null || carriage.awaitingTransfer || carriage.stopIdx >= carriage.route.stations.length - 1 } : null} cityKey={s.cityKey} communityMarkers={communityMarkers} playerBuildings={[...worldShops.map((sh) => ({ id: `shop:${sh.ownerPub}`, kind: "shop" as const, locId: sh.locId, name: sh.name, color: 0xf97316, emoji: SHOP_KIND_EMOJI[sh.kind] ?? "🏪" })), ...worldFlats.map((fl) => ({ id: `flat:${fl.ownerPub}`, kind: "flat" as const, locId: fl.locId, name: fl.name, color: 0x8b5cf6, emoji: "🏠" }))]} activePet={getActivePet(pets)} onCommunityMarkerClick={(m) => { if (m.kind === "shop" || m.kind === "flat") { const locId = m.pin.locId; if (locId) { setSelectedLoc(locId); setAsideTab("place"); setMapFocus({ locId, nonce: Date.now() }); setPinLoc(locId); } showToast(`${m.emoji} ${m.label}`); return; } setPhoneApp("social"); setPhoneOpen(true); showToast(`${m.emoji} ${m.label}`); }} selfLocId={walking || carriage ? (tripTo ?? selectedLoc) : currentLoc} selfEmoji={iden.emoji} selfFaceId={profile?.playerId ?? `player-${iden.emoji}`} selfColor={iden.color} selfName={profile?.name ?? "我"} remotePlayers={remotePlayers} billboards={boards} selfOutfitId={s.outfit} selfHair={s.hair} selfAccessory={ACCESSORIES[s.accessory ?? 0]?.id ?? "none"} travelModeId={tripMode ?? travelMode} selfEtaAt={tripEta ?? undefined} arrival={arrival} weatherKind={rwOk ? realWeather!.kind : "unknown"} npcMoodEmoji={Object.fromEntries(npcsForCity(s.cityKey).map((n) => [n.name, moodEmoji(memOf(s.npcMem ?? {}, n.name).mood)]))} apecDay={isApecWeek(s.day)} focusLocId={mapFocus?.locId} focusX={mapFocus?.x} focusZ={mapFocus?.z} focusNonce={mapFocus?.nonce} destLocId={selectedLoc} onSelect={walkTo} onPickActor={pickActor} navOverlay={(
+</span></>} lite={lite} pinLocId={pinLoc} onPinClear={() => setPinLoc(null)} scenic={scenicMoment ? (() => { const m = scenicMoment.m; const l = locById(currentLoc); /* look out past the spot (over the water for sea views), from a little above the rooftops */ const az = m.faceSea && !m.path ? seawardAz(s.cityKey, l.x, l.z, m.az) : m.az; const ox = -Math.sin(az) * m.dist * 0.75, oz = -Math.cos(az) * m.dist * 0.75; return { x: (m.path ? m.path[0]![0] : l.x) + ox, z: (m.path ? m.path[0]![1] : l.z) + oz, phase: m.phase, az, pol: m.path ? Math.min(m.pol, 1.08) : 0.9, dist: m.path ? m.dist : m.dist * 2.1, path: m.path, durMs: m.durMs, nonce: scenicMoment.nonce }; })() : null} mapMode={mapMode} onMapMode={setMapMode} fill paused={!!lifeAnim} train={carriage ? { pts: carriage.route.stations.map((st) => [st.x, st.z] as [number, number]), idx: carriage.stopIdx, stepMs: hopMs(carriage.route, carriage.stopIdx), color: (carriage.route.legs[carriage.legIdx]?.line ?? carriage.route.line).color, rail: carriage.route.legs.some((l) => ["szhz-rail", "guangshen", "hz-intercity", "ganshen-rail", "guangshan-rail", "hsr-hk"].includes(l.line.id)), hold: rideEntry !== null || carriage.awaitingTransfer || carriage.stopIdx >= carriage.route.stations.length - 1 } : null} cityKey={s.cityKey} communityMarkers={communityMarkers} playerBuildings={[...worldShops.map((sh) => ({ id: `shop:${sh.ownerPub}`, kind: "shop" as const, locId: sh.locId, name: sh.name, color: 0xf97316, emoji: SHOP_KIND_EMOJI[sh.kind] ?? "🏪" })), ...worldFlats.map((fl) => ({ id: `flat:${fl.ownerPub}`, kind: "flat" as const, locId: fl.locId, name: fl.name, color: 0x8b5cf6, emoji: "🏠" }))]} activePet={getActivePet(pets)} onCommunityMarkerClick={(m) => { if (m.kind === "shop" || m.kind === "flat") { const locId = m.pin.locId; if (locId) { setSelectedLoc(locId); setAsideTab("place"); setMapFocus({ locId, nonce: Date.now() }); setPinLoc(locId); } showToast(`${m.emoji} ${m.label}`); return; } setPhoneApp("social"); setPhoneOpen(true); showToast(`${m.emoji} ${m.label}`); }} selfLocId={walking || carriage ? (tripTo ?? selectedLoc) : currentLoc} selfEmoji={iden.emoji} selfFaceId={selfFaceId} selfFaceSpec={s.face ?? undefined} selfColor={iden.color} selfName={profile?.name ?? "我"} remotePlayers={remotePlayers} billboards={boards} selfOutfitId={s.outfit} selfHair={s.hair} selfAccessory={ACCESSORIES[s.accessory ?? 0]?.id ?? "none"} travelModeId={tripMode ?? travelMode} selfEtaAt={tripEta ?? undefined} arrival={arrival} weatherKind={rwOk ? realWeather!.kind : "unknown"} npcMoodEmoji={Object.fromEntries(npcsForCity(s.cityKey).map((n) => [n.name, moodEmoji(memOf(s.npcMem ?? {}, n.name).mood)]))} apecDay={isApecWeek(s.day)} focusLocId={mapFocus?.locId} focusX={mapFocus?.x} focusZ={mapFocus?.z} focusNonce={mapFocus?.nonce} destLocId={selectedLoc} onSelect={walkTo} onPickActor={pickActor} navOverlay={(
 <>
 {/* 弹幕层：联机动态 / 聊天 / 街坊发言飘过地图上半区 */}
 {danmakuOn && !scenicMoment && (
@@ -7149,7 +7183,7 @@ return (
 </div>
 <div className="mx-4 mt-3 overflow-hidden rounded-[16px] border-2 border-[var(--line)]">
 <div className="relative h-52">
-<LifeStage3D key={`road-${rr.mode}-${roadRideStep >= 4 ? "out" : roadRideStep === 0 ? "wait" : roadRideStep === 1 ? "in" : "ride"}`} setKind={roadRideStep === 0 ? "station" : rr.mode} pose={step.pose} shirt={outfitR.shirt} pants={outfitR.pants} night={nowMin() >= 19 * 60 || nowMin() < 6 * 60} emoji={iden.emoji} cur={Y} />
+<LifeStage3D key={`road-${rr.mode}-${roadRideStep >= 4 ? "out" : roadRideStep === 0 ? "wait" : roadRideStep === 1 ? "in" : "ride"}`} setKind={roadRideStep === 0 ? "station" : rr.mode} pose={step.pose} shirt={outfitR.shirt} pants={outfitR.pants} night={nowMin() >= 19 * 60 || nowMin() < 6 * 60} emoji={iden.emoji} faceSpec={s.face ?? undefined} cur={Y} />
 <div className="cine-grade" />
 </div>
 <p className="bg-[var(--surface2)] px-3 py-2 text-xs leading-relaxed"><b>{step.caption}</b> · {step.sub}</p>
@@ -7256,7 +7290,7 @@ return (
 {/* the ride, acted out: concourse → security → platform → carriage */}
 <div className="mx-4 mt-3 overflow-hidden rounded-[16px] border-2 border-[var(--line)]">
 <div className="relative h-52">
-<LifeStage3D key={`ride-${stageKey}`} setKind={stageSet} pose={stagePose} shirt={outfitC.shirt} pants={outfitC.pants} night={false} emoji={iden.emoji} />
+<LifeStage3D key={`ride-${stageKey}`} setKind={stageSet} pose={stagePose} shirt={outfitC.shirt} pants={outfitC.pants} night={false} emoji={iden.emoji} faceSpec={s.face ?? undefined} />
 <div className="cine-grade" />
 </div>
 {rideEntry !== null ? (
@@ -7314,10 +7348,10 @@ onLocate={(x, z, name) => { setMetroMapOpen(false); setMapFocus({ x, z, nonce: D
 <div key={`stage-${lifeAnim.kind}-${lifeAnim.idx}`} className={`life-stage life-fade mx-4 mt-3 h-60 sm:h-72 ${stepNight ? "night" : scene.tone === "indoor" ? "indoor" : ""}`}>
 {CUTSCENE_ROAM[lifeAnim.kind] ? (
   <LifeStage3D key={`roam-${lifeAnim.kind}-${lifeAnim.idx}`} setKind={CUTSCENE_ROAM[lifeAnim.kind]!} pose="idle" roam
-    shirt={outfit.shirt} pants={outfit.pants} night={stepNight} emoji={iden.emoji} en={en}
+    shirt={outfit.shirt} pants={outfit.pants} night={stepNight} emoji={iden.emoji} faceSpec={s.face ?? undefined} en={en}
     onSpot={() => { if (lifeAnim.idx + 1 >= scene.steps.length) finishLifeAnim(); else setLifeAnim({ kind: lifeAnim.kind, idx: lifeAnim.idx + 1 }); }} />
 ) : (
-  <LifeStage3D key={`${lifeAnim.kind}-${lifeAnim.idx}`} setKind={sp.set} pose={sp.pose} shirt={outfit.shirt} pants={outfit.pants} night={stepNight} emoji={iden.emoji} />
+  <LifeStage3D key={`${lifeAnim.kind}-${lifeAnim.idx}`} setKind={sp.set} pose={sp.pose} shirt={outfit.shirt} pants={outfit.pants} night={stepNight} emoji={iden.emoji} faceSpec={s.face ?? undefined} />
 )}
 <div aria-hidden="true" className="cine-grade" />
 {rainyDay && lifeAnim.kind === "day" && <div className="life-rain" aria-hidden="true" />}
@@ -7663,7 +7697,7 @@ return (
 <p className="flex items-center justify-between"><span className="font-display text-xl font-black">🏗️ 自己盖房子</span><button type="button" onClick={() => { saveHouseLayout(houseLayout); setBuildOpen(false); }} className="rounded-full border px-3 py-1 text-xs font-black">✕</button></p>
 <p className="mt-1 text-xs text-[var(--dim)]">在 12×8 的地块上盖自己的房子：加房间、摆家具，发布后就能在地图上看到、走进去。今天能发布的家具只有 3 种（双人床、布沙发、橱柜），其余先摆着看。</p>
 <div className="relative mt-3 h-[260px] overflow-hidden rounded-[16px] border border-[var(--line)]">
-<LifeStage3D key={`build-${houseLayout.rooms.length}-${houseLayout.items.length}`} setKind="bedroom" pose="idle" houseLayout={houseLayout} shirt={outfitOf(s.outfit).shirt} pants={outfitOf(s.outfit).pants} night={false} emoji={iden.emoji} en={en} />
+<LifeStage3D key={`build-${houseLayout.rooms.length}-${houseLayout.items.length}`} setKind="bedroom" pose="idle" houseLayout={houseLayout} shirt={outfitOf(s.outfit).shirt} pants={outfitOf(s.outfit).pants} night={false} emoji={iden.emoji} faceSpec={s.face ?? undefined} en={en} />
 </div>
 <p className="mt-3 text-xs font-black">加房间</p>
 <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -7781,7 +7815,7 @@ return (
 <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/70 p-3 sm:items-center" role="dialog" aria-label={venue3d.name}>
 <div className="rise max-h-[94vh] w-full max-w-lg overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)]">
 <div className="relative h-[52vh] min-h-[300px]">
-<LifeStage3D key={`venue-${venue3d.id ?? venue3d.set}-${venueTalk?.id ?? ""}-${s.accessory}-${venueBuilding ?? ""}-${venueFloor}`} sign={{ text: venueFloored ? (venueFloorDef?.sign ?? venue3d.name) : venue3d.name, emoji: venue3d.emoji, color: venueFloored ? (venueFloorDef?.signColor ?? venue3d.color) : venue3d.color }} seed={[...(venue3d.id ?? venue3d.name)].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 100003, 7)} wall={venue3d.color !== undefined ? mixHex(venue3d.color, 0xf6efe2, 0.82) : undefined} setKind={venue3d.set} floor={venueFloor} building={venueBuilding ?? undefined} pose={venueTalk?.pose ?? "idle"} faceId={profile?.playerId ?? `player-${iden.emoji}`} partnerFaceId={venueFloored && !venueTalk && venueFloorDef?.npc ? venueFloorDef.npc.faceId : (regularHere(venue3d.set)?.name ?? venueTalk?.who)} talkText={venueTalk ? (en ? venueTalk.sayEn : venueTalk.say) : undefined} talkVoiceId={regularHere(venue3d.set)?.name ?? venueTalk?.who} partner={(() => { const host = regularHere(venue3d.set); const meeting = !!(venueTalk && host && MEET_IDS.has(venueTalk.id)); if (meeting && host) return { shirt: host.shirt, pants: host.pants, accessory: host.accessory }; if (venueTalk?.partner) return { shirt: venueTalk.partner[0], pants: venueTalk.partner[1] }; if (!venueTalk && venueFloorDef?.npc) return { shirt: venueFloorDef.npc.shirt, pants: venueFloorDef.npc.pants }; if (host && !venueTalk) return { shirt: host.shirt, pants: host.pants, accessory: host.accessory }; return undefined; })()} shirt={outfitOf(s.outfit).shirt} pants={outfitOf(s.outfit).pants} accessory={ACCESSORIES[s.accessory ?? 0]?.id} night={nowMin() >= 18 * 60 || nowMin() < 6 * 60} emoji={iden.emoji} en={en} roam={!venueTalk} onSpot={(id) => { if (id === STAIR_UP_ID) { sfx("click"); setVenueFloor((f) => Math.min(maxFloor(venue3d.set, venueBuilding), f + 1)); return; } if (id === STAIR_DOWN_ID) { sfx("click"); setVenueFloor((f) => Math.max(1, f - 1)); return; } const v = venueTalksForFloor(venue3d.set, venue3d.id, venueBuilding, venueFloor).find((t) => t.id === id); if (v) runVenueTalk(v); }} />
+<LifeStage3D key={`venue-${venue3d.id ?? venue3d.set}-${venueTalk?.id ?? ""}-${s.accessory}-${venueBuilding ?? ""}-${venueFloor}`} sign={{ text: venueFloored ? (venueFloorDef?.sign ?? venue3d.name) : venue3d.name, emoji: venue3d.emoji, color: venueFloored ? (venueFloorDef?.signColor ?? venue3d.color) : venue3d.color }} seed={[...(venue3d.id ?? venue3d.name)].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 100003, 7)} wall={venue3d.color !== undefined ? mixHex(venue3d.color, 0xf6efe2, 0.82) : undefined} setKind={venue3d.set} floor={venueFloor} building={venueBuilding ?? undefined} pose={venueTalk?.pose ?? "idle"} faceId={profile?.playerId ?? `player-${iden.emoji}`} faceSpec={s.face ?? undefined} partnerFaceId={venueFloored && !venueTalk && venueFloorDef?.npc ? venueFloorDef.npc.faceId : (regularHere(venue3d.set)?.name ?? venueTalk?.who)} talkText={venueTalk ? (en ? venueTalk.sayEn : venueTalk.say) : undefined} talkVoiceId={regularHere(venue3d.set)?.name ?? venueTalk?.who} partner={(() => { const host = regularHere(venue3d.set); const meeting = !!(venueTalk && host && MEET_IDS.has(venueTalk.id)); if (meeting && host) return { shirt: host.shirt, pants: host.pants, accessory: host.accessory }; if (venueTalk?.partner) return { shirt: venueTalk.partner[0], pants: venueTalk.partner[1] }; if (!venueTalk && venueFloorDef?.npc) return { shirt: venueFloorDef.npc.shirt, pants: venueFloorDef.npc.pants }; if (host && !venueTalk) return { shirt: host.shirt, pants: host.pants, accessory: host.accessory }; return undefined; })()} shirt={outfitOf(s.outfit).shirt} pants={outfitOf(s.outfit).pants} accessory={ACCESSORIES[s.accessory ?? 0]?.id} night={nowMin() >= 18 * 60 || nowMin() < 6 * 60} emoji={iden.emoji} en={en} roam={!venueTalk} onSpot={(id) => { if (id === STAIR_UP_ID) { sfx("click"); setVenueFloor((f) => Math.min(maxFloor(venue3d.set, venueBuilding), f + 1)); return; } if (id === STAIR_DOWN_ID) { sfx("click"); setVenueFloor((f) => Math.max(1, f - 1)); return; } const v = venueTalksForFloor(venue3d.set, venue3d.id, venueBuilding, venueFloor).find((t) => t.id === id); if (v) runVenueTalk(v); }} />
 <div className="cine-grade" />
 {(() => { const host = regularHere(venue3d.set); const meeting = !!(venueTalk && host && MEET_IDS.has(venueTalk.id)); return <>
 {!venueTalk && host && <p className="absolute bottom-3 left-3 rounded-full bg-black/55 px-3 py-1 text-xs font-black text-white">{host.emoji} {en ? `${host.name} is here` : `${host.name}在这儿`}</p>}
@@ -7843,6 +7877,8 @@ return (
 <p className="text-xs font-black text-[var(--dim)]">{en ? "Hair — so people can tell you apart" : "发型 · 别人一眼能认出你"}</p>
 <div className="mt-2 flex flex-wrap gap-1.5">{HAIRS.map((h, i) => <button key={h.zh} type="button" onClick={() => { mutate((x) => { x.hair = i; }); showToast(en ? h.en : `换成了${h.zh}。`); }} className={`rounded-full border px-2.5 py-1 text-[11px] font-black ${s.hair === i ? "border-[var(--accent)] bg-[var(--accent)] text-white" : "border-[var(--line)]"}`}>{en ? h.en : h.zh}</button>)}</div>
 <div className="mt-2 flex flex-wrap gap-1.5">{ACCESSORIES.map((a, i) => <button key={a.id} type="button" onClick={() => { mutate((x) => { x.accessory = i; }); showToast(en ? a.en : `戴上了${a.zh}。`); }} className={`rounded-full border px-2.5 py-1 text-[11px] font-black ${s.accessory === i ? "border-[var(--accent)] bg-[var(--accent)] text-white" : "border-[var(--line)]"}`}>{en ? a.en : a.zh}</button>)}</div>
+{/* 捏脸（次要入口）：主入口是顶栏的 🎨（1 点直达），这里留一个顺路的 */}
+<button type="button" onClick={() => { setLifeOpen(false); setCreatorOpen(true); }} className="mt-2 w-full rounded-full border border-[var(--line)] py-2 text-[11px] font-black">🎨 {en ? "Change my look — face, hair, outfit" : "换个形象 · 脸、发型、衣服一起捏"}</button>
 </div>
 <div className="mt-3 rounded-[12px] border border-[var(--line)] p-3">
 <p className="text-xs font-black text-[var(--dim)]">{en ? "Family" : "家人"}{s.spouse ? ` · ${s.spouse}` : ""}</p>
@@ -7878,11 +7914,32 @@ return (
 </div>
 </div>
 )}
+{/* 捏脸弹窗：顶栏 🎨（1 点直达）或过日子"换个形象"打开。保存时把整套
+    形象（脸 / 发型 / 配饰 / 衣服）一次写进玩家状态；草稿和系统脸
+    一样就存 null（= 没有自定义脸），不留冗余数据。 */}
+{creatorOpen && phase === "game" && (
+<CharacterCreatorModal
+  initial={{ face: s.face ?? selfSeedFace, hair: s.hair, accessory: s.accessory, outfit: s.outfit }}
+  seedFace={selfSeedFace}
+  outfits={s.ownedOutfits.length > 0 ? s.ownedOutfits : ["casual", "pajamas"]}
+  onSave={(d) => {
+    mutate((x) => {
+      x.face = sameFaceSpec(d.face, selfSeedFace) ? null : d.face;
+      x.hair = d.hair;
+      x.accessory = d.accessory;
+      x.outfit = d.outfit;
+    });
+    setCreatorOpen(false);
+    showToast(en ? "Saved — this is you now." : "保存好了，这就是你。");
+  }}
+  onClose={() => setCreatorOpen(false)}
+/>
+)}
 {home3d && phase === "game" && (() => { const t = tierAt(s); const T = TIERS[s.cityKey]; const tn = nowMin(); return (
 <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/70 p-3 sm:items-center" role="dialog" aria-label={en ? "My home" : "我的家"}>
 <div className="rise max-h-[94vh] w-full max-w-lg overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)]">
 <div className="relative h-[40vh] min-h-[220px]">
-{(() => { const who = homeGuest ?? s.spouse ?? null; const guest = who ? npcsForCity(s.cityKey).find((n) => n.name === who) : undefined; const pf = homeGuest ? (visitHome?.layout ?? []) : placedFurn(s); const tier = homeGuest && visitHome ? visitHome.tier : t; const wall = homeGuest ? (visitHome?.style ? tplByName(visitHome.style)?.wall : undefined) : tplByName(s.homeStyle)?.wall; const kids = homeGuest ? [] : s.kids.map((_, i) => ({ shirt: [0xf9a8d4, 0x93c5fd, 0xfde68a][i] ?? 0xf9a8d4, pants: 0x374151 })); return <LifeStage3D key={`flat-${tier}-${homePose}-${who ?? ""}-${kids.length}-${s.accessory}-${pf.map((x) => x.id + x.slot).join(",")}`} setKind="flat" tier={tier} furn={pf} wall={wall} pose={homePose} roam={homePose === "idle"} en={en} accessory={ACCESSORIES[s.accessory ?? 0]?.id} shirt={outfitOf(s.outfit).shirt} pants={outfitOf(s.outfit).pants} night={tn >= 18 * 60 || tn < 6 * 60} emoji={iden.emoji} onFurn={usePlacedFurn} onSpot={(id) => { if (id === "bed") usePlacedFurn("bed-double"); else if (id === "sit") usePlacedFurn("sofa-fabric"); else if (id === "cook") usePlacedFurn("kitchen-cabinet"); else if (id === "wash") washHome(); }} household={kids} partner={who ? { shirt: guest?.shirt ?? 0x60a5fa, pants: guest?.pants ?? 0x1f2937, accessory: guest?.accessory } : undefined} homePet={getActivePet(pets)} />; })()}
+{(() => { const who = homeGuest ?? s.spouse ?? null; const guest = who ? npcsForCity(s.cityKey).find((n) => n.name === who) : undefined; const pf = homeGuest ? (visitHome?.layout ?? []) : placedFurn(s); const tier = homeGuest && visitHome ? visitHome.tier : t; const wall = homeGuest ? (visitHome?.style ? tplByName(visitHome.style)?.wall : undefined) : tplByName(s.homeStyle)?.wall; const kids = homeGuest ? [] : s.kids.map((_, i) => ({ shirt: [0xf9a8d4, 0x93c5fd, 0xfde68a][i] ?? 0xf9a8d4, pants: 0x374151 })); return <LifeStage3D key={`flat-${tier}-${homePose}-${who ?? ""}-${kids.length}-${s.accessory}-${pf.map((x) => x.id + x.slot).join(",")}`} setKind="flat" tier={tier} furn={pf} wall={wall} pose={homePose} roam={homePose === "idle"} en={en} accessory={ACCESSORIES[s.accessory ?? 0]?.id} shirt={outfitOf(s.outfit).shirt} pants={outfitOf(s.outfit).pants} night={tn >= 18 * 60 || tn < 6 * 60} emoji={iden.emoji} faceSpec={s.face ?? undefined} onFurn={usePlacedFurn} onSpot={(id) => { if (id === "bed") usePlacedFurn("bed-double"); else if (id === "sit") usePlacedFurn("sofa-fabric"); else if (id === "cook") usePlacedFurn("kitchen-cabinet"); else if (id === "wash") washHome(); }} household={kids} partner={who ? { shirt: guest?.shirt ?? 0x60a5fa, pants: guest?.pants ?? 0x1f2937, accessory: guest?.accessory } : undefined} homePet={getActivePet(pets)} />; })()}
 <div className="cine-grade" />
 <button type="button" onClick={() => { setHome3d(false); setHomeGuest(null); setVisitHome(null); setHomePose("idle"); }} className="absolute right-3 top-3 rounded-full bg-black/55 px-3 py-1 text-xs font-black text-white">✕</button>
 <p className="pointer-events-none absolute bottom-3 right-3 max-w-[14rem] rounded-full bg-black/55 px-3 py-1 text-[11px] font-black text-white">{en ? "Walk up to a gold ring, then Interact. Tap the furniture too." : "走近金色光柱再互动。点家具也行。"}</p>

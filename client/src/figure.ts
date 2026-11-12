@@ -78,8 +78,14 @@ export interface FaceSpec {
   mouth: "smile" | "flat" | "open" | "smirk"; mouthSize: number;
   nose: boolean; faceWidth: number; skin: number; hair: number;
 }
-const FACE_SKINS = [0xf2c79b, 0xe8b88a, 0xd9a06f, 0xc98d5f, 0xf6d7b0];
-const FACE_HAIRS = [0x2b2118, 0x2b2118, 0x4a3226, 0x6b6b6b, 0x8a5a2e, 0x1a1a22];
+/** The creator's palettes — the same arrays faceSpecFor draws from, so a
+    hand-picked face is always a face the seed generator could have made. */
+export const FACE_SKINS = [0xf2c79b, 0xe8b88a, 0xd9a06f, 0xc98d5f, 0xf6d7b0];
+export const FACE_HAIRS = [0x2b2118, 0x2b2118, 0x4a3226, 0x6b6b6b, 0x8a5a2e, 0x1a1a22];
+/** Skin-tone names for the creator's swatches (same order as FACE_SKINS). */
+export const FACE_SKIN_NAMES = ["白皙", "自然", "小麦", "古铜", "冷白"];
+/** Hair-colour names for the creator's swatches (same order as FACE_HAIRS). */
+export const FACE_HAIR_NAMES = ["黑", "深棕", "棕", "灰", "栗", "蓝黑"];
 export function faceSpecFor(seed: string): FaceSpec {
   let h = 2166136261;
   const s = seed || "???";
@@ -101,6 +107,91 @@ export function faceSpecFor(seed: string): FaceSpec {
     hair: FACE_HAIRS[Math.floor(u(6) * FACE_HAIRS.length) % FACE_HAIRS.length]!,
   };
 }
+/** Character creator (捏脸）: a random face in the same ranges the seed
+    generator uses, so 随机 always lands on a plausible face. */
+export function randomFaceSpec(): FaceSpec {
+  const pick = <T,>(arr: readonly T[]): T => arr[Math.floor(Math.random() * arr.length)]!;
+  const eyeShape = pick(["round", "narrow", "wide"] as const);
+  const mouth = pick(["smile", "flat", "open", "smirk"] as const);
+  return {
+    eyeGap: 0.095 + Math.random() * 0.04,
+    eyeSize: 0.034 + Math.random() * 0.016,
+    eyeShape,
+    browAngle: (Math.random() - 0.5) * 0.5,
+    browThick: 0.7 + Math.random() * 0.8,
+    mouth,
+    mouthSize: 0.8 + Math.random() * 0.5,
+    nose: Math.random() > 0.3,
+    faceWidth: 0.92 + Math.random() * 0.12,
+    skin: pick(FACE_SKINS),
+    hair: pick(FACE_HAIRS),
+  };
+}
+
+/** Validate + clamp a stored face (local save, cloud save, or another
+    player's heartbeat payload). Anything malformed returns null — the
+    caller falls back to the seed-derived face. */
+export function sanitizeFaceSpec(v: unknown): FaceSpec | null {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const o = v as Record<string, unknown>;
+  const num = (x: unknown, lo: number, hi: number, dflt: number): number => {
+    const n = typeof x === "number" && Number.isFinite(x) ? x : dflt;
+    return Math.min(hi, Math.max(lo, n));
+  };
+  const eyeShape = o.eyeShape === "round" || o.eyeShape === "narrow" || o.eyeShape === "wide" ? o.eyeShape : "round";
+  const mouth = o.mouth === "smile" || o.mouth === "flat" || o.mouth === "open" || o.mouth === "smirk" ? o.mouth : "smile";
+  const skin = typeof o.skin === "number" && FACE_SKINS.includes(o.skin) ? o.skin : FACE_SKINS[0]!;
+  const hair = typeof o.hair === "number" && FACE_HAIRS.includes(o.hair) ? o.hair : FACE_HAIRS[0]!;
+  return {
+    eyeGap: num(o.eyeGap, 0.095, 0.135, 0.115),
+    eyeSize: num(o.eyeSize, 0.034, 0.05, 0.042),
+    eyeShape,
+    browAngle: num(o.browAngle, -0.25, 0.25, 0),
+    browThick: num(o.browThick, 0.7, 1.5, 1),
+    mouth,
+    mouthSize: num(o.mouthSize, 0.8, 1.3, 1),
+    nose: o.nose === true,
+    faceWidth: num(o.faceWidth, 0.92, 1.04, 0.98),
+    skin,
+    hair,
+  };
+}
+
+/** Parse a face from a JSON string (the server's players.face column) or
+    a raw object (a local / cloud save). Anything malformed returns null. */
+export function parseFaceSpec(v: unknown): FaceSpec | null {
+  if (typeof v === "string") {
+    if (!v) return null;
+    try {
+      return sanitizeFaceSpec(JSON.parse(v) as unknown);
+    } catch {
+      return null;
+    }
+  }
+  return sanitizeFaceSpec(v);
+}
+
+/** Two faces are the same look (used when saving: a draft identical to the
+    seed face is stored as "no custom face" instead of a redundant spec). */
+export function sameFaceSpec(a: FaceSpec | null | undefined, b: FaceSpec | null | undefined): boolean {
+  if (!a || !b) return a == null && b == null;
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/** Dispose a figure group's geometries + materials (used when a preview or
+    a map actor rebuilds its figure — otherwise every 随机 / 保存 leaks GPU
+    geometry). Safe here: makeFigure / addAccessory create fresh materials
+    per figure, nothing is shared between figures. */
+export function disposeGroup(g: THREE.Group) {
+  g.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (m.geometry) m.geometry.dispose();
+    const mat = (m as unknown as { material?: THREE.Material | THREE.Material[] }).material;
+    if (Array.isArray(mat)) mat.forEach((x) => x.dispose());
+    else if (mat) mat.dispose();
+  });
+}
+
 export function addFaceFeatures(head: THREE.Mesh, spec: FaceSpec, mat: MatFactory) {
   const dark = mat(0x241a12, 0.55);
   const white = mat(0xfdfdf8, 0.4);
@@ -149,7 +240,11 @@ export function addFaceFeatures(head: THREE.Mesh, spec: FaceSpec, mat: MatFactor
   }
 }
 
-export function makeFigure(mat: MatFactory, shirt: number, pants: number, skin = 0xf2c79b, faceSeed?: string): Figure & { mats: FigureMats } {
+/** faceSpecOverride: the character creator's hand-picked face. When set,
+    the figure uses THAT spec instead of deriving one from the seed — same
+    geometry, same code path, just the player's own choices. When unset,
+    behaviour is unchanged (seed-derived face). */
+export function makeFigure(mat: MatFactory, shirt: number, pants: number, skin = 0xf2c79b, faceSeed?: string, faceSpecOverride?: FaceSpec): Figure & { mats: FigureMats } {
   // Detailed figure (PC high-end pass — no longer plain low-poly blocks):
   // rounded high-segment head with ears and a jaw taper, a neck, layered
   // hair with a fringe, a torso with collar / placket / belt, arms ending
@@ -209,8 +304,9 @@ export function makeFigure(mat: MatFactory, shirt: number, pants: number, skin =
   const armR = mkArm(0.42);
   const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 0.16, 12), skinMat);
   neck.position.y = 1.66; g.add(neck);
-  // distinct face: same seed always builds the same eyes/brows/mouth
-  const spec = faceSpecFor(faceSeed ?? `${shirt}-${pants}`);
+  // distinct face: same seed always builds the same eyes/brows/mouth —
+  // unless the player hand-picked one in the creator, which wins
+  const spec = faceSpecOverride ?? faceSpecFor(faceSeed ?? `${shirt}-${pants}`);
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.31, 24, 18), skinMat);
   head.position.y = 1.88; head.scale.set(0.94 * spec.faceWidth, 1.05, 0.98); head.castShadow = true; g.add(head);
   addFaceFeatures(head, spec, mat);

@@ -18,7 +18,7 @@ import { playNpcVoice, stopNpcVoice } from "./round2/sounds";
 import type { HouseLayout } from "./round2/house";
 import { PET_MODEL, type Pet } from "./round2/pets";
 import { floorDef, floorSpots, hasFloors, STAIR_DOWN_ID, STAIR_UP_ID } from "./round2/floors";
-import { makeFigure, faceSpecFor, addAccessory, type Figure } from "./figure";
+import { makeFigure, faceSpecFor, addAccessory, type Figure, type FaceSpec } from "./figure";
 
 export type LifeSet = "flat" | "station" | "metro" | "train" | "bus" | "taxi" | "drive" | "concourse" | "platform" | "office" | "restaurant" | "market" | "electronics" | "mall" | "kitchen" | "bedroom" | "bathroom" | "gym" | "park" | "home" | "cruise" | "wheel" | "aquarium" | "turtle" | "coaster" | "safari" | "hike" | "beach" | "cablecar" | "club" | "clinic" | "classroom" | "oilpainting" | "secondhand" | "seafood" | "oldtown" | "womensstreet" | "museum" | "library" | "factory" | "disney" | "tram" | "temple" | "miniature" | "farm" | "watershow" | "boardwalk" | "fishingport" | "bikehub" | "buildplot";
 export type LifePose = "walk" | "idle" | "sit" | "drive" | "type" | "cook" | "eat" | "sleep" | "wash" | "lift" | "stretch" | "talk" | "dance" | "sing";
@@ -47,6 +47,9 @@ interface Props {
   partnerFaceId?: string;
   /** stable id of the player — drives the player's distinct face */
   faceId?: string;
+  /** character creator: the player's hand-picked face. When set it wins
+      over the seed-derived face, so the figure matches the map exactly */
+  faceSpec?: FaceSpec;
   /** "buildplot": the layout to render on the empty plot */
   houseLayout?: HouseLayout;
   /** dialogue line currently shown above the stage — LifeStage blips it in the speaker's voice */
@@ -619,7 +622,7 @@ export function LifeStage3D(p: Props) {
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
-    const { setKind, pose, shirt, pants, night, emoji, cur, tier, furn, wall, partner, sign, seed, faceId, partnerFaceId, houseLayout, floor: floorProp, building: buildingProp } = propsRef.current;
+    const { setKind, pose, shirt, pants, night, emoji, cur, tier, furn, wall, partner, sign, seed, faceId, faceSpec, partnerFaceId, houseLayout, floor: floorProp, building: buildingProp } = propsRef.current;
     /* round-4 multi-floor: the floor def for this visit (undefined when the
        set has no floor plan — then everything below falls back to the
        existing single-room dressing and ROAM_SPOTS). `floor` is already the
@@ -2638,7 +2641,9 @@ export function LifeStage3D(p: Props) {
     }
 
     /* ---- the actor ---- */
-    const actor = makeFigure(mat, shirt, pants, 0xf2c79b, faceId ?? `player-${emoji}`);
+    /* character creator: a hand-picked face wins over the seed face (and
+       its skin tone wins over the fixed light skin, so head and body match) */
+    const actor = makeFigure(mat, shirt, pants, faceSpec?.skin ?? 0xf2c79b, faceId ?? `player-${emoji}`, faceSpec);
     addAccessory(actor.g, propsRef.current.accessory);
     const face = faceSprite(emoji);
     face.position.y = 2.42;

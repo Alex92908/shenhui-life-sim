@@ -40,6 +40,45 @@ const ONLINE_WINDOW_MS = 90_000;
     company × bonus day, a full day of overtime, plus rewards). */
 const MAX_EARN_PER_DAY = 25_000;
 
+/* 捏脸 (0023): a hand-picked face, stored as compact JSON on players.face.
+   Validated + clamped server-side so a forged heartbeat can't store junk
+   that breaks other clients' figure builder. Returns null for "clear it"
+   (back to the seed face) and undefined for "invalid — leave it alone". */
+const FACE_SKINS = [0xf2c79b, 0xe8b88a, 0xd9a06f, 0xc98d5f, 0xf6d7b0];
+const FACE_HAIRS = [0x2b2118, 0x2b2118, 0x4a3226, 0x6b6b6b, 0x8a5a2e, 0x1a1a22];
+function sanitizeFaceJson(raw: string | null): string | null | undefined {
+  if (raw === null) return null;
+  let o: unknown;
+  try {
+    o = JSON.parse(raw) as unknown;
+  } catch {
+    return undefined;
+  }
+  if (!o || typeof o !== "object" || Array.isArray(o)) return undefined;
+  const r = o as Record<string, unknown>;
+  const num = (x: unknown, lo: number, hi: number, d: number) => {
+    const n = typeof x === "number" && Number.isFinite(x) ? x : d;
+    return Math.min(hi, Math.max(lo, n));
+  };
+  const eyeShape = r.eyeShape === "round" || r.eyeShape === "narrow" || r.eyeShape === "wide" ? r.eyeShape : "round";
+  const mouth = r.mouth === "smile" || r.mouth === "flat" || r.mouth === "open" || r.mouth === "smirk" ? r.mouth : "smile";
+  const skin = typeof r.skin === "number" && FACE_SKINS.includes(r.skin) ? r.skin : FACE_SKINS[0]!;
+  const hair = typeof r.hair === "number" && FACE_HAIRS.includes(r.hair) ? r.hair : FACE_HAIRS[0]!;
+  return JSON.stringify({
+    eyeGap: num(r.eyeGap, 0.095, 0.135, 0.115),
+    eyeSize: num(r.eyeSize, 0.034, 0.05, 0.042),
+    eyeShape,
+    browAngle: num(r.browAngle, -0.25, 0.25, 0),
+    browThick: num(r.browThick, 0.7, 1.5, 1),
+    mouth,
+    mouthSize: num(r.mouthSize, 0.8, 1.3, 1),
+    nose: r.nose === true,
+    faceWidth: num(r.faceWidth, 0.92, 1.04, 0.98),
+    skin,
+    hair,
+  });
+}
+
 const playerShape = z.object({
   id: z.string(),
   name: z.string(),
@@ -58,6 +97,9 @@ const playerShape = z.object({
   resultTitle: z.string().nullable(),
   lastSeen: z.string(),
   look: z.string().nullable().optional(),
+  /* 捏脸 (0023): the player's hand-picked face as compact JSON (null =
+     seed-derived face) */
+  face: z.string().nullable().optional(),
 });
 
 const GIFT_KINDS = ["tea", "breakfast", "hongbao", "referral", "invite", "share"] as const;
@@ -197,6 +239,7 @@ async function loadWorld(ctx: Ctx, cityKey: string): Promise<World> {
       resultTitle: p.resultTitle,
       lastSeen: p.lastSeen.toISOString(),
       look: p.cosmetic ?? null,
+      face: p.face ?? null,
     })),
     onlineSz: onlineRows.filter((p) => p.cityKey === "sz").length,
     onlineHz: onlineRows.filter((p) => p.cityKey === "hz").length,
@@ -1533,6 +1576,9 @@ export const Actions = {
       /* 0–3 hair, 0–3 accessory. Stored on cosmetic as #h2a1 so name colours stay intact. */
       hair: z.number().int().min(0).max(3).optional(),
       accessory: z.number().int().min(0).max(3).optional(),
+      /* 捏脸 (0023): hand-picked face as compact JSON (null = clear it,
+         back to the seed face). Validated + clamped server-side. */
+      face: z.string().max(400).nullable().optional(),
       /* 玩家店铺 + 买下的房子（0022）：心跳时同步到 shops / homes，供全城地图展示 */
       shop: z.object({ kind: z.string(), name: z.string().max(16), locId: z.string().max(64), cityKey: z.enum(["sz", "hz", "hk"]), lvl: z.number().int().min(1).max(5), floor: z.number().int().min(1).max(3), building: z.string().max(32).nullable().optional() }).optional(),
       flat: z.object({ name: z.string().max(16), locId: z.string().max(64), cityKey: z.enum(["sz", "hz", "hk"]) }).optional(),
@@ -1607,6 +1653,11 @@ export const Actions = {
         const [myShop] = await db.select().from(schema.shops).where(eq(schema.shops.ownerId, args.playerId)).limit(1);
         shopTill = myShop?.till ?? 0;
       }
+      /* 捏脸 (0023): a changed face must reach the other players' maps
+         right away, not after the world cache TTL — same treatment as
+         shops/flats above. Invalid payloads leave the stored face alone. */
+      const faceNext = args.face !== undefined ? sanitizeFaceJson(args.face) : undefined;
+      if (faceNext !== undefined && faceNext !== (prev?.face ?? null)) dropWorldCache();
       await db
         .update(schema.players)
         .set({
@@ -1624,6 +1675,7 @@ export const Actions = {
           ...(args.title !== undefined ? { title: args.title } : {}),
           ...(args.season !== undefined ? { season: args.season } : {}),
           ...(args.hair !== undefined ? { cosmetic: `${(prev?.cosmetic ?? "").replace(/#h[0-3](?:a[0-3])?$/, "")}#h${args.hair}a${args.accessory ?? 0}` } : {}),
+          ...(faceNext !== undefined ? { face: faceNext } : {}),
           lastSeen: new Date(),
         })
         .where(eq(schema.players.id, args.playerId));

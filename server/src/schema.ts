@@ -44,6 +44,10 @@ export const players = sqliteTable("players", {
   earnBudget: integer("earn_budget").notNull().default(60000),
   budgetAt: integer("budget_at", { mode: "timestamp_ms" }),
   cosmetic: text("cosmetic"),
+  // 捏脸 (0023): the player's hand-picked face as compact JSON (null =
+  // seed-derived face). Synced by the heartbeat, shown to other players
+  // in the world snapshot so their maps render the custom face.
+  face: text("face"),
   // 运营 (0017): chat / DMs / posts blocked until this time (a temporary mute, lighter than a ban)
   mutedUntil: integer("muted_until", { mode: "timestamp_ms" }),
   // 公开编号 (0006): sha256(id) prefix. The id itself is the player's
