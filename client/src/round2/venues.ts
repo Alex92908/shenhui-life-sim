@@ -72,6 +72,7 @@ export const ANIM_BY_PLACE: Record<string, AnimKindId> = {
   danshui: "oldtown",
   yuenlong: "oldtown",
   xiayong: "cruise",
+  xunliao: "cruise", // Round-3: 巽寮湾渔港 — 跟船出海（data.ts animKind 同值，双保险）
   szmuseum: "gallery",
   hzmuseum: "gallery",
   yantian: "stroll",
@@ -133,6 +134,7 @@ export const VENUE_SET_COPY: Record<string, { set: string; zh: string; en: strin
   gallery: { set: "gallery", zh: "艺术中心：展厅、落地窗，海就在窗外", en: "The art centre: galleries and floor-to-ceiling windows, the sea outside" },
   boardwalk: { set: "boardwalk", zh: "海滨栈道：木栈道、栏杆，看海不用下水", en: "The seaside boardwalk: timber decking, railings, the sea without getting wet" },
   cycle: { set: "cycle", zh: "绿道骑行：租车点、单车径，风追着你跑", en: "The cycle greenway: bike hire, the cycle path, the wind at your back" },
+  fishingport: { set: "fishingport", zh: "渔港码头：渔船、渔网、刚上岸的海鲜，鱼贩在码头边叫卖", en: "The fishing port: boats, nets, the fresh catch, fish sellers calling out on the pier" },
   nature: { set: "nature", zh: "雨林：热带植物、吊桥，蝴蝶落在肩膀上", en: "The rainforest: tropical plants, a rope bridge, butterflies on your shoulder" },
 };
 

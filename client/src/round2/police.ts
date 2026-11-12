@@ -23,11 +23,17 @@
  * Scope: this is the client-side state + validation + report payload
  * shaping. Patrol movement itself reuses the existing map/roam: a patrol
  * is a mode flag the App snippet reads (patrol overlay + 👁️ badge), not a
- * new 3D system. No server endpoint is invented here — see
- * toBlackReportArgs() for the area (d) hook and the note on reportPlayer.
+ * new 3D system. Patrols and observations live on the server now
+ * (round-3, agent S: patrols / patrol_watches tables + startPatrol /
+ * observe / getWatchers / stopPatrol / stopObserving endpoints), so a
+ * watch is visible across sessions and devices — the in-memory Map from
+ * round-2 is gone.
  *
- * Pure TypeScript, no React, no server imports.
+ * Pure TypeScript, no React. The only server import is the typed `api`
+ * client (no server runtime is pulled into the bundle).
  */
+
+import { api } from "../api";
 
 /** A game avatar id: lowercase slug, e.g. "player-7f3a" or an NPC id from data.ts. */
 export function isGameAvatarId(id: string): boolean {
@@ -46,10 +52,12 @@ export type PatrolStatus = "off" | "patrolling" | "observing";
 
 export interface WatchRecord {
   officerId: string;
+  officerName: string;
+  officerEmoji: string;
   targetId: string;
   /** what the officer wrote down while watching (game behaviour only) */
   note: string;
-  startedAt: number;
+  startedAt: string;
   city: PoliceCity;
 }
 
@@ -74,77 +82,66 @@ export interface PoliceReportPayload {
   filedAt: number;
 }
 
-/* ---- module state: one patrol at a time, in-memory ---- */
+/* ---- server-backed patrol (round-3): one patrol per officer, rows in
+   patrols / patrol_watches; a watch is visible to the watched player via
+   getWatchers. All five calls go through the typed `api` client. ---- */
 
-let patrol: { officerId: string; city: PoliceCity; since: number } | null = null;
-const watchers = new Map<string, WatchRecord[]>();
-
-export function patrolState(): { status: PatrolStatus; officerId: string | null; city: PoliceCity | null } {
-  return {
-    status: patrol ? "patrolling" : "off",
-    officerId: patrol?.officerId ?? null,
-    city: patrol?.city ?? null,
-  };
-}
-
-export function startPatrol(officerId: string, city: PoliceCity): boolean {
-  if (!isGameAvatarId(officerId)) return false;
-  patrol = { officerId, city, since: Date.now() };
-  return true;
-}
-
-export function stopPatrol(officerId: string) {
-  if (patrol?.officerId !== officerId) return;
-  // ending a patrol ends every observation it opened — no lingering watch
-  for (const [target, list] of [...watchers]) {
-    const kept = list.filter((w) => w.officerId !== officerId);
-    if (kept.length === 0) watchers.delete(target);
-    else watchers.set(target, kept);
+/** Start (or refresh) a patrol in the caller's city. */
+export async function startPatrol(playerId: string, city: PoliceCity): Promise<{ ok: boolean; error?: string }> {
+  if (!isGameAvatarId(playerId)) return { ok: false, error: "你的游戏 ID 不合规。" };
+  try {
+    const r = await api.startPatrol({ playerId, city });
+    return r.ok ? { ok: true } : { ok: false, error: r.error };
+  } catch {
+    return { ok: false, error: "网络不太好，巡逻没开起来。" };
   }
-  patrol = null;
+}
+
+/** End the patrol — the server deletes every observation it opened too. */
+export async function stopPatrol(playerId: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const r = await api.stopPatrol({ playerId });
+    return r.ok ? { ok: true } : { ok: false, error: r.error };
+  } catch {
+    return { ok: false, error: "网络不太好。" };
+  }
 }
 
 /**
- * Start watching a game avatar. Returns null when rejected (bad id, not
- * on patrol, watching yourself, or already watching). The record is
- * visible to the target immediately via getWatchers().
+ * Start watching a game avatar. Returns ok:false when rejected (bad id,
+ * not on patrol, watching yourself, already watching, target in another
+ * city). The record is visible to the target immediately via getWatchers().
  */
-export function observe(targetId: string, note = ""): WatchRecord | null {
-  if (!patrol) return null;
-  if (!isGameAvatarId(targetId)) return null;
-  if (targetId === patrol.officerId) return null; // no watching yourself
-  const list = watchers.get(targetId) ?? [];
-  if (list.some((w) => w.officerId === patrol!.officerId)) return null;
-  const rec: WatchRecord = {
-    officerId: patrol.officerId,
-    targetId,
-    note: note.slice(0, 200),
-    startedAt: Date.now(),
-    city: patrol.city,
-  };
-  watchers.set(targetId, [...list, rec]);
-  return rec;
+export async function observe(playerId: string, targetId: string, note = ""): Promise<{ ok: boolean; error?: string }> {
+  if (!isGameAvatarId(targetId)) return { ok: false, error: "只能观察游戏里的玩家 / NPC。" };
+  if (targetId === playerId) return { ok: false, error: "不能观察自己。" };
+  try {
+    const r = await api.observe({ playerId, targetId, note: note.slice(0, 200) || undefined });
+    return r.ok ? { ok: true } : { ok: false, error: r.error };
+  } catch {
+    return { ok: false, error: "网络不太好。" };
+  }
 }
 
-export function stopObserving(officerId: string, targetId: string) {
-  const list = watchers.get(targetId);
-  if (!list) return;
-  const kept = list.filter((w) => w.officerId !== officerId);
-  if (kept.length === 0) watchers.delete(targetId);
-  else watchers.set(targetId, kept);
+/** Stop watching one avatar. */
+export async function stopObserving(playerId: string, targetId: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const r = await api.stopObserving({ playerId, targetId });
+    return r.ok ? { ok: true } : { ok: false, error: r.error };
+  } catch {
+    return { ok: false, error: "网络不太好。" };
+  }
 }
 
 /** Who is watching this avatar right now — the watched player reads this. */
-export function getWatchers(targetId: string): WatchRecord[] {
-  return [...(watchers.get(targetId) ?? [])];
-}
-
-export function isWatched(targetId: string): boolean {
-  return (watchers.get(targetId)?.length ?? 0) > 0;
-}
-
-export function observationsBy(officerId: string, targetId: string): WatchRecord[] {
-  return (watchers.get(targetId) ?? []).filter((w) => w.officerId === officerId);
+export async function getWatchers(playerId: string): Promise<WatchRecord[]> {
+  try {
+    const r = await api.getWatchers({ playerId });
+    if (!r.ok) return [];
+    return r.watchers.map((w) => ({ ...w, targetId: playerId, city: w.city as PoliceCity }));
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -158,13 +155,10 @@ export function buildPoliceReport(
   targetKind: PoliceReportPayload["targetKind"],
   city: PoliceCity,
   body: string,
+  observations: { note: string; at: number }[] = [],
 ): PoliceReportPayload | null {
   if (!isGameAvatarId(officerId) || !isGameAvatarId(targetId)) return null;
   if (!body.trim()) return null;
-  const observations = observationsBy(officerId, targetId).map((w) => ({
-    note: w.note,
-    at: w.startedAt,
-  }));
   return {
     officerId,
     targetId,

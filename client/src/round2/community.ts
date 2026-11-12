@@ -391,6 +391,15 @@ export type CommunityMapMarker =
   | { kind: "snake"; id: string; pin: MapPin; label: string; emoji: string }
   | { kind: "fishing"; id: string; pin: MapPin; label: string; emoji: string };
 
+/** 图钉在小地图上的圆点颜色 (round-3, MapView 的 minimap 与图钉共用;
+    蛇警告用红色, 与普通标记区分). */
+export const COMMUNITY_PIN_COLOR: Record<CommunityMapMarker["kind"], string> = {
+  stray: "#f59e0b",
+  notice: "#3b82f6",
+  snake: "#dc2626",
+  fishing: "#0ea5e9",
+};
+
 /**
  * 把四类社区内容聚合成地图标记 (App.tsx 从服务器拉到列表后调这个函数,
  * 传给 MapView 渲染; 标记点击后打开对应详情面板).
@@ -537,9 +546,11 @@ export function toMapMarkers(input: {
 //   // 蛇: validateSnakeReport → api.reportSnake; 钓点: validateFishingSpot → api.reportFishingSpot
 //   // 照片: 先走现有的图片上传 (若无, photoUrl 传 null, 只留文字描述)
 //
-// MAPVIEW SNIPPET — 社区标记 (MapView.tsx, 玩家/NPC 标记层附近):
-//   const markers = toMapMarkers({ strays, notices, snakes, fishingSpots, cityKey });
-//   // 每类一个 emoji sprite + 文字 label, 点击 onMarkerClick(marker) 打开详情面板.
-//   // 蛇标记用红色描边/感叹号样式, 与普通标记区分; 钓点标记只在靠近水域时显示.
-//   // 流浪动物信任 >= 40 时, 标记旁显示 “它好像想靠近你” 的小提示.
+// MAPVIEW SNIPPET — 社区标记 (round-3 已实现, MapView.tsx):
+//   MapView 新增 props: communityMarkers (App 传 toMapMarkers() 的返回值)
+//   + onCommunityMarkerClick(marker). MapView 把每条标记画成一张可点的
+//   HTML 图钉 (emoji + label, 与地点 / NPC 标签同一套 declutter 流程;
+//   蛇警告红色描边、优先级最高, 全城视角也显示), 点一下回调 App 打开
+//   对应详情面板; 小地图上是按 COMMUNITY_PIN_COLOR 着色的圆点.
+//   没传 communityMarkers 时地图上什么都不多画.
 //

@@ -79,6 +79,14 @@ export const MAX_PETS = 3;
 export const MAX_INTERACTIONS_PER_DAY = 6;
 export const PET_STORAGE_KEY = "shenhui.pets.v1";
 
+/** 3D 形象规格 (round-3, MapView.tsx 的 makePetGroup 与本表共用同一份:
+    猫狗靠耳朵 / 尾巴 / 体型区分 —— 猫尖耳 + 上翘细尾 + 小一圈,
+    狗垂耳 + 平伸粗尾 + 吻部 + 大一圈; 颜色用每只宠物自己的 pet.color). */
+export const PET_MODEL: Record<PetKind, { height: number; ear: "pointed" | "floppy"; tail: "up-curved" | "level"; emoji: string }> = {
+  cat: { height: 0.55, ear: "pointed", tail: "up-curved", emoji: "🐱" },
+  dog: { height: 0.7, ear: "floppy", tail: "level", emoji: "🐶" },
+};
+
 /** 领养/购买费用 (¥). 流浪收养免费, 收容所象征性收费, 宠物店最贵. */
 export const PET_COSTS: Record<PetSource, { min: number; max: number }> = {
   stray: { min: 0, max: 0 },
@@ -477,16 +485,18 @@ export interface PetSyncPayload {
 // 集成片段 (给集成 agent, 不要直接改 App.tsx/MapView.tsx)
 // ---------------------------------------------------------------------------
 //
-// PET_MODEL_HOOK — 3D 模型 (MapView.tsx, area a 的角色 builder 模式可复用):
-//   - 猫/狗各一个低多边形模型: 身体 (圆角长方体/胶囊) + 头 (球) + 耳朵
-//     (猫三角耳 / 狗垂耳) + 尾巴 (弯曲圆柱, 跟随动画时摆动) + 四条短腿.
-//   - 颜色用 pet.color; 猫 0.55 高 / 狗 0.7 高 (世界单位, 相对玩家 ~1.7).
-//   - 动作: follow = 腿摆动 + 尾巴摇; sit = 坐下姿态 (身体直立, 尾巴盘在身侧);
-//     sleep = 趴下; play = 原地小跳.
-//   - 复用 LifeStage.tsx 的角色 builder 思路 (基础几何体拼装, 不需要新 .glb),
-//     或复用 client/public/models/ 下的现有动物模型 (若有).
-//   - 位置每帧由 stepPetFollow() 驱动; 玩家在家 (locId === "home" 或室内)
-//     时改用 petHomePose() 放在门口, pose = "sit".
+// PET_MODEL_HOOK — 3D 模型 (round-3 已实现: MapView.tsx 的 makePetGroup,
+//   与 LifeStage.tsx 的 makeFigure 同一路子 —— 基础几何体拼装, 不需要新 .glb):
+//   - 猫/狗各一个低多边形模型: 身体 (椭球) + 头 (球) + 耳朵
+//     (猫三角尖耳 / 狗垂耳) + 尾巴 (猫上翘细尾 / 狗平伸粗尾, 跟随动画时摆动)
+//     + 四条短腿 (走路时摆动) + 两只黑眼睛 + 狗吻部 / 猫粉鼻子.
+//     规格见本文件 PET_MODEL, 颜色用 pet.color; 猫 0.55 高 / 狗 0.7 高
+//     (世界单位, 相对玩家 ~1.7), 狗整体再放大 1.28 倍.
+//   - 动作: follow = 腿摆动 + 尾巴摇 + 轻微起伏; sit = 身体直立 (胸抬起,
+//     尾巴盘在身侧慢摇); sleep = 趴下; play = 原地小跳 + 尾巴快摇.
+//   - 位置每帧由 stepPetFollow() 驱动 (MapView 帧循环里调); 玩家在家
+//     (locId === "home" 或室内) 时, 家里的坐姿见本文件底部的家宠物片段,
+//     由 LifeStage.tsx 渲染 (不要在 MapView 里再画一只).
 //
 // APP SNIPPET 1 — 领养入口 (App.tsx, 宠物面板/收容所按钮旁):
 //   import { adoptPet, interactWithPet, homecomingGreeting, tickPetDay,
@@ -506,10 +516,22 @@ export interface PetSyncPayload {
 //   洗澡: interactWithPet(pets, pet.id, "wash")   // 扣 cost ¥
 //   训练: trainTrick(pets, pet.id, trickName, gameDay)
 //
-// MAPVIEW SNIPPET — 跟随渲染 (MapView.tsx, 玩家角色更新处附近):
-//   const petRuntimeRef = useRef<PetRuntime>({ pos: { x: 0, z: 0 }, heading: 0, pose: "sit" });
-//   // 每帧: petRuntimeRef.current = stepPetFollow(activePet, petRuntimeRef.current,
-//   //   playerPos, playerHeading, dt); 然后把 petMesh.position/rotation 对应设置.
-//   // 玩家在家时: const pose = petHomePose(homeDoorPos, doorHeading); 宠物模型放门口坐着.
-//   // 没有宠物 (pets.pets.length === 0) 时不渲染宠物模型.
+// MAPVIEW SNIPPET — 跟随渲染 (round-3 已实现, MapView.tsx):
+//   MapView 新增 props: activePet (App 传 getActivePet(pets)).
+//   帧循环里: petRuntimeRef.current = stepPetFollow(activePet,
+//   petRuntimeRef.current, playerPos, playerHeading, dt), 再把 makePetGroup
+//   建的模型 position/rotation 对应设置; 换宠物 (id/kind/color 变了) 时
+//   重建模型; 没有宠物 (pets.pets.length === 0) 或玩家在坐火车时不渲染.
+//   玩家在家时: 家里的宠物由 LifeStage.tsx 渲染 (见本文件底部家宠物片段),
+//   MapView 不画.
+//
+// 家宠物片段 (给集成 agent, LifeStage.tsx 里应用, 不要直接改本文件):
+//   见 ~/workspace/shenhui-life-sim/ROUND3-LOG-C.md “家里宠物集成 snippet”:
+//   LifeStage3D 的 Props 加 homePet?: Pet | null, 在 setKind === "flat" 的
+//   场景里 (LifeStage.tsx:1247 的 flat 分支, 门在 (-4.4, 1.13, -3.56),
+//   沙发在 (-1.3, 0.3, -2.35)), 于 actor 建好后 (2588 行附近) 用
+//   makePetGroup 同款几何体 (或复用 MapView 的 makePetGroup, 抽成共享
+//   builder 前先在 LifeStage 里照抄一份) 在门口内侧 (-3.6, 0, -2.7)
+//   放一只坐姿宠物, 面朝门口 (rotation.y = π), pose 由 petHomePose() 的
+//   位置 + 坐姿决定; App 在 flat 处传 homePet={getActivePet(pets)}.
 //

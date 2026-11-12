@@ -520,7 +520,10 @@ export type VenueSetId =
   | "clinic" | "concourse" | "bedroom" | "club"
   | "disney" | "tram" | "temple" | "oldtown" | "miniature" | "farm" | "wetland"
   | "watershow" | "gallery" | "boardwalk" | "cycle" | "museum" | "library" | "nature"
-  | "factory" | "oilpainting" | "secondhand" | "seafood" | "womensstreet";
+  | "factory" | "oilpainting" | "secondhand" | "seafood" | "womensstreet"
+  /** Round-3: 渔港专用内景 — LifeStage 的 fishingport 3D 场景已建好
+      （巽寮湾渔港 / 大澳渔村）；此前无任何地点用它，场景不可达。 */
+  | "fishingport";
 /** Round-2 cutscene animation id (audit table 4). Reuses an existing LifeKind
     where one fits (coaster/wheel/aquarium/cablecar/cruise/beach/hike/turtle);
     a NEW name means area (g) still has to add that LifeKind + LifeStage scene
@@ -635,7 +638,7 @@ const SZ_LOCS: Loc[] = [
 const HZ_LOCS: Loc[] = [
   { id: "luofu", type: "mountain", emoji: "⛰️", name: "罗浮山", short: "罗浮山", desc: "爬山、吸氧、吃山水豆腐花。一趟下来，心情和体质一起回血。", funName: "登罗浮山", funCost: 25, funMood: 26, funDesc: "爬到飞云顶看云海，下山吃一碗山水豆腐花", venueSet: "hike", animKind: "hike", x: -22.6, z: -18.7, color: 0x059669, h: 1.5, w: 2.8 },
   { id: "work-hz", type: "work", emoji: "🏭", name: "仲恺公司", short: "公司", desc: "惠州的工作地，节奏比深圳慢一拍，工资也慢一拍——但职级一样能往上爬。", x: -6.1, z: -4, color: 0x64748b, h: 3.1, w: 2.6 },
-  { id: "gym", type: "scenic", emoji: "🚴", name: "红花湖骑行站", short: "骑行站", desc: "环湖绿道 18 公里。租车骑行练体质，练够 3 次，上班都没那么累了。", venueSet: "cycle", animKind: "cycle", x: -6.6, z: -7.7, color: 0x84cc16, h: 1.3, w: 2.5 },
+  { id: "honghualake", type: "scenic", emoji: "🚴", name: "红花湖骑行站", short: "骑行站", desc: "环湖绿道 18 公里。租车骑行练体质，练够 3 次，上班都没那么累了。", venueSet: "cycle", animKind: "cycle", x: -6.6, z: -7.7, color: 0x84cc16, h: 1.3, w: 2.5 },
   { id: "library", type: "learn", emoji: "📚", name: "惠州市图书馆", short: "图书馆", desc: "东江边的新馆，安静明亮。夜校课程便宜，攒技能、备考、升职都靠它。", x: -1.1, z: -14.3, color: 0x7c3aed, h: 2.5, w: 2.6 },
   { id: "xihu", type: "fun", emoji: "🛶", name: "惠州西湖", short: "西湖", desc: "苏堤、泗洲塔、红花洲。泛舟湖上，半天就过去了。", funName: "西湖泛舟", funCost: 30, funMood: 22, funDesc: "租条小船划到湖心，岸上再热闹也与你无关", venueSet: "cruise", animKind: "cruise", x: -2.7, z: -7.2, color: 0x10b981, h: 0.8, w: 2.6 },
   { id: "qiaodong", type: "secondhand", emoji: "🧺", name: "桥东二手市集", short: "二手市集", desc: "老街边的二手市集，旧手机、旧家具、旧唱片什么都有。能捡漏，也能帮摊主装机修小电器。", gigName: "旧货整理 / 修小电器", venueSet: "secondhand", x: 1.8, z: -8.6, color: 0x06b6d4, h: 2.1, w: 2.6 },
@@ -651,7 +654,7 @@ const HZ_LOCS: Loc[] = [
   { id: "danshui", type: "oldtown", emoji: "🏮", name: "淡水老城", short: "淡水老城", desc: "惠阳淡水的老骑楼街，客家小吃和老字号挤满一条街。帮工、摆摊、修小电器的活儿都找得到。", gigName: "老城摆摊 / 帮工", venueSet: "oldtown", animKind: "oldtown", x: -2.1, z: 7.7, color: 0xf59e0b, h: 1.6, w: 2.6 },
   { id: "dayawan", type: "fun", emoji: "🏝️", name: "大亚湾黄金海岸", short: "黄金海岸", desc: "沙子细、海水清，本地人周末拖家带口来。摆个小摊卖椰子也能赚点零花。", funName: "黄金海岸踏浪", funCost: 12, funMood: 24, funDesc: "踩着细沙走完整条海岸线，烦恼都被浪带走了", venueSet: "beach", animKind: "beach", x: 10.4, z: 7.7, color: 0x0891b2, h: 0.6, w: 2.8 },
   { id: "hotel", type: "lodging", emoji: "♨️", name: "温泉酒店", short: "温泉酒店", desc: "巽寮湾边的温泉酒店，周末客流旺。帮工、接待、行李单都不少，峰会周深圳客多，这边也跟着旺。", gigName: "温泉酒店帮工 / 接待", x: 12.7, z: -2.2, color: 0xf97316, h: 2.3, w: 2.6 },
-  { id: "xunliao", type: "port", emoji: "⛵", name: "巽寮湾渔港", short: "巽寮湾", desc: "渔船回港时最热闹。帮渔家分拣、给游客当向导，旺季不缺活儿。", gigName: "渔港帮工 / 海钓向导", x: 12.8, z: 13.9, color: 0x0284c7, h: 1.1, w: 2.8 },
+  { id: "xunliao", type: "port", emoji: "⛵", name: "巽寮湾渔港", short: "巽寮湾", desc: "渔船回港时最热闹。帮渔家分拣、给游客当向导，旺季不缺活儿。", gigName: "渔港帮工 / 海钓向导", venueSet: "fishingport", animKind: "cruise", x: 12.8, z: 13.9, color: 0x0284c7, h: 1.1, w: 2.8 },
   { id: "home", type: "home", emoji: "🏠", name: "海边出租屋", short: "出租屋", desc: "推窗能闻到海风的老房子，租金便宜。睡觉、躺平都在这儿。", x: 22.2, z: 15.4, color: 0xfb923c, h: 1.8, w: 2.3 },
   { id: "fun", type: "fun", emoji: "🏖️", name: "双月湾海边", short: "海边", desc: "沙滩、海浪、日落，全免费。心情崩了就来这儿坐一会儿。", venueSet: "beach", animKind: "beach", x: 22, z: 17.8, color: 0x06b6d4, h: 0.5, w: 2.8 },
   { id: "hostel", type: "lodging", emoji: "🛏️", name: "西湖青旅 · 湖畔民宿", short: "青旅民宿", desc: "西湖边的青年旅舍和湖畔民宿，背包客的天堂。住一晚、拼个桌、听听别人的旅行故事。", x: -4.9, z: -6.2, color: 0xf472b6, h: 1.8, w: 2.6 },
@@ -706,7 +709,7 @@ const HK_LOCS: Loc[] = [
   { id: "tramroad", type: "fun", emoji: "🚃", name: "湾仔电车路", short: "电车路", desc: "1904 年通车至今的双层电车，全程 HK$3，慢悠悠碌过整个港岛北岸。坐上层最前排，就是移动的观景台。", funName: "坐叮叮电车慢游港岛", funCost: 3, funMood: 18, funDesc: "HK$3 由西环碌到北角，城市以步行的速度在窗边过", venueSet: "tram", animKind: "tram", x: 14.9, z: 16.3, color: 0x14b8a6, h: 1.3, w: 2.5 },
   { id: "disney", type: "fun", emoji: "🏰", name: "香港迪士尼乐园", short: "迪士尼", desc: "大屿山竹篙湾的童话王国，奇妙梦想城堡 2020 年登场。全球最细的迪士尼，但烟花和巡游一样不少。", funName: "迪士尼玩一整天", funCost: 639, funMood: 32, funDesc: "门票 HK$639 起——入城堡、睇巡游、等夜晚的烟花，心情直接满格", venueSet: "disney", animKind: "wheel", x: -3, z: 9.7, color: 0xe879f9, h: 2.6, w: 3 },
   { id: "ngongping", type: "scenic", emoji: "🙏", name: "昂坪 · 天坛大佛", short: "昂坪大佛", desc: "坐昂坪 360 缆车跨山跨海 25 分钟，山上是 34 米高的天坛大佛和百年宝莲禅寺。爬 268 级石阶上去，风都静了。", funName: "缆车上昂坪拜大佛", funCost: 235, funMood: 26, funDesc: "水晶车厢脚下是海和山路，大佛在云雾里一点点变大", venueSet: "cablecar", animKind: "cablecar", x: -18.8, z: 17, color: 0xb45309, h: 2, w: 2.8 },
-  { id: "taio", type: "scenic", emoji: "🎣", name: "大澳渔村", short: "大澳", desc: "大屿山西端的水上棚屋渔村，咸鱼、虾酱、茶果的味道飘满涌道。坐小艇出涌口，运气好会见到中华白海豚。", funName: "大澳坐艇找白海豚", funCost: 50, funMood: 25, funDesc: "棚屋在水上排成一排，小艇在涌道里慢慢穿", venueSet: "cruise", animKind: "cruise", x: -23.3, z: 17.5, color: 0x0d9488, h: 0.8, w: 2.6 },
+  { id: "taio", type: "scenic", emoji: "🎣", name: "大澳渔村", short: "大澳", desc: "大屿山西端的水上棚屋渔村，咸鱼、虾酱、茶果的味道飘满涌道。坐小艇出涌口，运气好会见到中华白海豚。", funName: "大澳坐艇找白海豚", funCost: 50, funMood: 25, funDesc: "棚屋在水上排成一排，小艇在涌道里慢慢穿", venueSet: "fishingport", animKind: "cruise", x: -23.3, z: 17.5, color: 0x0d9488, h: 0.8, w: 2.6 },
   { id: "tungchung", type: "transit", emoji: "🚡", name: "东涌", short: "东涌", desc: "机场旁的新市镇，东荟城 outlet 和昂坪缆车站都在这里。机场打工仔的宿舍区，物价比市区平一截。", gigName: "缆车站 / 商场帮工", x: -14, z: 13.5, color: 0x38bdf8, h: 2, w: 2.6 },
   { id: "airport-hk", type: "transit", emoji: "✈️", name: "香港国际机场", short: "机场", desc: "赤鱲角的人工岛机场，全球最繁忙的货运机场。地勤、行李、免税店——24 小时都缺人，也最锻炼人。", gigName: "机场地勤 / 行李帮忙", x: -17.7, z: 10, color: 0x38bdf8, h: 1.8, w: 3.3 },
   { id: "oceanpark", type: "fun", emoji: "🐼", name: "海洋公园", short: "海洋公园", desc: "1977 年开园的香港人集体回忆：大熊猫、缆车、山上山下两个世界。坐园内缆车望住南中国海，几代人都在这里长大。", funName: "海洋公园坐缆车看海", funCost: 498, funMood: 28, funDesc: "门票 HK$498——缆车悬在海面上，熊猫在山下打盹", venueSet: "aquarium", animKind: "aquarium", x: 11.9, z: 19.3, color: 0x22c55e, h: 2.1, w: 2.8 },
@@ -1110,7 +1113,7 @@ export const SCENIC_SPOTS: ScenicSpot[] = [
   { locId: "xihu", cityKey: "hz", name: "惠州西湖", tag: "湖光", tip: "苏堤春晓打卡，泗洲塔倒影最出片" },
   { locId: "fun", cityKey: "hz", name: "双月湾", tag: "海湾", tip: "双湾同框，登观景台看日出日落" },
   { locId: "luofu", cityKey: "hz", name: "罗浮山", tag: "名山", tip: "飞云顶云海，冲虚古观祈福" },
-  { locId: "gym", cityKey: "hz", name: "红花湖", tag: "绿道", tip: "18公里环湖绿道骑行打卡" },
+  { locId: "honghualake", cityKey: "hz", name: "红花湖", tag: "绿道", tip: "18公里环湖绿道骑行打卡" },
   { locId: "dayawan", cityKey: "hz", name: "大亚湾黄金海岸", tag: "海岸", tip: "细沙踏浪，落日熔金" },
   { locId: "nankunshan", cityKey: "hz", name: "南昆山", tag: "竹海", tip: "川龙瀑布和竹海氧吧" },
   { locId: "xiangtoushan", cityKey: "hz", name: "象头山", tag: "溪谷", tip: "原始林溪谷徒步" },

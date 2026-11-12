@@ -62,13 +62,24 @@ export interface HouseWall {
 }
 
 /**
- * Furniture the player can place while building. `inCatalog` means the id
- * already exists in the game's furniture catalog (verified in App.tsx:
- * bed-double / sofa-fabric / kitchen-cabinet are placed via onFurn) and
- * therefore publishes through publishHome today. The rest are build-mode
- * only until the catalog gains them — the 3D buildplot set still draws
- * them, and toPlacedFurn() drops them from the publish payload with a
- * note instead of silently publishing a wrong item.
+ * Furniture the player can place while building. Every id here is a real
+ * ZhuyaHome catalog id (source of truth: `FURNITURE` in data.ts — same id,
+ * same Chinese name). `inCatalog` is therefore true for all of them and
+ * every placed piece publishes through publishHome: the server accepts any
+ * id matching /^[a-z0-9-]{1,32}$/ (server/src/actions.ts publishHome), the
+ * 3D flat already draws per-id geometry for all 14 ids (LifeStage.tsx
+ * "flat" set: sofa incl. leather L-shape + tatami, both coffee tables,
+ * tv-cabinet, bed, wardrobe, desk, fridge, kitchen-cabinet, dining-table,
+ * washer, bathtub), and furnById() in App.tsx resolves all of them — so
+ * nothing placed here is dropped by toPlacedFurn() for not being in the
+ * catalog. The only remaining drop reason is "no-free-slot": the flat has
+ * 14 FURN_SLOTS, so a 15th+ piece has nowhere to go (needs a LifeStage /
+ * App.tsx change, out of scope here).
+ *
+ * Round-2 shipped only 3 of these (bed-double / sofa-fabric /
+ * kitchen-cabinet) plus 5 made-up ids (table / wardrobe / desk / tv /
+ * plant) that matched nothing in the catalog and were dropped on publish.
+ * The made-up ids are gone; wardrobe/desk survive under their real ids.
  */
 export interface HouseFurnKind {
   id: string;
@@ -80,14 +91,20 @@ export interface HouseFurnKind {
 }
 
 export const HOUSE_FURN_CATALOG: HouseFurnKind[] = [
-  { id: "bed-double", zh: "双人床", en: "Double bed", w: 1.8, d: 2.1, inCatalog: true },
-  { id: "sofa-fabric", zh: "布沙发", en: "Fabric sofa", w: 2.0, d: 0.9, inCatalog: true },
-  { id: "kitchen-cabinet", zh: "灶台柜", en: "Kitchen counter", w: 1.8, d: 0.7, inCatalog: true },
-  { id: "table", zh: "餐桌", en: "Dining table", w: 1.4, d: 0.8, inCatalog: false },
-  { id: "wardrobe", zh: "衣柜", en: "Wardrobe", w: 1.2, d: 0.6, inCatalog: false },
-  { id: "desk", zh: "书桌", en: "Desk", w: 1.2, d: 0.6, inCatalog: false },
-  { id: "tv", zh: "电视柜", en: "TV stand", w: 1.5, d: 0.5, inCatalog: false },
-  { id: "plant", zh: "绿植", en: "Plant", w: 0.5, d: 0.5, inCatalog: false },
+  { id: "sofa-fabric", zh: "布艺三人沙发", en: "Fabric 3-seat sofa", w: 2.0, d: 0.9, inCatalog: true },
+  { id: "sofa-leather", zh: "真皮L型沙发", en: "Leather L-shaped sofa", w: 2.4, d: 1.0, inCatalog: true },
+  { id: "sofa-tatami", zh: "无腿榻榻米沙发", en: "Tatami sofa", w: 1.8, d: 0.9, inCatalog: true },
+  { id: "table-oak", zh: "橡木圆形茶几", en: "Oak round coffee table", w: 0.9, d: 0.9, inCatalog: true },
+  { id: "table-marble", zh: "大理石方形茶几", en: "Marble coffee table", w: 1.2, d: 0.7, inCatalog: true },
+  { id: "tv-cabinet", zh: "电视柜组合", en: "TV cabinet set", w: 1.8, d: 0.45, inCatalog: true },
+  { id: "bed-double", zh: "实木双人床", en: "Double bed", w: 1.8, d: 2.1, inCatalog: true },
+  { id: "wardrobe", zh: "三门衣柜", en: "3-door wardrobe", w: 1.8, d: 0.6, inCatalog: true },
+  { id: "desk", zh: "书桌 + 显示器支架", en: "Desk + monitor arm", w: 1.2, d: 0.6, inCatalog: true },
+  { id: "fridge", zh: "双门冰箱", en: "Double-door fridge", w: 0.8, d: 0.7, inCatalog: true },
+  { id: "kitchen-cabinet", zh: "整体橱柜 + 灶台", en: "Kitchen counter", w: 1.8, d: 0.7, inCatalog: true },
+  { id: "dining-table", zh: "四人餐桌椅", en: "4-seat dining table", w: 1.4, d: 0.8, inCatalog: true },
+  { id: "washer", zh: "滚筒洗衣机", en: "Front-load washer", w: 0.6, d: 0.6, inCatalog: true },
+  { id: "bathtub", zh: "独立浴缸", en: "Freestanding bathtub", w: 1.7, d: 0.8, inCatalog: true },
 ];
 
 export interface HouseItem {
@@ -195,6 +212,19 @@ export function saveHouseLayout(l: HouseLayout) {
   }
 }
 
+/**
+ * Round-2 shipped 5 made-up furniture ids in the build palette (table /
+ * wardrobe / desk / tv / plant) that matched nothing in the ZhuyaHome
+ * catalog. A layout saved with them in localStorage is migrated on load:
+ * table → table-oak, tv → tv-cabinet (wardrobe / desk already were the
+ * real ids); plant has no catalog counterpart and is dropped. Without
+ * this, an old save would publish with those pieces silently missing.
+ */
+const LEGACY_FURN_IDS: Record<string, string> = {
+  table: "table-oak",
+  tv: "tv-cabinet",
+};
+
 export function loadHouseLayout(): HouseLayout | null {
   try {
     const raw = localStorage.getItem(HOUSE_KEY);
@@ -206,7 +236,9 @@ export function loadHouseLayout(): HouseLayout | null {
       floorColor: parsed.floorColor ?? 0x9a6b40,
       rooms: parsed.rooms,
       walls: Array.isArray(parsed.walls) ? parsed.walls : [],
-      items: parsed.items,
+      items: parsed.items
+        .map((it) => ({ ...it, furnId: LEGACY_FURN_IDS[it.furnId] ?? it.furnId }))
+        .filter((it) => it.furnId !== "plant"),
     };
   } catch {
     return null;
@@ -227,13 +259,30 @@ export const HOUSE_FURN_SLOTS: { x: number; z: number; ry: number }[] = [
   { x: 1.9, z: -2.7, ry: 0 },
   { x: -2.2, z: 1.3, ry: 0.6 },
   { x: 2.3, z: 1.3, ry: -0.6 },
+  /* round-3 (H): 7 → 14 slots, so all 14 ZhuyaHome pieces publish.
+     New slots sit on open floor, clear of the door (side wall x -6.4,
+     z -1.2), the built-in sofas/beds, ROAM_SPOTS.flat (bed -2.4,-0.85 /
+     sit 0.2,0.55 / cook 3.1,-0.15 / wash 4.5,1.05), the roam spawn
+     (0.15, 1.15) and the home pet (-3.6, -2.7). Nearest existing slot
+     is ≥ 1.84 away (precedent: slots 3–4 sit 1.82 apart); nearest spot
+     / spawn is ≥ 1.25 away. Floor is 22×14, so z = 2.0 is still on it. */
+  { x: -0.6, z: -2.7, ry: 0 },
+  { x: 5.0, z: -0.6, ry: -0.45 },
+  { x: -5.4, z: 0.6, ry: 0.45 },
+  { x: 0.7, z: -0.6, ry: 0 },
+  { x: -5.6, z: -2.6, ry: 0.2 },
+  { x: 5.5, z: 1.8, ry: -0.6 },
+  { x: -3.9, z: 2.0, ry: 0.6 },
 ];
 
 /**
  * Convert a built layout to the placed-furniture shape publishHome takes.
- * Only catalog items publish; build-only items are listed in `dropped`
- * so the UI can tell the player which pieces won't show to visitors yet.
- * Slots are claimed nearest-first; an item with no free slot is dropped.
+ * Every id in HOUSE_FURN_CATALOG is a real ZhuyaHome catalog id, so
+ * nothing is dropped for "not-in-catalog" any more. The only drop reasons
+ * left are an unknown id (a stale save, or a hand-edited layout) and
+ * "no-free-slot" (the flat has 14 FURN_SLOTS since round-3 (H) — a 15th+
+ * piece has nowhere to go). Slots are claimed nearest-first; an item with no free slot is
+ * dropped. `dropped` is still returned so the UI can tell the player.
  */
 export function houseLayoutToPlacedFurn(l: HouseLayout): {
   placed: { id: string; slot: number }[];

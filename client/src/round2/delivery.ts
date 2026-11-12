@@ -74,6 +74,8 @@ export interface MenuRestaurant {
   rating: number;
   ratingCount: number;
   items: MenuItem[];
+  /** 商家赞助的店（server delivery_sponsors 来的，见 mergeSponsoredMenu） */
+  sponsored?: boolean;
 }
 
 /** 外卖菜单 = 本城所有餐厅的菜 + FOODS 快餐（夜市/茶餐厅档口）。 */
@@ -145,6 +147,66 @@ function dishToMenuItem(r: Restaurant, d: Dish, i: number): MenuItem {
 
 export function findMenuItem(city: CityKey, key: string): MenuItem | undefined {
   return deliveryMenu(city).flatMap((r) => r.items).find((it) => it.key === key);
+}
+
+/* ================= 商家赞助：赞助餐厅进外卖列表（Lagos merchant-sponsor） ================
+ * 写端点 deliverySponsorSlot（admin）已建；读端点 getDeliverySponsors 在 server。
+ * deliveryMenu() 本身不动（静态餐厅），App.tsx 拉到赞助列表后用 mergeSponsoredMenu
+ * 拼进去，带 sponsored 标记，UI 上显示「赞助」徽章。 */
+
+export interface SponsoredDish {
+  name: string;
+  cost: number;
+  energy: number;
+  mood: number;
+  desc: string;
+}
+
+/** getDeliverySponsors 一个元素的形状（server 回的 sponsors[]）。 */
+export interface SponsoredRestaurant {
+  id: number;
+  name: string;
+  cuisine: string;
+  emoji: string;
+  tier: string;
+  dishes: SponsoredDish[];
+  endsAt: string;
+}
+
+export function sponsoredRestaurantToMenu(s: SponsoredRestaurant): MenuRestaurant {
+  return {
+    id: `spon-${s.id}`,
+    name: s.name,
+    emoji: s.emoji,
+    cuisine: s.cuisine,
+    tier: s.tier,
+    scene: "商家赞助 · 本地小店进驻外卖",
+    rating: 4.5,
+    ratingCount: 0,
+    sponsored: true,
+    items: s.dishes.map((d, i) => ({
+      key: `spon:${s.id}:${i}`,
+      restaurantId: `spon-${s.id}`,
+      restaurantName: s.name,
+      restaurantEmoji: s.emoji,
+      cuisine: s.cuisine,
+      tier: s.tier,
+      name: d.name,
+      emoji: "🍽️",
+      cost: d.cost,
+      energy: d.energy,
+      mood: d.mood,
+      desc: d.desc,
+      madeToOrder: true,
+    })),
+  };
+}
+
+/** 把赞助餐厅拼到菜单末尾（按 id 去重；已下架的赞助 server 端已过滤）。 */
+export function mergeSponsoredMenu(menu: MenuRestaurant[], sponsors: SponsoredRestaurant[]): MenuRestaurant[] {
+  const ids = new Set(menu.map((m) => m.id));
+  const extra = sponsors.map(sponsoredRestaurantToMenu).filter((m) => !ids.has(m.id));
+  return [...menu, ...extra];
 }
 
 /* ================= 优惠券 / 会员 ================= */
@@ -882,6 +944,8 @@ export interface DeliveryState {
   gigHistory: { id: string; shopName: string; destName: string; pay: number; late: boolean; day: number }[];
   /** 新手礼包发过没有 */
   welcomed: boolean;
+  /** 正在参与的拼单（server group_orders 的 id + 暗号；没有 = null） */
+  activeGroup?: { id: number; code: string } | null;
 }
 
 export function emptyDeliveryState(): DeliveryState {
@@ -894,6 +958,7 @@ export function emptyDeliveryState(): DeliveryState {
     activeGigs: [],
     gigHistory: [],
     welcomed: false,
+    activeGroup: null,
   };
 }
 
@@ -947,6 +1012,38 @@ export function rateRestaurant(
   return { ...state, orders, myRatings, favorites };
 }
 
+/* ================= 吃完打分 → 每周任务 rate-5（round-3b） =================
+ * int 日志 §十一第 2 条：rateRestaurant 在 App.tsx 里从未被调用，没有评分 UI，
+ * 所以 reportDeliveryQuest({ event: "rate", stars: 5 }) 无处可接。下面三个小
+ * 函数就是打分入口的客户端一半（UI snippet 见 ROUND3B-LOG-D.md）：
+ *  - afterMealRateEligible：订单到了“可打分”状态没有（已送达 / 已吃完，且没评过）；
+ *  - rateAdvancesQuest：这颗星推不推进 rate-5（服务端规则，见 E 日志 §1(d)：
+ *    reportDeliveryQuest 只有 stars === 5 才给 rate-5 记 1；1–4 星也调
+ *    rateRestaurant 记分，但不推进任务，也不调 reportDeliveryQuest）；
+ *  - rateOrder：一次调用同时做本地记分 + 告诉调用方要不要上报（App.tsx 里
+ *    点星后调它，再按 advancesQuest 决定调不调 reportDeliveryQuest）。 */
+
+export function afterMealRateEligible(order: CustomerOrder): boolean {
+  return (order.stage === "delivered" || order.stage === "eaten") && order.rated === undefined;
+}
+
+/** rate-5 任务只认 5 星（服务端 reportDeliveryQuest 的规则，与客户端无关）。 */
+export const RATE_QUEST_STARS = 5;
+
+export function rateAdvancesQuest(stars: number): boolean {
+  return Math.round(stars) === RATE_QUEST_STARS;
+}
+
+/** 打分 + 任务判定一次做完：1–5 星都记分（rateRestaurant），只有 5 星才
+ *  advancesQuest（调用方据此调 reportDeliveryQuest({ event: "rate", stars })）。 */
+export function rateOrder(
+  state: DeliveryState,
+  orderId: string,
+  stars: number,
+): { state: DeliveryState; advancesQuest: boolean } {
+  return { state: rateRestaurant(state, orderId, stars), advancesQuest: rateAdvancesQuest(stars) };
+}
+
 /** 今日跑单小结（接单板顶部展示用）。 */
 export function courierTodaySummary(p: CourierProfile, day: number): {
   count: number;
@@ -958,6 +1055,181 @@ export function courierTodaySummary(p: CourierProfile, day: number): {
   const earned = day === p.todayDay ? p.todayEarned : 0;
   const onTimeRate = p.completed > 0 ? Math.round((p.onTime / p.completed) * 100) : 100;
   return { count, earned, onTimeRate, level: courierLevel(p) };
+}
+
+/* ================= Livehouse 打赏分成（Lagos creator-payout） =================
+ * 听众花 ✨ 打赏轮播里的歌，七成归音乐人（server tipTrack 走 bookStars /
+ * starLedger 到账，30% 是店里抽成）。打赏按钮在 Livehouse.tsx 的正在播放区，
+ * 音乐人自己的收入在 getLivehouseTips 里查。 */
+
+export const TIP_AMOUNTS = [10, 30, 88];
+/** 音乐人分成比例：七成。 */
+export const TIP_CREATOR_SHARE = 0.7;
+
+export function tipCreatorShare(amount: number): { creator: number; house: number } {
+  const creator = Math.floor(amount * TIP_CREATOR_SHARE);
+  return { creator, house: amount - creator };
+}
+
+/** getLivehouseTips 里 mine[] 一个元素的形状。 */
+export interface LivehouseTip {
+  id: number;
+  trackId: number;
+  trackTitle: string;
+  tipperName: string;
+  amount: number;
+  creatorShare: number;
+  message: string;
+  createdAt: string;
+}
+
+/* ================= 顾客拼单（Lagos group-order） =================
+ * 不是 CourierGig.stackWith（那是骑手顺路第二单）：这是顾客侧一起点。
+ * 流程：发起人 createGroupOrder（选店 + 自己的菜）→ 拿到 6 位暗号 → 朋友凭暗号
+ * joinGroupOrder（各点各的菜）→ 发起人 lockGroupOrder → 发起人用 mergeGroupItems
+ * 拼成一单 placeOrder，配送费按 groupOrderTotals 平摊 → completeGroupOrder。
+ * 托管（round-3b）：lockGroupOrder 时服务端按 groupOrderTotals 从每个成员余额里
+ * 托管各人那份，getGroupOrder 返回里带成员 escrow 状态。客户端只算数、只展示，
+ * 不扣钱、不结算——groupOrderTotals 保持原样（只算数），托管与结算是服务端的事。
+ * 30 分钟凑不齐自动取消，一人同时只能在一个拼单里。 */
+
+export interface GroupOrderItem {
+  key: string;
+  name: string;
+  qty: number;
+  cost: number;
+}
+
+/** 成员 escrow 状态（服务端 getGroupOrder 返回的成员字段，已与服务端对齐：
+ *  字段名 escrowStatus，值 "none" | "held" | "released" | "refunded"；
+ *  服务端返回里没有该字段时（旧数据 / 服务端未上线）视为 none。 */
+export type GroupOrderEscrowStatus = "none" | "held" | "released" | "refunded";
+
+export const GROUP_ORDER_ESCROW_ZH: Record<GroupOrderEscrowStatus, string> = {
+  none: "待托管",
+  held: "已托管",
+  released: "已结算",
+  refunded: "已退回",
+};
+
+export interface GroupOrderMember {
+  playerId: string;
+  playerName: string;
+  items: GroupOrderItem[];
+  subtotal: number;
+  joinedAt: string;
+  /** 托管状态（服务端返回；缺失 = none）。金额就是 groupOrderTotals 里该成员的 total。 */
+  escrowStatus?: GroupOrderEscrowStatus;
+  /** 该成员托管/结算/退回的总金额（菜钱 + 配送费分摊）；none 时为 0。 */
+  escrowTotal?: number;
+}
+
+/** 成员 escrow 状态（服务端没给字段时默认 none，别当成已托管）。 */
+export function groupMemberEscrow(m: GroupOrderMember): GroupOrderEscrowStatus {
+  return m.escrowStatus ?? "none";
+}
+
+/** 成员 escrow 状态的中文展示（拼单卡片上直接用）。 */
+export function groupEscrowLabel(m: GroupOrderMember): string {
+  return GROUP_ORDER_ESCROW_ZH[groupMemberEscrow(m)];
+}
+
+export type GroupOrderStatus = "open" | "locked" | "ordered" | "cancelled";
+
+export interface GroupOrderView {
+  id: number;
+  code: string;
+  city: CityKey;
+  hostId: string;
+  hostName: string;
+  restaurantId: string;
+  restaurantName: string;
+  status: GroupOrderStatus;
+  expiresAt: string;
+  /** 合单发到跑腿池后的池单号（服务端返回；没发池为 null）。 */
+  poolId?: string | null;
+  members: GroupOrderMember[];
+}
+
+export const GROUP_ORDER_MAX_MEMBERS = 6;
+export const GROUP_ORDER_TTL_MINUTES = 30;
+
+/** 每人菜钱小计 + 全单合计 + 每人摊的配送费（余数归发起人）。 */
+export function groupOrderTotals(
+  g: GroupOrderView,
+  deliveryFee: number,
+): { perMember: { playerId: string; playerName: string; subtotal: number; feeShare: number; total: number }[]; grandTotal: number } {
+  const n = Math.max(1, g.members.length);
+  const base = Math.floor(deliveryFee / n);
+  const perMember = g.members.map((m, i) => {
+    const feeShare = base + (i === 0 ? deliveryFee - base * n : 0);
+    return { playerId: m.playerId, playerName: m.playerName, subtotal: m.subtotal, feeShare, total: m.subtotal + feeShare };
+  });
+  return { perMember, grandTotal: perMember.reduce((s, m) => s + m.total, 0) };
+}
+
+/** 把所有人的菜合并成 placeOrder 的入参（同名菜 qty 相加）。 */
+export function mergeGroupItems(members: GroupOrderMember[]): { key: string; qty: number }[] {
+  const byKey = new Map<string, number>();
+  for (const m of members) for (const it of m.items) byKey.set(it.key, (byKey.get(it.key) ?? 0) + it.qty);
+  return [...byKey.entries()].map(([key, qty]) => ({ key, qty }));
+}
+
+/** 发给朋友的拼单邀请文案（暗号 6 位，无 0/O/1/I，口头报也不会错）。 */
+export function groupOrderShareText(g: GroupOrderView): string {
+  return `拼单暗号：${g.code}，在「外卖」里输入暗号加入，一起点「${g.restaurantName}」，配送费大家平摊。`;
+}
+
+/* ================= 顾客侧每周任务（Lagos retention-loop） =================
+ * 跑单那边已有 streakDays + 等级成长，顾客侧原来只有新人券。现在补每周任务：
+ * 任务定义在下面（与 server WEEKLY_QUEST_DEFS 同步改）；进度由 App.tsx 在下单 /
+ * 好评时调 reportDeliveryQuest 上报，领奖调 claimWeeklyQuest。奖励只用现有货币
+ * 和现有券：¥ 直接进账（server creditMoney），券是下面的 WEEKLY_REWARD_COUPONS，
+ * 领奖成功后 grantWeeklyCoupon 加进 state.coupons。 */
+
+export interface WeeklyQuestDef {
+  id: string;
+  title: string;
+  desc: string;
+  target: number;
+  rewardLabel: string;
+}
+
+export const WEEKLY_QUESTS: WeeklyQuestDef[] = [
+  { id: "order-3", title: "本周点 3 单", desc: "在外卖里下单 3 次（拼单也算）", target: 3, rewardLabel: "免配送费券 ×1" },
+  { id: "try-new", title: "尝一家新店", desc: "点一家本周还没点过的店", target: 1, rewardLabel: "¥15" },
+  { id: "rate-5", title: "给一单五星好评", desc: "吃完后给任意一单打 5 星", target: 1, rewardLabel: "立减 ¥8 券 ×1" },
+  { id: "spend-100", title: "本周吃满 ¥100", desc: "外卖累计消费满 ¥100", target: 100, rewardLabel: "¥20" },
+];
+
+/** 每周任务奖的券（已在 WELCOME_COUPONS 之外的任务专属券）。 */
+export const WEEKLY_REWARD_COUPONS: Coupon[] = [
+  { id: "weekly-free-delivery", kind: "freeDelivery", value: 0, minSpend: 0, label: "每周任务 · 免配送费 ×1" },
+  { id: "weekly-off-8", kind: "off", value: 8, minSpend: 25, label: "每周任务 · 立减 ¥8（满 ¥25）" },
+];
+
+export interface WeeklyQuestProgress {
+  questId: string;
+  progress: number;
+  target: number;
+  claimed: boolean;
+}
+
+/** 一项任务的展示状态：done = 已完成待领奖（claimed 后也是 done）。 */
+export function weeklyQuestState(
+  def: WeeklyQuestDef,
+  progress: WeeklyQuestProgress | undefined,
+): { progress: number; target: number; done: boolean; claimable: boolean } {
+  const p = progress?.progress ?? 0;
+  const claimed = progress?.claimed ?? false;
+  return { progress: Math.min(p, def.target), target: def.target, done: p >= def.target, claimable: p >= def.target && !claimed };
+}
+
+/** 领奖成功后把任务券加进 state（已有的不重复加；¥ 奖励 server 已直接入账）。 */
+export function grantWeeklyCoupon(state: DeliveryState, couponId: string): DeliveryState {
+  const coupon = WEEKLY_REWARD_COUPONS.find((c) => c.id === couponId);
+  if (!coupon || state.coupons.some((c) => c.id === couponId)) return state;
+  return { ...state, coupons: [...state.coupons, coupon] };
 }
 
 /* ================= Lagos Life gap check（2026-11-11 实测对照） =================
@@ -1019,18 +1291,18 @@ export const LAGOS_GAP_CHECK: LagosGap[] = [
   {
     id: "merchant-sponsor",
     lagosFeature: "商家赞助不止广告牌：赞助的店/菜进游戏内容",
-    status: "gap",
-    where: "—（无对应代码；RESTAURANTS 全是写死数据）",
-    note: "Lagos 的 Chowdeck 本身就是商家赞助进 App。本游戏餐厅全是静态数据，本地商家没法把自己的店和菜放进外卖列表——这是广告牌之外第二条商家变现路。",
-    next: "下一轮：server 加 sponsoredRestaurant 表 + admin 端点（见 ROUND2-LOG-h.md server spec deliverySponsorSlot），delivery.ts 里 MenuRestaurant 加 sponsored 标记位即可接。",
+    status: "done",
+    where: "server getDeliverySponsors + deliverySponsorSlot；本模块 mergeSponsoredMenu / sponsoredRestaurantToMenu，MenuRestaurant.sponsored",
+    note: "赞助餐厅（admin 买 slot，delivery_sponsors 表）现在能进外卖列表，菜单上带「赞助」标记；过期自动下架。",
+    next: "done in delivery.ts + server — 待 App.tsx 接线（外卖列表打开时调 getDeliverySponsors 再 mergeSponsoredMenu，见 ROUND3-LOG-E.md 片段 1）。",
   },
   {
     id: "creator-payout",
     lagosFeature: "音乐人/创作者能从游戏里赚钱（不只是花钱打榜）",
-    status: "gap",
-    where: "server livehouse featured 只收 300 ✨；sendGift/claimGift 有礼物通道",
-    note: "音乐人现在是纯付费方。Lagos 模式里夜店是收入；更完整的闭环是听众打赏/点歌分成。游戏已有 sendGift 礼物通道可复用。",
-    next: "下一轮：Livehouse 加打赏/点歌（听众花 ✨ 点歌，七成归音乐人），复用 sendGift + 收入分成 gift 路径。",
+    status: "done",
+    where: "server tipTrack / getLivehouseTips（livehouse_tips 表）；本模块 TIP_AMOUNTS / tipCreatorShare",
+    note: "听众花 ✨ 打赏轮播里的歌，七成进音乐人账上（server bookStars/starLedger，不另造钱系统），三成店里抽成；每天每人最多打赏 10 次，防刷。",
+    next: "done in delivery.ts + server + Livehouse.tsx 接线（打赏按钮在正在播放区）。round-3b 已把 tipTrack 从 ¥ 账本改成 ✨（bookStars）。",
   },
   {
     id: "invite",
@@ -1042,18 +1314,18 @@ export const LAGOS_GAP_CHECK: LagosGap[] = [
   {
     id: "group-order",
     lagosFeature: "拼单 / 一起点（社交点餐）",
-    status: "gap",
-    where: "—（无对应代码）",
-    note: "Lagos/Chowdeck 类 App 的常见玩法：室友/同事拼一单摊配送费。本游戏有室友系统（roommate 租金对半），拼单是自然的延伸。",
-    next: "下一轮：CustomerOrder 加 groupId + 参与人分摊；可先做同屋拼单（室友各点各的菜、一单结算、配送费对半）。",
+    status: "done",
+    where: "server createGroupOrder / joinGroupOrder / getGroupOrder / leaveGroupOrder / lockGroupOrder / completeGroupOrder（group_orders + group_order_members 表）；本模块 GroupOrderView / mergeGroupItems / groupOrderTotals（配送费平摊在内）",
+    note: "顾客拼单全套：6 位暗号开团（最多 6 人、30 分钟）、各点各的菜、发起人锁定后拼成一单下单、配送费平摊。注意不是 CourierGig.stackWith（那是骑手顺路第二单）。round-3b：lockGroupOrder 时服务端按 groupOrderTotals 从各成员余额托管，成员 escrow 状态（held/settled/refunded/pending，字段名待与服务端日志对齐）由 getGroupOrder 返回，客户端只展示不扣钱；groupOrderTotals 保持只算数。",
+    next: "done in delivery.ts + server — 待 App.tsx 接线（外卖页加「发起拼单 / 输入暗号加入」，拼单卡片显示每人 escrow 状态，见 ROUND3-LOG-E.md 片段 3 + ROUND3B-LOG-D.md 片段 B）。",
   },
   {
     id: "retention-loop",
     lagosFeature: "留存钩子：每日任务/连续签到式的外卖激励",
-    status: "partial",
-    where: "本模块 courier streakDays + WELCOME_COUPONS；App.tsx 另有每日例行",
-    note: "跑单有连续天数（streakDays）和等级成长；顾客侧只有新人券，缺“连续点餐/每周任务”式留存。",
-    next: "下一轮小活：在 delivery.ts 加 weeklyDeliveryQuest（本周点 3 单返一张券），纯客户端即可。",
+    status: "done",
+    where: "server getWeeklyQuests / reportDeliveryQuest / claimWeeklyQuest（delivery_quests 表）；本模块 WEEKLY_QUESTS / WEEKLY_REWARD_COUPONS / grantWeeklyCoupon",
+    note: "顾客侧每周任务 4 项：点 3 单、尝一家新店、给一单五星好评、本周吃满 ¥100；奖励是现有 ¥（server 直接入账）和现有券（免配送费 / 立减 ¥8），没造新货币。进度按北京时间 ISO 周算。",
+    next: "done in delivery.ts + server — 待 App.tsx 接线（下单/好评后调 reportDeliveryQuest，外卖页加每周任务卡，见 ROUND3-LOG-E.md 片段 4；吃完打分入口的客户端一半已就绪：afterMealRateEligible / rateOrder / rateAdvancesQuest，App.tsx snippet 见 ROUND3B-LOG-D.md 片段 A）。",
   },
 ];
 

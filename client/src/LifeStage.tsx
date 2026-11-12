@@ -16,6 +16,7 @@ import { makePostFx, type PostFx } from "./postfx";
 import { attachKeyboardRoam, KEYBOARD_HINTS } from "./round2/controls";
 import { playNpcVoice, stopNpcVoice } from "./round2/sounds";
 import type { HouseLayout } from "./round2/house";
+import { PET_MODEL, type Pet } from "./round2/pets";
 
 export type LifeSet = "flat" | "station" | "metro" | "train" | "bus" | "taxi" | "drive" | "concourse" | "platform" | "office" | "restaurant" | "market" | "electronics" | "mall" | "kitchen" | "bedroom" | "bathroom" | "gym" | "park" | "home" | "cruise" | "wheel" | "aquarium" | "turtle" | "coaster" | "safari" | "hike" | "beach" | "cablecar" | "club" | "clinic" | "classroom" | "oilpainting" | "secondhand" | "seafood" | "oldtown" | "womensstreet" | "museum" | "library" | "factory" | "disney" | "tram" | "temple" | "miniature" | "farm" | "watershow" | "boardwalk" | "fishingport" | "bikehub" | "buildplot";
 export type LifePose = "walk" | "idle" | "sit" | "drive" | "type" | "cook" | "eat" | "sleep" | "wash" | "lift" | "stretch" | "talk" | "dance" | "sing";
@@ -52,6 +53,8 @@ interface Props {
   talkVoiceId?: string;
   /** kids already in the flat, drawn smaller and left standing */
   household?: { shirt: number; pants: number }[];
+  /** 家里坐着的宠物 (App 传 getActivePet(pets)); 只在 setKind === "flat" 时渲染 */
+  homePet?: Pet | null;
   /** bag / cap / tie, the same piece the map draws, so the person matches */
   accessory?: string;
   /** venue interiors: joystick to walk, drag to look, a button to talk. Off for acted beats. */
@@ -69,7 +72,9 @@ const ROAM_SPOTS: Partial<Record<LifeSet, { id: string; emoji: string; zh: strin
   market: [{ id: "haggle", emoji: "🥬", zh: "跟阿姨讲价", en: "Haggle", x: 0.15, z: -0.2 }, { id: "fish", emoji: "🐟", zh: "挑条鱼", en: "Pick a fish", x: -4.1, z: -0.15 }],
   electronics: [{ id: "check", emoji: "📱", zh: "验二手手机", en: "Check a phone", x: -0.5, z: -0.2 }, { id: "parts", emoji: "🔌", zh: "配装配件", en: "Pick parts", x: 1.9, z: -0.1 }],
   restaurant: [{ id: "order", emoji: "🍚", zh: "点猪脚饭", en: "Order rice", x: 0.55, z: 1.05 }, { id: "chat", emoji: "💬", zh: "跟老板娘聊", en: "Chat", x: 3.7, z: 0.35 }, { id: "share", emoji: "🪑", zh: "拼桌", en: "Share a table", x: -2.3, z: 0.55 }, { id: "toilet", emoji: "🚻", zh: "去洗手间", en: "Restroom", x: 4.6, z: 1.2 }],
-  office: [{ id: "coffee", emoji: "☕", zh: "茶水间聊天", en: "Pantry chat", x: 3.3, z: 0.95 }, { id: "ask", emoji: "🙋", zh: "请教前辈", en: "Ask a senior", x: -1.4, z: 1.15 }, { id: "toilet", emoji: "🚻", zh: "去洗手间", en: "Restroom", x: 4.8, z: 1.15 }],
+  office: [{ id: "coffee", emoji: "☕", zh: "茶水间聊天", en: "Pantry chat", x: 3.3, z: 0.95 }, { id: "ask", emoji: "🙋", zh: "请教前辈", en: "Ask a senior", x: -1.4, z: 1.15 }, { id: "toilet", emoji: "🚻", zh: "去洗手间", en: "Restroom", x: 4.8, z: 1.15 },
+    /* round-3 (D): 上班/加班摇杆过场的节拍点 — code 坐在自己工位前（工位在 z≈-0.95，椅子在 (0.4, 0.38)，点放在工位前空地 (-0.9, 0.1)，离出生点 (0.15, 1.15) 约 1.48，不会一开场就触发）；leave 下班走人（前场 (-2.6, 1.9)，离出生点约 2.85）。过场里点任意 pin 都推进一拍（App.tsx 6786 的 onSpot 不看 id）；场馆模式下这两个 id 的对话在 App.tsx VENUE_TALK.office 里补（见 ROUND3-LOG-D.md），不留死 pin。 */
+    { id: "code", emoji: "💻", zh: "坐下敲代码", en: "Sit down and code", x: -0.9, z: 0.1 }, { id: "leave", emoji: "🚪", zh: "下班走人", en: "Clock out", x: -2.6, z: 1.9 }],
   flat: [{ id: "bed", emoji: "🛏️", zh: "上床躺一会儿", en: "Lie down", x: -2.4, z: -0.85 }, { id: "sit", emoji: "🛋️", zh: "在沙发坐下", en: "Sit", x: 0.2, z: 0.55 }, { id: "cook", emoji: "🍳", zh: "用灶台做饭", en: "Cook", x: 3.1, z: -0.15 }, { id: "wash", emoji: "🚿", zh: "洗一下", en: "Wash", x: 4.5, z: 1.05 }],
   gym: [{ id: "coach", emoji: "🏋️", zh: "让教练看动作", en: "Check form", x: 0.15, z: 0.55 }, { id: "spot", emoji: "🤝", zh: "帮人保护", en: "Spot a set", x: 2.5, z: 0.35 }],
   club: [{ id: "sing", emoji: "🎤", zh: "上台唱一首", en: "Sing", x: 0.5, z: 0.15 }, { id: "dance", emoji: "🕺", zh: "挤到台前跳", en: "Dance", x: -2.1, z: 0.75 }, { id: "drink", emoji: "🍹", zh: "吧台点一杯", en: "Get a drink", x: -4.5, z: 0.4 }, { id: "friend", emoji: "🙌", zh: "聊乐队", en: "Talk music", x: 3.3, z: 0.8 }, { id: "live", emoji: "🎧", zh: "听原创", en: "Live music", x: 1.7, z: 0.35 }],
@@ -77,7 +82,18 @@ const ROAM_SPOTS: Partial<Record<LifeSet, { id: string; emoji: string; zh: strin
   classroom: [{ id: "class", emoji: "📖", zh: "听一节课", en: "Sit in", x: -0.6, z: 1.15 }, { id: "classmate", emoji: "🤝", zh: "加个微信", en: "Swap WeChat", x: 2.1, z: 1.2 }],
   bedroom: [{ id: "desk", emoji: "🛎️", zh: "问前台", en: "Ask the desk", x: 0.2, z: 0.85 }, { id: "sleep", emoji: "🛏️", zh: "躺下睡觉", en: "Lie down", x: -1.1, z: -1.05 }, { id: "wake", emoji: "🌅", zh: "起床伸懒腰", en: "Stretch awake", x: 0.2, z: 0.3 }],
   concourse: [{ id: "toilet", emoji: "🚻", zh: "去洗手间", en: "Restroom", x: 4.4, z: 1.05 }, { id: "wait", emoji: "🪑", zh: "坐一会儿", en: "Sit", x: 3.1, z: 0.55 }, { id: "water", emoji: "🧴", zh: "买瓶水", en: "Buy water", x: -3.5, z: 0.75 }],
-  park: [{ id: "bench", emoji: "🪑", zh: "坐长椅", en: "Bench", x: 2.2, z: 0.15 }, { id: "stroll", emoji: "🚶", zh: "沿园路走", en: "Walk the path", x: -2.2, z: 0.65 }, { id: "photo", emoji: "📸", zh: "拍一张", en: "Photo", x: 0.2, z: 1.1 }],
+  park: [{ id: "bench", emoji: "🪑", zh: "坐长椅", en: "Bench", x: 2.2, z: 0.15 }, { id: "stroll", emoji: "🚶", zh: "沿园路走", en: "Walk the path", x: -2.2, z: 0.65 }, { id: "photo", emoji: "📸", zh: "拍一张", en: "Photo", x: 0.2, z: 1.1 },
+    /* round-3 (H): 蝴蝶谷光柱点 — id 必须 exactly "butterfly"，与 App.tsx
+       QINGQING_TALK 的条目 id 一致（onSpot 按 venueTalksFor 查 id）。
+       坐标 (-4.2, -0.9) 在公园布景的花丛里（LifeStage.tsx:2316 的 12 朵
+       花，x -5…5、z -1.3…-0.6）：离最近的树 (-4.4, -2.5) 1.61、灌木
+       (-2.2, -1.5) 2.09、池塘 (-4.1, 1.9) 2.8、路灯 (-1.9, -1.2) 2.32；
+       离已有三点 bench/stroll/photo 最近 2.53，离出生点 (0.15, 1.15)
+       约 4.8；在 clampWalk (x ±5.6, z -1.15…2.15) 内。注意：ROAM_SPOTS.park
+       是全城公园共用的，所以其它公园也会看到这个点，但只有青青世界
+       (locId "qingqing") 能在 venueTalksFor 里查到 butterfly 对话，别处
+       点了没反应——见 ROUND3B-LOG-H.md。 */
+    { id: "butterfly", emoji: "🦋", zh: "在蝴蝶谷站一会儿", en: "Stand in Butterfly Valley", x: -4.2, z: -0.9 }],
   beach: [{ id: "waves", emoji: "🌊", zh: "踩进浪里", en: "Into the wash", x: 0.3, z: 0.8 }, { id: "shade", emoji: "⛱️", zh: "伞下歇着", en: "Shade", x: -2.5, z: 0.5 }],
   hike: [{ id: "climb", emoji: "🥾", zh: "再往上走", en: "Climb on", x: 0.1, z: 0.65 }, { id: "view", emoji: "🏙️", zh: "看一眼城", en: "Look out", x: 2.5, z: 1.0 }],
   /* walkable daily-life cutscenes (round-2): the same joystick as venue
@@ -96,7 +112,15 @@ const ROAM_SPOTS: Partial<Record<LifeSet, { id: string; emoji: string; zh: strin
   womensstreet: [{ id: "clothes", emoji: "👗", zh: "淘衣服鞋袜", en: "Browse clothes", x: 0.15, z: -0.2 }, { id: "fish", emoji: "🐠", zh: "买条金鱼", en: "Buy a goldfish", x: -3.6, z: 0.85 }, { id: "flower", emoji: "🌸", zh: "买束花", en: "Buy flowers", x: 2.4, z: 0.6 }],
   museum: [{ id: "exhibit", emoji: "🏺", zh: "看展", en: "See the exhibit", x: 0.15, z: -0.2 }, { id: "guide", emoji: "🎧", zh: "听讲解", en: "Hear the guide", x: -2.6, z: 0.85 }],
   library: [{ id: "borrow", emoji: "📚", zh: "借本书", en: "Borrow a book", x: 0.15, z: -0.2 }, { id: "study", emoji: "📖", zh: "坐下自修", en: "Sit and study", x: 2.4, z: 0.6 }],
-  factory: [{ id: "tour", emoji: "🏭", zh: "看产线", en: "See the line", x: 0.15, z: -0.2 }, { id: "ask", emoji: "🙋", zh: "问问三班倒", en: "Ask about shifts", x: -2.6, z: 0.85 }],
+  factory: [{ id: "tour", emoji: "🏭", zh: "看产线", en: "See the line", x: 0.15, z: -0.2 }, { id: "ask", emoji: "🙋", zh: "问问三班倒", en: "Ask about shifts", x: -2.6, z: 0.85 },
+    /* round-3 (H): 食堂光柱点 — id 必须 exactly "canteen"，与 App.tsx
+       VENUE_TALK.factory 的 canteen 条目 id 一致（onSpot 按 id 查）。
+       工厂布景里没有食堂道具（只有产线/储罐/工人），所以点放在前场
+       右侧空地 (4.2, 1.2)：离产线 (z -1.9) 3.1、离班长 (-1.4, -0.6) /
+       工头 (2.2, 0.4) 最近 2.15、离已有两点 tour/ask 最近 4.29、离出生点
+       (0.15, 1.15) 约 4.05；在 clampWalk (x ±5.6, z -1.15…2.15) 内。
+       没改布景、没动已有两点。 */
+    { id: "canteen", emoji: "🍱", zh: "在食堂吃一顿", en: "Eat in the canteen", x: 4.2, z: 1.2 }],
   disney: [{ id: "castle", emoji: "🏰", zh: "去城堡前拍照", en: "Photo at the castle", x: 0.15, z: -0.2 }, { id: "ride", emoji: "🎢", zh: "玩游乐设施", en: "Ride something", x: -2.6, z: 0.85 }, { id: "parade", emoji: "🎭", zh: "看花车", en: "Watch the parade", x: 2.8, z: 0.6 }],
   tram: [{ id: "ride", emoji: "🚋", zh: "上车坐一程", en: "Ride the tram", x: 0.15, z: -0.2 }, { id: "photo", emoji: "📸", zh: "拍叮叮车", en: "Photo the tram", x: -2.6, z: 0.85 }],
   temple: [{ id: "pray", emoji: "🙏", zh: "上香祈福", en: "Offer incense", x: 0.15, z: -0.2 }, { id: "fortune", emoji: "🎋", zh: "求一支签", en: "Draw a fortune stick", x: -2.6, z: 0.85 }],
@@ -181,6 +205,21 @@ export const FURN_SLOTS: { x: number; z: number; ry: number; zh: string; en: str
   { x: 1.9, z: -2.7, ry: 0, zh: "靠后墙", en: "Back wall" },
   { x: -2.2, z: 1.3, ry: 0.6, zh: "左前", en: "Front left" },
   { x: 2.3, z: 1.3, ry: -0.6, zh: "右前", en: "Front right" },
+  /* round-3 (H): 7 → 14 slots, so all 14 ZhuyaHome pieces publish — same
+     order/coords as house.ts HOUSE_FURN_SLOTS. New slots sit on open
+     floor, clear of the door (side wall x -6.4, z -1.2), the built-in
+     sofas/beds, ROAM_SPOTS.flat (bed -2.4,-0.85 / sit 0.2,0.55 / cook
+     3.1,-0.15 / wash 4.5,1.05), the roam spawn (0.15, 1.15) and the home
+     pet (-3.6, -2.7). Nearest existing slot is ≥ 1.84 away (precedent:
+     slots 3–4 sit 1.82 apart); nearest spot/spawn is ≥ 1.25 away.
+     Floor is 22×14, so z = 2.0 is still on it. */
+  { x: -0.6, z: -2.7, ry: 0, zh: "后墙中", en: "Back centre" },
+  { x: 5.0, z: -0.6, ry: -0.45, zh: "右墙边", en: "Right wall" },
+  { x: -5.4, z: 0.6, ry: 0.45, zh: "左墙边", en: "Left wall" },
+  { x: 0.7, z: -0.6, ry: 0, zh: "正中", en: "Centre" },
+  { x: -5.6, z: -2.6, ry: 0.2, zh: "左后墙边", en: "Far back left" },
+  { x: 5.5, z: 1.8, ry: -0.6, zh: "右前角", en: "Front-right corner" },
+  { x: -3.9, z: 2.0, ry: 0.6, zh: "左前中", en: "Front left centre" },
 ];
 
 /* ---------------- canvas texture helpers ---------------- */
@@ -215,6 +254,126 @@ function faceSprite(emoji: string): THREE.Sprite {
   sp.scale.set(0.62, 0.62, 1);
   sp.renderOrder = 10;
   return sp;
+}
+
+interface PetParts {
+  body?: THREE.Group;
+  tail?: THREE.Group;
+  legFL?: THREE.Group;
+  legFR?: THREE.Group;
+  legBL?: THREE.Group;
+  legBR?: THREE.Group;
+}
+
+/* Round-3 (C): the player's pet as a low-poly animal — a copy of MapView's
+   makePetGroup (same primitive-geometry language as makeFigure, no .glb).
+   Cat vs dog is read off PET_MODEL (round2/pets.ts): pointed triangle ears
+   + up-curved thin tail + smaller frame for a cat; floppy ears + level
+   thick tail + snout + bigger frame for a dog. Both get real geometry eyes
+   (the round-2 faces rule: nothing faceless). Coat colour is the pet's own
+   pet.color; belly / muzzle are the same colour lightened. Kept as a copy
+   (not a shared module) so MapView stays untouched; keep the two in sync. */
+function makePetGroup(pet: Pet): THREE.Group {
+  const spec = PET_MODEL[pet.kind];
+  const g = new THREE.Group();
+  const s = pet.kind === "dog" ? 1.28 : 1; // dogs read bigger than cats at map scale
+  const coat = new THREE.MeshStandardMaterial({ color: pet.color, roughness: 0.85 });
+  const light = new THREE.MeshStandardMaterial({ color: new THREE.Color(pet.color).lerp(new THREE.Color(0xffffff), 0.45), roughness: 0.85 });
+  const dark = new THREE.MeshStandardMaterial({ color: new THREE.Color(pet.color).multiplyScalar(0.55), roughness: 0.9 });
+  const mkLeg = (x: number, z: number) => {
+    const pivot = new THREE.Group();
+    pivot.position.set(x, 0.22 * s, z);
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.05 * s, 0.045 * s, 0.22 * s, 8), dark);
+    m.position.y = -0.11 * s;
+    m.castShadow = true;
+    pivot.add(m);
+    g.add(pivot);
+    return pivot;
+  };
+  const legFL = mkLeg(-0.11 * s, 0.17 * s);
+  const legFR = mkLeg(0.11 * s, 0.17 * s);
+  const legBL = mkLeg(-0.11 * s, -0.17 * s);
+  const legBR = mkLeg(0.11 * s, -0.17 * s);
+  // body parts live in their own subgroup so the sit pose can lift the
+  // chest (rotation.x) while the legs stay planted on the ground
+  const body = new THREE.Group();
+  body.position.y = 0.22 * s;
+  g.add(body);
+  const torso = new THREE.Mesh(new THREE.SphereGeometry(0.26 * s, 14, 10), coat);
+  torso.scale.set(0.85, 0.78, 1.3);
+  torso.position.y = 0.12 * s;
+  torso.castShadow = true;
+  body.add(torso);
+  const belly = new THREE.Mesh(new THREE.SphereGeometry(0.2 * s, 12, 8), light);
+  belly.scale.set(0.7, 0.55, 1.1);
+  belly.position.set(0, 0.02 * s, 0.08 * s);
+  body.add(belly);
+  const head = new THREE.Group();
+  head.position.set(0, 0.32 * s, 0.34 * s);
+  body.add(head);
+  const skull = new THREE.Mesh(new THREE.SphereGeometry(0.19 * s, 14, 10), coat);
+  skull.castShadow = true;
+  head.add(skull);
+  const eyeMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.3 });
+  for (const ex of [-0.07, 0.07]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.028 * s, 8, 6), eyeMat);
+    eye.position.set(ex * s, 0.05 * s, 0.165 * s);
+    head.add(eye);
+  }
+  if (pet.kind === "cat") {
+    for (const ex of [-0.1, 0.1]) {
+      const ear = new THREE.Mesh(new THREE.ConeGeometry(0.085 * s, 0.17 * s, 4), coat);
+      ear.position.set(ex * s, 0.2 * s, 0);
+      ear.rotation.y = Math.PI / 4;
+      ear.castShadow = true;
+      head.add(ear);
+      const inner = new THREE.Mesh(new THREE.ConeGeometry(0.045 * s, 0.1 * s, 4), new THREE.MeshStandardMaterial({ color: 0xf5a8b8, roughness: 0.9 }));
+      inner.position.set(ex * s, 0.18 * s, 0.03 * s);
+      inner.rotation.y = Math.PI / 4;
+      head.add(inner);
+    }
+    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.05 * s, 0.03 * s, 0.02), new THREE.MeshStandardMaterial({ color: 0xe87a90, roughness: 0.7 }));
+    nose.position.set(0, -0.01 * s, 0.19 * s);
+    head.add(nose);
+  } else {
+    for (const ex of [-0.17, 0.17]) {
+      const ear = new THREE.Mesh(new THREE.BoxGeometry(0.07 * s, 0.24 * s, 0.05 * s), dark);
+      ear.position.set(ex * s, 0.02 * s, 0.02 * s);
+      ear.rotation.z = ex < 0 ? 0.25 : -0.25;
+      ear.castShadow = true;
+      head.add(ear);
+    }
+    const muzzle = new THREE.Mesh(new THREE.BoxGeometry(0.15 * s, 0.11 * s, 0.13 * s), light);
+    muzzle.position.set(0, -0.05 * s, 0.18 * s);
+    muzzle.castShadow = true;
+    head.add(muzzle);
+    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.06 * s, 0.04 * s, 0.03), new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.5 }));
+    nose.position.set(0, -0.02 * s, 0.25 * s);
+    head.add(nose);
+  }
+  // tail on its own pivot so the frame loop can wag it: cat up-curved,
+  // dog out level and slightly up
+  const tail = new THREE.Group();
+  tail.position.set(0, 0.14 * s, -0.33 * s);
+  const tailLen = pet.kind === "cat" ? 0.42 : 0.3;
+  const tailMesh = new THREE.Mesh(new THREE.CylinderGeometry(pet.kind === "cat" ? 0.028 * s : 0.042 * s, pet.kind === "cat" ? 0.022 * s : 0.035 * s, tailLen * s, 8), coat);
+  tailMesh.position.y = (tailLen / 2) * s;
+  tailMesh.castShadow = true;
+  tail.add(tailMesh);
+  tail.rotation.x = pet.kind === "cat" ? -0.35 : -1.15;
+  body.add(tail);
+  const badge = faceSprite(spec.emoji);
+  badge.scale.set(0.9, 0.9, 1);
+  badge.position.y = 0.85 * s;
+  g.add(badge);
+  const parts = g.userData as PetParts;
+  parts.body = body;
+  parts.tail = tail;
+  parts.legFL = legFL;
+  parts.legFR = legFR;
+  parts.legBL = legBL;
+  parts.legBR = legBR;
+  return g;
 }
 
 /** A self-lit board (sign / screen / menu) with centred text lines. */
@@ -1967,7 +2126,9 @@ export function LifeStage3D(p: Props) {
         void wallMesh;
       }
       for (const it of layout.items) {
-        const furn = box(0.9, 0.55, 0.6, it.furnId === "bed-double" ? 0xd9534a : it.furnId === "sofa-fabric" ? 0x3f6d8e : it.furnId === "kitchen-cabinet" ? 0x8a5a3b : 0x78716c, it.x, 0.28, it.z, 0.8);
+        // Round-3 (B): 预览按 ZhuyaHome 目录色画，不再只有 3 个旧 id 有颜色、其余一律灰盒子
+        const BUILDPLOT_COLORS: Record<string, number> = { "sofa-fabric": 0x93b8a4, "sofa-leather": 0x8a5a3b, "sofa-tatami": 0xd9c39a, "table-oak": 0xb08954, "table-marble": 0xf1f5f9, "tv-cabinet": 0x8a6f4d, "bed-double": 0xa9835a, wardrobe: 0xb08954, desk: 0x6b7280, fridge: 0xd7dde3, "kitchen-cabinet": 0x9db4a0, "dining-table": 0xb08954, washer: 0xe5e7eb, bathtub: 0xf1f5f9 };
+        const furn = box(0.9, 0.55, 0.6, BUILDPLOT_COLORS[it.furnId] ?? 0x78716c, it.x, 0.28, it.z, 0.8);
         furn.rotation.y = it.ry;
       }
       if (layout.rooms.length === 0 && layout.walls.length === 0 && layout.items.length === 0) {
@@ -2592,6 +2753,19 @@ export function LifeStage3D(p: Props) {
     actor.g.add(face);
     scene.add(actor.g);
 
+    // 家里的宠物: 坐在门口内侧等主人 (round-3, 缺口 9b)。门在后墙 (-4.4, 1.13, -3.56),
+    // 门口内侧一点是 (-3.6, 0, -2.7); 面朝门口即 rotation.y = Math.PI。
+    if (setKind === "flat" && propsRef.current.homePet) {
+      const hp = makePetGroup(propsRef.current.homePet);
+      hp.position.set(-3.6, 0, -2.7);
+      hp.rotation.y = Math.PI; // 面朝门口
+      // 坐姿: body 子组抬起 (与 MapView 帧循环里 sit 的 -0.5 同值)
+      const parts = hp.userData as PetParts;
+      if (parts.body) parts.body.rotation.x = -0.5;
+      scene.add(hp);
+      bobbers.push({ g: hp, ph: 1.3, amp: 0.008 }); // 呼吸起伏, 与人物同制
+    }
+
     // barbell for the lift pose
     const barbell = new THREE.Group();
     const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1.7, 8), mat(0x9aa3ad, 0.3, { metalness: 0.7 }));
@@ -3108,6 +3282,8 @@ export function LifeStage3D(p: Props) {
         else if (setKind === "station") { A.g.position.set(0.2, 0, 0.55); A.g.rotation.y = Math.PI; }
         else if (setKind === "concourse") { A.g.position.set(-0.05, 0, 0.55); A.g.rotation.y = Math.PI / 2; }
         else if (setKind === "platform") { A.g.position.set(0.2, 0, 0.55); A.g.rotation.y = Math.PI; }
+        /* round-3 (D): watershow 的默认落点 (0.2, 0, 0.3) 在喷泉水池里（水池中心 (0, -1.2) 半径约 2.1，水面 y≈0.28）——定时过场里演员会站在水中。挪到池边前场 (0.2, 0, 1.3)，面朝水秀，和其它场馆 set 一样面朝布景。 */
+        else if (setKind === "watershow") { A.g.position.set(0.2, 0, 1.3); A.g.rotation.y = Math.PI; }
         else { A.g.position.set(0.2, 0, 0.3); }
         const swayA = Math.sin(t * 1.6) * 0.045;
         A.armL.rotation.x = swayA;

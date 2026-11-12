@@ -290,7 +290,7 @@ export const starLedger = sqliteTable("star_ledger", {
   accountId: text("account_id").notNull(),
   amount: integer("amount").notNull(),
   balance: integer("balance").notNull(),
-  reason: text("reason").notNull(), // purchase | refund | pass | member | shop | grant
+  reason: text("reason").notNull(), // purchase | refund | pass | member | shop | grant | livehouse-tip
   ref: text("ref"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
 });
@@ -614,6 +614,10 @@ export const tradeTasks = sqliteTable("trade_tasks", {
   expiresDay: integer("expires_day").notNull().default(0),
   completionNote: text("completion_note"),
   disputeReason: text("dispute_reason"),
+  disputedAt: integer("disputed_at", { mode: "timestamp_ms" }),
+  disputeFromStatus: text("dispute_from_status"), // accepted | completed — the status the dispute froze
+  disputeVerdict: text("dispute_verdict"), // seller | buyer | expired
+  disputeSettledAt: integer("dispute_settled_at", { mode: "timestamp_ms" }),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
 });
 /* Dedicated trade escrow ledger (NOT sendGift: gift kinds cap at ¥5,000 and
@@ -841,3 +845,100 @@ export const deliverySponsors = sqliteTable("delivery_sponsors", {
   endsAt: integer("ends_at", { mode: "timestamp_ms" }).notNull(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
 });
+
+/* ---- round-3 (S): trade-dispute jury (e) ---- */
+/* One vote per juror per disputed trade task. Reuses the gigVotes /
+   blackReportVotes pattern; a separate table because neither fits a trade
+   task (gigVotes keys on gigId, blackReportVotes on reportId). */
+export const tradeDisputeVotes = sqliteTable("trade_dispute_votes", {
+  taskId: integer("task_id").notNull(),
+  voterId: text("voter_id").notNull(),
+  side: text("side").notNull(), // seller | buyer — who the frozen escrow goes to
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+}, (t) => [primaryKey({ columns: [t.taskId, t.voterId] })]);
+
+/* ---- round-3 (S): police patrol / observation (g) ---- */
+/* Server-side patrols + watches (client police.ts kept them in process
+   memory, so the 👁️ was only visible in the same session). One active
+   patrol per officer; watches end when the patrol ends or goes stale
+   (6 h TTL, lazy expiry). Avatar ids only — no real identity is stored. */
+export const patrols = sqliteTable("patrols", {
+  officerId: text("officer_id").primaryKey(),
+  city: text("city").notNull(),
+  startedAt: integer("started_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+export const patrolWatches = sqliteTable("patrol_watches", {
+  officerId: text("officer_id").notNull(),
+  targetId: text("target_id").notNull(),
+  note: text("note").notNull().default(""),
+  city: text("city").notNull(),
+  startedAt: integer("started_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+}, (t) => [primaryKey({ columns: [t.officerId, t.targetId] })]);
+
+/* ---- round-3 (E): Livehouse tips (creator payout), group orders, weekly quests ----
+   Lagos gaps 11: merchant-sponsor read side is getDeliverySponsors (no new
+   table — delivery_sponsors already exists); tips pay the musician 70% of an
+   ✨ tip through the account star ledger (bookStars, round-3b — was ¥ via
+   creditMoney/writeLedger); group orders split one restaurant order across players;
+   weekly quests are the customer-side retention loop (courier streaks
+   already exist, this is the missing half). */
+export const livehouseTips = sqliteTable("livehouse_tips", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  trackId: integer("track_id").notNull(),
+  tipperId: text("tipper_id").notNull(),
+  tipperName: text("tipper_name").notNull(),
+  creatorId: text("creator_id").notNull(),
+  amount: integer("amount").notNull(), // what the listener paid, ✨ (round-3b: was ¥)
+  creatorShare: integer("creator_share").notNull(), // 70% of amount, credited to the musician in ✨
+  message: text("message").notNull().default(""),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+export const groupOrders = sqliteTable("group_orders", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  city: text("city").notNull(),
+  hostId: text("host_id").notNull(),
+  hostName: text("host_name").notNull(),
+  restaurantId: text("restaurant_id").notNull(),
+  restaurantName: text("restaurant_name").notNull(),
+  code: text("code").notNull(), // 6-char invite code, unique while open
+  status: text("status").notNull().default("open"), // open | locked | ordered | cancelled
+  poolId: text("pool_id"), // delivery_pool_orders id when the host published the combined order to the rider pool (round-3b); null for local/NPC delivery
+  lockedAt: integer("locked_at", { mode: "timestamp_ms" }), // when the host locked + escrowed (round-3b); locked groups expire 2 h after this
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+});
+export const groupOrderMembers = sqliteTable("group_order_members", {
+  groupId: integer("group_id").notNull(),
+  playerId: text("player_id").notNull(),
+  playerName: text("player_name").notNull(),
+  itemsJson: text("items_json").notNull().default("[]"), // [{key, name, qty, cost}]
+  subtotal: integer("subtotal").notNull().default(0),
+  joinedAt: integer("joined_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+}, (t) => [primaryKey({ columns: [t.groupId, t.playerId] })]);
+export const deliveryQuests = sqliteTable("delivery_quests", {
+  playerId: text("player_id").notNull(),
+  weekKey: text("week_key").notNull(), // ISO week in Beijing time, e.g. "2026-W46"
+  questId: text("quest_id").notNull(),
+  progress: integer("progress").notNull().default(0),
+  claimed: integer("claimed").notNull().default(0), // 0 | 1
+  meta: text("meta").notNull().default("{}"), // JSON: { seen: [restaurantId...] } for try-new
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+}, (t) => [primaryKey({ columns: [t.playerId, t.weekKey, t.questId] })]);
+
+/* ---- round-3b (S): group-order escrow — one row per member per group ----
+   Same pattern as tradeEscrow (hold in creditMoney/writeLedger, then
+   release / refund, compare-and-set on the group status), but a dedicated
+   table: settlement needs the food/fee split per member (tradeEscrow has
+   no split columns), and getGroupOrder reads each member's escrow status
+   straight off this table. One row per (group, player): a group is
+   escrowed at most once (lock), so the composite PK is safe. */
+export const groupOrderEscrow = sqliteTable("group_order_escrow", {
+  groupId: integer("group_id").notNull(),
+  playerId: text("player_id").notNull(),
+  foodAmount: integer("food_amount").notNull(), // member's dishes subtotal (¥)
+  feeAmount: integer("fee_amount").notNull(), // member's share of the delivery fee (¥)
+  amount: integer("amount").notNull(), // foodAmount + feeAmount — what was taken from the member
+  status: text("status").notNull().default("held"), // held | released | refunded
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  releasedAt: integer("released_at", { mode: "timestamp_ms" }),
+}, (t) => [primaryKey({ columns: [t.groupId, t.playerId] })]);

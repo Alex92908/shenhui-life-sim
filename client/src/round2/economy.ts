@@ -900,6 +900,13 @@ export interface TradeTask {
   expiresDay: GameDay;
   /** Free-text completion note ("已当面验货，没问题"). */
   completionNote?: string;
+  /** Round-3 (S): jury fields, filled by the server once a dispute is filed.
+   * disputeDueAt is the 24 h jury deadline (ISO); disputeVerdict is only
+   * set after the jury closes (seller = escrow released to the seller side,
+   * buyer = refunded to the payer, expired = not enough votes, refunded). */
+  disputeReason?: string;
+  disputeVerdict?: "seller" | "buyer" | "expired";
+  disputeDueAt?: string;
 }
 
 export interface TradeTaskBook {

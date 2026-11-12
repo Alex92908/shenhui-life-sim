@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type ApiResponse } from "./api";
 import { playTrack, stopTrack } from "./sound";
+import { TIP_AMOUNTS, type LivehouseTip } from "./round2/delivery";
 
 type State = ApiResponse<typeof api, "livehouseState">;
 type Track = State["rotation"][number];
@@ -32,12 +33,21 @@ function nowPlaying(rot: Track[], nowMs: number): { i: number; offset: number } 
   return { i: 0, offset: 0 };
 }
 
-export function LivehouseModal({ en, token, venue, soundIsOn, enableSound, onClose, toast, openAccount, openStore }: { en: boolean; token: string; venue: string; soundIsOn: boolean; enableSound: () => void; onClose: () => void; toast: (m: string) => void; openAccount: () => void; openStore: () => void }) {
+export function LivehouseModal({ en, token, playerId, venue, soundIsOn, enableSound, onClose, toast, openAccount, openStore }: { en: boolean; token: string; playerId: string; venue: string; soundIsOn: boolean; enableSound: () => void; onClose: () => void; toast: (m: string) => void; openAccount: () => void; openStore: () => void }) {
   const T = (zh: string, e: string) => (en ? e : zh);
   const [st, setSt] = useState<State | null>(null);
   const [clock, setClock] = useState(Date.now());
   const [listening, setListening] = useState(false);
   const [loadingTrack, setLoadingTrack] = useState(false);
+  const [tipSent, setTipSent] = useState(false);
+  const [tips, setTips] = useState<LivehouseTip[]>([]);
+  const [tipsTotal, setTipsTotal] = useState(0);
+  const [tipTotals, setTipTotals] = useState<{ trackId: number; total: number; count: number }[]>([]);
+  const loadTips = async () => {
+    if (!playerId) return;
+    try { const r = await api.getLivehouseTips({ playerId }); if (r.ok) { setTips(r.mine); setTipsTotal(r.totalEarned); setTipTotals(r.totals); } } catch { /* offline */ }
+  };
+  useEffect(() => { void loadTips(); }, [playerId]); // eslint-disable-line react-hooks/exhaustive-deps
   const [file, setFile] = useState<File | null>(null);
   const [artist, setArtist] = useState(""); const [title, setTitle] = useState(""); const [rights, setRights] = useState(false);
   const [upload, setUpload] = useState<number | null>(null);
@@ -47,6 +57,13 @@ export function LivehouseModal({ en, token, venue, soundIsOn, enableSound, onClo
   const rot = st?.rotation ?? [];
   const np = nowPlaying(rot, clock + offsetRef.current);
   const cur = np ? rot[np.i] : undefined;
+  useEffect(() => { setTipSent(false); }, [cur?.id]);
+  const tip = async (amount: number) => {
+    if (!cur || !playerId) return;
+    const r = await api.tipTrack({ playerId, trackId: cur.id, amount });
+    if (r.ok) { setTipSent(true); toast(T(`已打赏 ✨${amount}，${r.creatorName} 收到 ✨${r.creatorShare}（七成）。`, `Tipped ✨${amount} — ${r.creatorName} gets ✨${r.creatorShare} (70%).`)); void loadTips(); }
+    else toast(r.error ?? T("打赏失败", "Tip failed"));
+  };
 
   const listen = async () => {
     if (!soundIsOn) enableSound();
@@ -103,13 +120,24 @@ export function LivehouseModal({ en, token, venue, soundIsOn, enableSound, onClo
             <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/25"><div className="h-full bg-white" style={{ width: `${Math.min(100, (np.offset / cur.durationSec) * 100)}%` }} /></div>
             <p className="mt-1 flex justify-between text-[11px] text-white/75"><span>{fmtT(np.offset)}</span><span>{fmtT(cur.durationSec)}</span></p>
             <button type="button" disabled={loadingTrack} onClick={() => { if (listening) { stopTrack(); setListening(false); } else void listen(); }} className="mt-3 w-full rounded-full bg-white py-2.5 text-sm font-black text-[#7c3aed] disabled:opacity-60">{loadingTrack ? T("加载中…", "Loading…") : listening ? T("⏸ 停止收听", "⏸ Stop") : T("🎧 一起听", "🎧 Listen along")}</button>
+            {/* round-3 (E) / round-3b: 打赏音乐人 — 听众出 ✨，七成归音乐人（server tipTrack 走 ✨ 账本 / bookStars） */}
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-black text-white/70">{T("打赏音乐人", "Tip the musician")}</span>
+              {TIP_AMOUNTS.map((a) => (
+                <button key={a} type="button" disabled={tipSent || !playerId}
+                  onClick={() => void tip(a)}
+                  className="rounded-full bg-white/15 px-2.5 py-1 text-xs font-black disabled:opacity-40">
+                  ✨{a}
+                </button>
+              ))}
+            </div>
           </>) : (
             <p className="text-sm font-bold">{T("还没有音乐人的歌在轮播——现在放的是店里的电子舞曲（打开 🔊 就能听到）。第一个投稿的音乐人，全城都会听到。", "No musicians' songs in rotation yet — the house beat is playing (turn on 🔊). The first musician to submit gets heard by the whole city.")}</p>
           )}
         </div>
         {rot.length > 1 && np && (<>
           <p className="mt-3 text-xs font-black text-white/70">{T("接下来", "Up next")}</p>
-          {[1, 2, 3].map((k) => rot[(np.i + k) % rot.length]).filter((t, k, arr) => t && arr.indexOf(t) === k).map((t) => <p key={`n${t!.id}`} className="mt-1 text-sm">{t!.featured ? "⭐ " : "· "}{t!.title} <span className="text-white/60">— {t!.artist}</span></p>)}
+          {[1, 2, 3].map((k) => rot[(np.i + k) % rot.length]).filter((t, k, arr) => t && arr.indexOf(t) === k).map((t) => <p key={`n${t!.id}`} className="mt-1 text-sm">{t!.featured ? "⭐ " : "· "}{t!.title} <span className="text-white/60">— {t!.artist}{(() => { const tt = tipTotals.find((x) => x.trackId === t!.id); return tt ? ` · 已收到打赏 ✨${tt.total}` : ""; })()}</span></p>)}
         </>)}
         <div className="mt-4 rounded-[14px] border border-white/20 p-3">
           <p className="text-sm font-black">🎤 {T("我是音乐人：投稿我的原创", "I'm a musician: submit my original song")}</p>
@@ -123,6 +151,13 @@ export function LivehouseModal({ en, token, venue, soundIsOn, enableSound, onClo
           {(st?.mine ?? []).map((t) => (
             <p key={`m${t.id}`} className="mt-2 flex items-center gap-2 text-xs"><span className="min-w-0 flex-1 truncate">{t.title} · {en ? STATUS[t.status]?.[1] : STATUS[t.status]?.[0]}{t.featured ? " · ⭐" : ""}</span>{t.status === "approved" && <button type="button" onClick={() => void boost(t.id)} className="shrink-0 rounded-full bg-white/15 px-2.5 py-1 font-black">⭐ {T(`主打一周 ${st?.boostStars ?? 300}✨`, `Feature 1 week · ${st?.boostStars ?? 300}✨`)}</button>}</p>
           ))}
+          {/* round-3 (E) / round-3b: 我收到的打赏（server getLivehouseTips；totalEarned 是全量累计，✨） */}
+          {tips.length > 0 && (
+            <div className="mt-3 border-t border-white/15 pt-2">
+              <p className="text-xs font-black text-white/70">{T(`💰 我收到的打赏（累计 ✨${tipsTotal}）`, `💰 Tips I received (✨${tipsTotal} total)`)}</p>
+              {tips.slice(0, 5).map((t) => <p key={t.id} className="mt-1 text-xs">《{t.trackTitle}》{t.tipperName} 打赏 ✨{t.amount}，你收到 ✨{t.creatorShare}{t.message ? ` · “${t.message}”` : ""}</p>)}
+            </div>
+          )}
         </div>
       </div>
     </div>

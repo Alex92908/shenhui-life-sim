@@ -27,7 +27,9 @@ import * as THK from "./terrain-hk";
 import { ROADS as REAL_ROADS } from "./roads";
 /* Real land / inland water / bridges / rivers per city (tools/terrain/gen_terrain.py). */
 const TERRAIN: Record<CityKey, typeof THK> = { sz: TSZ, hz: THZ, hk: THK };
-import { CITIES, LOC_EN, getLocations, resolveLoc, areaLocId, placesForCity, billboardSpots, PLACE_KINDS, stationLocId, metroLinesForCity, modeById, npcsForCity, outfitOf, type CityKey, type Loc, type LocType, type Npc, type TransportModeId } from "./data";
+import { CITIES, LOC_EN, getLocations, resolveLoc, areaLocId, placesForCity, billboardSpots, PLACE_KINDS, stationLocId, metroLinesForCity, modeById, npcsForCity, npcAllowedAt, outfitOf, type CityKey, type Loc, type LocType, type Npc, type TransportModeId } from "./data";
+import { COMMUNITY_PIN_COLOR, type CommunityMapMarker } from "./round2/community";
+import { PET_MODEL, stepPetFollow, type Pet, type PetRuntime } from "./round2/pets";
 import { makePostFx, type PostFx } from "./postfx";
 import { getLang } from "./i18n";
 const tt = (zh: string, en: string) => (getLang() === "zh" ? zh : en);
@@ -78,6 +80,17 @@ interface Props {
   onSelect: (locId: string) => void;
   /** Tapped a person on the map: an NPC (by name) or another player (by public id). */
   onPickActor?: (who: { npc: string } | { player: string }) => void;
+  /** Round-3 (C): community pins for this city — the return value of
+      toMapMarkers() (round2/community.ts) over App's server queries
+      (strays / notices / snake warnings / fishing spots). Absent or empty
+      = no pins. Clicks go to onCommunityMarkerClick. */
+  communityMarkers?: CommunityMapMarker[];
+  /** Round-3 (C): the pet currently following the player
+      (getActivePet(pets) in App). Absent / null = no pet on the map. */
+  activePet?: Pet | null;
+  /** Tapped a community pin: App opens the matching detail panel
+      (stray / notice / snake warning / fishing spot). */
+  onCommunityMarkerClick?: (marker: CommunityMapMarker) => void;
   /** Search focus: when focusNonce changes, the camera pans to focusLocId
       for a few seconds so a searched place is actually shown on the map. */
   focusLocId?: string;
@@ -321,15 +334,23 @@ function hash(s: string): number {
 function npcAnchorLocId(n: Npc, hour: number, locs: Loc[]): string {
   const first = locs[0];
   if (!first) return "home";
+  /* Round-3 (C): npcAllowedAt (data.ts) decides — onlyLocIds / neverLocIds
+     win over preferTypes, so e.g. 阿海 never gets sent to a second-hand
+     market for lunch and 大芬姐 never to Dafen / 华强北. The type-only
+     fallback below runs only for NPCs without an allow-list; an NPC whose
+     allow-list matches nothing here (e.g. 郭叔, onlyLocIds: []) is not
+     placed on this city's map at all (actor sync filters them out), so the
+     `allowedFirst ?? first` fallback here is only a safety net. */
+  const allowedFirst = locs.find((l) => npcAllowedAt(n, l));
   const byType = (types: LocType[]): Loc | undefined =>
-    locs.find((l) => types.includes(l.type) && n.preferTypes.includes(l.type)) ??
-    locs.find((l) => types.includes(l.type));
-  if (n.behavior === "stay") return (locs.find((l) => n.preferTypes.includes(l.type)) ?? first).id;
-  if (hour >= 7 && hour < 9) return (byType(["transit", "work"]) ?? first).id;
-  if (hour >= 12 && hour < 14) return (byType(["food", "market"]) ?? first).id;
-  if (hour >= 18 && hour < 22) return (byType(["food", "social", "mall", "fun"]) ?? first).id;
-  if (hour >= 22 || hour < 7) return (byType(["home", "fun"]) ?? first).id;
-  return (byType(n.preferTypes) ?? first).id;
+    locs.find((l) => types.includes(l.type) && npcAllowedAt(n, l)) ??
+    (n.onlyLocIds ? undefined : locs.find((l) => types.includes(l.type)));
+  if (n.behavior === "stay") return (allowedFirst ?? first).id;
+  if (hour >= 7 && hour < 9) return (byType(["transit", "work"]) ?? allowedFirst ?? first).id;
+  if (hour >= 12 && hour < 14) return (byType(["food", "market"]) ?? allowedFirst ?? first).id;
+  if (hour >= 18 && hour < 22) return (byType(["food", "social", "mall", "fun"]) ?? allowedFirst ?? first).id;
+  if (hour >= 22 || hour < 7) return (byType(["home", "fun"]) ?? allowedFirst ?? first).id;
+  return (byType(n.preferTypes) ?? allowedFirst ?? first).id;
 }
 
 /* Street greetings: when two named neighbours pass on the pavement, one
@@ -410,10 +431,153 @@ function emojiSprite(emoji: string, ring: number, self = false): THREE.Sprite {
   return sp;
 }
 
+/* The pet model's moving parts, kept on the group so the frame loop can
+   animate them without re-querying the scene graph every frame. */
+interface PetParts {
+  body?: THREE.Group;
+  tail?: THREE.Group;
+  legFL?: THREE.Group;
+  legFR?: THREE.Group;
+  legBL?: THREE.Group;
+  legBR?: THREE.Group;
+}
+
+/** Dispose a pet group built by makePetGroup (geometries + materials +
+    the badge sprite's canvas texture) when the pet changes. */
+function disposeObject(root: THREE.Object3D): void {
+  root.traverse((o) => {
+    if (o instanceof THREE.Mesh || o instanceof THREE.Sprite) {
+      const mesh = o as THREE.Mesh;
+      mesh.geometry?.dispose?.();
+      const m = mesh.material as THREE.Material | THREE.Material[];
+      const disposeOne = (x: THREE.Material) => {
+        if (x instanceof THREE.SpriteMaterial) x.map?.dispose();
+        x.dispose();
+      };
+      if (Array.isArray(m)) m.forEach(disposeOne);
+      else if (m) disposeOne(m);
+    }
+  });
+}
+
+/* Round-3 (C): the player's pet as a low-poly animal, built from the same
+   primitive-geometry language as the map figures above (LifeStage's
+   makeFigure works the same way) — no new .glb. Facing +Z, like the
+   actors: rotation.y = heading from stepPetFollow().
+   Cat vs dog is read off PET_MODEL (round2/pets.ts): pointed triangle ears
+   + up-curved thin tail + smaller frame for a cat; floppy ears + level
+   thick tail + snout + bigger frame for a dog. Both get real geometry eyes
+   (the round-2 faces rule: nothing faceless). Coat colour is the pet's own
+   pet.color; belly / muzzle are the same colour lightened. */
+function makePetGroup(pet: Pet): THREE.Group {
+  const spec = PET_MODEL[pet.kind];
+  const g = new THREE.Group();
+  const s = pet.kind === "dog" ? 1.28 : 1; // dogs read bigger than cats at map scale
+  const coat = new THREE.MeshStandardMaterial({ color: pet.color, roughness: 0.85 });
+  const light = new THREE.MeshStandardMaterial({ color: new THREE.Color(pet.color).lerp(new THREE.Color(0xffffff), 0.45), roughness: 0.85 });
+  const dark = new THREE.MeshStandardMaterial({ color: new THREE.Color(pet.color).multiplyScalar(0.55), roughness: 0.9 });
+  const mkLeg = (x: number, z: number) => {
+    const pivot = new THREE.Group();
+    pivot.position.set(x, 0.22 * s, z);
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.05 * s, 0.045 * s, 0.22 * s, 8), dark);
+    m.position.y = -0.11 * s;
+    m.castShadow = true;
+    pivot.add(m);
+    g.add(pivot);
+    return pivot;
+  };
+  const legFL = mkLeg(-0.11 * s, 0.17 * s);
+  const legFR = mkLeg(0.11 * s, 0.17 * s);
+  const legBL = mkLeg(-0.11 * s, -0.17 * s);
+  const legBR = mkLeg(0.11 * s, -0.17 * s);
+  // body parts live in their own subgroup so the sit pose can lift the
+  // chest (rotation.x) while the legs stay planted on the ground
+  const body = new THREE.Group();
+  body.position.y = 0.22 * s;
+  g.add(body);
+  const torso = new THREE.Mesh(new THREE.SphereGeometry(0.26 * s, 14, 10), coat);
+  torso.scale.set(0.85, 0.78, 1.3);
+  torso.position.y = 0.12 * s;
+  torso.castShadow = true;
+  body.add(torso);
+  const belly = new THREE.Mesh(new THREE.SphereGeometry(0.2 * s, 12, 8), light);
+  belly.scale.set(0.7, 0.55, 1.1);
+  belly.position.set(0, 0.02 * s, 0.08 * s);
+  body.add(belly);
+  const head = new THREE.Group();
+  head.position.set(0, 0.32 * s, 0.34 * s);
+  body.add(head);
+  const skull = new THREE.Mesh(new THREE.SphereGeometry(0.19 * s, 14, 10), coat);
+  skull.castShadow = true;
+  head.add(skull);
+  const eyeMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.3 });
+  for (const ex of [-0.07, 0.07]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.028 * s, 8, 6), eyeMat);
+    eye.position.set(ex * s, 0.05 * s, 0.165 * s);
+    head.add(eye);
+  }
+  if (pet.kind === "cat") {
+    for (const ex of [-0.1, 0.1]) {
+      const ear = new THREE.Mesh(new THREE.ConeGeometry(0.085 * s, 0.17 * s, 4), coat);
+      ear.position.set(ex * s, 0.2 * s, 0);
+      ear.rotation.y = Math.PI / 4;
+      ear.castShadow = true;
+      head.add(ear);
+      const inner = new THREE.Mesh(new THREE.ConeGeometry(0.045 * s, 0.1 * s, 4), new THREE.MeshStandardMaterial({ color: 0xf5a8b8, roughness: 0.9 }));
+      inner.position.set(ex * s, 0.18 * s, 0.03 * s);
+      inner.rotation.y = Math.PI / 4;
+      head.add(inner);
+    }
+    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.05 * s, 0.03 * s, 0.02), new THREE.MeshStandardMaterial({ color: 0xe87a90, roughness: 0.7 }));
+    nose.position.set(0, -0.01 * s, 0.19 * s);
+    head.add(nose);
+  } else {
+    for (const ex of [-0.17, 0.17]) {
+      const ear = new THREE.Mesh(new THREE.BoxGeometry(0.07 * s, 0.24 * s, 0.05 * s), dark);
+      ear.position.set(ex * s, 0.02 * s, 0.02 * s);
+      ear.rotation.z = ex < 0 ? 0.25 : -0.25;
+      ear.castShadow = true;
+      head.add(ear);
+    }
+    const muzzle = new THREE.Mesh(new THREE.BoxGeometry(0.15 * s, 0.11 * s, 0.13 * s), light);
+    muzzle.position.set(0, -0.05 * s, 0.18 * s);
+    muzzle.castShadow = true;
+    head.add(muzzle);
+    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.06 * s, 0.04 * s, 0.03), new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.5 }));
+    nose.position.set(0, -0.02 * s, 0.25 * s);
+    head.add(nose);
+  }
+  // tail on its own pivot so the frame loop can wag it: cat up-curved,
+  // dog out level and slightly up
+  const tail = new THREE.Group();
+  tail.position.set(0, 0.14 * s, -0.33 * s);
+  const tailLen = pet.kind === "cat" ? 0.42 : 0.3;
+  const tailMesh = new THREE.Mesh(new THREE.CylinderGeometry(pet.kind === "cat" ? 0.028 * s : 0.042 * s, pet.kind === "cat" ? 0.022 * s : 0.035 * s, tailLen * s, 8), coat);
+  tailMesh.position.y = (tailLen / 2) * s;
+  tailMesh.castShadow = true;
+  tail.add(tailMesh);
+  tail.rotation.x = pet.kind === "cat" ? -0.35 : -1.15;
+  body.add(tail);
+  const badge = emojiSprite(spec.emoji, pet.color);
+  badge.scale.set(0.9, 0.9, 1);
+  badge.position.y = 0.85 * s;
+  g.add(badge);
+  const parts = g.userData as PetParts;
+  parts.body = body;
+  parts.tail = tail;
+  parts.legFL = legFL;
+  parts.legFR = legFR;
+  parts.legBL = legBL;
+  parts.legBR = legBR;
+  return g;
+}
+
 interface Chip {
   el: HTMLButtonElement | HTMLDivElement;
   getPos: () => { x: number; y: number; z: number };
-  kind: "loc" | "road" | "actor";
+  kind: "loc" | "road" | "actor" | "community";
+  /** round-3 (C): community pin kind (stray / notice / snake / fishing) */
+  community?: CommunityMapMarker["kind"];
   /** a scripted neighbour (not a real player): name shows only near you */
   npc?: boolean;
   locId?: string;
@@ -454,6 +618,13 @@ export function MapView(p: Props) {
   /* each NPC's current schedule anchor (locId), so a changed beat only
      retargets them once — they then walk there across the map */
   const npcAnchorRef = useRef<Map<string, string>>(new Map());
+  /* round-3 (C): the following pet's live position, driven every frame by
+     stepPetFollow() (round2/pets.ts); not saved, rebuilt when the pet changes */
+  const petRuntimeRef = useRef<PetRuntime>({ pos: { x: 0, z: 0 }, heading: 0, pose: "sit" });
+  /* round-3 (C): community pins — the chip divs the sync effect below
+     creates in the labels overlay, positioned by the frame loop's
+     declutter pass together with the place / NPC chips */
+  const communityChipsRef = useRef<Chip[]>([]);
   const propsRef = useRef(p);
   propsRef.current = p;
   const camRef = useRef({ az: 0, pol: CAM_POL, dist: 46, distCur: 46, tx: LAND_CX, tz: LAND_CZ, lastUser: 0, cut: 0 });
@@ -712,10 +883,14 @@ export function MapView(p: Props) {
       upsert({ key: `p-${rp.id}`, name: rp.name, emoji: rp.emoji, color: rp.color, seed: hash(rp.id), heading: 0, phase: hash(rp.id) % 6, blend: 0, startLoc: rp.locId, shirt: rp.color, pants: 0x2e3440, accessory: ACCESSORIES[rp.accessory ?? 0]?.id ?? "none", hair: rp.hair ?? hash(rp.id) % 4, behavior: "wander", speed: 2.4 });
     }
     /* NPCs keep a quiet city company: each real player in town sends one neighbour home
-       (at least two stay), so the map belongs to real people as soon as they show up */
-    const cast = npcsForCity(p.cityKey);
+       (at least two stay), so the map belongs to real people as soon as they show up.
+       Round-3 (C): npcAllowedAt decides where an NPC may stand — an NPC whose
+       onlyLocIds matches nothing in this city (e.g. 郭叔, onlyLocIds: [], no
+       real wet market in Huizhou yet) is not placed at all, instead of
+       falling back to a random corner. */
+    const cast = npcsForCity(p.cityKey).filter((n) => !n.onlyLocIds || locs.some((l) => npcAllowedAt(n, l)));
     cast.slice(0, Math.max(2, cast.length - p.remotePlayers.length)).forEach((n, i) => {
-      const preferred = locs.filter((l) => n.preferTypes.includes(l.type));
+      const preferred = locs.filter((l) => npcAllowedAt(n, l));
       const pool = preferred.length > 0 ? preferred : locs;
       const loc = pool[(hash(n.name) + i) % pool.length];
       const speed = n.behavior === "commute" ? 5.6 : n.behavior === "patrol" ? 3.4 : n.behavior === "stay" ? 2 : 4.2;
@@ -866,6 +1041,13 @@ export function MapView(p: Props) {
     });
     let trainKey = ""; let trainIdx = -1; let trainSince = 0; let selfOnTrain = false;
     const trainPos = { x: 0, z: 0, active: false };
+    /* round-3 (C): the following pet — one makePetGroup model, rebuilt only
+       when the pet itself changes (id / kind / colour); the scene rebuild
+       on city change resets these, and the runtime ref restarts at the
+       player's feet. petPhase is the walk-cycle clock for the leg swing. */
+    let petGroup: THREE.Group | null = null;
+    let petGroupKey = "";
+    let petPhase = 0;
 
     /* registries for materials the frame loop animates with the day cycle */
     const buildingMats: THREE.MeshStandardMaterial[] = [];
@@ -3331,6 +3513,49 @@ export function MapView(p: Props) {
         }
       }
 
+      // round-3 (C): the player's pet — a low-poly cat/dog (makePetGroup)
+      // driven every frame by stepPetFollow() in round2/pets.ts. No pet,
+      // or the player riding the train, hides the model; a new pet
+      // (id / kind / colour changed) rebuilds it. Poses come from the
+      // state machine: follow = legs swing + tail wag, sit = chest up,
+      // play = little hops + fast wag, sleep = lying low.
+      {
+        const pet = propsRef.current.activePet ?? null;
+        const selfA = actorsRef.current.get("self");
+        if (pet && selfA && !trainPos.active) {
+          const key = `${pet.id}|${pet.kind}|${pet.color}`;
+          if (!petGroup || petGroupKey !== key) {
+            if (petGroup) { scene.remove(petGroup); disposeObject(petGroup); }
+            petGroup = makePetGroup(pet);
+            petGroupKey = key;
+            scene.add(petGroup);
+            petRuntimeRef.current = { pos: { x: selfA.x, z: selfA.z }, heading: selfA.heading, pose: "sit" };
+            petPhase = 0;
+          }
+          const rt = stepPetFollow(pet, petRuntimeRef.current, { x: selfA.x, z: selfA.z }, selfA.heading, dt);
+          petRuntimeRef.current = rt;
+          const moving = rt.pose === "follow";
+          if (moving) petPhase += dt * 9;
+          const parts = petGroup.userData as PetParts;
+          if (parts.tail) parts.tail.rotation.y = Math.sin(tSec * (rt.pose === "play" ? 10 : 5)) * 0.45;
+          const swing = Math.sin(petPhase) * 0.55 * (moving ? 1 : 0);
+          if (parts.legFL) parts.legFL.rotation.x = swing;
+          if (parts.legBR) parts.legBR.rotation.x = swing;
+          if (parts.legFR) parts.legFR.rotation.x = -swing;
+          if (parts.legBL) parts.legBL.rotation.x = -swing;
+          if (parts.body) {
+            const target = rt.pose === "sit" ? -0.5 : rt.pose === "sleep" ? 0.28 : 0;
+            parts.body.rotation.x += (target - parts.body.rotation.x) * Math.min(1, dt * 8);
+          }
+          const hop = rt.pose === "play" ? Math.abs(Math.sin(tSec * 6)) * 0.09 : moving ? Math.abs(Math.sin(petPhase)) * 0.03 : 0;
+          petGroup.visible = true;
+          petGroup.position.set(rt.pos.x, LAND + hop, rt.pos.z);
+          petGroup.rotation.y = rt.heading;
+        } else if (petGroup) {
+          petGroup.visible = false;
+        }
+      }
+
       // camera follows the player, user keeps orbit/zoom; in cinematic mode
       // it eases, leads the walk direction, pushes in on arrival, and drifts
       // very slowly when the user has not touched it for a while
@@ -3452,7 +3677,11 @@ export function MapView(p: Props) {
       const kindShown = { place: 0, area: 0, station: 0, road: 0 };
       const cands: { chip: Chip; sx: number; sy: number; prio: number; near: boolean }[] = [];
       let measured = 0;
-      for (const chip of chips) {
+      /* round-3 (C): community pins ride the same declutter pass as the
+         place / NPC chips, so a snake warning never stacks on top of a
+         place name — they just compete for the same screen space. */
+      const allChips = communityChipsRef.current.length > 0 ? chips.concat(communityChipsRef.current) : chips;
+      for (const chip of allChips) {
         const pos = chip.getPos();
         // far-off place / area / station labels: skip before any projection or DOM work
         if ((chip.place || chip.area || chip.station) && !hover && (((chip.place || chip.station) && overview) || Math.hypot(pos.x - cam.tx, pos.z - cam.tz) > 32)) {
@@ -3493,6 +3722,17 @@ export function MapView(p: Props) {
           }
         } else if (chip.kind === "loc") {
           prio = (chip.locId !== undefined && chip.locId === propsRef.current.selfLocId ? 1 : 3) + dCam / 60;
+        } else if (chip.kind === "community") {
+          /* round-3 (C): community pins. A snake warning is safety info —
+             it shows even at city-wide zoom and outranks everything but
+             you and the searched pin; strays / notices / fishing spots
+             join the normal mid-zoom crowd. */
+          if (overview && chip.community !== "snake") {
+            chip.visible = false;
+            chip.el.style.display = "none";
+            continue;
+          }
+          prio = (chip.community === "snake" ? 1.5 : chip.community === "stray" ? 3.5 : chip.community === "notice" ? 4 : 5) + dCam / 60;
         } else if (chip.area) {
           // towns/streets show from mid zoom (and city-wide unless 精简);
           // small neighbourhoods only up close — or under the cursor
@@ -3666,6 +3906,51 @@ export function MapView(p: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.cityKey]);
 
+  /* Round-3 (C): community pins. App passes toMapMarkers() output as the
+     communityMarkers prop; this effect turns each marker into a clickable
+     HTML chip in the labels overlay (same mkChip-free pattern as the actor
+     chips: emoji + label, pointer-events on, click → onCommunityMarkerClick).
+     Position resolves from the marker's own x/z, falling back to its locId
+     via resolveLoc, so pins without exact coordinates still land on their
+     place. Declared AFTER the scene effect on purpose: the scene rebuild
+     wipes the labels overlay (labels.innerHTML = ""), and effects run in
+     declaration order, so these chips are recreated after every rebuild.
+     Capped at 24 pins so a busy city can't flood the declutter pass. */
+  const communityKey = (p.communityMarkers ?? []).map((m) => `${m.kind}:${m.id}:${m.label}`).join("|");
+  useEffect(() => {
+    const labels = labelsRef.current;
+    for (const c of communityChipsRef.current) c.el.remove();
+    communityChipsRef.current = [];
+    const markers = (p.communityMarkers ?? []).slice(0, 24);
+    if (!labels || markers.length === 0) return;
+    const locs = getLocations(p.cityKey);
+    const byId = new Map(locs.map((l) => [l.id, l]));
+    for (const m of markers) {
+      const loc = byId.get(m.pin.locId) ?? resolveLoc(p.cityKey, m.pin.locId);
+      const x = m.pin.x ?? loc?.x;
+      const z = m.pin.z ?? loc?.z;
+      if (x === undefined || z === undefined) continue;
+      const el = document.createElement("button");
+      el.type = "button";
+      el.textContent = `${m.emoji} ${m.label}`;
+      el.setAttribute("aria-label", m.label);
+      el.style.cssText = "position:absolute;left:0;top:0;transform:translate(-50%,-100%);white-space:nowrap;pointer-events:auto;cursor:pointer;font:700 10.5px 'Noto Sans SC',sans-serif;line-height:1.3;padding:2px 7px;border-radius:999px;background:rgba(255,253,248,.94);color:#14202b;border:1px solid rgba(20,26,32,.4);box-shadow:0 1px 4px rgba(10,20,30,.25);";
+      if (m.kind === "snake") el.style.cssText += "background:#fef2f2;border-color:#dc2626;color:#991b1b;";
+      el.addEventListener("pointerdown", (e) => e.stopPropagation());
+      el.addEventListener("click", (e) => { e.stopPropagation(); propsRef.current.onCommunityMarkerClick?.(m); });
+      labels.appendChild(el);
+      communityChipsRef.current.push({
+        el, kind: "community", community: m.kind, w: 0, h: 0, lastText: "", visible: true, clampDx: 0, clampDy: 0,
+        getPos: () => ({ x, y: LAND + 1.6, z }),
+      });
+    }
+    return () => {
+      for (const c of communityChipsRef.current) c.el.remove();
+      communityChipsRef.current = [];
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [communityKey, p.cityKey]);
+
   const zoomBy = (f: number) => {
     autoFitRef.current = false;
     camRef.current.dist = Math.max(14, Math.min(130, camRef.current.dist * f));
@@ -3783,6 +4068,13 @@ export function MapView(p: Props) {
           g.beginPath(); g.arc(px(a.x), py(a.z), 5, 0, Math.PI * 2); g.fill(); g.stroke();
         }
       }
+      // round-3 (C): community pins as small coloured dots (positions
+      // already resolved onto the map by the chip sync effect)
+      for (const c of communityChipsRef.current) {
+        const pos = c.getPos();
+        g.fillStyle = COMMUNITY_PIN_COLOR[c.community ?? "notice"];
+        g.beginPath(); g.arc(px(pos.x), py(pos.z), 3.2, 0, Math.PI * 2); g.fill();
+      }
       // you: the biggest dot, white ring + heading tick
       if (self) {
         const col = `#${self.color.toString(16).padStart(6, "0")}`;
@@ -3850,6 +4142,24 @@ export function MapView(p: Props) {
             </button>
           ))}
         </div>
+        {/* round-3 (C): community pins also work without WebGL — same tap → detail panel */}
+        {(p.communityMarkers?.length ?? 0) > 0 && (
+          <div className="mt-3">
+            <p className="mb-1.5 text-xs font-black">📍 社区动态 · 点一下看详情</p>
+            <div className="flex flex-wrap gap-1.5">
+              {p.communityMarkers!.map((m) => (
+                <button
+                  key={`${m.kind}:${m.id}`}
+                  type="button"
+                  onClick={() => p.onCommunityMarkerClick?.(m)}
+                  className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1.5 text-left text-xs font-bold"
+                >
+                  {m.emoji} {m.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     );
   }

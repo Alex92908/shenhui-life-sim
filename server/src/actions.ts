@@ -1006,6 +1006,59 @@ const usedFurnitureShape = z.object({
   condition: z.number(), price: z.number(), newPrice: z.number(),
   seller: z.object({ playerId: z.string(), name: z.string() }), note: z.string(), listedDay: z.number(),
 });
+/* ---- round-3 (S): trade-dispute jury (e) ----
+   disputeTradeTask only freezes the escrow; this settles it. Mirror of
+   settleBlackReports: 24 h jury, quorum 3, majority wins, tie / too few
+   votes = expired. One deliberate difference, forced by money: an expired
+   trade case cannot leave the escrow frozen forever, so the money is
+   refunded to whoever paid it (the buyer side). Seller wins → escrow
+   released to the seller side (same rule as completeTradeTask: sell-task
+   → poster, otherwise accepter). Settled tasks go back to completed /
+   cancelled, so the client never sees a new status string; the verdict
+   rides along in disputeVerdict. A task disputed after completion keeps
+   status completed (its escrow was already released) — the verdict is
+   recorded only. Called from the trade read endpoints, the vote endpoint
+   and adjudicateTradeDispute, like settleBlackReports / settleGigs. */
+const TRADE_JURY_MS = 24 * 3600_000;
+const TRADE_JURY_QUORUM = 3;
+type TradeVerdict = "seller" | "buyer" | "expired";
+async function tradeDisputeTallies(db: Db, taskId: number) {
+  const vs = await db.select().from(schema.tradeDisputeVotes).where(eq(schema.tradeDisputeVotes.taskId, taskId));
+  return {
+    seller: vs.filter((v: { side: string }) => v.side === "seller").length,
+    buyer: vs.filter((v: { side: string }) => v.side === "buyer").length,
+  };
+}
+async function settleTradeDisputes(db: Db) {
+  const now = new Date();
+  const due = await db.select().from(schema.tradeTasks).where(eq(schema.tradeTasks.status, "disputed"));
+  for (const t of due) {
+    const base = t.disputedAt ?? t.createdAt;
+    if (base.getTime() + TRADE_JURY_MS > now.getTime()) continue;
+    const { seller, buyer } = await tradeDisputeTallies(db, t.id);
+    const total = seller + buyer;
+    const verdict: TradeVerdict = total < TRADE_JURY_QUORUM ? "expired" : seller > buyer ? "seller" : buyer > seller ? "buyer" : "expired";
+    const amount = t.escrowHeld;
+    const releaseToId = t.kind === "sell" ? t.posterId : (t.accepterId ?? t.posterId);
+    // A task disputed after completion stays completed: the trade already
+    // happened and its escrow was already released — the verdict is a record.
+    const status = t.disputeFromStatus === "completed" || verdict === "seller" ? "completed" : "cancelled";
+    // compare-and-set: only the first settler moves the money
+    const changed = await db.update(schema.tradeTasks).set({ status, escrowHeld: 0, disputeVerdict: verdict, disputeSettledAt: now })
+      .where(and(eq(schema.tradeTasks.id, t.id), eq(schema.tradeTasks.status, "disputed"))).returning({ id: schema.tradeTasks.id });
+    if (!changed.length) continue; // another request settled it first
+    if (amount > 0) {
+      const [esc] = await db.select().from(schema.tradeEscrow).where(and(eq(schema.tradeEscrow.taskId, t.id), eq(schema.tradeEscrow.kind, "trade"), sql`(${schema.tradeEscrow.status} = 'frozen' OR ${schema.tradeEscrow.status} = 'held')`)).limit(1);
+      if (esc) {
+        await db.update(schema.tradeEscrow).set({ status: verdict === "seller" ? "released" : "refunded", releasedAt: now }).where(eq(schema.tradeEscrow.id, esc.id));
+      }
+      // The money moves even if the escrow row is missing (shouldn't happen):
+      // a settled verdict must never swallow the frozen amount.
+      const toId = verdict === "seller" ? releaseToId : (esc?.payerId ?? t.escrowFromId ?? t.posterId);
+      await creditMoney(db, toId, amount, verdict === "seller" ? `trade jury release #${t.id}` : `trade jury refund #${t.id}`);
+    }
+  }
+}
 const tradeTaskShape = z.object({
   id: z.string(), poster: z.object({ playerId: z.string(), name: z.string() }),
   kind: z.enum(["buy", "sell", "swap", "service", "other"]), title: z.string(), body: z.string(),
@@ -1014,6 +1067,8 @@ const tradeTaskShape = z.object({
   accepter: z.object({ playerId: z.string(), name: z.string() }).optional(),
   escrowHeld: z.number(), escrowFrom: z.object({ playerId: z.string(), name: z.string() }).optional(),
   createdDay: z.number(), expiresDay: z.number(), completionNote: z.string().optional(),
+  disputeReason: z.string().optional(), disputeVerdict: z.enum(["seller", "buyer", "expired"]).optional(),
+  disputeDueAt: z.string().optional(),
 });
 function tradeTaskView(r: typeof schema.tradeTasks.$inferSelect) {
   let tags: string[] = [];
@@ -1029,6 +1084,9 @@ function tradeTaskView(r: typeof schema.tradeTasks.$inferSelect) {
     ...(r.escrowFromId ? { escrowFrom: { playerId: r.escrowFromId, name: r.escrowFromName ?? "" } } : {}),
     createdDay: r.createdDay, expiresDay: r.expiresDay,
     ...(r.completionNote ? { completionNote: r.completionNote } : {}),
+    ...(r.disputeReason ? { disputeReason: r.disputeReason } : {}),
+    ...(r.disputeVerdict ? { disputeVerdict: r.disputeVerdict as "seller" | "buyer" | "expired" } : {}),
+    ...(r.disputedAt ? { disputeDueAt: new Date(r.disputedAt.getTime() + TRADE_JURY_MS).toISOString() } : {}),
   };
 }
 const subletShape = z.object({
@@ -1127,6 +1185,179 @@ async function expirePoolOrders(db: Db, city: string) {
     await db.update(schema.tradeEscrow).set({ status: "refunded", releasedAt: new Date() }).where(and(eq(schema.tradeEscrow.taskId, o.id), eq(schema.tradeEscrow.kind, "delivery"), eq(schema.tradeEscrow.status, "held")));
     await creditMoney(db, o.customerId, o.riderFee, `delivery pool #${o.id} expired refund`);
   }
+}
+
+/* ---- round-3 (E): Lagos gaps — group orders, weekly quests, Livehouse tips ----
+   Server mirror of the client defs in client/src/round2/delivery.ts
+   (WEEKLY_QUESTS / WEEKLY_REWARD_COUPONS). Rewards are existing money/coupons
+   only: ¥ via creditMoney (ledger), coupons are client-side state the server
+   names by id and the client grants on claim. */
+const WEEKLY_QUEST_DEFS = [
+  { id: "order-3", target: 3, reward: { kind: "coupon", couponId: "weekly-free-delivery", label: "免配送费券 ×1" } },
+  { id: "try-new", target: 1, reward: { kind: "money", amount: 15, label: "¥15" } },
+  { id: "rate-5", target: 1, reward: { kind: "coupon", couponId: "weekly-off-8", label: "立减 ¥8 券 ×1" } },
+  { id: "spend-100", target: 100, reward: { kind: "money", amount: 20, label: "¥20" } },
+] as const;
+/** ISO week (Mon-based) in Beijing time, e.g. "2026-W46". */
+function weekKeyOf(d = new Date()): string {
+  const bj = new Date(d.getTime() + 8 * 3600_000); // shift to Beijing wall clock, read as UTC
+  const day = bj.getUTCDay() || 7;
+  const thu = new Date(Date.UTC(bj.getUTCFullYear(), bj.getUTCMonth(), bj.getUTCDate() + (4 - day)));
+  const year = thu.getUTCFullYear();
+  const week = Math.floor((thu.getTime() - Date.UTC(year, 0, 4)) / 604_800_000) + 1;
+  return `${year}-W${String(week).padStart(2, "0")}`;
+}
+async function ensureWeeklyQuestRows(db: Db, playerId: string, weekKey: string) {
+  const d = db as any;
+  for (const q of WEEKLY_QUEST_DEFS) {
+    await d.insert(schema.deliveryQuests).values({ playerId, weekKey, questId: q.id, progress: 0, claimed: 0, meta: "{}", updatedAt: new Date() }).onConflictDoNothing();
+  }
+}
+const GROUP_ORDER_MAX_MEMBERS = 6;
+const GROUP_ORDER_TTL_MS = 30 * 60_000; // 30 min to gather the group, then it auto-cancels
+const GROUP_CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no 0/O/1/I — read out loud safely
+function randomGroupCode(): string {
+  let code = "";
+  for (let i = 0; i < 6; i++) code += GROUP_CODE_CHARS[Math.floor(Math.random() * GROUP_CODE_CHARS.length)];
+  return code;
+}
+const GROUP_ORDER_ITEM_Z = z.object({ key: z.string().min(1).max(80), name: z.string().min(1).max(40), qty: z.number().int().min(1).max(99), cost: z.number().int().min(0).max(100000) });
+/** escrowStatus per member (shown in the client as 未托管 / 已托管 / 已结算 / 已退回):
+    none = nothing escrowed yet (group still open), held = locked at lockGroupOrder,
+    released = settled at completeGroupOrder, refunded = cancelled / expired. */
+const GROUP_ORDER_ESCROW_STATUS_Z = z.enum(["none", "held", "released", "refunded"]);
+const GROUP_ORDER_VIEW = z.object({
+  id: z.number(), code: z.string(), city: z.string(), hostId: z.string(), hostName: z.string(),
+  restaurantId: z.string(), restaurantName: z.string(), status: z.string(),
+  createdAt: z.string(), expiresAt: z.string(), poolId: z.string().nullable(),
+  members: z.array(z.object({ playerId: z.string(), playerName: z.string(), items: z.array(GROUP_ORDER_ITEM_Z), subtotal: z.number(), joinedAt: z.string(), escrowStatus: GROUP_ORDER_ESCROW_STATUS_Z, escrowTotal: z.number() })),
+});
+type GroupOrderView = z.infer<typeof GROUP_ORDER_VIEW>;
+/** A locked group the host never completes holds everyone's money: it
+    expires 2 h after locking (lazy, same pattern as the 30-min open
+    expiry below) and the escrow is refunded in full. */
+const GROUP_ORDER_LOCKED_TTL_MS = 2 * 3600_000;
+/** Server mirror of the client's groupOrderTotals (delivery.ts): the
+    delivery fee is split evenly, the remainder goes to the first member
+    (the host, who joined first). Fee shares + subtotals are the amounts
+    lockGroupOrder escrows per member. */
+function groupOrderSplit(members: { playerId: string; subtotal: number }[], deliveryFee: number): { playerId: string; feeShare: number; total: number }[] {
+  const n = Math.max(1, members.length);
+  const base = Math.floor(deliveryFee / n);
+  return members.map((m, i) => {
+    const feeShare = base + (i === 0 ? deliveryFee - base * n : 0);
+    return { playerId: m.playerId, feeShare, total: m.subtotal + feeShare };
+  });
+}
+async function groupEscrowByPlayer(db: Db, groupId: number): Promise<Map<string, { status: "held" | "released" | "refunded"; foodAmount: number; feeAmount: number; total: number }>> {
+  const rows = await db.select().from(schema.groupOrderEscrow).where(eq(schema.groupOrderEscrow.groupId, groupId));
+  return new Map(rows.map((r: typeof schema.groupOrderEscrow.$inferSelect) => [r.playerId, { status: r.status as "held" | "released" | "refunded", foodAmount: r.foodAmount, feeAmount: r.feeAmount, total: r.amount }]));
+}
+/** Refunds every still-held escrow row of a group (cancel / expiry).
+    Money moves even if a row is missing for a member — there is nothing
+    to refund then, the member was never charged. */
+async function refundGroupEscrow(db: Db, groupId: number): Promise<number> {
+  const now = new Date();
+  const rows = await db.select().from(schema.groupOrderEscrow).where(and(eq(schema.groupOrderEscrow.groupId, groupId), eq(schema.groupOrderEscrow.status, "held")));
+  for (const r of rows) {
+    const changed = await db.update(schema.groupOrderEscrow).set({ status: "refunded", releasedAt: now })
+      .where(and(eq(schema.groupOrderEscrow.groupId, groupId), eq(schema.groupOrderEscrow.playerId, r.playerId), eq(schema.groupOrderEscrow.status, "held"))).returning({ playerId: schema.groupOrderEscrow.playerId });
+    if (!changed.length) continue; // another request refunded it first
+    if (r.amount > 0) await creditMoney(db, r.playerId, r.amount, `group order #${groupId} refund`);
+  }
+  return rows.length;
+}
+/** Settles a completed group's escrow. The restaurant is an NPC (no player
+    account), so the food share is released to the merchant as a sink — the
+    money simply leaves the game, exactly as a normal client placeOrder
+    deducts it. The fee share: with a pool order the host already fronted
+    the riderFee through deliveryPoolPublish, so each member's fee share
+    reimburses the host (the rider is then paid out of the pool's own
+    riderFee escrow by deliveryPoolDelivered, on-time full / late 70% per
+    the existing rule); without a pool order the rider is an NPC too and
+    the fee is released as a sink, like a local order. */
+async function settleGroupEscrow(db: Db, groupId: number, hostId: string, poolId: string | null): Promise<{ food: number; fee: number; feeToHost: number }> {
+  const now = new Date();
+  const rows = await db.select().from(schema.groupOrderEscrow).where(and(eq(schema.groupOrderEscrow.groupId, groupId), eq(schema.groupOrderEscrow.status, "held")));
+  let food = 0, fee = 0, feeToHost = 0;
+  for (const r of rows) {
+    const changed = await db.update(schema.groupOrderEscrow).set({ status: "released", releasedAt: now })
+      .where(and(eq(schema.groupOrderEscrow.groupId, groupId), eq(schema.groupOrderEscrow.playerId, r.playerId), eq(schema.groupOrderEscrow.status, "held"))).returning({ playerId: schema.groupOrderEscrow.playerId });
+    if (!changed.length) continue;
+    food += r.foodAmount; fee += r.feeAmount;
+    if (poolId && r.feeAmount > 0) { await creditMoney(db, hostId, r.feeAmount, `group order #${groupId} rider fee share`); feeToHost += r.feeAmount; }
+  }
+  return { food, fee, feeToHost };
+}
+/** Loads a group + its members; an open group past its deadline is cancelled lazily (same pattern as expirePoolOrders), and a locked group
+    past its 2 h lock TTL is cancelled the same way. Either way the held
+    escrow (if any) is refunded in full before the view is returned. */
+async function groupOrderView(db: Db, groupId: number): Promise<GroupOrderView | null> {
+  const [g] = await db.select().from(schema.groupOrders).where(eq(schema.groupOrders.id, groupId)).limit(1);
+  if (!g) return null;
+  if (g.status === "open" && g.expiresAt.getTime() <= Date.now()) {
+    await db.update(schema.groupOrders).set({ status: "cancelled" }).where(and(eq(schema.groupOrders.id, g.id), eq(schema.groupOrders.status, "open")));
+    g.status = "cancelled";
+    await refundGroupEscrow(db, g.id);
+  } else if (g.status === "locked" && g.lockedAt && g.lockedAt.getTime() + GROUP_ORDER_LOCKED_TTL_MS <= Date.now()) {
+    await db.update(schema.groupOrders).set({ status: "cancelled" }).where(and(eq(schema.groupOrders.id, g.id), eq(schema.groupOrders.status, "locked")));
+    g.status = "cancelled";
+    await refundGroupEscrow(db, g.id);
+  }
+  const rows = await db.select().from(schema.groupOrderMembers).where(eq(schema.groupOrderMembers.groupId, g.id)).orderBy(schema.groupOrderMembers.joinedAt);
+  const escrow = await groupEscrowByPlayer(db, g.id);
+  return {
+    id: g.id, code: g.code, city: g.city, hostId: g.hostId, hostName: g.hostName,
+    restaurantId: g.restaurantId, restaurantName: g.restaurantName, status: g.status,
+    createdAt: g.createdAt.toISOString(), expiresAt: g.expiresAt.toISOString(), poolId: g.poolId ?? null,
+    members: rows.map((m: typeof schema.groupOrderMembers.$inferSelect) => {
+      let items: { key: string; name: string; qty: number; cost: number }[] = [];
+      try { const parsed = JSON.parse(m.itemsJson) as unknown; if (Array.isArray(parsed)) items = parsed.filter((x): x is { key: string; name: string; qty: number; cost: number } => !!x && typeof (x as { key?: unknown }).key === "string" && typeof (x as { name?: unknown }).name === "string" && typeof (x as { qty?: unknown }).qty === "number" && typeof (x as { cost?: unknown }).cost === "number"); } catch { items = []; }
+      const e = escrow.get(m.playerId);
+      return { playerId: m.playerId, playerName: m.playerName, items, subtotal: m.subtotal, joinedAt: m.joinedAt.toISOString(), escrowStatus: e ? e.status : "none" as const, escrowTotal: e ? e.total : 0 };
+    }),
+  };
+}
+/** Is this player already in an open group (host or member)? One open group at a time. */
+async function openGroupOf(db: Db, playerId: string): Promise<GroupOrderView | null> {
+  const rows = await db.select().from(schema.groupOrders).where(and(eq(schema.groupOrders.status, "open"), sql`${schema.groupOrders.expiresAt} > ${Date.now()}`));
+  for (const g of rows) {
+    if (g.hostId === playerId) return groupOrderView(db, g.id);
+    const [m] = await db.select().from(schema.groupOrderMembers).where(and(eq(schema.groupOrderMembers.groupId, g.id), eq(schema.groupOrderMembers.playerId, playerId))).limit(1);
+    if (m) return groupOrderView(db, g.id);
+  }
+  return null;
+}
+
+/* ---- round-3 (S): police patrol / observation (g) ----
+   Server side of client/src/round2/police.ts. Same three rules: in-game
+   avatar ids only (isGameAvatarId, mirrored from the client), the watched
+   player can always see who is watching (getWatchers), and watching alone
+   does nothing — consequences need a filed report through (d). Patrols and
+   watches are rows, not process memory, so 👁️ is visible across sessions.
+   A patrol goes stale after 6 h (lazy expiry on every patrol read/write);
+   ending a patrol ends every watch it opened. */
+const PATROL_TTL_MS = 6 * 3600_000;
+/** Mirror of client police.ts isGameAvatarId: lowercase slugs only — no
+    emails, phone numbers, real names or handles from other apps. */
+function isGameAvatarId(id: string): boolean {
+  if (!id || id.length > 48) return false;
+  if (!/^[a-z0-9][a-z0-9_-]*$/.test(id)) return false;
+  if (/\d{7,}/.test(id)) return false;
+  return true;
+}
+async function expirePatrols(db: Db) {
+  const cutoff = Date.now() - PATROL_TTL_MS;
+  const stale = await db.select().from(schema.patrols).where(sql`${schema.patrols.startedAt} <= ${cutoff}`);
+  for (const p of stale) {
+    await db.delete(schema.patrolWatches).where(eq(schema.patrolWatches.officerId, p.officerId));
+    await db.delete(schema.patrols).where(eq(schema.patrols.officerId, p.officerId));
+  }
+}
+async function activePatrol(db: Db, officerId: string) {
+  await expirePatrols(db);
+  const [p] = await db.select().from(schema.patrols).where(eq(schema.patrols.officerId, officerId)).limit(1);
+  return p as typeof schema.patrols.$inferSelect | undefined;
 }
 
 export const Actions = {
@@ -1365,7 +1596,7 @@ export const Actions = {
       playerId: z.string().min(4).max(64),
       tier: z.number().int().min(0).max(3),
       style: z.string().max(40).nullable(),
-      layout: z.array(z.object({ id: z.string().regex(/^[a-z0-9-]{1,32}$/), slot: z.number().int().min(0).max(6) })).max(8),
+      layout: z.array(z.object({ id: z.string().regex(/^[a-z0-9-]{1,32}$/), slot: z.number().int().min(0).max(13) })).max(14),
     }),
     response: z.object({ ok: z.boolean() }),
     async handler(ctx, args) {
@@ -1401,7 +1632,7 @@ export const Actions = {
         if (Array.isArray(parsed)) layout = parsed.flatMap((x) => {
           const o = x as { id?: unknown; slot?: unknown };
           return typeof o?.id === "string" && typeof o.slot === "number" ? [{ id: o.id, slot: o.slot }] : [];
-        }).slice(0, 8);
+        }).slice(0, 14);
       } catch { layout = []; }
       return { home: { tier: row.tier, style: row.style, layout } };
     },
@@ -3559,6 +3790,7 @@ export const Actions = {
     response: z.object({ ok: z.boolean(), error: z.string().optional(), tasks: z.array(tradeTaskShape) }),
     async handler(ctx, args) {
       const db = ctx.db<typeof schema>();
+      await settleTradeDisputes(db);
       const me = args.playerId ? await r2Player(db, args.playerId) : undefined;
       if (args.playerId && !me) return { ok: false, error: NO_PLAYER, tasks: [] };
       if (me?.banned) return { ok: false, error: BANNED_MSG, tasks: [] };
@@ -3730,7 +3962,7 @@ export const Actions = {
   }),
 
   disputeTradeTask: defineAction({
-    description: "Freezes an accepted/completed task and its escrow; the dispute goes to the community jury flow (area d). Frozen money is never released by this endpoint.",
+    description: "Freezes an accepted/completed task and its escrow; the dispute goes to a 24 h same-city jury (quorum 3). The frozen money is released/refunded by adjudicateTradeDispute once the jury closes — never by this endpoint.",
     request: z.object({ playerId: pidZ, taskId: z.string().min(1).max(32), reason: z.string().trim().min(4).max(200) }),
     response: z.object({ ok: z.boolean(), error: z.string().optional(), caseId: z.string().optional() }),
     async handler(ctx, args) {
@@ -3745,9 +3977,71 @@ export const Actions = {
       if (!t) return { ok: false, error: "这个交易贴找不到了" };
       if (t.status !== "accepted" && t.status !== "completed") return { ok: false, error: "只有进行中 / 刚完成的交易能申诉。" };
       if (t.posterId !== me.id && t.accepterId !== me.id) return { ok: false, error: "只有交易的双方能申诉。" };
-      await db.update(schema.tradeTasks).set({ status: "disputed", disputeReason: cleanText(args.reason).slice(0, 200) }).where(eq(schema.tradeTasks.id, id));
+      await db.update(schema.tradeTasks).set({ status: "disputed", disputeReason: cleanText(args.reason).slice(0, 200), disputedAt: new Date(), disputeFromStatus: t.status }).where(eq(schema.tradeTasks.id, id));
       if (t.escrowHeld > 0) await db.update(schema.tradeEscrow).set({ status: "frozen" }).where(and(eq(schema.tradeEscrow.taskId, id), eq(schema.tradeEscrow.kind, "trade"), eq(schema.tradeEscrow.status, "held")));
       return { ok: true, caseId: `trade-${id}` };
+    },
+  }),
+
+  tradeDisputeVote: defineAction({
+    description: "Votes on a disputed trade task in the caller's city (seller = release the frozen escrow to the seller side, buyer = refund it to whoever paid). One vote, changeable until the jury closes; the two parties can't vote; needs an account.",
+    request: z.object({ playerId: pidZ, taskId: z.string().min(1).max(32), side: z.enum(["seller", "buyer"]) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), votes: z.object({ seller: z.number(), buyer: z.number() }).optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      await settleTradeDisputes(db);
+      const id = Number(args.taskId);
+      if (!Number.isInteger(id)) return { ok: false, error: "这个交易贴找不到了" };
+      const [t] = await db.select().from(schema.tradeTasks).where(eq(schema.tradeTasks.id, id)).limit(1);
+      const me = await r2Player(db, args.playerId);
+      if (!t || !me || t.status !== "disputed") return { ok: false, error: "这个纠纷已经结案了" };
+      if (t.posterId === me.id || t.accepterId === me.id) return { ok: false, error: "当事人不能投票" };
+      if (t.city !== "any" && me.cityKey !== t.city) return { ok: false, error: "只有同城的人能当陪审员" };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      if (socialNeedsAccount() && !me.accountId) return { ok: false, error: "先绑定账号，才能当陪审员——一人一票" };
+      await db.insert(schema.tradeDisputeVotes).values({ taskId: id, voterId: me.id, side: args.side, createdAt: new Date() })
+        .onConflictDoUpdate({ target: [schema.tradeDisputeVotes.taskId, schema.tradeDisputeVotes.voterId], set: { side: args.side } });
+      return { ok: true, votes: await tradeDisputeTallies(db, id) };
+    },
+  }),
+
+  adjudicateTradeDispute: defineAction({
+    description: "Settles a disputed trade task's 24 h jury (quorum 3, majority wins, tie / too few votes = expired and the escrow is refunded to whoever paid it). Seller wins → escrow released to the seller side (sell-task → poster, otherwise accepter); buyer wins or expired → refunded to the payer. Anyone may trigger the settlement once the window has closed — it is deterministic and single-claim guarded — and the response reports the verdict and the money moved.",
+    request: z.object({ playerId: pidZ, taskId: z.string().min(1).max(32) }),
+    response: z.object({
+      ok: z.boolean(), error: z.string().optional(), task: tradeTaskShape.optional(),
+      verdict: z.enum(["seller", "buyer", "expired"]).optional(),
+      votes: z.object({ seller: z.number(), buyer: z.number() }).optional(),
+      releasedTo: z.string().optional(), releasedAmount: z.number().optional(), refunded: z.number().optional(),
+      dueAt: z.string().optional(),
+    }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      await settleTradeDisputes(db);
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      const id = Number(args.taskId);
+      if (!Number.isInteger(id)) return { ok: false, error: "这个交易贴找不到了" };
+      const [t] = await db.select().from(schema.tradeTasks).where(eq(schema.tradeTasks.id, id)).limit(1);
+      if (!t) return { ok: false, error: "这个交易贴找不到了" };
+      const votes = await tradeDisputeTallies(db, id);
+      if (t.status === "disputed") {
+        const dueAt = new Date((t.disputedAt ?? t.createdAt).getTime() + TRADE_JURY_MS);
+        return { ok: false, error: "陪审团还在投票，24 小时后再来结算。", votes, dueAt: dueAt.toISOString(), task: tradeTaskView(t) };
+      }
+      if (!t.disputeVerdict) return { ok: false, error: "这单没有在申诉中。", task: tradeTaskView(t) };
+      const verdict = t.disputeVerdict as TradeVerdict;
+      // The escrow row carries what moved at settle time (at most one trade
+      // escrow row exists per task). No row / still held = no money moved.
+      const [esc] = await db.select().from(schema.tradeEscrow).where(and(eq(schema.tradeEscrow.taskId, id), eq(schema.tradeEscrow.kind, "trade"))).limit(1);
+      const moved = esc && (esc.status === "released" || esc.status === "refunded") ? esc.amount : 0;
+      if (verdict === "seller") {
+        const releaseToId = t.kind === "sell" ? t.posterId : (t.accepterId ?? t.posterId);
+        const [to] = moved > 0 ? await db.select().from(schema.players).where(eq(schema.players.id, releaseToId)).limit(1) : [];
+        return { ok: true, task: tradeTaskView(t), verdict, votes, releasedTo: to?.name ?? releaseToId, releasedAmount: moved };
+      }
+      return { ok: true, task: tradeTaskView(t), verdict, votes, refunded: moved };
     },
   }),
 
@@ -3757,6 +4051,7 @@ export const Actions = {
     response: z.object({ ok: z.boolean(), error: z.string().optional(), tasks: z.array(tradeTaskShape) }),
     async handler(ctx, args) {
       const db = ctx.db<typeof schema>();
+      await settleTradeDisputes(db);
       const me = await r2Player(db, args.playerId);
       if (!me) return { ok: false, error: NO_PLAYER, tasks: [] };
       if (me.banned) return { ok: false, error: BANNED_MSG, tasks: [] };
@@ -4518,32 +4813,99 @@ export const Actions = {
     },
   }),
 
-  reportLandlord: defineAction({
-    description: "Reports a landlord problem (乱涨租 / 扣押金 / 断水不修 / 赶人). Handed off to the area (d) black-report flow — same jury, same reputation — not duplicated here.",
-    request: z.object({
-      playerId: pidZ, city: cityZ,
-      target: z.enum(["landlord", "employer"]),
-      reason: z.enum(["乱涨租", "扣押金", "断水不修", "赶人"]),
-      detail: z.string().trim().min(4).max(600), evidence: z.object({ baseRent: z.number().int().min(0).max(100000).optional(), currentRent: z.number().int().min(0).max(100000).optional(), depositPaid: z.number().int().min(0).max(100000).optional() }).optional(),
-    }),
-    response: z.object({ ok: z.boolean(), error: z.string().optional(), reportId: z.string().optional(), dueAt: z.number().optional() }),
+  /* ---- round-3 (g): 玩家警察巡逻 + 监视 ----
+     Server side of client/src/round2/police.ts. Replaces the in-memory
+     watchers Map: patrols and watches are rows, so 👁️ is visible across
+     sessions. Watching alone does nothing — consequences need a filed
+     report through (d) (fileBlackReport / reportPlayer). This block sits
+     where reportLandlord was (round-3: deleted, see ROUND3-LOG-S.md). */
+  startPatrol: defineAction({
+    description: "Starts a police patrol in the caller's city (one active patrol per officer; starting again refreshes it). Server-side, so other players can see the 👁️.",
+    request: z.object({ playerId: pidZ, city: cityZ }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), patrol: z.object({ officerId: z.string(), officerName: z.string(), city: z.string(), since: z.string() }).optional() }),
     async handler(ctx, args) {
       const db = ctx.db<typeof schema>();
       const me = await r2Player(db, args.playerId);
       if (!me) return { ok: false, error: NO_PLAYER };
       if (me.banned) return { ok: false, error: BANNED_MSG };
-      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
-      const res = await fileBlackReportInner(db, me, {
-        city: args.city, kind: "landlord",
-        targetId: `home:${args.city}`, targetName: "房东",
-        body: `${args.reason}：${cleanText(args.detail)}`.slice(0, 600),
-        evidence: args.evidence,
-      });
-      return {
-        ok: res.ok, error: res.error,
-        reportId: res.reportId !== undefined ? String(res.reportId) : undefined,
-        dueAt: res.dueAt ? Date.parse(res.dueAt) : undefined,
-      };
+      if (me.cityKey !== args.city) return { ok: false, error: "只能在你所在的城市巡逻" };
+      await expirePatrols(db);
+      const now = new Date();
+      await db.insert(schema.patrols).values({ officerId: me.id, city: args.city, startedAt: now })
+        .onConflictDoUpdate({ target: schema.patrols.officerId, set: { city: args.city, startedAt: now } });
+      return { ok: true, patrol: { officerId: me.id, officerName: me.name, city: args.city, since: now.toISOString() } };
+    },
+  }),
+
+  stopPatrol: defineAction({
+    description: "Ends the caller's patrol — and every observation it opened, so no watch lingers after the patrol.",
+    request: z.object({ playerId: pidZ }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      await db.delete(schema.patrolWatches).where(eq(schema.patrolWatches.officerId, me.id));
+      await db.delete(schema.patrols).where(eq(schema.patrols.officerId, me.id));
+      return { ok: true };
+    },
+  }),
+
+  observe: defineAction({
+    description: "Starts watching a game avatar (player id or NPC slug) while on patrol. Avatar ids only — emails, phone numbers and real names are rejected. The watched player can see this via getWatchers.",
+    request: z.object({ playerId: pidZ, targetId: z.string().min(1).max(48), note: z.string().max(200).optional() }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), watch: z.object({ officerId: z.string(), targetId: z.string(), note: z.string(), city: z.string(), startedAt: z.string() }).optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      const patrol = await activePatrol(db, me.id);
+      if (!patrol) return { ok: false, error: "先开始巡逻，才能观察。" };
+      if (!isGameAvatarId(args.targetId)) return { ok: false, error: "只能观察游戏里的玩家 / NPC，不能填真实身份。" };
+      if (args.targetId === me.id) return { ok: false, error: "不能观察自己。" };
+      // A known player in another city can't be watched from this patrol;
+      // NPC slugs (not in the players table) are accepted on the slug rule.
+      const [target] = await db.select().from(schema.players).where(eq(schema.players.id, args.targetId)).limit(1);
+      if (target && target.cityKey !== patrol.city) return { ok: false, error: "这个人不在你巡逻的城市。" };
+      const [existing] = await db.select().from(schema.patrolWatches).where(and(eq(schema.patrolWatches.officerId, me.id), eq(schema.patrolWatches.targetId, args.targetId))).limit(1);
+      if (existing) return { ok: false, error: "已经在观察这个人了。" };
+      const now = new Date();
+      const note = cleanText(args.note ?? "").slice(0, 200);
+      await db.insert(schema.patrolWatches).values({ officerId: me.id, targetId: args.targetId, note, city: patrol.city, startedAt: now });
+      return { ok: true, watch: { officerId: me.id, targetId: args.targetId, note, city: patrol.city, startedAt: now.toISOString() } };
+    },
+  }),
+
+  stopObserving: defineAction({
+    description: "Stops watching one avatar.",
+    request: z.object({ playerId: pidZ, targetId: z.string().min(1).max(48) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      await db.delete(schema.patrolWatches).where(and(eq(schema.patrolWatches.officerId, me.id), eq(schema.patrolWatches.targetId, args.targetId)));
+      return { ok: true };
+    },
+  }),
+
+  getWatchers: defineAction({
+    description: "Who is watching the caller right now (officer name + note + city + since) — the watched player always sees this; surveillance is never secret. No banned check on purpose: a restricted player still gets to see who is watching them.",
+    request: z.object({ playerId: pidZ }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), watchers: z.array(z.object({ officerId: z.string(), officerName: z.string(), officerEmoji: z.string(), note: z.string(), city: z.string(), startedAt: z.string() })) }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER, watchers: [] };
+      await expirePatrols(db);
+      const rows = await db.select().from(schema.patrolWatches).where(eq(schema.patrolWatches.targetId, me.id)).orderBy(desc(schema.patrolWatches.startedAt));
+      const watchers = [];
+      for (const w of rows) {
+        const [officer] = await db.select().from(schema.players).where(eq(schema.players.id, w.officerId)).limit(1);
+        watchers.push({ officerId: w.officerId, officerName: officer?.name ?? w.officerId, officerEmoji: officer?.emoji ?? "🙂", note: w.note, city: w.city, startedAt: w.startedAt.toISOString() });
+      }
+      return { ok: true, watchers };
     },
   }),
 
@@ -4789,6 +5151,441 @@ export const Actions = {
         endsAt: new Date(Date.now() + args.days * 24 * 60 * 60 * 1000), createdAt: new Date(),
       }).returning();
       return { ok: true, sponsorId: row ? String(row.id) : undefined };
+    },
+  }),
+
+  /* ---- round-3 (E): Lagos gap merchant-sponsor — read side ----
+     deliverySponsorSlot (admin write) already exists; this is the missing
+     getDeliverySponsors the client menu needs. No banned/muted gate: reading
+     a menu is not a social write. */
+  getDeliverySponsors: defineAction({
+    description: "Lists the sponsored restaurants live in a city's delivery menu (admin-bought slots whose end date has not passed).",
+    request: z.object({ playerId: pidZ, city: cityZ }),
+    response: z.object({
+      ok: z.boolean(), error: z.string().optional(),
+      sponsors: z.array(z.object({
+        id: z.number(), name: z.string(), cuisine: z.string(), emoji: z.string(), tier: z.string(),
+        dishes: z.array(z.object({ name: z.string(), cost: z.number(), energy: z.number(), mood: z.number(), desc: z.string() })),
+        endsAt: z.string(),
+      })),
+    }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER, sponsors: [] };
+      if (me.cityKey !== args.city) return { ok: false, error: "只能看你所在城市的赞助餐厅", sponsors: [] };
+      const rows = await db.select().from(schema.deliverySponsors)
+        .where(and(eq(schema.deliverySponsors.city, args.city), sql`${schema.deliverySponsors.endsAt} > ${Date.now()}`))
+        .orderBy(desc(schema.deliverySponsors.id));
+      return {
+        ok: true,
+        sponsors: rows.map((r) => {
+          let dishes: { name: string; cost: number; energy: number; mood: number; desc: string }[] = [];
+          try {
+            const parsed = JSON.parse(r.dishesJson) as unknown;
+            if (Array.isArray(parsed)) dishes = parsed.flatMap((x) => {
+              const o = x as { name?: unknown; cost?: unknown; energy?: unknown; mood?: unknown; desc?: unknown };
+              return typeof o?.name === "string" && typeof o?.cost === "number" && typeof o?.energy === "number" && typeof o?.mood === "number"
+                ? [{ name: o.name, cost: o.cost, energy: o.energy, mood: o.mood, desc: typeof o?.desc === "string" ? o.desc : "" }] : [];
+            });
+          } catch { dishes = []; }
+          return { id: r.id, name: r.name, cuisine: r.cuisine, emoji: r.emoji, tier: r.tier, dishes, endsAt: r.endsAt.toISOString() };
+        }),
+      };
+    },
+  }),
+
+  /* ---- round-3 (E): Lagos gap creator-payout — Livehouse tips ----
+     Listener pays ✨, the musician gets 70% in ✨ through the account star
+     ledger (bookStars, same calls as buyLook / claimStars — the tipper's
+     account is debited, the musician's account credited; round-3b changed
+     this from the ¥ money ledger, see tipTrack). 30% is the house cut, kept
+     only as a number on the livehouse_tips row. Amounts on that table are
+     now ✨, not ¥ — no table change, just the unit. The client still shows
+     ¥ in its tip buttons / toasts until integration updates the copy. */
+  tipTrack: defineAction({
+    description: "Tips an approved Livehouse track in ✨: 70% goes to the musician's ✨ balance, 30% is the house cut. Max 10 tips a day per listener. The tipper needs a bound account (✨ lives on the account, not the run).",
+    request: z.object({ playerId: pidZ, trackId: z.number().int().positive(), amount: z.number().int().min(1).max(500), message: z.string().max(100).optional() }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), creatorShare: z.number().optional(), creatorName: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      const [t] = await db.select().from(schema.musicTracks).where(eq(schema.musicTracks.id, args.trackId)).limit(1);
+      if (!t || t.status !== "approved") return { ok: false, error: "这首歌还没上轮播，打赏不了。" };
+      const [creator] = await db.select().from(schema.players).where(eq(schema.players.accountId, t.accountId)).limit(1);
+      if (!creator) return { ok: false, error: "这首歌的音乐人还没进游戏，暂时不能打赏。" };
+      if (creator.id === me.id) return { ok: false, error: "不能给自己的歌打赏。" };
+      if (!me.accountId) return { ok: false, error: "打赏要用 ✨，先绑定账号（右上角 👤 账号）再打赏。" };
+      if ((await starBalance(db, me.accountId)) < args.amount) return { ok: false, error: "✨ 不够打赏。" };
+      const dayAgo = new Date(Date.now() - 86_400_000);
+      const sent = await db.select({ n: sql<number>`count(*)` }).from(schema.livehouseTips).where(and(eq(schema.livehouseTips.tipperId, me.id), gte(schema.livehouseTips.createdAt, dayAgo)));
+      if (Number(sent[0]?.n ?? 0) >= 10) return { ok: false, error: "今天打赏得够多了，明天再来。" };
+      const creatorShare = Math.floor(args.amount * 0.7);
+      // ✨ via bookStars (starLedger, reason+ref unique per tip so a retry
+      // can never double-book): tipper pays, musician gets 70%.
+      const ref = `livehouse-tip:${randomUUID()}`;
+      if (!(await bookStars(db, me.accountId, -args.amount, "livehouse-tip", ref))) return { ok: false, error: "✨ 不够打赏。" };
+      if (creatorShare > 0 && !(await bookStars(db, t.accountId, creatorShare, "livehouse-tip", `${ref}:creator`))) {
+        // Musician credit failed (shouldn't happen — fresh ref, positive
+        // amount): give the tip back rather than swallowing it.
+        await bookStars(db, me.accountId, args.amount, "livehouse-tip", `${ref}:refund`);
+        return { ok: false, error: "打赏没成功，✨ 已退回。" };
+      }
+      await db.insert(schema.livehouseTips).values({
+        trackId: t.id, tipperId: me.id, tipperName: me.name, creatorId: creator.id,
+        amount: args.amount, creatorShare, message: cleanText(args.message ?? "").slice(0, 100), createdAt: new Date(),
+      });
+      await db.insert(schema.feedEvents).values({ playerId: me.id, playerName: me.name, kind: "life", text: `给${creator.name}的《${t.title}》打赏了 ✨${args.amount}`, createdAt: new Date() });
+      ctx.invalidateQueries();
+      return { ok: true, creatorShare, creatorName: creator.name };
+    },
+  }),
+
+  getLivehouseTips: defineAction({
+    description: "The caller's received Livehouse tips (latest 20) plus per-track tip totals for the whole city, so the rotation can show how much each song earned. totalEarned is the all-time sum of the caller's creatorShare (SQL SUM over all their tips), in ✨.",
+    request: z.object({ playerId: pidZ }),
+    response: z.object({
+      ok: z.boolean(), error: z.string().optional(), totalEarned: z.number(),
+      mine: z.array(z.object({ id: z.number(), trackId: z.number(), trackTitle: z.string(), tipperName: z.string(), amount: z.number(), creatorShare: z.number(), message: z.string(), createdAt: z.string() })),
+      totals: z.array(z.object({ trackId: z.number(), total: z.number(), count: z.number() })),
+    }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER, totalEarned: 0, mine: [], totals: [] };
+      const rows = await db.select().from(schema.livehouseTips).where(eq(schema.livehouseTips.creatorId, me.id)).orderBy(desc(schema.livehouseTips.id)).limit(20);
+      const tracks = await db.select().from(schema.musicTracks);
+      const titleOf = new Map(tracks.map((t) => [t.id, t.title]));
+      const agg = await db.select({ trackId: schema.livehouseTips.trackId, total: sql<number>`sum(${schema.livehouseTips.amount})`, count: sql<number>`count(*)` }).from(schema.livehouseTips).groupBy(schema.livehouseTips.trackId);
+      // All-time total (not just the latest 20): one SQL SUM, no row scan.
+      const [sumRow] = await db.select({ total: sql<number>`sum(${schema.livehouseTips.creatorShare})` }).from(schema.livehouseTips).where(eq(schema.livehouseTips.creatorId, me.id));
+      return {
+        ok: true,
+        totalEarned: Number(sumRow?.total ?? 0),
+        mine: rows.map((r) => ({ id: r.id, trackId: r.trackId, trackTitle: titleOf.get(r.trackId) ?? "", tipperName: r.tipperName, amount: r.amount, creatorShare: r.creatorShare, message: r.message, createdAt: r.createdAt.toISOString() })),
+        totals: agg.map((a) => ({ trackId: a.trackId, total: Number(a.total ?? 0), count: Number(a.count ?? 0) })),
+      };
+    },
+  }),
+
+  /* ---- round-3 (E): Lagos gap group-order — 顾客拼单 ----
+     Not the rider-side stackWith field (delivery.ts:574): this is customers
+     ordering together. Host creates a group with a 6-char code, friends join
+     with their own dishes, host locks it and places one combined order
+     client-side (placeOrder with mergeGroupItems); delivery fee is split by
+     the client (groupOrderTotals in delivery.ts). Round-3b escrow: at lock
+     the server takes every member's share (subtotal + fee share, same split
+     as groupOrderTotals) into group_order_escrow via creditMoney/writeLedger
+     (tradeEscrow pattern, dedicated table for the food/fee split); the host
+     must NOT pay the combined order again client-side — the money is already
+     held. completeGroupOrder settles it (food to the NPC merchant, fee to
+     the host as riderFee reimbursement when the order went to the pool, else
+     to the NPC rider); cancel / expiry refunds everyone in full. One open
+     group per player; 30 min to gather; a locked group expires 2 h after
+     locking. The client passes the deliveryFee it computed for placeOrder
+     to lockGroupOrder so the server splits the same fee. */
+  createGroupOrder: defineAction({
+    description: "Starts a group order: the host picks a restaurant and their dishes, and gets a 6-char code to share. Max 6 members, 30 minutes to gather.",
+    request: z.object({ playerId: pidZ, city: cityZ, restaurantId: z.string().min(1).max(80), restaurantName: z.string().min(1).max(60), items: z.array(GROUP_ORDER_ITEM_Z).min(1).max(20) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), groupId: z.number().optional(), code: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      if (me.cityKey !== args.city) return { ok: false, error: "只能在你所在的城市拼单" };
+      if (await openGroupOf(db, me.id)) return { ok: false, error: "你已经在一个拼单里了，先结了它再开新的。" };
+      let code = "";
+      for (let i = 0; i < 5; i++) {
+        const c = randomGroupCode();
+        const [dup] = await db.select().from(schema.groupOrders).where(and(eq(schema.groupOrders.code, c), eq(schema.groupOrders.status, "open"))).limit(1);
+        if (!dup) { code = c; break; }
+      }
+      if (!code) return { ok: false, error: "拼单暗号生成失败，稍后再试。" };
+      const subtotal = args.items.reduce((s, it) => s + it.cost * it.qty, 0);
+      const now = new Date();
+      const [row] = await db.insert(schema.groupOrders).values({
+        city: args.city, hostId: me.id, hostName: me.name,
+        restaurantId: args.restaurantId, restaurantName: cleanText(args.restaurantName).slice(0, 60),
+        code, status: "open", createdAt: now, expiresAt: new Date(now.getTime() + GROUP_ORDER_TTL_MS),
+      }).returning();
+      if (!row) return { ok: false, error: "拼单开不起来，稍后再试。" };
+      await db.insert(schema.groupOrderMembers).values({ groupId: row.id, playerId: me.id, playerName: me.name, itemsJson: JSON.stringify(args.items), subtotal, joinedAt: now });
+      return { ok: true, groupId: row.id, code };
+    },
+  }),
+
+  joinGroupOrder: defineAction({
+    description: "Joins an open group order with a 6-char code and your own dishes.",
+    request: z.object({ playerId: pidZ, code: z.string().min(6).max(6), items: z.array(GROUP_ORDER_ITEM_Z).min(1).max(20) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), groupId: z.number().optional(), memberCount: z.number().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      const [g] = await db.select().from(schema.groupOrders).where(and(eq(schema.groupOrders.code, args.code.toUpperCase()), eq(schema.groupOrders.status, "open"))).limit(1);
+      if (!g) return { ok: false, error: "这个拼单暗号不对，或者拼单已经结束了。" };
+      const view = await groupOrderView(db, g.id);
+      if (!view || view.status !== "open") return { ok: false, error: "这个拼单已经结束了。" };
+      if (me.cityKey !== g.city) return { ok: false, error: "拼单在别的城市，你得先过去。" };
+      if (view.members.some((m) => m.playerId === me.id)) return { ok: false, error: "你已经在这个拼单里了。" };
+      if (view.members.length >= GROUP_ORDER_MAX_MEMBERS) return { ok: false, error: `拼单满了（最多 ${GROUP_ORDER_MAX_MEMBERS} 人）。` };
+      if (await openGroupOf(db, me.id)) return { ok: false, error: "你已经在另一个拼单里了，先结了它再来。" };
+      const subtotal = args.items.reduce((s, it) => s + it.cost * it.qty, 0);
+      await db.insert(schema.groupOrderMembers).values({ groupId: g.id, playerId: me.id, playerName: me.name, itemsJson: JSON.stringify(args.items), subtotal, joinedAt: new Date() });
+      return { ok: true, groupId: g.id, memberCount: view.members.length + 1 };
+    },
+  }),
+
+  getGroupOrder: defineAction({
+    description: "Reads a group order (host + members + dishes + subtotals). Members only.",
+    request: z.object({ playerId: pidZ, groupId: z.number().int().positive() }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), group: GROUP_ORDER_VIEW.nullable() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER, group: null };
+      const view = await groupOrderView(db, args.groupId);
+      if (!view) return { ok: false, error: "这个拼单找不到了。", group: null };
+      if (view.hostId !== me.id && !view.members.some((m) => m.playerId === me.id)) return { ok: false, error: "你不在这个拼单里。", group: null };
+      return { ok: true, group: view };
+    },
+  }),
+
+  leaveGroupOrder: defineAction({
+    description: "Leaves an open group order. If the host leaves, the whole group is cancelled (members can still read it as cancelled) and any held escrow is refunded in full. The host may also cancel a locked group this way (before it is ordered) — the escrow is refunded in full; other members cannot leave once locked.",
+    request: z.object({ playerId: pidZ, groupId: z.number().int().positive() }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      const view = await groupOrderView(db, args.groupId);
+      if (!view) return { ok: false, error: "这个拼单找不到了。" };
+      if (!view.members.some((m) => m.playerId === me.id)) return { ok: false, error: "你不在这个拼单里。" };
+      if (view.status === "ordered") return { ok: false, error: "拼单已经下单，不能退出了。" };
+      if (view.status === "cancelled") return { ok: false, error: "拼单已经取消了。" };
+      if (view.status === "locked" && view.hostId !== me.id) return { ok: false, error: "拼单已锁定，不能退出了。" };
+      if (view.status === "locked") {
+        // Host cancels a locked group: whole group cancelled, escrow refunded in full.
+        await db.update(schema.groupOrders).set({ status: "cancelled" }).where(eq(schema.groupOrders.id, args.groupId));
+        await refundGroupEscrow(db, args.groupId);
+        return { ok: true };
+      }
+      await db.delete(schema.groupOrderMembers).where(and(eq(schema.groupOrderMembers.groupId, args.groupId), eq(schema.groupOrderMembers.playerId, me.id)));
+      if (view.hostId === me.id) {
+        await db.update(schema.groupOrders).set({ status: "cancelled" }).where(eq(schema.groupOrders.id, args.groupId));
+        await refundGroupEscrow(db, args.groupId);
+      } else {
+        // Normally nothing is escrowed while a group is still open (escrow
+        // happens at lock), but refund defensively if a row ever exists.
+        await refundGroupEscrow(db, args.groupId);
+      }
+      return { ok: true };
+    },
+  }),
+
+  lockGroupOrder: defineAction({
+    description: "Host only: locks an open group so nobody else can join, and escrows every member's share (dishes subtotal + delivery-fee share, same split as the client's groupOrderTotals) from each member's own balance via the money ledger. Fails with no money moved if any member is short — the error names them and the shortfall. The host then places one combined order client-side WITHOUT paying for it again (placeOrder with mergeGroupItems, money already held).",
+    request: z.object({ playerId: pidZ, groupId: z.number().int().positive(), deliveryFee: z.number().int().min(0).max(10000).optional() }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), group: GROUP_ORDER_VIEW.nullable(), shortfalls: z.array(z.object({ playerId: z.string(), playerName: z.string(), need: z.number(), have: z.number(), short: z.number() })).optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER, group: null };
+      const view = await groupOrderView(db, args.groupId);
+      if (!view) return { ok: false, error: "这个拼单找不到了。", group: null };
+      if (view.hostId !== me.id) return { ok: false, error: "只有发起人能锁定拼单。", group: null };
+      if (view.status !== "open") return { ok: false, error: "拼单已经锁定 / 结束了。", group: null };
+      const fee = args.deliveryFee ?? 0;
+      const split = groupOrderSplit(view.members, fee);
+      const existing = await groupEscrowByPlayer(db, args.groupId);
+      // All-or-nothing balance check first: nobody is charged if anyone is short.
+      const shortfalls: { playerId: string; playerName: string; need: number; have: number; short: number }[] = [];
+      for (const s of split) {
+        if (existing.has(s.playerId)) continue; // resume after a partial lock: already held, don't charge twice
+        const [p] = await db.select().from(schema.players).where(eq(schema.players.id, s.playerId)).limit(1);
+        const have = p?.money ?? 0;
+        if (have < s.total) {
+          const m = view.members.find((x) => x.playerId === s.playerId);
+          shortfalls.push({ playerId: s.playerId, playerName: m?.playerName ?? s.playerId, need: s.total, have, short: s.total - have });
+        }
+      }
+      if (shortfalls.length) {
+        const first = shortfalls[0]!;
+        const more = shortfalls.length > 1 ? `，还有 ${shortfalls.length - 1} 人也不够` : "";
+        return { ok: false, error: `余额不够：${first.playerName} 还差 ¥${first.short}（这单要 ¥${first.need}，只有 ¥${first.have}）${more}。没扣任何人的钱。`, group: null, shortfalls };
+      }
+      const now = new Date();
+      const inserted: string[] = [];
+      for (const s of split) {
+        if (existing.has(s.playerId)) continue;
+        const m = view.members.find((x) => x.playerId === s.playerId)!;
+        if (s.total > 0) await creditMoney(db, s.playerId, -s.total, `group order #${args.groupId} escrow`);
+        await db.insert(schema.groupOrderEscrow).values({ groupId: args.groupId, playerId: s.playerId, foodAmount: m.subtotal, feeAmount: s.feeShare, amount: s.total, status: "held", createdAt: now });
+        inserted.push(s.playerId);
+      }
+      // Compare-and-set: only the first locker wins. If another request
+      // locked it first, refund exactly the rows this call inserted.
+      const changed = await db.update(schema.groupOrders).set({ status: "locked", lockedAt: now }).where(and(eq(schema.groupOrders.id, args.groupId), eq(schema.groupOrders.status, "open"))).returning({ id: schema.groupOrders.id });
+      if (!changed.length) {
+        for (const pid of inserted) {
+          const [r] = await db.select().from(schema.groupOrderEscrow).where(and(eq(schema.groupOrderEscrow.groupId, args.groupId), eq(schema.groupOrderEscrow.playerId, pid))).limit(1);
+          if (r && r.status === "held") {
+            await db.update(schema.groupOrderEscrow).set({ status: "refunded", releasedAt: new Date() }).where(and(eq(schema.groupOrderEscrow.groupId, args.groupId), eq(schema.groupOrderEscrow.playerId, pid), eq(schema.groupOrderEscrow.status, "held")));
+            if (r.amount > 0) await creditMoney(db, pid, r.amount, `group order #${args.groupId} lock race refund`);
+          }
+        }
+        return { ok: false, error: "拼单已经锁定 / 结束了。", group: null };
+      }
+      return { ok: true, group: await groupOrderView(db, args.groupId) };
+    },
+  }),
+
+  completeGroupOrder: defineAction({
+    description: "Host only: marks a locked group as ordered, after the combined order is placed client-side, and settles the escrow: each member's food share goes to the restaurant (NPC merchant — released as spent, no player account), and the delivery-fee shares reimburse the host when the combined order was published to the rider pool (poolId), or go to the NPC rider for a local order. Groups locked before round-3b have no escrow rows and complete as before.",
+    request: z.object({ playerId: pidZ, groupId: z.number().int().positive(), poolId: z.string().min(1).max(32).optional() }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), settlement: z.object({ food: z.number(), fee: z.number(), feeToHost: z.number() }).optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      const [g] = await db.select().from(schema.groupOrders).where(eq(schema.groupOrders.id, args.groupId)).limit(1);
+      if (!g) return { ok: false, error: "这个拼单找不到了。" };
+      if (g.hostId !== me.id) return { ok: false, error: "只有发起人能确认下单。" };
+      // groupOrderView first: a locked group past its 2 h TTL is cancelled + refunded here.
+      const view = await groupOrderView(db, args.groupId);
+      if (!view || view.status !== "locked") return { ok: false, error: view?.status === "cancelled" ? "拼单已过期取消，托管已退回各成员。" : "拼单还没锁定，先锁定再确认。" };
+      let poolId: string | null = null;
+      if (args.poolId) {
+        const pid = Number(args.poolId);
+        if (!Number.isInteger(pid)) return { ok: false, error: "跑腿单号不对。" };
+        const [o] = await db.select().from(schema.deliveryPoolOrders).where(eq(schema.deliveryPoolOrders.id, pid)).limit(1);
+        if (!o) return { ok: false, error: "这个跑腿单找不到了。" };
+        if (o.customerId !== me.id) return { ok: false, error: "这个跑腿单不是你发的。" };
+        if (o.restaurantId !== g.restaurantId) return { ok: false, error: "跑腿单的餐厅和拼单对不上。" };
+        if (o.status === "expired" || o.status === "cancelled") return { ok: false, error: "这个跑腿单已经过期 / 取消了，骑手费托管还在原地。" };
+        poolId = String(pid);
+      }
+      const changed = await db.update(schema.groupOrders).set({ status: "ordered", poolId }).where(and(eq(schema.groupOrders.id, args.groupId), eq(schema.groupOrders.status, "locked"))).returning({ id: schema.groupOrders.id });
+      if (!changed.length) return { ok: false, error: "拼单还没锁定，先锁定再确认。" };
+      const settlement = await settleGroupEscrow(db, args.groupId, me.id, poolId);
+      return { ok: true, settlement };
+    },
+  }),
+
+  /* ---- round-3 (E): Lagos gap retention-loop — 顾客侧每周任务 ----
+     Courier streaks already exist; the customer side only had welcome
+     coupons. Four weekly quests on existing order/rating play (order count,
+     try a new restaurant, 5★ a delivered order, weekly spend). Progress is
+     reported by the client (reportDeliveryQuest) — same trust model as the
+     rest of delivery money, which is client-computed (see business-plan
+     note); a stricter version would derive progress from pool orders only,
+     but local orders never reach the pool. Rewards: existing ¥ (ledger) or
+     existing coupon ids the client grants on claim. */
+  getWeeklyQuests: defineAction({
+    description: "This week's delivery quests for the caller (Beijing ISO week): progress and claimed state per quest.",
+    request: z.object({ playerId: pidZ }),
+    response: z.object({
+      ok: z.boolean(), error: z.string().optional(), weekKey: z.string(),
+      quests: z.array(z.object({ questId: z.string(), progress: z.number(), target: z.number(), claimed: z.boolean() })),
+    }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER, weekKey: "", quests: [] };
+      const weekKey = weekKeyOf();
+      await ensureWeeklyQuestRows(db, me.id, weekKey);
+      const rows = await db.select().from(schema.deliveryQuests).where(and(eq(schema.deliveryQuests.playerId, me.id), eq(schema.deliveryQuests.weekKey, weekKey)));
+      const byId = new Map(rows.map((r) => [r.questId, r]));
+      return {
+        ok: true, weekKey,
+        quests: WEEKLY_QUEST_DEFS.map((q) => ({ questId: q.id, progress: byId.get(q.id)?.progress ?? 0, target: q.target, claimed: !!(byId.get(q.id)?.claimed) })),
+      };
+    },
+  }),
+
+  reportDeliveryQuest: defineAction({
+    description: "Reports one delivery event for weekly-quest progress: an order (counts orders + spend + new-restaurant) or a 5★ rating.",
+    request: z.object({ playerId: pidZ, event: z.enum(["order", "rate"]), restaurantId: z.string().max(80).optional(), amount: z.number().int().min(0).max(100000).optional(), stars: z.number().int().min(1).max(5).optional() }),
+    response: z.object({
+      ok: z.boolean(), error: z.string().optional(), weekKey: z.string(),
+      quests: z.array(z.object({ questId: z.string(), progress: z.number(), target: z.number(), claimed: z.boolean() })),
+    }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER, weekKey: "", quests: [] };
+      if (me.banned) return { ok: false, error: BANNED_MSG, weekKey: "", quests: [] };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG, weekKey: "", quests: [] };
+      if (!communityRateOk(me.id)) return { ok: false, error: RATE_MSG, weekKey: "", quests: [] };
+      const weekKey = weekKeyOf();
+      await ensureWeeklyQuestRows(db, me.id, weekKey);
+      const rows = await db.select().from(schema.deliveryQuests).where(and(eq(schema.deliveryQuests.playerId, me.id), eq(schema.deliveryQuests.weekKey, weekKey)));
+      const byId = new Map(rows.map((r) => [r.questId, r]));
+      const bump = async (questId: string, next: number, meta?: string) => {
+        const row = byId.get(questId);
+        if (!row) return;
+        const def = WEEKLY_QUEST_DEFS.find((q) => q.id === questId)!;
+        const capped = Math.min(def.target, Math.max(row.progress, next));
+        if (capped === row.progress && meta === undefined) return;
+        await db.update(schema.deliveryQuests).set({ progress: capped, ...(meta !== undefined ? { meta } : {}), updatedAt: new Date() }).where(and(eq(schema.deliveryQuests.playerId, me.id), eq(schema.deliveryQuests.weekKey, weekKey), eq(schema.deliveryQuests.questId, questId)));
+        row.progress = capped;
+        if (meta !== undefined) row.meta = meta;
+      };
+      if (args.event === "order") {
+        const o = byId.get("order-3");
+        if (o) await bump("order-3", o.progress + 1);
+        const s = byId.get("spend-100");
+        if (s) await bump("spend-100", s.progress + (args.amount ?? 0));
+        const t = byId.get("try-new");
+        if (t && args.restaurantId && t.progress < 1) {
+          let seen: string[] = [];
+          try { const parsed = JSON.parse(t.meta) as unknown; if (parsed && typeof parsed === "object" && Array.isArray((parsed as { seen?: unknown }).seen)) seen = (parsed as { seen: string[] }).seen.filter((x) => typeof x === "string"); } catch { seen = []; }
+          if (!seen.includes(args.restaurantId)) {
+            seen.push(args.restaurantId);
+            await bump("try-new", 1, JSON.stringify({ seen }));
+          }
+        }
+      } else if (args.event === "rate" && args.stars === 5) {
+        const r = byId.get("rate-5");
+        if (r) await bump("rate-5", 1);
+      }
+      return {
+        ok: true, weekKey,
+        quests: WEEKLY_QUEST_DEFS.map((q) => ({ questId: q.id, progress: byId.get(q.id)?.progress ?? 0, target: q.target, claimed: !!(byId.get(q.id)?.claimed) })),
+      };
+    },
+  }),
+
+  claimWeeklyQuest: defineAction({
+    description: "Claims a completed weekly quest once: ¥ goes to the caller's money via the ledger; a coupon is returned by id for the client to grant.",
+    request: z.object({ playerId: pidZ, questId: z.string().min(1).max(20) }),
+    response: z.object({
+      ok: z.boolean(), error: z.string().optional(),
+      reward: z.object({ kind: z.string(), amount: z.number().optional(), couponId: z.string().optional(), label: z.string() }).optional(),
+    }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      const def = WEEKLY_QUEST_DEFS.find((q) => q.id === args.questId);
+      if (!def) return { ok: false, error: "没有这个任务。" };
+      const weekKey = weekKeyOf();
+      const [row] = await db.select().from(schema.deliveryQuests).where(and(eq(schema.deliveryQuests.playerId, me.id), eq(schema.deliveryQuests.weekKey, weekKey), eq(schema.deliveryQuests.questId, args.questId))).limit(1);
+      if (!row || row.progress < def.target) return { ok: false, error: "这项任务还没完成。" };
+      if (row.claimed) return { ok: false, error: "奖励已经领过了。" };
+      const changed = await db.update(schema.deliveryQuests).set({ claimed: 1, updatedAt: new Date() }).where(and(eq(schema.deliveryQuests.playerId, me.id), eq(schema.deliveryQuests.weekKey, weekKey), eq(schema.deliveryQuests.questId, args.questId), eq(schema.deliveryQuests.claimed, 0))).returning();
+      if (!changed.length) return { ok: false, error: "奖励已经领过了。" };
+      if (def.reward.kind === "money") await creditMoney(db, me.id, def.reward.amount, `weekly quest ${args.questId}`);
+      return { ok: true, reward: { kind: def.reward.kind, ...(def.reward.kind === "money" ? { amount: def.reward.amount } : { couponId: def.reward.couponId }), label: def.reward.label } };
     },
   }),
 
