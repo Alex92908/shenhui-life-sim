@@ -20,6 +20,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { createLandmarks, mergeStatic } from "./landmarks";
 import { AREA_LABELS } from "./areas";
 import { ACCESSORIES, HAIRS } from "./living";
+import { makeFigure, faceSpecFor, addAccessory } from "./figure";
 import { activitiesAt } from "./activities";
 import { SKYLINE } from "./skyline";
 import * as TSZ from "./terrain-sz";
@@ -62,6 +63,9 @@ interface Props {
   scenic?: { x: number; z: number; phase: number; az: number; pol: number; dist: number; path?: [number, number][]; durMs: number; nonce: number } | null;
   onMapMode?: (m: "city" | "follow") => void;
   selfEmoji: string;
+  /** the player's face seed (same value LifeStage gets as faceId) — so the
+      player has the same face on the map and in interiors */
+  selfFaceId?: string;
   selfColor: number;
   selfName: string;
   remotePlayers: RemotePlayer[];
@@ -191,6 +195,10 @@ interface Actor {
   behavior: string;
   speed: number;
   seed: number;
+  /** face seed for the shared figure builder — the SAME seed LifeStage
+      uses for this person, so the face matches between map and interior:
+      the player's faceId, an NPC's name, a remote player's id */
+  faceSeed?: string;
   heading: number;
   phase: number;
   blend: number;
@@ -933,9 +941,9 @@ export function MapView(p: Props) {
     // visibly slow, a taxi crosses the miniature ~3× faster, rail fastest.
     // App's trip timer derives from the same table, so arrival matches.
     const selfSpeed = modeById((p.travelModeId ?? "walk") as TransportModeId).mapSpeed;
-    upsert({ key: "self", name: p.selfName, emoji: p.selfEmoji, color: p.selfColor, isSelf: true, seed: 7, heading: 0, phase: 0, blend: 0, startLoc: p.selfLocId, shirt: selfOutfit.shirt, pants: selfOutfit.pants, accessory: p.selfAccessory && p.selfAccessory !== "none" ? p.selfAccessory : (selfOutfit.id === "formal" ? "tie" : "none"), hair: p.selfHair ?? 0, behavior: "self", speed: selfSpeed });
+    upsert({ key: "self", name: p.selfName, emoji: p.selfEmoji, color: p.selfColor, isSelf: true, seed: 7, faceSeed: p.selfFaceId ?? `player-${p.selfEmoji}`, heading: 0, phase: 0, blend: 0, startLoc: p.selfLocId, shirt: selfOutfit.shirt, pants: selfOutfit.pants, accessory: p.selfAccessory && p.selfAccessory !== "none" ? p.selfAccessory : (selfOutfit.id === "formal" ? "tie" : "none"), hair: p.selfHair ?? 0, behavior: "self", speed: selfSpeed });
     for (const rp of p.remotePlayers) {
-      upsert({ key: `p-${rp.id}`, name: rp.name, emoji: rp.emoji, color: rp.color, seed: hash(rp.id), heading: 0, phase: hash(rp.id) % 6, blend: 0, startLoc: rp.locId, shirt: rp.color, pants: 0x2e3440, accessory: ACCESSORIES[rp.accessory ?? 0]?.id ?? "none", hair: rp.hair ?? hash(rp.id) % 4, behavior: "wander", speed: 2.4 });
+      upsert({ key: `p-${rp.id}`, name: rp.name, emoji: rp.emoji, color: rp.color, seed: hash(rp.id), faceSeed: rp.id, heading: 0, phase: hash(rp.id) % 6, blend: 0, startLoc: rp.locId, shirt: rp.color, pants: 0x2e3440, accessory: ACCESSORIES[rp.accessory ?? 0]?.id ?? "none", hair: rp.hair ?? hash(rp.id) % 4, behavior: "wander", speed: 2.4 });
     }
     /* NPCs keep a quiet city company: each real player in town sends one neighbour home
        (at least two stay), so the map belongs to real people as soon as they show up.
@@ -953,7 +961,7 @@ export function MapView(p: Props) {
          巡逻 2.0 是稳步，守摊/守工位 1.4 是慢挪。之前 wander 4.2 =
          玩家跑步速度、commute 5.6 比玩家跑步还快，所以看着像在 sprint。 */
       const speed = n.behavior === "commute" ? 2.6 : n.behavior === "patrol" ? 2.0 : n.behavior === "stay" ? 1.4 : 1.8;
-      upsert({ key: `npc-${n.name}`, name: `${n.name}·${n.job}${p.npcMoodEmoji?.[n.name] ? ` ${p.npcMoodEmoji[n.name]}` : ""}`, emoji: n.emoji, color: n.color, wander: true, seed: hash(n.name), heading: 0, phase: hash(n.name) % 6, blend: 0, startLoc: loc?.id ?? "home", shirt: n.shirt, pants: n.pants, accessory: n.accessory, hair: hash(n.name) % 4, behavior: n.behavior, speed });
+      upsert({ key: `npc-${n.name}`, name: `${n.name}·${n.job}${p.npcMoodEmoji?.[n.name] ? ` ${p.npcMoodEmoji[n.name]}` : ""}`, emoji: n.emoji, color: n.color, wander: true, seed: hash(n.name), faceSeed: n.name, heading: 0, phase: hash(n.name) % 6, blend: 0, startLoc: loc?.id ?? "home", shirt: n.shirt, pants: n.pants, accessory: n.accessory, hair: hash(n.name) % 4, behavior: n.behavior, speed });
     });
     // NPC schedules: the beat changes with the real hour, and when it does
     // the NPC visibly travels to the new anchor across the map (commuting
@@ -2622,9 +2630,18 @@ export function MapView(p: Props) {
       let v = actorViews.get(a.key);
       if (!v) {
         v = new THREE.Group();
-        // body parts live in a subgroup so riding a vehicle can lift the
-        // figure onto the seat (and tuck the legs away in a car/bus)
-        const body = new THREE.Group();
+        // One shared figure builder (./figure.ts): the map character is
+        // now the SAME detailed figure as in interiors (shoes, belt,
+        // hands, neck, ears, fringe, distinct face from the same seed),
+        // not a plain inline copy. The figure's own group IS the body
+        // subgroup, so riding a vehicle can lift it onto the seat.
+        const mat = (c: number, r = 0.85) => new THREE.MeshStandardMaterial({ color: c, roughness: r });
+        const faceSeed = a.faceSeed ?? a.key;
+        // skin rule mirrors LifeStage: the player uses the fixed light
+        // skin, everyone else uses their face seed's skin tone.
+        const skin = a.isSelf ? 0xf2c79b : faceSpecFor(faceSeed).skin;
+        const fig = makeFigure(mat, a.shirt, a.pants, skin, faceSeed);
+        const body = fig.g;
         v.add(body);
         (v.userData as { body?: THREE.Group }).body = body;
         // round-9: generous invisible hit target so a moving person is
@@ -2640,57 +2657,15 @@ export function MapView(p: Props) {
           v.add(hit);
           (v.userData as { hit?: THREE.Mesh }).hit = hit;
         }
-        const shirt = new THREE.MeshStandardMaterial({ color: a.shirt, roughness: 0.65 });
-        const shirtDark = new THREE.MeshStandardMaterial({ color: new THREE.Color(a.shirt).multiplyScalar(0.78), roughness: 0.7 });
-        const pants = new THREE.MeshStandardMaterial({ color: a.pants, roughness: 0.85 });
-        const skin = new THREE.MeshStandardMaterial({ color: 0xf2c79b, roughness: 0.7 });
-        const mkLimb = (mat: THREE.Material, w: number, len: number) => {
-          const pivot = new THREE.Group();
-          const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, len, w + 0.03), mat);
-          mesh.position.y = -len / 2;
-          mesh.castShadow = true;
-          pivot.add(mesh);
-          return pivot;
-        };
-        const legL = mkLimb(pants, 0.21, 0.82);
-        legL.position.set(-0.16, 0.86, 0);
-        body.add(legL);
-        const legR = mkLimb(pants, 0.21, 0.82);
-        legR.position.set(0.16, 0.86, 0);
-        body.add(legR);
-        const torso = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.74, 0.37), shirt);
-        torso.position.y = 1.24;
-        torso.castShadow = true;
-        body.add(torso);
-        const armL = mkLimb(shirtDark, 0.18, 0.68);
-        armL.position.set(-0.42, 1.56, 0);
-        body.add(armL);
-        const armR = mkLimb(shirtDark, 0.18, 0.68);
-        armR.position.set(0.42, 1.56, 0);
-        body.add(armR);
-        const head = new THREE.Mesh(new THREE.SphereGeometry(0.31, 14, 12), skin);
-        head.position.y = 1.86;
-        head.castShadow = true;
-        body.add(head);
-        const hairMat = new THREE.MeshStandardMaterial({ color: 0x2b2118, roughness: 0.95 });
-        const hair = new THREE.Mesh(new THREE.SphereGeometry(0.325, 14, 10), hairMat);
-        hair.position.y = 1.94;
-        hair.scale.set(1, 0.72, 1);
-        body.add(hair);
-        (v.userData as { limbs?: ActorLimbs }).limbs = { armL, armR, legL, legR };
-        (v.userData as { mats?: { shirt: THREE.MeshStandardMaterial; dark: THREE.MeshStandardMaterial; pants: THREE.MeshStandardMaterial; hair: THREE.MeshStandardMaterial; hairMesh: THREE.Mesh } }).mats = { shirt, dark: shirtDark, pants, hair: hairMat, hairMesh: hair };
+        (v.userData as { limbs?: ActorLimbs }).limbs = { armL: fig.armL, armR: fig.armR, legL: fig.legL, legR: fig.legR };
+        (v.userData as { mats?: { shirt: THREE.MeshStandardMaterial; dark: THREE.MeshStandardMaterial; pants: THREE.MeshStandardMaterial; hair: THREE.MeshStandardMaterial; hairMesh: THREE.Mesh } }).mats = fig.mats;
         // identity accessories, toggled by role/outfit: cap (保安), helmet (骑手),
-        // tie (正装/通勤), apron (摊主), reflective vest (保洁), bag (学生/白领)
+        // tie (正装/通勤), apron (摊主), reflective vest (保洁), bag (学生/白领).
+        // Geometry comes from the shared ./figure.ts addAccessory — the same
+        // definition LifeStage uses, so an accessory looks identical in both.
         const accGroup = new THREE.Group();
-        const mkAcc = (name: string, build: (g: THREE.Group) => void) => { const g = new THREE.Group(); g.name = `acc-${name}`; build(g); g.visible = false; accGroup.add(g); };
-        mkAcc("cap", (g) => { const m = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.14, 0.5), new THREE.MeshStandardMaterial({ color: 0x24304d, roughness: 0.8 })); m.position.y = 2.14; g.add(m); const brim = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.05, 0.3), m.material); brim.position.set(0, 2.08, 0.36); g.add(brim); });
-        mkAcc("helmet", (g) => { const m = new THREE.Mesh(new THREE.SphereGeometry(0.36, 12, 8), new THREE.MeshStandardMaterial({ color: 0xf5b301, roughness: 0.35 })); m.position.y = 1.97; m.scale.y = 0.78; g.add(m); });
-        mkAcc("tie", (g) => { const m = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.44, 0.03), new THREE.MeshStandardMaterial({ color: 0x8c2b2e, roughness: 0.6 })); m.position.set(0, 1.32, 0.2); g.add(m); });
-        mkAcc("apron", (g) => { const m = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.62, 0.03), new THREE.MeshStandardMaterial({ color: 0xf3ead8, roughness: 0.9 })); m.position.set(0, 1.14, 0.2); g.add(m); });
-        mkAcc("vest", (g) => { const m = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.5, 0.43), new THREE.MeshStandardMaterial({ color: 0xff7a1a, roughness: 0.7, emissive: 0xff7a1a, emissiveIntensity: 0.18 })); m.position.y = 1.3; g.add(m); });
-        // round-9: bag centred on the back (x=0, z just behind the torso)
-        // — it was at x=0.42, reading as a side satchel, not a backpack.
-        mkAcc("bag", (g) => { const m = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.44, 0.16), new THREE.MeshStandardMaterial({ color: 0x54432e, roughness: 0.85 })); m.position.set(0, 1.18, -0.22); m.castShadow = true; g.add(m); });
+        const mkAcc = (name: string) => { const g = new THREE.Group(); g.name = `acc-${name}`; addAccessory(g, name); g.visible = false; accGroup.add(g); };
+        for (const accName of ["cap", "helmet", "tie", "apron", "vest", "bag"]) mkAcc(accName);
         body.add(accGroup);
         (v.userData as { acc?: THREE.Group }).acc = accGroup;
         // No floating avatar badge above the head (round-9 removed it):

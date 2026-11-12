@@ -276,3 +276,18 @@ lee：“还有路人的移动速度太快了”。
 根因（`MapView.tsx`，NPC 速度一行）：路人速度按行为分档——commute 5.6、patrol 3.4、stay 2、默认 wander 4.2（单位/秒）。玩家步行是 2.6、跑步是 4.2（`data.ts` 交通方式 `mapSpeed`）。所以普通路人（wander 4.2）走得跟玩家跑步一样快，通勤族（5.6）比玩家跑步还快——满街的人都在 sprint，看着就太快。
 
 修法：路人速度降到玩家步行速度及以下——wander 1.8（散步）、commute 2.6（赶路的快走，等于玩家步行）、patrol 2.0（稳步）、stay 1.4（慢挪）。其他玩家（remote player）2.4 本来就接近玩家步行，没动。只改了这一行速度值，没动走路动画、NPC 的作息锚点和随机漫步逻辑；速度慢了，腿的摆动也跟着慢下来，看着更自然。
+
+## 十五、地图和屋里的人物形象统一了（lee 报的 bug）
+
+lee（截图是店内）：“这里的人物形象和地图不是同一个，所有的画面应该保持一致”。
+
+根因：两套人物 builder。LifeStage 的 `makeFigure` 是精细版（鞋、领子/门襟/腰带、颈、手/袖口、耳、刘海/鬓发、按种子生成的 distinct 脸：眼睛/眉毛/嘴），地图 MapView 的 `ensureActorView` 是现场手写的简版（同样的身体盒子，但没有鞋/腰带/手/颈/耳/刘海，头是空白皮肤球，没有五官）。头顶的大圆脸徽章在 9b 里去掉之后，地图上的人彻底没脸了，差别更明显。
+
+修法（新共享模块 `client/src/figure.ts`，地图和屋里都调它）：
+- `makeFigure`、`faceSpecFor`、`addFaceFeatures`、`Figure` 原样从 LifeStage 搬进 `figure.ts`，LifeStage 改成 import 调用（调用点、参数、姿势/动画一律没动）。`Figure` 返回形状 `{g, legL, legR, armL, armR, head, torso}` 一字没改；`makeFigure` 额外多返回一个 `mats`（衣服/裤子/皮肤/头发材质 + 头发网格，供地图每帧换装/换发型用），是 additive 的，不动原有消费方。
+- 地图 `ensureActorView` 里现场手写的简版身体整个删掉，改调共享 `makeFigure`；人物的 group（`fig.g`）直接当 `body` 子组（骑车时抬身体的逻辑不变）。地图上的人现在也有鞋、腰带、手、颈、耳、刘海，最重要的是有了同一张脸。
+- 同一个人同一张脸：地图上按和屋里相同的种子调 `faceSpecFor`——玩家用 `selfFaceId`（App 传给地图，和 LifeStage 的 `faceId` 是同一个值：`profile?.playerId ?? player-${emoji}`）；NPC 用名字（屋里和 NPC 对话时 `partnerFaceId` 也是名字）；其他玩家用 id（屋里没有他们的对照，地图内自洽即可）。皮肤规则也和屋里对齐：玩家固定浅肤色 `0xf2c79b`，其他人用自己种子的肤色。没有改任何人的种子、衣服颜色、发型数据。
+- 配饰也统一了：`addAccessory` 用地图的定义（cap/helmet/tie/apron/vest/bag 各自分开，包在背后正中），屋里和地图共用同一份。之前屋里把 helmet 并成 cap、apron/vest 并成 bag，所以骑手在屋里戴深色帽、地图上戴黄头盔，摊主在屋里背包、地图上穿围裙；现在两边一样。帽子/领带/包本来两边就一样，没动。
+- 没动的东西：名字标签、人物选中隐形命中圆柱、自己脚下的橙色圈、可骑载具组、地图每帧的换装/发型（`mats` 换色、HAIRS 缩放）——头发材质是刘海/鬓发共用的，换发型颜色时三处一起变。性能：每人多几个静态小网格（鞋、腰带、手、五官），没有新增每帧开销；地图人物数量和 LOD 没动。
+
+改动的文件：`client/src/figure.ts`（新）、`client/src/LifeStage.tsx`（删本地 builder，import 调用）、`client/src/MapView.tsx`（删简版身体，调共享 builder；配饰走 `addAccessory`）、`client/src/App.tsx`（给地图传 `selfFaceId`）。验证：`bun x tsc --noEmit -p client/tsconfig.json` 通过（只有已知 bun-types 报错）；`cd standalone && npm run build` 通过，9.33s。浏览器里还需 lee 看一眼：同一个人（自己、NPC）在地图上和走进屋里/店里时，脸、衣服、鞋、包看起来是同一个。

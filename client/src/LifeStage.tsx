@@ -18,6 +18,7 @@ import { playNpcVoice, stopNpcVoice } from "./round2/sounds";
 import type { HouseLayout } from "./round2/house";
 import { PET_MODEL, type Pet } from "./round2/pets";
 import { floorDef, floorSpots, hasFloors, STAIR_DOWN_ID, STAIR_UP_ID } from "./round2/floors";
+import { makeFigure, faceSpecFor, addAccessory, type Figure } from "./figure";
 
 export type LifeSet = "flat" | "station" | "metro" | "train" | "bus" | "taxi" | "drive" | "concourse" | "platform" | "office" | "restaurant" | "market" | "electronics" | "mall" | "kitchen" | "bedroom" | "bathroom" | "gym" | "park" | "home" | "cruise" | "wheel" | "aquarium" | "turtle" | "coaster" | "safari" | "hike" | "beach" | "cablecar" | "club" | "clinic" | "classroom" | "oilpainting" | "secondhand" | "seafood" | "oldtown" | "womensstreet" | "museum" | "library" | "factory" | "disney" | "tram" | "temple" | "miniature" | "farm" | "watershow" | "boardwalk" | "fishingport" | "bikehub" | "buildplot";
 export type LifePose = "walk" | "idle" | "sit" | "drive" | "type" | "cook" | "eat" | "sleep" | "wash" | "lift" | "stretch" | "talk" | "dance" | "sing";
@@ -588,204 +589,10 @@ function clockTex(): THREE.CanvasTexture {
   });
 }
 
-/* ---------------- the low-poly figure ---------------- */
-
-interface Figure {
-  g: THREE.Group; legL: THREE.Group; legR: THREE.Group;
-  armL: THREE.Group; armR: THREE.Group; head: THREE.Mesh; torso: THREE.Mesh;
-}
-
-function wearAccessory(g: THREE.Group, id: string | undefined) {
-  if (!id || id === "none") return;
-  const kind = id === "helmet" ? "cap" : id === "apron" || id === "vest" ? "bag" : id;
-  const mat = new THREE.MeshStandardMaterial({ color: kind === "cap" ? 0x24304d : kind === "tie" ? 0x8c2b2e : 0x54432e, roughness: 0.8 });
-  if (kind === "cap") {
-    const cap = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.14, 0.5), mat);
-    cap.position.y = 2.14; g.add(cap);
-    const brim = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.05, 0.3), mat);
-    brim.position.set(0, 2.08, 0.36); g.add(brim);
-  } else if (kind === "tie") {
-    const tie = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.44, 0.03), mat);
-    tie.position.set(0, 1.32, 0.2); g.add(tie);
-  } else if (kind === "bag") {
-    const bag = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.44, 0.16), mat);
-    // round-9: centred on the back — was x=0.42, a side satchel, not a backpack
-    bag.position.set(0, 1.18, -0.22); g.add(bag);
-  }
-}
-
-/* ---------------- distinct faces (round-2) ----------------
-   The close-up complaint (2026-11-11): interior characters had NO eyes or
-   mouth at all. Every figure now gets real face geometry — eyes, brows,
-   nose hint, mouth — parameterized by a stable seed (NPC id/name, or the
-   player's id), so every person reads as a different face at close-up
-   distance. The seed is hashed (FNV), so the same person always has the
-   same face and two people never share one by accident.
-   Face features are children of the head mesh, so they turn with it when
-   a pose rotates the head. Front is +z (the fringe sits there too). */
-interface FaceSpec {
-  eyeGap: number; eyeSize: number; eyeShape: "round" | "narrow" | "wide";
-  browAngle: number; browThick: number;
-  mouth: "smile" | "flat" | "open" | "smirk"; mouthSize: number;
-  nose: boolean; faceWidth: number; skin: number; hair: number;
-}
-const FACE_SKINS = [0xf2c79b, 0xe8b88a, 0xd9a06f, 0xc98d5f, 0xf6d7b0];
-const FACE_HAIRS = [0x2b2118, 0x2b2118, 0x4a3226, 0x6b6b6b, 0x8a5a2e, 0x1a1a22];
-function faceSpecFor(seed: string): FaceSpec {
-  let h = 2166136261;
-  const s = seed || "???";
-  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
-  const u = (n: number) => ((h >>> (n % 24)) & 0xff) / 255;
-  const eyeShape = (["round", "narrow", "wide"] as const)[Math.floor(u(2) * 3) % 3]!;
-  const mouth = (["smile", "flat", "open", "smirk"] as const)[Math.floor(u(14) * 4) % 4]!;
-  return {
-    eyeGap: 0.095 + u(0) * 0.04, // 0.095…0.135 — close-set vs wide-set
-    eyeSize: 0.034 + u(4) * 0.016, // 0.034…0.05
-    eyeShape,
-    browAngle: (u(8) - 0.5) * 0.5, // −0.25…0.25 — angled brows read as moods
-    browThick: 0.7 + u(10) * 0.8,
-    mouth,
-    mouthSize: 0.8 + u(16) * 0.5,
-    nose: u(18) > 0.3,
-    faceWidth: 0.92 + u(20) * 0.12,
-    skin: FACE_SKINS[Math.floor(u(22) * FACE_SKINS.length) % FACE_SKINS.length]!,
-    hair: FACE_HAIRS[Math.floor(u(6) * FACE_HAIRS.length) % FACE_HAIRS.length]!,
-  };
-}
-function addFaceFeatures(head: THREE.Mesh, spec: FaceSpec, mat: (c: number, r?: number) => THREE.MeshStandardMaterial) {
-  const dark = mat(0x241a12, 0.55);
-  const white = mat(0xfdfdf8, 0.4);
-  const mouthDark = mat(0x7a2e2a, 0.6);
-  const eyeScale: [number, number, number] =
-    spec.eyeShape === "narrow" ? [1, 0.62, 0.7] : spec.eyeShape === "wide" ? [1.3, 0.95, 0.7] : [1, 1, 0.7];
-  for (const side of [-1, 1]) {
-    const white_m = new THREE.Mesh(new THREE.SphereGeometry(spec.eyeSize, 10, 8), white);
-    white_m.position.set(side * spec.eyeGap, 0.05, 0.26);
-    white_m.scale.set(...eyeScale);
-    head.add(white_m);
-    const pupil = new THREE.Mesh(new THREE.SphereGeometry(spec.eyeSize * 0.55, 8, 6), dark);
-    pupil.position.set(side * spec.eyeGap, 0.05, 0.285);
-    pupil.scale.set(eyeScale[0], eyeScale[1], 0.7);
-    head.add(pupil);
-    const brow = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.022 * spec.browThick, 0.02), dark);
-    brow.position.set(side * spec.eyeGap, 0.11, 0.315);
-    brow.rotation.z = -side * spec.browAngle;
-    head.add(brow);
-  }
-  if (spec.nose) {
-    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.055, 0.03), mat(new THREE.Color(spec.skin).multiplyScalar(0.88).getHex(), 0.62));
-    nose.position.set(0, -0.05, 0.3);
-    head.add(nose);
-  }
-  const my = -0.155, mz = 0.285;
-  if (spec.mouth === "smile") {
-    const smile = new THREE.Mesh(new THREE.TorusGeometry(0.05 * spec.mouthSize, 0.011, 6, 14, Math.PI), mouthDark);
-    smile.position.set(0, my + 0.02, mz);
-    smile.rotation.z = Math.PI; // arc opens upward = a smile
-    head.add(smile);
-  } else if (spec.mouth === "flat") {
-    const flat = new THREE.Mesh(new THREE.BoxGeometry(0.09 * spec.mouthSize, 0.013, 0.015), mouthDark);
-    flat.position.set(0, my, mz);
-    head.add(flat);
-  } else if (spec.mouth === "smirk") {
-    const smirk = new THREE.Mesh(new THREE.BoxGeometry(0.085 * spec.mouthSize, 0.013, 0.015), mouthDark);
-    smirk.position.set(0.015, my, mz);
-    smirk.rotation.z = 0.18;
-    head.add(smirk);
-  } else {
-    const open = new THREE.Mesh(new THREE.SphereGeometry(0.042 * spec.mouthSize, 10, 8), mouthDark);
-    open.position.set(0, my, mz);
-    open.scale.set(1, 0.72, 0.45);
-    head.add(open);
-  }
-}
-
-function makeFigure(mat: (c: number, r?: number) => THREE.MeshStandardMaterial, shirt: number, pants: number, skin = 0xf2c79b, faceSeed?: string): Figure {
-  // Detailed figure (PC high-end pass — no longer plain low-poly blocks):
-  // rounded high-segment head with ears and a jaw taper, a neck, layered
-  // hair with a fringe, a torso with collar / placket / belt, arms ending
-  // in hands, and legs ending in shoes. Pivot layout is unchanged, so
-  // every existing pose and animation keeps working.
-  const g = new THREE.Group();
-  const shirtMat = mat(shirt, 0.62);
-  const darkMat = mat(new THREE.Color(shirt).multiplyScalar(0.78).getHex(), 0.68);
-  const pantsMat = mat(pants, 0.82);
-  const skinMat = mat(skin, 0.62);
-  const mkLimb = (m: THREE.Material, w: number, len: number) => {
-    const pivot = new THREE.Group();
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, len, w + 0.03), m);
-    mesh.position.y = -len / 2;
-    mesh.castShadow = true;
-    pivot.add(mesh);
-    return pivot;
-  };
-  const shoeMat = mat(0x2e2620, 0.45);
-  const mkLeg = (side: number) => {
-    const leg = mkLimb(pantsMat, 0.21, 0.82);
-    const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.23, 0.11, 0.4), shoeMat);
-    shoe.position.set(0, -0.79, 0.07);
-    shoe.castShadow = true;
-    leg.add(shoe);
-    leg.position.set(side, 0.86, 0);
-    g.add(leg);
-    return leg;
-  };
-  const legL = mkLeg(-0.16);
-  const legR = mkLeg(0.16);
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.74, 0.37), shirtMat);
-  torso.position.y = 1.24; torso.castShadow = true; g.add(torso);
-  // collar + placket + belt: the small tailoring that reads as clothing
-  const collar = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.09, 0.4), darkMat);
-  collar.position.y = 1.63; g.add(collar);
-  const placket = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.6, 0.02), darkMat);
-  placket.position.set(0, 1.26, 0.195); g.add(placket);
-  const belt = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.09, 0.39), mat(0x3a2c20, 0.55));
-  belt.position.y = 0.9; g.add(belt);
-  const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.06, 0.02), mat(0xd9b45a, 0.3));
-  buckle.position.set(0, 0.9, 0.2); g.add(buckle);
-  const mkArm = (side: number) => {
-    const arm = mkLimb(darkMat, 0.18, 0.68);
-    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.095, 12, 10), skinMat);
-    hand.position.y = -0.7;
-    hand.castShadow = true;
-    arm.add(hand);
-    const cuff = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.09, 0.22), shirtMat);
-    cuff.position.y = -0.6;
-    arm.add(cuff);
-    arm.position.set(side, 1.56, 0);
-    g.add(arm);
-    return arm;
-  };
-  const armL = mkArm(-0.42);
-  const armR = mkArm(0.42);
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 0.16, 12), skinMat);
-  neck.position.y = 1.66; g.add(neck);
-  // distinct face: same seed always builds the same eyes/brows/mouth
-  const spec = faceSpecFor(faceSeed ?? `${shirt}-${pants}`);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.31, 24, 18), skinMat);
-  head.position.y = 1.88; head.scale.set(0.94 * spec.faceWidth, 1.05, 0.98); head.castShadow = true; g.add(head);
-  addFaceFeatures(head, spec, mat);
-  for (const side of [-1, 1]) {
-    const ear = new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 8), skinMat);
-    ear.position.set(side * 0.29, 1.88, 0);
-    ear.scale.set(0.5, 0.8, 0.7);
-    g.add(ear);
-  }
-  const hairMat = mat(spec.hair, 0.92);
-  const hair = new THREE.Mesh(new THREE.SphereGeometry(0.325, 24, 16), hairMat);
-  hair.position.y = 1.99; hair.scale.set(1, 0.72, 1); g.add(hair);
-  const fringe = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.13, 0.1), hairMat);
-  fringe.position.set(0, 2.02, 0.26);
-  fringe.rotation.x = 0.25;
-  g.add(fringe);
-  for (const side of [-1, 1]) {
-    const sideHair = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.3, 0.24), hairMat);
-    sideHair.position.set(side * 0.29, 1.9, 0.02);
-    g.add(sideHair);
-  }
-  return { g, legL, legR, armL, armR, head, torso };
-}
-
+/* The shared figure builder lives in ./figure.ts (makeFigure,
+   faceSpecFor, addFaceFeatures, addAccessory) — one builder for
+   the map and every interior, so the same person looks the same
+   everywhere. */
 /* ---------------- component ---------------- */
 
 export function LifeStage3D(p: Props) {
@@ -2583,7 +2390,7 @@ export function LifeStage3D(p: Props) {
       ][tr] ?? { x: -2.95, y: -0.12, z: -2.45, ry: 0.15 };
       if (partner) {
         const seated = extraFigure(seat.x, seat.y, seat.z, seat.ry, partner.shirt, partner.pants, true, partnerFaceId ?? "partner");
-        wearAccessory(seated.g, partner.accessory);
+        addAccessory(seated.g, partner.accessory);
         bobbers.splice(bobbers.findIndex((b) => b.g === seated.g), 1);
         talker = seated;
       }
@@ -2594,7 +2401,7 @@ export function LifeStage3D(p: Props) {
       });
     } else if (partner) {
       const stood = extraFigure(1.05, 0, 0.6, -Math.PI / 2, partner.shirt, partner.pants, false, partnerFaceId ?? "partner");
-      wearAccessory(stood.g, partner.accessory);
+      addAccessory(stood.g, partner.accessory);
       bobbers.splice(bobbers.findIndex((b) => b.g === stood.g), 1);
       talker = stood;
     }
@@ -2832,7 +2639,7 @@ export function LifeStage3D(p: Props) {
 
     /* ---- the actor ---- */
     const actor = makeFigure(mat, shirt, pants, 0xf2c79b, faceId ?? `player-${emoji}`);
-    wearAccessory(actor.g, propsRef.current.accessory);
+    addAccessory(actor.g, propsRef.current.accessory);
     const face = faceSprite(emoji);
     face.position.y = 2.42;
     actor.g.add(face);
