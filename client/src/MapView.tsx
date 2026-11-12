@@ -1317,21 +1317,40 @@ export function MapView(p: Props) {
     land.receiveShadow = true;
     scene.add(land);
     // hinterland: neighbouring land continuing off the map edge (Dongguan /
-    // Huizhou / Hong Kong New Territories) — solid land, same height and
-    // colour as our own, so the city no longer reads as an island. It is
-    // NOT in TERRAIN LAND, so isLand / nearestLand / click-to-walk stay
-    // inside the city (visual only, you cannot walk off into Dongguan).
-    // +0.02 lift: it overlaps the faded ACROSS where the two meet (the NT),
-    // and a coplanar deck would z-fight with it.
+    // Huizhou / Hong Kong New Territories) — solid land near the city, so
+    // the city no longer reads as an island. It is NOT in TERRAIN LAND, so
+    // isLand / nearestLand / click-to-walk stay inside the city (visual
+    // only, you cannot walk off into Dongguan).
+    // lee (2026-11-12): the first version was a flat solid deck and read
+    // as a giant grey slab with a hard rectangular edge. So it now fades
+    // exactly like ACROSS below — solid within ~2 units of the city
+    // border, dithered out by ~35 — the land dissolves into the distance
+    // instead of ending in a straight cut. Same land colour as the city
+    // (no colour step at the border); the fade, not a colour change, is
+    // what marks it as background. +0.02 lift: it overlaps the faded
+    // ACROSS where the two meet (the NT), and a coplanar deck would
+    // z-fight with it.
     if (TERRAIN[cityKey].HINTERLAND.length) {
       const toShapeH = (ring: [number, number][]) => { const sh = new THREE.Shape(); ring.forEach(([x, z], i) => (i ? sh.lineTo(x, -z) : sh.moveTo(x, -z))); return sh; };
       const hShapes = TERRAIN[cityKey].HINTERLAND.map((poly) => { const sh = toShapeH(poly[0]!); for (const hole of poly.slice(1)) sh.holes.push(toShapeH(hole)); return sh; });
       const hGeo = new THREE.ExtrudeGeometry(hShapes, { depth: LAND, bevelEnabled: false });
       hGeo.rotateX(-Math.PI / 2);
-      const hinter = new THREE.Mesh(
-        hGeo,
-        new THREE.MeshStandardMaterial({ color: cityKey === "sz" ? 0xd9cfae : 0xcfd6a8, roughness: 1 }),
-      );
+      const ownPtsH: [number, number][] = [];
+      for (const poly of TERRAIN[cityKey].LAND) { const ring = poly[0] ?? []; const step = Math.max(1, Math.floor(ring.length / 600)); for (let i = 0; i < ring.length; i += step) ownPtsH.push(ring[i]!); }
+      const hinterPts: [number, number][] = [];
+      for (const poly of TERRAIN[cityKey].HINTERLAND) { const ring = poly[0] ?? []; const step = Math.max(1, Math.floor(ring.length / 600)); for (let i = 0; i < ring.length; i += step) hinterPts.push(ring[i]!); }
+      let borderH = ownPtsH.filter(([x, z]) => hinterPts.some(([hx, hz]) => (hx - x) ** 2 + (hz - z) ** 2 < 2.25));
+      if (borderH.length === 0) borderH = ownPtsH;
+      const NH = 64;
+      const pickH: THREE.Vector2[] = [];
+      for (let i = 0; i < NH; i++) { const p = borderH[Math.floor((i * borderH.length) / NH)] ?? borderH[0]!; pickH.push(new THREE.Vector2(p[0], p[1])); }
+      const hinterMat = new THREE.MeshStandardMaterial({ color: cityKey === "sz" ? 0xd9cfae : 0xcfd6a8, roughness: 1 });
+      hinterMat.onBeforeCompile = (sh) => {
+        sh.uniforms.uBorder = { value: pickH };
+        sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nvarying vec2 vXZ;").replace("#include <begin_vertex>", "#include <begin_vertex>\nvXZ = (modelMatrix * vec4(transformed, 1.0)).xz;");
+        sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec2 vXZ;\nuniform vec2 uBorder[64];").replace("#include <dithering_fragment>", "#include <dithering_fragment>\nfloat bd = 1e9; for (int i = 0; i < 64; i++) { bd = min(bd, distance(vXZ, uBorder[i])); }\nfloat fade = 1.0 - smoothstep(2.0, 35.0, bd); float nz = fract(sin(dot(floor(gl_FragCoord.xy), vec2(12.9898, 78.233))) * 43758.5453); if (fade < nz) discard;");
+      };
+      const hinter = new THREE.Mesh(hGeo, hinterMat);
       hinter.position.y = 0.02;
       hinter.receiveShadow = true;
       scene.add(hinter);
