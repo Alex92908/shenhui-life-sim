@@ -933,8 +933,12 @@ export function MapView(p: Props) {
        use reads r.w (road mesh, viaduct, sidewalks, zebra stop lines,
        lamps, nearRoad clearance, shop offsets, pedestrian pavements), so
        the whole street cross-section breathes out together and all place
-       positions, landAt(), metro lines and camera framing stay untouched. */
-    const ROAD_W = 1.35;
+       positions, landAt(), metro lines and camera framing stay untouched.
+       ROUND-6: still too narrow / the map reads thin ("瘦") — bump to
+       ×1.8 (深南大道 2.8 → 5.0) and widen the sidewalks to match, so the
+       whole street corridor scales up proportionally. */
+    const ROAD_W = 1.8;
+    const SIDEWALK_W = 1.5;
     const roads: Road[] = ROADS[cityKey].map((r) => ({ ...r, w: r.w * ROAD_W }));
     const flagGroups: THREE.Group[] = [];
     const wheelGroups: THREE.Object3D[] = [];
@@ -1412,7 +1416,7 @@ export function MapView(p: Props) {
         const len = roadLen(r);
         const ang = Math.atan2(r.z2 - r.z1, r.x2 - r.x1);
         for (const side of [1, -1]) {
-          const off = (r.w / 2 + 0.5) * side;
+          const off = (r.w / 2 + SIDEWALK_W / 2 - 0.075) * side;
           if (TERRAIN[cityKey].LAND.length) {
             // pavements only where the road is on land (not along viaducts / tunnels)
             const n = Math.max(2, Math.ceil(len / 1.5));
@@ -1420,12 +1424,12 @@ export function MapView(p: Props) {
               const tm = (i + 0.5) / n;
               const mx = r.x1 + (r.x2 - r.x1) * tm + Math.sin(ang) * off, mz = r.z1 + (r.z2 - r.z1) * tm - Math.cos(ang) * off;
               if (!isLand(cityKey, mx, mz)) continue;
-              const pm = new THREE.Mesh(new THREE.BoxGeometry(len / n + 0.02, 0.07, 1.15), paveMat);
+              const pm = new THREE.Mesh(new THREE.BoxGeometry(len / n + 0.02, 0.07, SIDEWALK_W), paveMat);
               pm.position.set(mx, LAND + 0.045, mz); pm.rotation.y = -ang; pm.receiveShadow = true; scene.add(pm);
             }
             continue;
           }
-          const m = new THREE.Mesh(new THREE.BoxGeometry(len, 0.07, 1.15), paveMat);
+          const m = new THREE.Mesh(new THREE.BoxGeometry(len, 0.07, SIDEWALK_W), paveMat);
           m.position.set((r.x1 + r.x2) / 2 + Math.sin(ang) * off, LAND + 0.045, (r.z1 + r.z2) / 2 - Math.cos(ang) * off);
           m.rotation.y = -ang;
           m.receiveShadow = true;
