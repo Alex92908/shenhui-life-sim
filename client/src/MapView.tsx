@@ -1208,13 +1208,14 @@ export function MapView(p: Props) {
     if (TERRAIN[cityKey].ACROSS.length) {
       const toShape2 = (ring: [number, number][]) => { const sh = new THREE.Shape(); ring.forEach(([x, z], i) => (i ? sh.lineTo(x, -z) : sh.moveTo(x, -z))); return sh; };
       const shapes = TERRAIN[cityKey].ACROSS.map((poly) => { const sh = toShape2(poly[0]!); for (const hole of poly.slice(1)) sh.holes.push(toShape2(hole)); return sh; });
-      const g2 = new THREE.ExtrudeGeometry(shapes, { depth: LAND * 0.8, bevelEnabled: false });
+      const g2 = new THREE.ExtrudeGeometry(shapes, { depth: LAND, bevelEnabled: false });
       g2.rotateX(-Math.PI / 2);
       /* only a band of the neighbour shows: solid within ~2 units of the shared
-         border, fading out by ~5 — the border reads clearly without a big grey
+         border, fading out by ~10 — the border reads clearly without a big grey
          block filling the screen (portrait phones see far to the south). The
          fade is per pixel (distance to sampled border points), so big
-         triangles don't smear it. */
+         triangles don't smear it. The neighbour is extruded to the same height
+         as our own land (not lower): a step at the border reads as a cut. */
       const ownPts: [number, number][] = [];
       for (const poly of TERRAIN[cityKey].LAND) { const ring = poly[0] ?? []; const step = Math.max(1, Math.floor(ring.length / 600)); for (let i = 0; i < ring.length; i += step) ownPts.push(ring[i]!); }
       const acrossPts: [number, number][] = [];
@@ -1224,11 +1225,11 @@ export function MapView(p: Props) {
       const N = 64;
       const pick: THREE.Vector2[] = [];
       for (let i = 0; i < N; i++) { const p = border[Math.floor((i * border.length) / N)] ?? border[0]!; pick.push(new THREE.Vector2(p[0], p[1])); }
-      const acrossMat = new THREE.MeshStandardMaterial({ color: 0x8b8f87, roughness: 1 });
+      const acrossMat = new THREE.MeshStandardMaterial({ color: 0xb3b598, roughness: 1 });
       acrossMat.onBeforeCompile = (sh) => {
         sh.uniforms.uBorder = { value: pick };
         sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nvarying vec2 vXZ;").replace("#include <begin_vertex>", "#include <begin_vertex>\nvXZ = (modelMatrix * vec4(transformed, 1.0)).xz;");
-        sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec2 vXZ;\nuniform vec2 uBorder[64];").replace("#include <dithering_fragment>", "#include <dithering_fragment>\nfloat bd = 1e9; for (int i = 0; i < 64; i++) { bd = min(bd, distance(vXZ, uBorder[i])); }\nfloat fade = 1.0 - smoothstep(3.0, 7.0, bd); float nz = fract(sin(dot(floor(gl_FragCoord.xy), vec2(12.9898, 78.233))) * 43758.5453); if (fade < nz) discard;");
+        sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec2 vXZ;\nuniform vec2 uBorder[64];").replace("#include <dithering_fragment>", "#include <dithering_fragment>\nfloat bd = 1e9; for (int i = 0; i < 64; i++) { bd = min(bd, distance(vXZ, uBorder[i])); }\nfloat fade = 1.0 - smoothstep(2.0, 10.0, bd); float nz = fract(sin(dot(floor(gl_FragCoord.xy), vec2(12.9898, 78.233))) * 43758.5453); if (fade < nz) discard;");
       };
       const across = new THREE.Mesh(g2, acrossMat);
       across.receiveShadow = true;
@@ -1261,7 +1262,10 @@ export function MapView(p: Props) {
         for (let i = 1; i < rv.pts.length; i++) {
           const [ax, az] = rv.pts[i - 1]!, [bx, bz] = rv.pts[i]!;
           const mx = (ax + bx) / 2, mz = (az + bz) / 2;
-          if (!landAt(cityKey, mx, mz)) continue;
+          // border rivers (深圳河) hug the edge of the land, so a segment's
+          // midpoint can fall just off it — accept it if either end is on land,
+          // so the river ribbon doesn't drop out right at the border seam
+          if (!landAt(cityKey, mx, mz) && !landAt(cityKey, ax, az) && !landAt(cityKey, bx, bz)) continue;
           const len = Math.hypot(bx - ax, bz - az);
           const seg = new THREE.Mesh(new THREE.BoxGeometry(len + 0.25, 0.04, 0.55), waterMat);
           seg.position.set(mx, LAND + 0.02, mz); seg.rotation.y = -Math.atan2(bz - az, bx - ax); scene.add(seg);
