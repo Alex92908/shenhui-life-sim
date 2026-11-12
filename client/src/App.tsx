@@ -37,9 +37,10 @@ import { npcAllowedAt, type LocType, type VenueSetId, type AnimKindId } from "./
 import { vendorSellFor } from "./routines";
 /* ---- round-2 feature modules (see ROUND2-LOG-*.md for the integration snippets) ---- */
 import { venueSetFor, animFor } from "./round2/venues";
-import { hasFloors, buildingsFor, buildingDef, floorDef, floorTalks, maxFloor, STAIR_UP_ID, STAIR_DOWN_ID } from "./round2/floors";
+import { hasFloors, buildingsFor, buildingDef, buildingZhById, floorDef, floorTalks, maxFloor, STAIR_UP_ID, STAIR_DOWN_ID } from "./round2/floors";
+import { SHOP_MENUS, SHOP_KIND_ZH, SHOP_KIND_EMOJI, shopMenu, defaultShopName, defaultFlatName, clampName, sanitizeShop, sanitizeFlat, shopFloorText, isVillageLoc, isStorefrontLoc, shopSyncPayload, flatSyncPayload, SHOP_NAME_MAX, type ShopState, type FlatState, type PlayerShop, type PlayerFlat } from "./round2/shops";
 import { adoptPet, interactWithPet, homecomingGreeting, tickPetDay, getActivePet, PET_STORAGE_KEY, serializePets, deserializePets, type PetsState, type InteractionKind } from "./round2/pets";
-import { buildNotice, feedStrayLocal, strayToAdoptInput, validateNotice, validateSnakeReport, validateFishingSpot, toMapMarkers } from "./round2/community";
+import { buildNotice, feedStrayLocal, strayToAdoptInput, validateNotice, validateSnakeReport, validateFishingSpot, toMapMarkers, shopFlatMarkers } from "./round2/community";
 import { emptyEconomyState, economyDailyTick, buyUsedFurniture as buyUsedFurnitureLocal, buyCheapGood as buyCheapGoodLocal, resellUsedFurniture as resellUsedFurnitureLocal, postSubletListing, acceptSublet as acceptSubletLocal, postTradeTask as postTradeTaskLocal, searchTradeTasks, acceptTradeTask as acceptTradeTaskLocal, escrowTradeTask as escrowTradeTaskLocal, completeTradeTask as completeTradeTaskLocal, cancelTradeTask as cancelTradeTaskLocal, disputeTradeTask as disputeTradeTaskLocal, OVERSEAS_CATALOG, placeOverseasOrder as placeOverseasOrderLocal, payOverseasDuty as payOverseasDutyLocal, USED_FURNITURE, TRADE_TASK_EXAMPLES, type EconomyState, type TradeTask, type TradeTaskKind, type PlayerRef } from "./round2/economy";
 import { asReportTransport, buildRentEvidence, buildWageEvidence, canFile, validateDraft, reputationWarning, applyLandlordVerdict, applyEmployerVerdict, applyFalseReportPenalty, applyTrueReportGain, exposureLine, jurySummary, SUGGESTED_CHARGES, ReportBook, type ReportDraft, type BlackReport, type LandlordRemedy, type EmployerRemedy } from "./round2/report";
 import { defaultLifestyleState, sanitizeLifestyleState, type LifestyleState, type PlayerProfile, SANHE_SHIFTS, SANHE_SLEEP, SANHE_EATS, SANHE_MATES, takeSanheShift, sanheSleep, sanheEat, chatMate, SMALL_JOYS, doSmallJoy, encouragementFor, checkinDue, doCheckin, RENT_TALKS, negotiateRent, SECONDHAND_FLOOR, sellSecondHand, subletBunk, openStall, STALL_KINDS, JOB_CENTER_TABS, COURSES, INTERVIEW_QUESTIONS, listingsFor, applyForJob, bookGuidance, suggestRoute, enrollCourse, courseDayTick, mockInterview, startTrial, trialWorkDay, resolveTrial, markUnemployed, markEmployed, flatDays, flatStatusLine, isJobCenterPlace, REAL_HELP, type LifeResult } from "./round2/lifestyles";
@@ -359,7 +360,9 @@ life?: LifestyleState;
 delivery?: DeliveryState;
 /** 长线目标：买了房、开了店、带了徒弟 */
 ownFlat?: boolean; flatDay?: number;
-shop?: { kind: string; day: number; lvl: number; till: number; partner?: string };
+/** 买下的房子：名字 + 位置（round-9: 和店一样上地图、可被走访） */
+flat?: FlatState;
+shop?: ShopState;
 apprentice?: { name: string; day: number; lvl: number };
 homeSpent: number;
 xp: number;
@@ -988,11 +991,21 @@ const [pinLoc, setPinLoc] = useState<string | null>(null);
 const rememberSearch = (h: SearchHit) => setSearchHist((old) => { const next = [h, ...old.filter((x) => !(x.locId === h.locId && x.city === h.city))].slice(0, 20); try { localStorage.setItem("shhr-search-hist", JSON.stringify(next)); } catch { /* storage unavailable */ } return next; });
 const clearSearchHist = () => { setSearchHist([]); try { localStorage.removeItem("shhr-search-hist"); } catch { /* storage unavailable */ } };
 const [mapFocus, setMapFocus] = useState<{ locId?: string; x?: number; z?: number; nonce: number } | null>(null);
+/* round-9: the server-side till — money visitors paid into my shop (buyFromShop).
+   It is NOT in s.shop.till (that is only the overnight rollover); 收钱 merges
+   both, then zeroes the server till via collectShopTill. */
+const [serverShopTill, setServerShopTill] = useState(0);
 const [metroMapOpen, setMetroMapOpen] = useState(false);
 const [navOpen, setNavOpen] = useState(false);
 const [metroMapDest, setMetroMapDest] = useState<string | null>(null);
 type VenueScene = { kind: "dine" | "shop" | "stay"; id: string };
 const [venueScene, setVenueScene] = useState<VenueScene | null>(null);
+/* round-9: the shop / flat whose interior the player is visiting (modal). */
+const [shopVisit, setShopVisit] = useState<PlayerShop | null>(null);
+const [flatVisit, setFlatVisit] = useState<PlayerFlat | null>(null);
+/* round-9: the open-shop / buy-flat draft in the 人生大事 fold. */
+const [shopDraft, setShopDraft] = useState<{ kind: string; locId: string; floor: number; building: string | null; name: string } | null>(null);
+const [flatDraft, setFlatDraft] = useState<{ locId: string; name: string } | null>(null);
 const [sceneFlags, setSceneFlags] = useState<Record<string, boolean>>({});
 const walkTimer = useRef<number | null>(null);
 const pendingSleep = useRef(false);
@@ -1430,15 +1443,25 @@ const noticesQuery = useQuery({ queryKey: ["notices", cityKey], queryFn: () => a
 const snakesQuery = useQuery({ queryKey: ["snakes", cityKey], queryFn: () => api.getSnakeWarnings({ cityKey, playerId: profile!.playerId }), refetchInterval: 120_000, enabled: phase === "game" && !!profile });
 const fishingQuery = useQuery({ queryKey: ["fishing", cityKey], queryFn: () => api.getFishingSpots({ cityKey, playerId: profile!.playerId }), refetchInterval: 300_000, enabled: phase === "game" && !!profile });
 /* (c) round-3: community map markers for MapView (strays / notices / snakes / fishing spots) */
+/* round-9: player shops / flats ride the same marker system and go FIRST, so
+   the MapView 24-marker cap keeps shops/flats before community content. */
+const worldShops: PlayerShop[] = (world?.shops ?? []) as PlayerShop[];
+const worldFlats: PlayerFlat[] = (world?.flats ?? []) as PlayerFlat[];
 const communityMarkers = useMemo(
-  () => toMapMarkers({
-    strays: straysQuery.data?.strays ?? [],
-    notices: noticesQuery.data?.notices ?? [],
-    snakes: snakesQuery.data?.warnings ?? [],
-    fishingSpots: fishingQuery.data?.spots ?? [],
-    cityKey,
-  }),
-  [straysQuery.data, noticesQuery.data, snakesQuery.data, fishingQuery.data, cityKey],
+  () => [
+    ...shopFlatMarkers({
+      shops: worldShops, flats: worldFlats, cityKey,
+      buildingZh: (b) => (b ? (buildingZhById(b) ?? b) : null),
+    }),
+    ...toMapMarkers({
+      strays: straysQuery.data?.strays ?? [],
+      notices: noticesQuery.data?.notices ?? [],
+      snakes: snakesQuery.data?.warnings ?? [],
+      fishingSpots: fishingQuery.data?.spots ?? [],
+      cityKey,
+    }),
+  ],
+  [worldShops, worldFlats, straysQuery.data, noticesQuery.data, snakesQuery.data, fishingQuery.data, cityKey],
 );
 /* (g) round-3: server patrol — who is watching me (👁️ badge, polled every 60 s) */
 const watchersQuery = useQuery({ queryKey: ["watchers", profile?.playerId ?? ""], queryFn: () => getWatchers(profile!.playerId), refetchInterval: 60_000, enabled: phase === "game" && !!profile });
@@ -2005,6 +2028,10 @@ stamps: Math.min(999, metaRef.current.stamps.length),
 title: metaRef.current.title,
 hair: Math.max(0, Math.min(3, Math.round(s.hair ?? 0))),
 accessory: Math.max(0, Math.min(3, Math.round(s.accessory ?? 0))),
+/* round-9: my shop / flat ride the heartbeat so the server lists them for
+   every player in the city (shops table / homes row). */
+shop: shopSyncPayload(s.shop, prof.name, "home", s.cityKey),
+flat: s.ownFlat ? flatSyncPayload(s.flat, prof.name, "home", s.cityKey) : undefined,
 });
 },
 onSuccess: (data) => {
@@ -2026,6 +2053,8 @@ if (data.bank?.corrected) {
   mutate((x) => { x.money = fix; });
   showToast(en ? `💰 The server credited ${Y}${fix - before} to your wallet.` : `💰 服务器给你钱包里加了 ${Y}${fix - before}。`);
 }
+/* round-9: the server till (visitors' purchases) rides the heartbeat. */
+if (typeof data.bank?.shopTill === "number") setServerShopTill(data.bank.shopTill);
 const s = gsRef.current;
 queryClient.setQueryData(["world", s?.cityKey?? "sz"], data);
 },
@@ -2157,7 +2186,8 @@ venueFx: strArr(g.venueFx),
 npcGigs: strArr(g.npcGigs),
 arcs: g.arcs && typeof g.arcs === "object" && !Array.isArray(g.arcs) ? Object.fromEntries(Object.entries(g.arcs as Record<string, unknown>).filter(([k, v]) => arcById(k) && v && typeof v === "object").map(([k, v]) => { const o = v as Record<string, unknown>; return [k, { st: num(o.st, 0), day: num(o.day, 0), flags: strArr(o.flags), ...(typeof o.done === "string" ? { done: o.done } : {}) }]; })) : {},
 ownFlat: g.ownFlat === true, flatDay: typeof g.flatDay === "number" ? g.flatDay : undefined,
-shop: g.shop && typeof g.shop === "object" && typeof (g.shop as { kind?: unknown }).kind === "string" ? { kind: String((g.shop as { kind: string }).kind), day: num((g.shop as { day?: unknown }).day, 0), lvl: num((g.shop as { lvl?: unknown }).lvl, 1), till: num((g.shop as { till?: unknown }).till, 0), partner: typeof (g.shop as { partner?: unknown }).partner === "string" ? (g.shop as { partner: string }).partner : undefined } : undefined,
+flat: g.ownFlat === true ? sanitizeFlat(g.flat, prof.name, "home") : undefined,
+shop: sanitizeShop(g.shop, prof.name, "home"),
 apprentice: g.apprentice && typeof g.apprentice === "object" && typeof (g.apprentice as { name?: unknown }).name === "string" ? { name: String((g.apprentice as { name: string }).name).slice(0, 20), day: num((g.apprentice as { day?: unknown }).day, 0), lvl: num((g.apprentice as { lvl?: unknown }).lvl, 0) } : undefined,
 homeSpent: num(g.homeSpent, 0),
 xp: num(g.xp, 0),
@@ -3560,6 +3590,22 @@ const openVisit = (name: string) => {
   const pub = (world?.online ?? []).find((p) => p.name === name)?.id ?? bonds.find((b) => b.status === "active" && b.peerName === name)?.peerId;
   if (pub) void api.getHome({ pub }).then((r) => { if (r.home) setVisitHome({ tier: r.home.tier, style: r.home.style, layout: spotsOf(r.home.layout) }); }).catch(() => {});
   showToast(en ? `You walked into ${name}'s place.` : `走进${name}的家。人已经坐着了，你自己走过去。`);
+};
+/* round-9: visit a bought flat (own or another player's). Reuses the home
+   3D interior; visitors are read-only (furniture UI hides when homeGuest). */
+const visitFlat = (fl: PlayerFlat) => {
+  const mine = fl.ownerPub === myPubRef.current;
+  if (mine) {
+    publishHome(); setHomeGuest(null); setVisitHome(null); setHomePose("idle"); setHome3d(true);
+    showToast(en ? "This is your flat — welcome home." : "这是你买下的房子，欢迎回家。");
+    return;
+  }
+  setVisitHome({ tier: fl.tier, style: null, layout: [] });
+  setHomePose("idle");
+  setHomeGuest(fl.ownerName);
+  setHome3d(true);
+  void api.getHome({ pub: fl.ownerPub }).then((r) => { if (r.home) setVisitHome({ tier: r.home.tier, style: r.home.style, layout: spotsOf(r.home.layout) }); }).catch(() => {});
+  showToast(en ? `You walked into ${fl.ownerName}'s flat (${fl.name}). Look around — the furniture is theirs.` : `走进${fl.ownerName}的家（${fl.name}）。串串门看看，家具是人家的，别乱动。`);
 };
 const usePlacedFurn = (id: string) => {
   const u = furnUse(id);
@@ -5857,6 +5903,11 @@ const city = CITIES[s.cityKey];
 const career = CAREERS[s.careerIdx] ?? CAREERS[0]!;
 const selLoc = locById(selectedLoc);
 const arrived = currentLoc === selectedLoc && !walking;
+/* round-9: player shops / flats at the selected location (this city). */
+const shopsHere = worldShops.filter((sh) => sh.locId === selLoc.id && sh.cityKey === s.cityKey);
+const flatsHere = worldFlats.filter((fl) => fl.locId === selLoc.id && fl.cityKey === s.cityKey);
+/* round-9: shops in the venue currently open in 3D (for the floor banner). */
+const shopsAtVenue = venue3d ? worldShops.filter((sh) => sh.locId === (venue3d.id ?? "") && sh.cityKey === s.cityKey) : [];
 const shopLabel = s.shop ? (SHOP_KINDS.find((k) => k.id === s.shop!.kind)?.zh ?? null) : null;
 const boards = mapAds(s.cityKey, s.day, (billboardsQuery.data?.slots ?? []).flatMap((b) => (b.ad ? [{ slot: b.slot, text: b.ad.text, emoji: b.ad.emoji, owner: b.ad.owner }] : [])), shopLabel);
 const spotsNow = billboardSpots(s.cityKey);
@@ -6180,9 +6231,13 @@ const locResults = [
 ...AREA_LABELS.filter((a) => a.c === s.cityKey && hit(a.n, a.e)).slice(0, 6).map((a) => locById(areaLocId(a.c, a.n))),
 ];
 const stationResults = stationIndexOf(s.cityKey).filter((st) => hit(st.name, trText(st.name), trText(`${st.name}站`))).slice(0, 6);
+/* round-9: player shops / flats / billboard ads — searchable by name, kind or owner. */
+const shopResults = worldShops.filter((sh) => hit(sh.name, SHOP_KIND_ZH[sh.kind], sh.ownerName)).slice(0, 4);
+const flatResults = worldFlats.filter((fl) => hit(fl.name, fl.ownerName)).slice(0, 4);
+const boardResults = boards.filter((b) => hit(b.text, b.owner)).slice(0, 3);
 return (
 <div className="absolute inset-x-1.5 top-full z-30 max-h-72 overflow-y-auto rounded-[14px] border-2 border-[var(--border)] bg-[var(--surface)] p-1.5 shadow-xl">
-{locResults.length === 0 && stationResults.length === 0 && <p className="px-2 py-1.5 text-xs text-[var(--dim)]">没找到「{q}」——地点名、{railWord(s.cityKey)}站名、英文名都能搜。</p>}
+{locResults.length === 0 && stationResults.length === 0 && shopResults.length === 0 && flatResults.length === 0 && boardResults.length === 0 && <p className="px-2 py-1.5 text-xs text-[var(--dim)]">没找到「{q}」——地点名、{railWord(s.cityKey)}站名、英文名都能搜。</p>}
 {locResults.map((l) => {
 const plan = l.id !== currentLoc ? planRailTrip(s.cityKey, currentLoc, l.id) : null;
 return (
@@ -6191,6 +6246,35 @@ return (
 <span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold">{en ? trText(l.name) : l.name}</span><span className="block truncate text-[11px] text-[var(--dim)]">{l.id === currentLoc ? "你现在在这里" : plan ? `怎么去：${plan.boardLoc !== currentLoc ? `先步行到${locById(plan.boardLoc).short}站 · ` : ""}${railWord(s.cityKey)} ${plan.route.summary} · ${plan.route.stops} 站 · ${Y}${Math.round(plan.route.fare * policyRef.current.metro)}${plan.alightLoc !== l.id ? ` · 到${locById(plan.alightLoc).short}站再步行过去` : ""}` : "怎么去：离得很近，步行就到（在下方选好出行方式，点地点名或地图上的建筑前往）"}</span></span>
 <span className="shrink-0 text-[11px] font-black text-[var(--accent2)]">定位</span>
 <span role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); setMapQuery(""); setPinLoc(l.id); rememberSearch({ locId: l.id, name: l.name, city: s.cityKey }); walkTo(l.id); }} onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); setMapQuery(""); setPinLoc(l.id); walkTo(l.id); } }} className="shrink-0 rounded-full bg-[var(--accent)] px-2.5 py-1 text-[11px] font-black text-white">{en ? "Go" : "去这里"}</span>
+</button>
+);
+})}
+{shopResults.map((sh) => {
+const floorTxt = shopFloorText(sh.building ? (buildingZhById(sh.building) ?? sh.building) : null, sh.floor);
+return (
+<button key={`shop-${sh.ownerPub}`} type="button" aria-label={`定位到${sh.name}`} onClick={() => { setSelectedLoc(sh.locId); setAsideTab("place"); autoOpenAside(); setMapFocus({ locId: sh.locId, nonce: Date.now() }); setMapQuery(""); setPinLoc(sh.locId); rememberSearch({ locId: sh.locId, name: sh.name, city: s.cityKey }); }} className="flex w-full items-center gap-2 rounded-[10px] px-2 py-1.5 text-left hover:bg-[var(--surface2)]">
+<span className="text-lg">{SHOP_KIND_EMOJI[sh.kind] ?? "🏪"}</span>
+<span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold">{sh.name}{floorTxt}</span><span className="block truncate text-[11px] text-[var(--dim)]">{SHOP_KIND_ZH[sh.kind] ?? "小店"} · {sh.ownerName} · {sh.lvl} 级 · {locById(sh.locId).short}</span></span>
+<span className="shrink-0 text-[11px] font-black text-[var(--accent2)]">定位</span>
+<span role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); setMapQuery(""); setPinLoc(sh.locId); rememberSearch({ locId: sh.locId, name: sh.name, city: s.cityKey }); walkTo(sh.locId); }} onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); setMapQuery(""); setPinLoc(sh.locId); walkTo(sh.locId); } }} className="shrink-0 rounded-full bg-[var(--accent)] px-2.5 py-1 text-[11px] font-black text-white">{en ? "Go" : "去这里"}</span>
+</button>
+);
+})}
+{flatResults.map((fl) => (
+<button key={`flat-${fl.ownerPub}`} type="button" aria-label={`定位到${fl.name}`} onClick={() => { setSelectedLoc(fl.locId); setAsideTab("place"); autoOpenAside(); setMapFocus({ locId: fl.locId, nonce: Date.now() }); setMapQuery(""); setPinLoc(fl.locId); rememberSearch({ locId: fl.locId, name: fl.name, city: s.cityKey }); }} className="flex w-full items-center gap-2 rounded-[10px] px-2 py-1.5 text-left hover:bg-[var(--surface2)]">
+<span className="text-lg">🏠</span>
+<span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold">{fl.name}</span><span className="block truncate text-[11px] text-[var(--dim)]">{fl.ownerName}的家 · {locById(fl.locId).short}</span></span>
+<span className="shrink-0 text-[11px] font-black text-[var(--accent2)]">定位</span>
+<span role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); setMapQuery(""); setPinLoc(fl.locId); rememberSearch({ locId: fl.locId, name: fl.name, city: s.cityKey }); walkTo(fl.locId); }} onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); setMapQuery(""); setPinLoc(fl.locId); walkTo(fl.locId); } }} className="shrink-0 rounded-full bg-[var(--accent)] px-2.5 py-1 text-[11px] font-black text-white">{en ? "Go" : "去这里"}</span>
+</button>
+))}
+{boardResults.map((b) => {
+const spotId = b.go ?? spotsNow[b.slot]?.id ?? currentLoc;
+return (
+<button key={`board-${b.slot}`} type="button" aria-label={`定位到广告牌：${b.text}`} onClick={() => { setSelectedLoc(spotId); setAsideTab("place"); autoOpenAside(); setMapFocus({ locId: spotId, nonce: Date.now() }); setMapQuery(""); setPinLoc(spotId); }} className="flex w-full items-center gap-2 rounded-[10px] px-2 py-1.5 text-left hover:bg-[var(--surface2)]">
+<span className="text-lg">📢</span>
+<span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold">{b.text}</span><span className="block truncate text-[11px] text-[var(--dim)]">广告牌 · {b.owner}</span></span>
+<span className="shrink-0 text-[11px] font-black text-[var(--accent2)]">定位</span>
 </button>
 );
 })}
@@ -6206,7 +6290,7 @@ return (
 })()}
 </div>
 <MapView extraControls={<><button type="button" onClick={toggleSound} aria-pressed={soundIsOn} aria-label={soundIsOn ? (en ? "Mute" : "静音") : (en ? "Sound on" : "打开声音")} data-tip={soundIsOn ? (en ? "Sound on · tap to mute" : "声音开着 · 点一下静音") : (en ? "Muted · tap for music" : "已静音 · 点一下开声音")} className={`tipbtn grid h-9 w-9 place-items-center rounded-full border text-base shadow ${soundIsOn ? "border-black/40 bg-[#fffdf8]/95" : "border-[var(--accent)] bg-[#14202b]/95"}`}>{soundIsOn ? "🔊" : "🔇"}</button><span className="relative"><button type="button" onClick={() => setMusicOpen((o) => !o)} aria-expanded={musicOpen} aria-label={en ? "Change music" : "换背景音乐"} data-tip={en ? "Change music" : "换背景音乐"} className="tipbtn grid h-9 w-9 place-items-center rounded-full border border-black/40 bg-[#fffdf8]/95 text-base shadow">🎵</button>
-</span></>} lite={lite} pinLocId={pinLoc} onPinClear={() => setPinLoc(null)} scenic={scenicMoment ? (() => { const m = scenicMoment.m; const l = locById(currentLoc); /* look out past the spot (over the water for sea views), from a little above the rooftops */ const az = m.faceSea && !m.path ? seawardAz(s.cityKey, l.x, l.z, m.az) : m.az; const ox = -Math.sin(az) * m.dist * 0.75, oz = -Math.cos(az) * m.dist * 0.75; return { x: (m.path ? m.path[0]![0] : l.x) + ox, z: (m.path ? m.path[0]![1] : l.z) + oz, phase: m.phase, az, pol: m.path ? Math.min(m.pol, 1.08) : 0.9, dist: m.path ? m.dist : m.dist * 2.1, path: m.path, durMs: m.durMs, nonce: scenicMoment.nonce }; })() : null} mapMode={mapMode} onMapMode={setMapMode} fill paused={!!lifeAnim} train={carriage ? { pts: carriage.route.stations.map((st) => [st.x, st.z] as [number, number]), idx: carriage.stopIdx, stepMs: hopMs(carriage.route, carriage.stopIdx), color: (carriage.route.legs[carriage.legIdx]?.line ?? carriage.route.line).color, rail: carriage.route.legs.some((l) => ["szhz-rail", "guangshen", "hz-intercity", "ganshen-rail", "guangshan-rail", "hsr-hk"].includes(l.line.id)), hold: rideEntry !== null || carriage.awaitingTransfer || carriage.stopIdx >= carriage.route.stations.length - 1 } : null} cityKey={s.cityKey} communityMarkers={communityMarkers} activePet={getActivePet(pets)} onCommunityMarkerClick={(m) => { setPhoneApp("social"); setPhoneOpen(true); showToast(`${m.emoji} ${m.label}`); }} selfLocId={walking || carriage ? (tripTo ?? selectedLoc) : currentLoc} selfEmoji={iden.emoji} selfColor={iden.color} selfName={profile?.name ?? "我"} remotePlayers={remotePlayers} billboards={boards} selfOutfitId={s.outfit} selfHair={s.hair} selfAccessory={ACCESSORIES[s.accessory ?? 0]?.id ?? "none"} travelModeId={tripMode ?? travelMode} selfEtaAt={tripEta ?? undefined} arrival={arrival} weatherKind={rwOk ? realWeather!.kind : "unknown"} npcMoodEmoji={Object.fromEntries(npcsForCity(s.cityKey).map((n) => [n.name, moodEmoji(memOf(s.npcMem ?? {}, n.name).mood)]))} apecDay={isApecWeek(s.day)} focusLocId={mapFocus?.locId} focusX={mapFocus?.x} focusZ={mapFocus?.z} focusNonce={mapFocus?.nonce} destLocId={selectedLoc} onSelect={walkTo} onPickActor={pickActor} navOverlay={(
+</span></>} lite={lite} pinLocId={pinLoc} onPinClear={() => setPinLoc(null)} scenic={scenicMoment ? (() => { const m = scenicMoment.m; const l = locById(currentLoc); /* look out past the spot (over the water for sea views), from a little above the rooftops */ const az = m.faceSea && !m.path ? seawardAz(s.cityKey, l.x, l.z, m.az) : m.az; const ox = -Math.sin(az) * m.dist * 0.75, oz = -Math.cos(az) * m.dist * 0.75; return { x: (m.path ? m.path[0]![0] : l.x) + ox, z: (m.path ? m.path[0]![1] : l.z) + oz, phase: m.phase, az, pol: m.path ? Math.min(m.pol, 1.08) : 0.9, dist: m.path ? m.dist : m.dist * 2.1, path: m.path, durMs: m.durMs, nonce: scenicMoment.nonce }; })() : null} mapMode={mapMode} onMapMode={setMapMode} fill paused={!!lifeAnim} train={carriage ? { pts: carriage.route.stations.map((st) => [st.x, st.z] as [number, number]), idx: carriage.stopIdx, stepMs: hopMs(carriage.route, carriage.stopIdx), color: (carriage.route.legs[carriage.legIdx]?.line ?? carriage.route.line).color, rail: carriage.route.legs.some((l) => ["szhz-rail", "guangshen", "hz-intercity", "ganshen-rail", "guangshan-rail", "hsr-hk"].includes(l.line.id)), hold: rideEntry !== null || carriage.awaitingTransfer || carriage.stopIdx >= carriage.route.stations.length - 1 } : null} cityKey={s.cityKey} communityMarkers={communityMarkers} playerBuildings={[...worldShops.map((sh) => ({ id: `shop:${sh.ownerPub}`, kind: "shop" as const, locId: sh.locId, name: sh.name, color: 0xf97316, emoji: SHOP_KIND_EMOJI[sh.kind] ?? "🏪" })), ...worldFlats.map((fl) => ({ id: `flat:${fl.ownerPub}`, kind: "flat" as const, locId: fl.locId, name: fl.name, color: 0x8b5cf6, emoji: "🏠" }))]} activePet={getActivePet(pets)} onCommunityMarkerClick={(m) => { if (m.kind === "shop" || m.kind === "flat") { const locId = m.pin.locId; if (locId) { setSelectedLoc(locId); setAsideTab("place"); setMapFocus({ locId, nonce: Date.now() }); setPinLoc(locId); } showToast(`${m.emoji} ${m.label}`); return; } setPhoneApp("social"); setPhoneOpen(true); showToast(`${m.emoji} ${m.label}`); }} selfLocId={walking || carriage ? (tripTo ?? selectedLoc) : currentLoc} selfEmoji={iden.emoji} selfColor={iden.color} selfName={profile?.name ?? "我"} remotePlayers={remotePlayers} billboards={boards} selfOutfitId={s.outfit} selfHair={s.hair} selfAccessory={ACCESSORIES[s.accessory ?? 0]?.id ?? "none"} travelModeId={tripMode ?? travelMode} selfEtaAt={tripEta ?? undefined} arrival={arrival} weatherKind={rwOk ? realWeather!.kind : "unknown"} npcMoodEmoji={Object.fromEntries(npcsForCity(s.cityKey).map((n) => [n.name, moodEmoji(memOf(s.npcMem ?? {}, n.name).mood)]))} apecDay={isApecWeek(s.day)} focusLocId={mapFocus?.locId} focusX={mapFocus?.x} focusZ={mapFocus?.z} focusNonce={mapFocus?.nonce} destLocId={selectedLoc} onSelect={walkTo} onPickActor={pickActor} navOverlay={(
 <>
 {/* 弹幕层：联机动态 / 聊天 / 街坊发言飘过地图上半区 */}
 {danmakuOn && !scenicMoment && (
@@ -6374,6 +6458,36 @@ return (
 {!arrived && !walking && (() => { const cur = locById(currentLoc); const d = Math.hypot(selLoc.x - cur.x, selLoc.z - cur.z); const tm = modesForCity(s.cityKey).find((m) => m.id === travelMode) ?? modeById(travelMode); return (
 <button type="button" onClick={() => walkTo(selLoc.id)} className="mt-3 w-full rounded-full bg-[var(--text)] py-3 text-sm font-black text-[var(--bg)]">{en ? `${tm.emoji} Go by ${trText(tm.name)} → · about ${etaMinutes(travelMode, d)} min (${trText(tm.speedTag)})` : `${tm.emoji} ${tm.name}过去 → · 预计约 ${etaMinutes(travelMode, d)} 分钟（${tm.speedTag}）`}</button>
 ); })()}
+{/* round-9: player shops / flats at this place */}
+{shopsHere.map((sh) => {
+  const mine = sh.ownerPub === myPub;
+  const kindZh = SHOP_KIND_ZH[sh.kind] ?? "小店";
+  const kindEmoji = SHOP_KIND_EMOJI[sh.kind] ?? "🏪";
+  const floorTxt = shopFloorText(sh.building ? (buildingZhById(sh.building) ?? sh.building) : null, sh.floor);
+  const multi = sh.floor > 1;
+  const menu = shopMenu(sh.kind);
+  return (
+    <div key={`shop-${sh.ownerPub}`} className="mt-3 rounded-[14px] border-2 border-[var(--accent)] bg-[var(--surface2)] p-3">
+      <p className="text-sm font-black">{kindEmoji} {sh.name}{floorTxt} <span className="text-[11px] font-bold text-[var(--dim)]">{mine ? "· 你的店" : `· ${sh.ownerName} · ${kindZh} · ${sh.lvl} 级`}</span></p>
+      <p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">{mine ? `收银台里：${fmt((s.shop?.till ?? 0) + serverShopTill, s.cityKey)}（含线上顾客付款）。在家里的人�大事里收钱、升级。` : `菜单：${menu.map((m) => `${m.name} ¥${m.price}`).join(" / ")}。买了钱进店主收银台。`}</p>
+      {!arrived && !walking && <button type="button" onClick={() => walkTo(selLoc.id)} className="mt-2 w-full rounded-full bg-[var(--text)] py-2 text-xs font-black text-[var(--bg)]">🚶 去这里</button>}
+      {arrived && !mine && !multi && <button type="button" onClick={() => setShopVisit(sh)} className="mt-2 w-full rounded-full bg-[var(--accent)] py-2 text-xs font-black text-white">🚪 走进去逛逛</button>}
+      {arrived && !mine && multi && <button type="button" onClick={() => { const vs = venueFor(selLoc); if (vs) { setVenueTalk(null); setVenue3d({ set: vs.set, name: en ? trText(selLoc.name) : selLoc.name, line: en ? vs.en : vs.zh, id: selLoc.id, emoji: selLoc.emoji, color: selLoc.color }); setVenueFloor(1); setVenueBuilding(sh.building ?? buildingsFor(vs.set)[0]?.id ?? null); } }} className="mt-2 w-full rounded-full bg-[var(--accent)] py-2 text-xs font-black text-white">🚪 进去 · {sh.name}在{floorTxt.replace(" · ", "")}，上楼就能逛</button>}
+      {arrived && mine && <p className="mt-2 text-xs font-bold text-[var(--dim)]">这是你自己的店，不能自己买自己的东西。</p>}
+    </div>
+  );
+})}
+{flatsHere.map((fl) => {
+  const mine = fl.ownerPub === myPub;
+  return (
+    <div key={`flat-${fl.ownerPub}`} className="mt-3 rounded-[14px] border border-[var(--line)] bg-[var(--surface2)] p-3">
+      <p className="text-sm font-black">🏠 {fl.name} <span className="text-[11px] font-bold text-[var(--dim)]">{mine ? "· 你的家" : `· ${fl.ownerName}的家`}</span></p>
+      <p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">{mine ? "你买下的房子。走进去就是你的家（只能你自己摆家具）。" : `${fl.ownerName}买下的房子，走进去串串门（只能看，不能动家具）。`}</p>
+      {!arrived && !walking && <button type="button" onClick={() => walkTo(selLoc.id)} className="mt-2 w-full rounded-full bg-[var(--text)] py-2 text-xs font-black text-[var(--bg)]">🚶 去这里</button>}
+      {arrived && <button type="button" onClick={() => visitFlat(fl)} className="mt-2 w-full rounded-full bg-[var(--text)] py-2 text-xs font-black text-[var(--bg)]">🚪 走进去</button>}
+    </div>
+  );
+})}
 {(() => { const g = guideForLocName(selLoc.name); if (!g) return null; return <ExperienceCard g={g} here={arrived} unlocked={(s.album ?? []).includes(g.key)} onCheckin={() => checkinGuide(g)} />; })()}
 <p className="mt-3.5 flex items-baseline justify-between gap-2"><span className="text-xs font-black tracking-wide">📍 在这里能做 · 常用操作</span><span className="text-[11px] font-bold text-[var(--dim)]">{arrived ? "点一下就行动" : "到了才能做"}</span></p>
 <div className="mt-2 grid gap-2">
@@ -6541,20 +6655,76 @@ return (
 <div className="rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
 <p className="text-sm font-black">🔑 {en ? "Buy your own flat" : "买套自己的房"} {!s.ownFlat && <span className="text-[var(--accent)]">{en ? `deposit ${fmt(fp, s.cityKey)}` : `首付 ${fmt(fp, s.cityKey)}`}</span>}</p>
 <p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">{s.ownFlat ? (en ? `Yours since day ${s.flatDay}. The mortgage replaces rent; every morning in your own home: mood +2.` : `第 ${s.flatDay} 天拿到钥匙。月供代替房租，每天在自己家醒来心情 +2。`) : (en ? "Pay the deposit and the weekly rent becomes a mortgage of 80%. No more landlords." : "付了首付，周租变成八折的月供。从此不看房东脸色。")}</p>
-{!s.ownFlat && <button type="button" disabled={s.money < fp} onClick={() => { mutate((x) => { x.money -= fp; x.ownFlat = true; x.flatDay = x.day; x.rent = Math.round((x.rent * 0.8) / 10) * 10; x.baseRent = Math.round((x.baseRent * 0.8) / 10) * 10; x.roommate = undefined; x.mood = clamp(x.mood + 20, 0, 100); }); publishHome(); addLog("🔑 买房了！在湾区有了自己的家。"); sfx("cheer"); showToast(en ? "🔑 You got the keys. This home is the one visitors walk into." : "🔑 拿到钥匙了。这套房子就是别人来串门时走进去的那一间。"); }} className="mt-2 w-full rounded-full bg-[var(--accent)] py-2 text-xs font-black text-white disabled:opacity-40">{s.money < fp ? (en ? `Still ${fmt(fp - s.money, s.cityKey)} short` : `还差 ${fmt(fp - s.money, s.cityKey)}`) : (en ? "Pay the deposit" : "付首付")}</button>}
+{!s.ownFlat && (flatDraft ? (
+<div className="mt-2 grid gap-2">
+<label className="text-xs font-bold">📍 房子在哪 <span className="font-normal text-[var(--dim)]">（城中村 / 小区排在前面，楼下就是铺面）</span>
+<select value={flatDraft.locId} onChange={(e) => setFlatDraft({ ...flatDraft, locId: e.target.value })} className="mt-1 w-full rounded-[10px] border border-[var(--line)] bg-[var(--surface)] px-2 py-2 text-xs font-bold">
+{[...getLocations(s.cityKey).filter((l) => isVillageLoc(l)), ...getLocations(s.cityKey).filter((l) => !isVillageLoc(l))].map((l) => (
+<option key={l.id} value={l.id}>{isVillageLoc(l) ? "🏘️ " : ""}{l.name}</option>
+))}
+</select></label>
+<label className="text-xs font-bold">🏷️ 给房子取个名字
+<input value={flatDraft.name} maxLength={SHOP_NAME_MAX} onChange={(e) => setFlatDraft({ ...flatDraft, name: e.target.value })} placeholder={defaultFlatName(profile?.name ?? "我")} className="mt-1 w-full rounded-[10px] border border-[var(--line)] bg-[var(--surface)] px-2 py-2 text-xs font-bold" /></label>
+<div className="flex gap-1.5">
+<button type="button" onClick={() => setFlatDraft(null)} className="rounded-full border border-[var(--line)] px-3 py-2 text-xs font-black">取消</button>
+<button type="button" disabled={s.money < fp} onClick={() => { const name = clampName(flatDraft.name, defaultFlatName(profile?.name ?? "我")); const locId = flatDraft.locId; mutate((x) => { x.money -= fp; x.ownFlat = true; x.flatDay = x.day; x.flat = { name, locId, cityKey: x.cityKey }; x.rent = Math.round((x.rent * 0.8) / 10) * 10; x.baseRent = Math.round((x.baseRent * 0.8) / 10) * 10; x.roommate = undefined; x.mood = clamp(x.mood + 20, 0, 100); }); setFlatDraft(null); publishHome(); addLog(`🔑 买房了！${name}，在湾区有了自己的家。`); sfx("cheer"); showToast(en ? `🔑 You got the keys to ${name}. Anyone can search it and walk in.` : `🔑 拿到钥匙了。「${name}」上了地图，别人搜得到、走得进来。`); }} className="flex-1 rounded-full bg-[var(--accent)] py-2 text-xs font-black text-white disabled:opacity-40">{s.money < fp ? (en ? `Still ${fmt(fp - s.money, s.cityKey)} short` : `还差 ${fmt(fp - s.money, s.cityKey)}`) : (en ? `Pay the deposit · ${fmt(fp, s.cityKey)}` : `付首付 ${fmt(fp, s.cityKey)}`)}</button>
+</div></div>
+) : (
+<button type="button" disabled={s.money < fp} onClick={() => setFlatDraft({ locId: "home", name: defaultFlatName(profile?.name ?? "我") })} className="mt-2 w-full rounded-full bg-[var(--accent)] py-2 text-xs font-black text-white disabled:opacity-40">{s.money < fp ? (en ? `Still ${fmt(fp - s.money, s.cityKey)} short` : `还差 ${fmt(fp - s.money, s.cityKey)}`) : (en ? "Pick a spot & name it →" : "选位置、取名字 →")}</button>
+))}
 </div>
 <div className="rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
 <p className="text-sm font-black">🏪 {en ? "Open a little shop" : "开一家小店"}</p>
 {s.shop ? (() => { const k = SHOP_KINDS.find((x) => x.id === s.shop!.kind) ?? SHOP_KINDS[0]!; const up = shopUpgrade(s); return (<>
-<p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">{k.emoji} {en ? `${k.en} · level ${s.shop.lvl} · open since day ${s.shop.day}. It takes money every day — even while you're offline. Some days lose money.` : `${k.zh} · ${s.shop.lvl} 级 · 第 ${s.shop.day} 天开张。每天都在营业（你不在线也是），偶尔会亏。`}</p>
-<p className="mt-1 text-sm font-black">{en ? "In the till: " : "收银台里："}<span className={s.shop.till >= 0 ? "text-green-700" : "text-red-600"}>{fmt(s.shop.till, s.cityKey)}</span></p>
+<p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">{k.emoji} {en ? `${k.en} · level ${s.shop.lvl} · open since day ${s.shop.day}. It takes money every day — even while you're offline. Some days lose money.` : `${k.zh} · ${s.shop.lvl} 级 · 第 ${s.shop.day} 天开张。每天都在营业（你不在线也是），偶尔会亏。`}{s.shop.name ? ` · 「${s.shop.name}」` : ""}{s.shop.locId ? ` · ${locById(s.shop.locId).short}` : ""}{s.shop.floor && s.shop.floor > 1 ? ` · ${s.shop.floor}F` : ""}</p>
+<p className="mt-1 text-sm font-black">{en ? "In the till: " : "收银台里："}<span className={(s.shop.till + serverShopTill) >= 0 ? "text-green-700" : "text-red-600"}>{fmt(s.shop.till + serverShopTill, s.cityKey)}</span>{serverShopTill > 0 && <span className="ml-1 text-[11px] font-bold text-[var(--dim)]">（其中线上顾客付款 {fmt(serverShopTill, s.cityKey)}）</span>}</p>
 <div className="mt-2 grid grid-cols-2 gap-1.5">
-<button type="button" disabled={s.shop.till === 0} onClick={() => { const t = s.shop!.till; const partner = s.shop!.partner; const share = partner && t > 0 ? Math.round(t * 0.2) : 0; mutate((x) => { x.money += t - share; if (t - share > 0) x.earned += t - share; x.shop = { ...x.shop!, till: 0 }; }); const mate = bonds.find((b) => b.status === "active" && b.peerName === partner); if (share > 0 && mate) sendGift(mate.peerId, mate.peerName, "share", share); sfx("coin"); showToast(t < 0 ? (en ? `Covered a loss of ${fmt(-t, s.cityKey)}.` : `补上了亏损 ${fmt(-t, s.cityKey)}。`) : share > 0 ? (en ? `Collected ${fmt(t - share, s.cityKey)}. ${fmt(share, s.cityKey)} is on its way to ${partner}'s wallet.` : `收了 ${fmt(t - share, s.cityKey)}。${fmt(share, s.cityKey)} 记给${partner}，对方下次上线进钱包。`) : (en ? `Collected ${fmt(t, s.cityKey)} from the shop.` : `从店里收了 ${fmt(t, s.cityKey)}。`)); }} className="rounded-full bg-[var(--text)] py-2 text-xs font-black text-[var(--bg)] disabled:opacity-40">{en ? "Empty the till" : "收钱"}</button>
+<button type="button" disabled={s.shop.till + serverShopTill === 0} onClick={async () => { let srv = 0; if (profile) { const r = await api.collectShopTill({ playerId: profile.playerId }).catch(() => ({ ok: false as const, amount: 0 })); if (r.ok) srv = r.amount ?? 0; } setServerShopTill(0); const t = s.shop!.till + srv; const partner = s.shop!.partner; const share = partner && t > 0 ? Math.round(t * 0.2) : 0; mutate((x) => { x.money += t - share; if (t - share > 0) x.earned += t - share; x.shop = { ...x.shop!, till: 0 }; }); const mate = bonds.find((b) => b.status === "active" && b.peerName === partner); if (share > 0 && mate) sendGift(mate.peerId, mate.peerName, "share", share); sfx("coin"); showToast(t < 0 ? (en ? `Covered a loss of ${fmt(-t, s.cityKey)}.` : `补上了亏损 ${fmt(-t, s.cityKey)}。`) : share > 0 ? (en ? `Collected ${fmt(t - share, s.cityKey)}. ${fmt(share, s.cityKey)} is on its way to ${partner}'s wallet.` : `收了 ${fmt(t - share, s.cityKey)}。${fmt(share, s.cityKey)} 记给${partner}，对方下次上线进钱包。`) : (en ? `Collected ${fmt(t, s.cityKey)} from the shop.` : `从店里收了 ${fmt(t, s.cityKey)}。`)); }} className="rounded-full bg-[var(--text)] py-2 text-xs font-black text-[var(--bg)] disabled:opacity-40">{en ? "Empty the till" : "收钱"}</button>
 <button type="button" disabled={s.money < up || s.shop.lvl >= 5} onClick={() => { mutate((x) => { x.money -= up; x.shop = { ...x.shop!, lvl: x.shop!.lvl + 1 }; }); sfx("arrive"); showToast(en ? "Shop upgraded — more customers every day." : "小店升级了，每天客人更多。"); }} className="rounded-full border border-[var(--line)] py-2 text-xs font-black disabled:opacity-40">{s.shop.lvl >= 5 ? (en ? "Max level" : "满级了") : (en ? `Upgrade · ${fmt(up, s.cityKey)}` : `升级 · ${fmt(up, s.cityKey)}`)}</button>
-</div></>); })() : (<>
+</div></>); })() : (shopDraft ? (() => {
+  const draftLoc = locById(shopDraft.locId);
+  const draftVs = venueFor(draftLoc);
+  const draftFloors = !!draftVs && hasFloors(draftVs.set);
+  const draftBuildings = draftVs ? buildingsFor(draftVs.set) : [];
+  const draftMaxFloor = draftVs ? maxFloor(draftVs.set, shopDraft.building) : 1;
+  const kind = SHOP_KINDS.find((k) => k.id === shopDraft.kind) ?? SHOP_KINDS[0]!;
+  return (
+    <div className="mt-2 grid gap-2">
+      <p className="text-xs font-bold">{kind.emoji} {kind.zh} · 盘一间铺面 {fmt(sp, s.cityKey)}</p>
+      <label className="text-xs font-bold">📍 开在哪 <span className="font-normal text-[var(--dim)]">（城中村 / 小区排在前面，楼下就是铺面）</span>
+        <select value={shopDraft.locId} onChange={(e) => { const nl = e.target.value; const nvs = venueFor(locById(nl)); const nb = nvs ? (buildingsFor(nvs.set)[0]?.id ?? null) : null; setShopDraft({ ...shopDraft, locId: nl, floor: 1, building: nb }); }} className="mt-1 w-full rounded-[10px] border border-[var(--line)] bg-[var(--surface)] px-2 py-2 text-xs font-bold">
+          {[...getLocations(s.cityKey).filter((l) => isVillageLoc(l)), ...getLocations(s.cityKey).filter((l) => !isVillageLoc(l))].map((l) => (
+            <option key={l.id} value={l.id}>{isVillageLoc(l) ? "🏘️ " : ""}{l.name}</option>
+          ))}
+        </select>
+      </label>
+      {draftFloors && draftBuildings.length > 1 && (
+        <label className="text-xs font-bold">🏢 哪栋楼
+          <select value={shopDraft.building ?? ""} onChange={(e) => setShopDraft({ ...shopDraft, building: e.target.value || null, floor: 1 })} className="mt-1 w-full rounded-[10px] border border-[var(--line)] bg-[var(--surface)] px-2 py-2 text-xs font-bold">
+            {draftBuildings.map((b) => <option key={b.id} value={b.id}>{b.zh}</option>)}
+          </select>
+        </label>
+      )}
+      {draftFloors && (
+        <label className="text-xs font-bold">🛗 第几层
+          <select value={shopDraft.floor} onChange={(e) => setShopDraft({ ...shopDraft, floor: Number(e.target.value) })} className="mt-1 w-full rounded-[10px] border border-[var(--line)] bg-[var(--surface)] px-2 py-2 text-xs font-bold">
+            {Array.from({ length: draftMaxFloor }, (_, i) => i + 1).map((f) => <option key={f} value={f}>{f}F</option>)}
+          </select>
+        </label>
+      )}
+      <label className="text-xs font-bold">🏷️ 给店取个名字
+        <input value={shopDraft.name} maxLength={SHOP_NAME_MAX} onChange={(e) => setShopDraft({ ...shopDraft, name: e.target.value })} placeholder={defaultShopName(profile?.name ?? "我", shopDraft.kind)} className="mt-1 w-full rounded-[10px] border border-[var(--line)] bg-[var(--surface)] px-2 py-2 text-xs font-bold" />
+      </label>
+      <div className="flex gap-1.5">
+        <button type="button" onClick={() => setShopDraft(null)} className="rounded-full border border-[var(--line)] px-3 py-2 text-xs font-black">取消</button>
+        <button type="button" disabled={s.money < sp} onClick={() => { const name = clampName(shopDraft.name, defaultShopName(profile?.name ?? "我", shopDraft.kind)); const loc = locById(shopDraft.locId); const vs = venueFor(loc); const building = vs && hasFloors(vs.set) ? (shopDraft.building ?? buildingsFor(vs.set)[0]?.id ?? null) : null; const floor = vs && hasFloors(vs.set) ? Math.max(1, Math.min(maxFloor(vs.set, building), shopDraft.floor || 1)) : 1; mutate((x) => { x.money -= sp; x.shop = { kind: shopDraft.kind, day: x.day, lvl: 1, till: 0, name, locId: shopDraft.locId, cityKey: x.cityKey, floor, building: building ?? undefined }; }); setShopDraft(null); addLog(`🏪 开了一家${kind.zh}「${name}」，在${loc.short}${floor > 1 ? ` ${floor}F` : ""}。`); sfx("arrive"); showToast(en ? `${kind.emoji} Your ${kind.en}「${name}」is open! Anyone can search it and walk in.` : `${kind.emoji} 你的${kind.zh}「${name}」开张了！别人搜得到、走得进来。`); }} className="flex-1 rounded-full bg-[var(--accent)] py-2 text-xs font-black text-white disabled:opacity-40">{s.money < sp ? (en ? `Still ${fmt(sp - s.money, s.cityKey)} short` : `还差 ${fmt(sp - s.money, s.cityKey)}`) : (en ? `Open · ${fmt(sp, s.cityKey)}` : `确认开店 · ${fmt(sp, s.cityKey)}`)}</button>
+      </div>
+    </div>
+  );
+})() : (<>
 <p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">{en ? `Rent a shopfront for ${fmt(sp, s.cityKey)}. It earns every day, even when you're offline.` : `盘一间铺面 ${fmt(sp, s.cityKey)}，每天自己挣钱，你不在线也照样营业。`}</p>
-<div className="mt-2 grid grid-cols-3 gap-1.5">{SHOP_KINDS.map((k) => <button key={k.id} type="button" disabled={s.money < sp} onClick={() => { mutate((x) => { x.money -= sp; x.shop = { kind: k.id, day: x.day, lvl: 1, till: 0 }; }); addLog(`🏪 开了一家${k.zh}。`); sfx("arrive"); showToast(en ? `${k.emoji} Your ${k.en} is open!` : `${k.emoji} 你的${k.zh}开张了！`); }} className="rounded-[10px] border border-[var(--line)] px-1 py-2 text-[11px] font-black disabled:opacity-40">{k.emoji} {en ? k.en : k.zh}</button>)}</div>
-</>)}
+<div className="mt-2 grid grid-cols-3 gap-1.5">{SHOP_KINDS.map((k) => <button key={k.id} type="button" disabled={s.money < sp} onClick={() => setShopDraft({ kind: k.id, locId: "home", floor: 1, building: null, name: defaultShopName(profile?.name ?? "我", k.id) })} className="rounded-[10px] border border-[var(--line)] px-1 py-2 text-[11px] font-black disabled:opacity-40">{k.emoji} {en ? k.en : k.zh}</button>)}</div>
+</>))}
 </div>
 <div className="rounded-[12px] border border-[var(--line)] bg-[var(--bg)] p-3">
 <p className="text-sm font-black">🧑‍🎓 {en ? "Take on an apprentice" : "带个徒弟"}</p>
@@ -7568,6 +7738,45 @@ return (
 <button type="button" onClick={() => { setKaraokeLang("en"); showToast("Karaoke lyrics: English"); }} className="flex-1 rounded-full border border-[var(--line)] py-1.5 text-xs font-black">English</button>
 </div>
 </div></>}
+{/* round-9: shop interior — menu + buy. Payment goes to the shop's till
+    (server buyFromShop), never straight to the owner's wallet. */}
+{shopVisit && phase === "game" && profile && (() => {
+  const sh = shopVisit;
+  const mine = sh.ownerPub === myPub;
+  const menu = shopMenu(sh.kind);
+  const floorTxt = shopFloorText(sh.building ? (buildingZhById(sh.building) ?? sh.building) : null, sh.floor);
+  const kindZh = SHOP_KIND_ZH[sh.kind] ?? "小店";
+  const kindEmoji = SHOP_KIND_EMOJI[sh.kind] ?? "🏪";
+  return (
+    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/60 p-3 sm:items-center" role="dialog" aria-label={sh.name}>
+      <div className="rise w-full max-w-md rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)] p-4">
+        <p className="font-display text-xl font-black">{kindEmoji} {sh.name}</p>
+        <p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">{sh.ownerName}的{kindZh} · {sh.lvl} 级{floorTxt} · {locById(sh.locId).short}{mine ? " · 你的店" : ""}</p>
+        <p className="mt-1 text-xs leading-relaxed text-[var(--dim)]">{mine ? "这是你自己的店，不能自己买自己的东西。" : "买了钱直接进店主收银台，店主收钱时再按 20% 分给合伙人。"}</p>
+        <div className="mt-3 grid gap-2">
+          {menu.map((m) => (
+            <div key={m.id} className="flex items-center gap-2 rounded-[12px] border border-[var(--line)] bg-[var(--bg)] px-3 py-2.5">
+              <span className="min-w-0 flex-1 text-sm font-black">{m.name}</span>
+              <span className="text-sm font-black text-[var(--accent2)]">{fmt(m.price, s.cityKey)}</span>
+              <button type="button" disabled={mine || s.money < m.price} onClick={async () => {
+                if (!profile) return;
+                const r = await api.buyFromShop({ playerId: profile.playerId, ownerPub: sh.ownerPub, itemId: m.id }).catch(() => ({ ok: false as const, error: "网络开小差了" }));
+                if (!r.ok) { showToast(r.error ?? "买不成了"); return; }
+                const price = r.price ?? m.price;
+                mutate((x) => { x.money -= price; x.mood = clamp(x.mood + 4, 0, 100); });
+                sfx("coin");
+                showToast(en ? `Bought ${m.name} for ${fmt(price, s.cityKey)}. The money is in ${sh.ownerName}'s till.` : `买了${m.name}，${fmt(price, s.cityKey)}。钱已经进${sh.ownerName}的收银台了。`);
+              }} className="shrink-0 rounded-full bg-[var(--text)] px-3 py-1.5 text-xs font-black text-[var(--bg)] disabled:opacity-40">
+                {mine ? "自己的店" : s.money < m.price ? "钱不够" : "买一份"}
+              </button>
+            </div>
+          ))}
+        </div>
+        <button type="button" onClick={() => setShopVisit(null)} className="mt-3 w-full rounded-full border border-[var(--line)] py-2.5 text-sm font-black">✕ {en ? "Leave the shop" : "出门"}</button>
+      </div>
+    </div>
+  );
+})()}
 {venue3d && phase === "game" && (
 <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/70 p-3 sm:items-center" role="dialog" aria-label={venue3d.name}>
 <div className="rise max-h-[94vh] w-full max-w-lg overflow-y-auto rounded-[22px] border-2 border-[var(--border)] bg-[var(--surface)]">
@@ -7588,6 +7797,28 @@ return (
 <div className="flex flex-wrap gap-1.5">{buildingsFor(venue3d.set).map((b) => <button key={b.id} type="button" onClick={() => { setVenueBuilding(b.id); setVenueFloor(1); }} className={`rounded-full border px-3 py-1.5 text-xs font-black ${(venueBuilding ?? buildingsFor(venue3d.set)[0]?.id) === b.id ? "border-[var(--accent)] bg-[var(--accent)] text-white" : "border-[var(--line)]"}`}>{en ? b.en : b.zh}</button>)}</div>
 )}
 <div className="mt-1.5 flex flex-wrap gap-1.5">{(buildingDef(venue3d.set, venueBuilding)?.floors ?? []).map((f) => <button key={f.floor} type="button" onClick={() => setVenueFloor(f.floor)} className={`rounded-full border px-3 py-1.5 text-xs font-black ${venueFloor === f.floor ? "border-[var(--accent)] bg-[var(--accent)] text-white" : "border-[var(--line)]"}`}>{f.label} {en ? f.en : f.zh}</button>)}</div>
+{/* round-9: a player shop on this floor / in this building. A shop is only
+    buyable on its own floor: on the right floor it opens, on another floor
+    it is only a sign pointing upstairs. */}
+{shopsAtVenue.length > 0 && (() => {
+  const effBuilding = venueBuilding ?? buildingsFor(venue3d.set)[0]?.id ?? null;
+  const bOf = (sh: PlayerShop) => sh.building ?? effBuilding;
+  const here = shopsAtVenue.filter((sh) => sh.floor === venueFloor && bOf(sh) === effBuilding);
+  const other = shopsAtVenue.filter((sh) => !(sh.floor === venueFloor && bOf(sh) === effBuilding));
+  return (
+    <div className="mt-3 grid gap-1.5">
+      {here.map((sh) => (
+        <div key={`vshop-${sh.ownerPub}`} className="flex items-center gap-2 rounded-[12px] border-2 border-[var(--accent)] bg-[var(--surface2)] px-3 py-2.5">
+          <span className="min-w-0 flex-1 text-sm font-black">{SHOP_KIND_EMOJI[sh.kind] ?? "🏪"} {sh.name} <span className="text-[11px] font-bold text-[var(--dim)]">就在这层 · {sh.ownerName}</span></span>
+          <button type="button" onClick={() => setShopVisit(sh)} className="shrink-0 rounded-full bg-[var(--accent)] px-3 py-1.5 text-xs font-black text-white">进去逛逛</button>
+        </div>
+      ))}
+      {other.map((sh) => (
+        <p key={`vshop-o-${sh.ownerPub}`} className="rounded-[12px] border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-xs font-bold text-[var(--dim)]">{SHOP_KIND_EMOJI[sh.kind] ?? "🏪"} {sh.name} 在{shopFloorText(sh.building ? (buildingZhById(sh.building) ?? sh.building) : null, sh.floor).replace(" · ", "")}，上楼就能逛。</p>
+      ))}
+    </div>
+  );
+})()}
 </div>
 )}
 <div className="mt-3 grid gap-1.5">{venueTalksForFloor(venue3d.set, venue3d.id, venueBuilding, venueFloor).map((v) => { const key = hasFloors(venue3d.set) ? `${s.day}:${venue3d.set}:${venueBuilding}:${venueFloor}:${v.id}` : `${s.day}:${venue3d.set}:${v.id}`; const done = (s.venueFx ?? []).includes(key); const cost = -(v.money ?? 0); const fx = [cost > 0 ? fmt(-cost, s.cityKey) : "", v.energy ? `${en ? "energy" : "能量"} ${v.energy > 0 ? "+" : ""}${v.energy}` : "", !done && v.mood ? `${en ? "mood" : "心情"} +${v.mood}` : "", !done && v.network ? `${en ? "contacts" : "人脉"} +${v.network}` : "", !done && v.xp ? `${en ? "XP" : "经验"} +${v.xp}` : "", v.id === "toilet" ? (en ? "feel better" : "内急好了") : ""].filter(Boolean).join(" · "); return (

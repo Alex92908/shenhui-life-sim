@@ -106,6 +106,28 @@ export const homes = sqliteTable("homes", {
   tier: integer("tier").notNull().default(0),
   style: text("style"),
   layout: text("layout").notNull().default("[]"),
+  /* 玩家买下的房子在地图上的名字 / 位置（0022，玩家店铺 + 地图上的房子） */
+  name: text("name"),
+  locId: text("loc_id"),
+  cityKey: text("city_key"),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+/* 玩家开的店（0022）：一玩家一店，till 是店里未收的营业款（收钱时才进钱包） */
+export const shops = sqliteTable("shops", {
+  ownerId: text("owner_id").primaryKey(),
+  ownerPub: text("owner_pub"),
+  ownerName: text("owner_name").notNull(),
+  kind: text("kind").notNull(),
+  name: text("name").notNull(),
+  locId: text("loc_id").notNull(),
+  cityKey: text("city_key").notNull(),
+  lvl: integer("lvl").notNull().default(1),
+  floor: integer("floor").notNull().default(1),
+  building: text("building"),
+  till: integer("till").notNull().default(0),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" })
     .notNull()
     .$defaultFn(() => new Date()),

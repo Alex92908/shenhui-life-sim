@@ -10,6 +10,7 @@
 import { SZ_KM_PER_UNIT, SZ_METRO_LINES, SZ_REAL_KM } from "./metro-sz";
 import { AREA_LABELS } from "./areas";
 import { SZ_PLACES, type CityPlace, type PlaceKind } from "./places-sz";
+import { villageLocs } from "./round2/villages";
 import { HZ_LOC_KM, HZ_PLACES, HZ_REAL_KM } from "./places-hz";
 import { HK_LOC_KM, HK_PLACES, HK_REAL_KM } from "./places-hk";
 
@@ -729,7 +730,10 @@ const HK_LOCS: Loc[] = [
 ];
 
 export function getLocations(cityKey: CityKey): Loc[] {
-  return cityKey === "sz" ? SZ_LOCS : cityKey === "hk" ? HK_LOCS : HZ_LOCS;
+  const base = cityKey === "sz" ? SZ_LOCS : cityKey === "hk" ? HK_LOCS : HZ_LOCS;
+  // Round-9: named 城中村 / 小区 (round2/villages.ts) ride along with the
+  // city's locations so they are searchable, walkable and pickable.
+  return [...base, ...villageLocs(cityKey)];
 }
 /** A metro station with no game location of its own is still a place the
     player can stand: its id is "st:<站名>". These are resolved on demand

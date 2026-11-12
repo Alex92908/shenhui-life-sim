@@ -18,6 +18,7 @@
 //   - 过期由服务器在列表接口里过滤 + 客户端展示时再过滤一次 (双保险).
 
 import type { AdoptInput } from "./pets";
+import { SHOP_KIND_EMOJI } from "./shops";
 
 export type CityKey = "sz" | "hz" | "hk";
 
@@ -389,7 +390,10 @@ export type CommunityMapMarker =
   | { kind: "stray"; id: string; pin: MapPin; label: string; emoji: string }
   | { kind: "notice"; id: string; pin: MapPin; label: string; emoji: string }
   | { kind: "snake"; id: string; pin: MapPin; label: string; emoji: string }
-  | { kind: "fishing"; id: string; pin: MapPin; label: string; emoji: string };
+  | { kind: "fishing"; id: string; pin: MapPin; label: string; emoji: string }
+  /* round-9: player shops / bought flats on the map (same marker system). */
+  | { kind: "shop"; id: string; pin: MapPin; label: string; emoji: string }
+  | { kind: "flat"; id: string; pin: MapPin; label: string; emoji: string };
 
 /** 图钉在小地图上的圆点颜色 (round-3, MapView 的 minimap 与图钉共用;
     蛇警告用红色, 与普通标记区分). */
@@ -398,6 +402,8 @@ export const COMMUNITY_PIN_COLOR: Record<CommunityMapMarker["kind"], string> = {
   notice: "#3b82f6",
   snake: "#dc2626",
   fishing: "#0ea5e9",
+  shop: "#f97316",
+  flat: "#8b5cf6",
 };
 
 /**
@@ -441,6 +447,41 @@ export function toMapMarkers(input: {
       kind: "fishing", id: f.id, pin: f.pin,
       label: `🎣 ${f.catchDesc}${f.confirmations > 0 ? ` · ${f.confirmations}人证实` : ""}`,
       emoji: "🎣",
+    });
+  }
+  return out;
+}
+
+/**
+ * Round-9: player shops / bought flats as map markers (App.tsx 从 world
+ * 快照拉到 shops/flats 后调这个函数, 拼在 toMapMarkers 前面, 所以 MapView
+ * 的 24 个标记上限先保住店和房子, 再放社区内容). 标记落在店/房子的 locId
+ * 上; 点一下打开店/房子面板.
+ */
+export function shopFlatMarkers(input: {
+  shops: { ownerPub: string; ownerName: string; kind: string; name: string; locId: string; cityKey: CityKey; lvl: number; floor: number; building: string | null }[];
+  flats: { ownerPub: string; ownerName: string; name: string; locId: string; cityKey: CityKey; tier: number }[];
+  cityKey: CityKey;
+  buildingZh?: (buildingId: string | null) => string | null;
+}): CommunityMapMarker[] {
+  const out: CommunityMapMarker[] = [];
+  for (const sh of input.shops) {
+    if (sh.cityKey !== input.cityKey) continue;
+    const emoji = SHOP_KIND_EMOJI[sh.kind] ?? "🏪";
+    const bZh = sh.building ? (input.buildingZh?.(sh.building) ?? sh.building) : null;
+    const floor = sh.floor > 1 || bZh ? ` · ${bZh ? `${bZh} ` : ""}${sh.floor}F` : "";
+    out.push({
+      kind: "shop", id: `shop:${sh.ownerPub}`, pin: { locId: sh.locId, locName: sh.name },
+      label: `${sh.name}${floor} · ${sh.ownerName}`,
+      emoji,
+    });
+  }
+  for (const fl of input.flats) {
+    if (fl.cityKey !== input.cityKey) continue;
+    out.push({
+      kind: "flat", id: `flat:${fl.ownerPub}`, pin: { locId: fl.locId, locName: fl.name },
+      label: `${fl.name} · ${fl.ownerName}的家`,
+      emoji: "🏠",
     });
   }
   return out;

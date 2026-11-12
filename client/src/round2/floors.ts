@@ -868,6 +868,16 @@ export function buildingDef(set: LifeSet, buildingId?: string | null): BuildingD
   return bs.find((b) => b.id === buildingId) ?? bs[0];
 }
 
+/** The display name of a building by id, searching every venue's plan
+    (round-9: a shop's building id needs a name without knowing its loc). */
+export function buildingZhById(buildingId: string): string | undefined {
+  for (const bs of Object.values(FLOOR_PLANS)) {
+    const b = bs.find((x) => x.id === buildingId);
+    if (b) return b.zh;
+  }
+  return undefined;
+}
+
 export function maxFloor(set: LifeSet, buildingId?: string | null): number {
   return buildingDef(set, buildingId)?.floors.length ?? 1;
 }

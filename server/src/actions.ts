@@ -12,7 +12,7 @@ z,
 type ActionsModule,
 type Ctx,
 } from "@hatch/space-sdk";
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, sql } from "drizzle-orm";
 import * as schema from "./schema";
 import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
 import { cleanName, cleanText } from "./moderation";
@@ -114,6 +114,10 @@ const worldResponse = z.object({
   companyBoard: z.array(z.object({ employer: z.string(), count: z.number(), money: z.number() })),
   /* 集章排行：跨局累计盖章最多的人 */
   stampBoard: z.array(z.object({ id: z.string(), name: z.string(), emoji: z.string(), stamps: z.number(), title: z.string().nullable() })),
+  /* 玩家开的店（0022）：全城的店都出现在地图上 */
+  shops: z.array(z.object({ ownerPub: z.string(), ownerName: z.string(), kind: z.string(), name: z.string(), locId: z.string(), cityKey: z.string(), lvl: z.number(), floor: z.number(), building: z.string().nullable() })),
+  /* 玩家买下的房子（0022）：只有起了名字、有位置的才上地图 */
+  flats: z.array(z.object({ ownerPub: z.string(), ownerName: z.string(), name: z.string(), locId: z.string(), cityKey: z.string(), tier: z.number() })),
 });
 
 type World = z.infer<typeof worldResponse>;
@@ -161,6 +165,19 @@ async function loadWorld(ctx: Ctx, cityKey: string): Promise<World> {
     .where(and(eq(schema.players.suspect, 0), eq(schema.players.banned, 0)))
     .orderBy(desc(schema.players.stamps))
     .limit(10);
+  /* 玩家店铺 + 房子（0022）：本城所有的店；房子只有起了名字、有位置的才上地图 */
+  const shopRows = await db
+    .select()
+    .from(schema.shops)
+    .where(eq(schema.shops.cityKey, cityKey));
+  const flatRows = await db
+    .select()
+    .from(schema.homes)
+    .where(and(eq(schema.homes.cityKey, cityKey), isNotNull(schema.homes.name), isNotNull(schema.homes.locId)));
+  const flatOwners = flatRows.length
+    ? await db.select().from(schema.players).where(inArray(schema.players.id, flatRows.map((h) => h.playerId)))
+    : [];
+  const flatOwnerById = new Map(flatOwners.map((p) => [p.id, p]));
   return {
     online: onlineRows.map((p) => ({
       id: p.pub ?? pubOf(p.id),
@@ -221,6 +238,25 @@ async function loadWorld(ctx: Ctx, cityKey: string): Promise<World> {
     stampBoard: stampRows
       .filter((p) => p.stamps > 0)
       .map((p) => ({ id: p.pub ?? pubOf(p.id), name: p.name, emoji: p.emoji, stamps: p.stamps, title: p.title })),
+    shops: shopRows.map((s) => ({
+      ownerPub: s.ownerPub ?? pubOf(s.ownerId),
+      ownerName: s.ownerName,
+      kind: s.kind,
+      name: s.name,
+      locId: s.locId,
+      cityKey: s.cityKey,
+      lvl: s.lvl,
+      floor: s.floor,
+      building: s.building ?? null,
+    })),
+    flats: flatRows.map((h) => ({
+      ownerPub: flatOwnerById.get(h.playerId)?.pub ?? pubOf(h.playerId),
+      ownerName: flatOwnerById.get(h.playerId)?.name ?? "?",
+      name: h.name!,
+      locId: h.locId!,
+      cityKey: h.cityKey ?? cityKey,
+      tier: h.tier,
+    })),
   };
 }
 
@@ -1367,6 +1403,25 @@ async function activePatrol(db: Db, officerId: string) {
   return p as typeof schema.patrols.$inferSelect | undefined;
 }
 
+/* 玩家店铺菜单（0022）：服务端定价，客户端只传 itemId */
+const SHOP_MENUS: Record<string, { id: string; name: string; price: number }[]> = {
+  tangshui: [
+    { id: "tangshui", name: "糖水", price: 12 },
+    { id: "guilinggao", name: "龟苓膏", price: 15 },
+    { id: "yangzhi", name: "杨枝甘露", price: 18 },
+  ],
+  changfen: [
+    { id: "changfen", name: "肠粉", price: 10 },
+    { id: "baizhou", name: "白粥", price: 8 },
+    { id: "zhengjiao", name: "蒸饺", price: 14 },
+  ],
+  milktea: [
+    { id: "zhenzhu", name: "珍珠奶茶", price: 15 },
+    { id: "shuiguoch", name: "水果茶", price: 18 },
+    { id: "kafei", name: "咖啡", price: 20 },
+  ],
+};
+
 export const Actions = {
   joinWorld: defineAction({
     description:
@@ -1478,8 +1533,11 @@ export const Actions = {
       /* 0–3 hair, 0–3 accessory. Stored on cosmetic as #h2a1 so name colours stay intact. */
       hair: z.number().int().min(0).max(3).optional(),
       accessory: z.number().int().min(0).max(3).optional(),
+      /* 玩家店铺 + 买下的房子（0022）：心跳时同步到 shops / homes，供全城地图展示 */
+      shop: z.object({ kind: z.string(), name: z.string().max(16), locId: z.string().max(64), cityKey: z.enum(["sz", "hz", "hk"]), lvl: z.number().int().min(1).max(5), floor: z.number().int().min(1).max(3), building: z.string().max(32).nullable().optional() }).optional(),
+      flat: z.object({ name: z.string().max(16), locId: z.string().max(64), cityKey: z.enum(["sz", "hz", "hk"]) }).optional(),
     }),
-    response: z.object({ world: worldResponse, inbox: z.array(giftShape), me: z.string(), bank: z.object({ money: z.number(), corrected: z.boolean() }).optional() }),
+    response: z.object({ world: worldResponse, inbox: z.array(giftShape), me: z.string(), bank: z.object({ money: z.number(), corrected: z.boolean(), shopTill: z.number().optional() }).optional() }),
     async handler(ctx, args) {
       const db = ctx.db<typeof schema>();
       /* 防作弊：the simulation runs on the client, so the server checks each
@@ -1498,6 +1556,57 @@ export const Actions = {
       }
       const bank = prev ? await settleMoney(db, prev, args.money, args.season ?? prev.season, args.gameDay) : null;
       if (bank?.cheat) suspect = 1;
+      /* 店铺 / 房子同步（0022）：只写展示字段，不碰 money / reportedMoney。
+         店的 till 冲突时保留（不重置）；房子的 tier/style/layout 冲突时保留。 */
+      let shopTill = 0;
+      if (prev) {
+        if (args.shop) {
+          await db.insert(schema.shops).values({
+            ownerId: args.playerId,
+            ownerPub: pubOf(args.playerId),
+            ownerName: prev.name,
+            kind: args.shop.kind,
+            name: args.shop.name,
+            locId: args.shop.locId,
+            cityKey: args.shop.cityKey,
+            lvl: args.shop.lvl,
+            floor: args.shop.floor,
+            building: args.shop.building ?? null,
+            till: 0,
+            updatedAt: new Date(),
+          }).onConflictDoUpdate({
+            target: schema.shops.ownerId,
+            set: {
+              ownerPub: pubOf(args.playerId),
+              ownerName: prev.name,
+              kind: args.shop.kind,
+              name: args.shop.name,
+              locId: args.shop.locId,
+              cityKey: args.shop.cityKey,
+              lvl: args.shop.lvl,
+              floor: args.shop.floor,
+              building: args.shop.building ?? null,
+              updatedAt: new Date(),
+            },
+          });
+          dropWorldCache();
+        }
+        if (args.flat) {
+          await db.insert(schema.homes).values({
+            playerId: args.playerId,
+            name: args.flat.name,
+            locId: args.flat.locId,
+            cityKey: args.flat.cityKey,
+            updatedAt: new Date(),
+          }).onConflictDoUpdate({
+            target: schema.homes.playerId,
+            set: { name: args.flat.name, locId: args.flat.locId, cityKey: args.flat.cityKey, updatedAt: new Date() },
+          });
+          dropWorldCache();
+        }
+        const [myShop] = await db.select().from(schema.shops).where(eq(schema.shops.ownerId, args.playerId)).limit(1);
+        shopTill = myShop?.till ?? 0;
+      }
       await db
         .update(schema.players)
         .set({
@@ -1530,7 +1639,7 @@ export const Actions = {
         world: await loadWorldCached(ctx, args.cityKey),
         inbox: inboxRows.map((g) => ({ id: g.id, fromId: pubOf(g.fromId), fromName: g.fromName, kind: g.kind, company: g.company, amount: g.amount ?? 0, createdAt: g.createdAt.toISOString() })),
         me: pubOf(args.playerId),
-        ...(bank ? { bank: { money: bank.money, corrected: bank.corrected } } : {}),
+        ...(bank ? { bank: { money: bank.money, corrected: bank.corrected, shopTill } } : {}),
       };
     },
   }),
@@ -1642,6 +1751,48 @@ export const Actions = {
         }).slice(0, 14);
       } catch { layout = []; }
       return { home: { tier: row.tier, style: row.style, layout } };
+    },
+  }),
+
+  /* ---- 玩家店铺（0022）：在别人的店里买东西，钱进店主的 till；店主收钱 ----
+     菜单是服务端定价，客户端只传 itemId。 */
+  buyFromShop: defineAction({
+    description: "Buys one item from another player's shop: the buyer pays, the price goes into the shop's till.",
+    request: z.object({ playerId: z.string().min(4).max(64), ownerPub: z.string().min(4).max(64), itemId: z.string().min(1).max(32) }),
+    response: z.object({ ok: z.boolean(), price: z.number().optional(), error: z.string().optional() }),
+    async handler(ctx, args): Promise<{ ok: boolean; price?: number; error?: string }> {
+      const db = ctx.db<typeof schema>();
+      const [buyer] = await db.select().from(schema.players).where(eq(schema.players.id, args.playerId)).limit(1);
+      const [shop] = await db.select().from(schema.shops).where(eq(schema.shops.ownerPub, args.ownerPub)).limit(1);
+      if (!buyer || !shop) return { ok: false, error: "找不到这家店" };
+      if (buyer.banned) return { ok: false, error: BANNED_MSG };
+      if (buyer.id === shop.ownerId) return { ok: false, error: "不能买自己的店" };
+      const item = SHOP_MENUS[shop.kind]?.find((i) => i.id === args.itemId);
+      if (!item) return { ok: false, error: "这家店没有这道菜" };
+      if (buyer.money < item.price) return { ok: false, error: "钱不够" };
+      /* 买家两边一起扣（客户端成交后本地也扣），心跳才不会把差额当收入/支出；
+         店主的 reportedMoney 不动——till 里的钱要他自己收钱才进钱包。 */
+      await db.update(schema.players).set({ money: buyer.money - item.price, reportedMoney: buyer.reportedMoney - item.price }).where(eq(schema.players.id, buyer.id));
+      await db.update(schema.shops).set({ till: shop.till + item.price }).where(eq(schema.shops.ownerId, shop.ownerId));
+      await writeLedger(db, buyer.id, buyer.season, "spend", -item.price, buyer.money - item.price, `在${shop.name}买${item.name}`);
+      return { ok: true, price: item.price };
+    },
+  }),
+
+  collectShopTill: defineAction({
+    description: "Collects the caller's shop till into their pocket: zeroes the till and returns what was in it. Money itself is applied by the client on success (heartbeat settles it); the server touches no balance here.",
+    request: z.object({ playerId: z.string().min(4).max(64) }),
+    response: z.object({ ok: z.boolean(), amount: z.number() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const [row] = await db.select().from(schema.shops).where(eq(schema.shops.ownerId, args.playerId)).limit(1);
+      if (!row) return { ok: true, amount: 0 };
+      const amount = row.till;
+      if (amount <= 0) return { ok: true, amount: 0 };
+      /* 乐观锁：只有 till 还是 amount 时才清零，并发收钱只成功一次 */
+      const cleared = await db.update(schema.shops).set({ till: 0 }).where(and(eq(schema.shops.ownerId, args.playerId), eq(schema.shops.till, amount))).returning();
+      if (!cleared.length) return { ok: true, amount: 0 };
+      return { ok: true, amount };
     },
   }),
 

@@ -609,7 +609,8 @@ function wearAccessory(g: THREE.Group, id: string | undefined) {
     tie.position.set(0, 1.32, 0.2); g.add(tie);
   } else if (kind === "bag") {
     const bag = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.44, 0.16), mat);
-    bag.position.set(0.42, 1.18, -0.16); g.add(bag);
+    // round-9: centred on the back — was x=0.42, a side satchel, not a backpack
+    bag.position.set(0, 1.18, -0.22); g.add(bag);
   }
 }
 
@@ -1476,10 +1477,14 @@ export function LifeStage3D(p: Props) {
       } else if (tr === 2) {
         roomShell(0xf5ead6, 0xc9a877, { windowX: 2.6, windowW: 2.6 });
         // living room: sofa, TV glow, coffee table, rug, plants, picture
-        box(3.0, 0.5, 1.0, 0x6b8f71, -2.6, 0.45, -2.6, 0.9); box(3.0, 0.7, 0.25, 0x5f8065, -2.6, 0.95, -3.05, 0.9);
-        for (const ax of [-4.05, -1.15]) box(0.25, 0.6, 1.0, 0x5f8065, ax, 0.6, -2.6, 0.9);
+        // (round-9: sofa + armrests sit ON the floor — the seat base was 0.2 up)
+        box(3.0, 0.5, 1.0, 0x6b8f71, -2.6, 0.25, -2.6, 0.9); box(3.0, 1.0, 0.25, 0x5f8065, -2.6, 0.5, -3.05, 0.9);
+        for (const ax of [-4.05, -1.15]) box(0.25, 0.7, 1.0, 0x5f8065, ax, 0.35, -2.6, 0.9);
         const tv = box(2.0, 1.1, 0.06, 0x0b0f19, 2.4, 1.6, 2.6, 0.3, { emissive: 0x3060c0, emissiveIntensity: night ? 1.2 : 0.4 }); tv.rotation.y = Math.PI; tv.castShadow = false;
         box(1.4, 0.06, 0.7, 0xb08a5c, -2.6, 0.45, -1.2, 0.6);
+        // coffee-table legs — the top was floating with no support
+        for (const [lx, lz] of [[-3.2, -1.45], [-2.0, -1.45], [-3.2, -0.95], [-2.0, -0.95]] as const)
+          box(0.06, 0.42, 0.06, 0x8a6a44, lx, 0.21, lz, 0.7);
         const rug2 = cyl(1.6, 1.6, 0.02, 0xd9a05b, -2.4, 0.012, -1.4, 1, {}, 24); rug2.castShadow = false;
         cyl(0.24, 0.19, 0.32, 0xb0653a, 5.4, 0.16, -3.0, 0.8);
         const leaves = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 7), mat(0x4d9b5f, 1, { flatShading: true })); leaves.position.set(5.4, 0.75, -3.0); scene.add(leaves);
@@ -1492,8 +1497,10 @@ export function LifeStage3D(p: Props) {
         box(13.6, 0.08, 0.1, 0x2b2b2b, -0.4, 0.22, -3.42, 0.4, { metalness: 0.7 });
         addGlow(-0.4, 3.2, -3.0, 8, night ? 0xffc98a : 0xfff2c8, night ? 0.35 : 0.25);
         // L-shaped sofa, marble island, pendant lights, long rug, a big plant
-        box(4.2, 0.45, 1.1, 0xe7e2d8, -3.0, 0.4, -1.6, 0.9); box(1.1, 0.45, 2.4, 0xe7e2d8, -5.55, 0.4, -0.95, 0.9);
-        box(4.2, 0.6, 0.25, 0xddd6c9, -3.0, 0.85, -2.1, 0.9);
+        // (round-9: sofa bases sit ON the floor — the seat was 0.175 up and
+        // read as floating against the glass skyline)
+        box(4.2, 0.45, 1.1, 0xe7e2d8, -3.0, 0.225, -1.6, 0.9); box(1.1, 0.45, 2.4, 0xe7e2d8, -5.55, 0.225, -0.95, 0.9);
+        box(4.2, 0.9, 0.25, 0xddd6c9, -3.0, 0.45, -2.1, 0.9);
         box(2.8, 0.95, 1.0, 0xf2f0ec, 3.4, 0.48, -0.6, 0.25, { metalness: 0.1 }); box(2.9, 0.06, 1.1, 0x1f2937, 3.4, 0.98, -0.6, 0.3);
         for (const lx of [2.6, 3.4, 4.2]) { cyl(0.01, 0.01, 2.0, 0x222222, lx, 4.2, -0.6, 0.6); const shade = cyl(0.16, 0.22, 0.24, 0xc8a46a, lx, 3.1, -0.6, 0.4, { metalness: 0.6, emissive: 0xffc873, emissiveIntensity: night ? 1.6 : 0.4 }); shade.castShadow = false; addGlow(lx, 3.0, -0.6, 1.4, 0xffc98a, night ? 0.6 : 0.25); }
         const rug3 = box(5.5, 0.02, 2.6, 0x9ca3af, -3.0, 0.012, -0.4, 1); rug3.castShadow = false;
@@ -1511,10 +1518,11 @@ export function LifeStage3D(p: Props) {
         const kind = it.id.split("-")[0];
         if (kind === "sofa") {
           const tat = it.id === "sofa-tatami";
-          gb(2.4, tat ? 0.25 : 0.45, 1.0, c, 0, tat ? 0.13 : 0.35, 0); gb(2.4, tat ? 0.5 : 0.7, 0.25, dark, 0, tat ? 0.4 : 0.85, -0.42);
-          if (!tat) { gb(0.22, 0.55, 1.0, dark, -1.2, 0.55, 0); gb(0.22, 0.55, 1.0, dark, 1.2, 0.55, 0); }
-          gb(0.5, 0.35, 0.15, 0xf5b942, -0.6, tat ? 0.4 : 0.75, -0.25, 0.95); gb(0.5, 0.35, 0.15, 0x7ea6c9, 0.6, tat ? 0.4 : 0.75, -0.25, 0.95);
-          if (it.id === "sofa-leather") { gb(1.0, 0.45, 1.6, c, 1.7, 0.35, 0.3); }
+          // (round-9: seat + backrest + armrests sit ON the floor — the seat base was 0.125 up)
+          gb(2.4, tat ? 0.25 : 0.45, 1.0, c, 0, tat ? 0.125 : 0.225, 0); gb(2.4, tat ? 0.5 : 0.9, 0.25, dark, 0, tat ? 0.25 : 0.45, -0.42);
+          if (!tat) { gb(0.22, 0.7, 1.0, dark, -1.2, 0.35, 0); gb(0.22, 0.7, 1.0, dark, 1.2, 0.35, 0); }
+          gb(0.5, 0.35, 0.15, 0xf5b942, -0.6, tat ? 0.3 : 0.62, -0.25, 0.95); gb(0.5, 0.35, 0.15, 0x7ea6c9, 0.6, tat ? 0.3 : 0.62, -0.25, 0.95);
+          if (it.id === "sofa-leather") { gb(1.0, 0.45, 1.6, c, 1.7, 0.225, 0.3); }
         } else if (kind === "table") {
           if (it.id === "table-oak") { gc(0.6, 0.06, c, 0, 0.45, 0); gc(0.06, 0.42, dark, 0, 0.22, 0); }
           else { gb(1.3, 0.08, 0.8, c, 0, 0.42, 0, 0.2, { metalness: 0.1 }); for (const [lx, lz] of [[-0.55, -0.32], [0.55, -0.32], [-0.55, 0.32], [0.55, 0.32]]) gb(0.06, 0.4, 0.06, 0x2b2b2b, lx!, 0.2, lz!, 0.4); }
@@ -1522,7 +1530,7 @@ export function LifeStage3D(p: Props) {
         } else if (it.id === "tv-cabinet") {
           gb(2.2, 0.45, 0.45, c, 0, 0.23, 0); const tv = gb(1.7, 0.95, 0.06, 0x0b0f19, 0, 1.0, -0.12, 0.3, { emissive: 0x3060c0, emissiveIntensity: night ? 1.2 : 0.4 }); tv.castShadow = false;
         } else if (it.id === "bed-double") {
-          gb(2.0, 0.35, 2.3, c, 0, 0.2, 0); gb(1.9, 0.22, 2.2, 0xf6efe0, 0, 0.47, 0.02, 0.95); gb(2.0, 0.9, 0.12, dark, 0, 0.6, -1.12);
+          gb(2.0, 0.35, 2.3, c, 0, 0.175, 0); gb(1.9, 0.22, 2.2, 0xf6efe0, 0, 0.47, 0.02, 0.95); gb(2.0, 0.9, 0.12, dark, 0, 0.45, -1.12);
           gb(0.7, 0.14, 0.4, 0xffffff, -0.45, 0.65, -0.8, 0.95); gb(0.7, 0.14, 0.4, 0xffffff, 0.45, 0.65, -0.8, 0.95); gb(1.9, 0.08, 1.2, 0x7ea6c9, 0, 0.6, 0.45, 0.95);
         } else if (it.id === "wardrobe") {
           gb(1.8, 2.3, 0.65, c, 0, 1.15, 0); for (const dx of [-0.3, 0.3]) gb(0.03, 2.1, 0.02, dark, dx, 1.15, 0.33); for (const dx of [-0.42, 0.18, 0.42]) gb(0.04, 0.25, 0.04, 0xd4af37, dx, 1.2, 0.36, 0.3, { metalness: 0.7 });
@@ -2570,8 +2578,8 @@ export function LifeStage3D(p: Props) {
       const seat = [
         { x: -2.95, y: -0.12, z: -2.45, ry: 0.15 },
         { x: -2.7, y: -0.16, z: -2.7, ry: 0.25 },
-        { x: -1.7, y: -0.08, z: -2.55, ry: 0.12 },
-        { x: -2.0, y: -0.2, z: -1.45, ry: 0.08 },
+        { x: -1.7, y: -0.28, z: -2.55, ry: 0.12 },
+        { x: -2.0, y: -0.375, z: -1.45, ry: 0.08 },
       ][tr] ?? { x: -2.95, y: -0.12, z: -2.45, ry: 0.15 };
       if (partner) {
         const seated = extraFigure(seat.x, seat.y, seat.z, seat.ry, partner.shirt, partner.pants, true, partnerFaceId ?? "partner");
@@ -3111,11 +3119,15 @@ export function LifeStage3D(p: Props) {
       const vib = setKind === "metro" || setKind === "station" || setKind === "train" || setKind === "bus" || setKind === "taxi" || setKind === "drive" ? Math.sin(t * 34) * 0.008 : 0;
       if (setKind === "flat" && (pose === "sit" || pose === "sleep")) {
         const tr = Math.max(0, Math.min(3, propsRef.current.tier ?? 1));
+        // sleep focus = centre of the lying body (feet x - 0.85, body runs along X)
         const focus = (pose === "sleep"
-          ? [[-3.2, 0.9, -2.3], [-3.4, 0.85, -2.7], [-2.3, 0.8, -2.3], [-2.4, 0.75, -1.35]]
+          ? [[-3.45, 1.0, -2.45], [-3.55, 0.95, -2.9], [-2.6, 0.8, -2.6], [-3.0, 0.75, -1.6]]
           : [[-3.5, 0.9, -2.4], [-3.4, 0.85, -2.65], [-2.4, 0.85, -2.5], [-2.7, 0.75, -1.45]])[tr] ?? [-3.2, 0.9, -2.3];
         const fx = focus[0] ?? -3.2, fy = focus[1] ?? 0.9, fz = focus[2] ?? -2.3;
-        camera.position.set(fx + 2.6, 2.05, fz + 3.2);
+        // sleep: frame side-on — camera mostly in front (+Z) so the lying
+        // body (long axis along X) reads full-length, not end-on.
+        if (pose === "sleep") camera.position.set(fx + 0.7, 1.9, fz + 3.6);
+        else camera.position.set(fx + 2.6, 2.05, fz + 3.2);
         camera.lookAt(fx, fy, fz);
       } else {
         camera.position.set(sway, 3.15 - push * 0.55 + vib, dist);
@@ -3268,20 +3280,35 @@ export function LifeStage3D(p: Props) {
         A.head.position.y = 1.86 - bite * 0.05;
         A.head.rotation.x = bite * 0.12;
       } else if (pose === "sleep") {
+        // (round-9) lie ACROSS the bed/sofa — long axis along X, head to the
+        // side — so the camera sees the full body side-on. The old
+        // rotation.x = -PI/2 laid the body along Z, straight away from the
+        // camera: foreshortened end-on into a small dark box, and sunk into
+        // the sofa (y too low for the seat). rotation.z = PI/2 tips the
+        // figure sideways: head toward -X, chest facing the camera (+Z).
+        // y = surface + 0.30 rests the torso (0.64 wide, half 0.32) on the
+        // mattress/seat instead of sinking into it.
+        let zzzX = -0.6, zzzY = 1.35, zzzZ = -2.75;
         if (setKind === "flat") {
           const tr = Math.max(0, Math.min(3, propsRef.current.tier ?? 1));
-          const bed = [[-3.3, 0.85, -2.35], [-3.5, 0.72, -2.75], [-2.4, 0.55, -2.3], [-2.6, 0.5, -1.35]][tr] ?? [-3.3, 0.85, -2.35];
-          A.g.position.set(bed[0] ?? -3.3, bed[1] ?? 0.85, bed[2] ?? -2.35);
-        } else A.g.position.set(-1.1, 0.68, -1.05);
-        A.g.rotation.x = -Math.PI / 2 + 0.1;
-        A.g.rotation.z = 0.04;
+          // [feet x, y, z] per tier — body runs from the feet toward -X (head at x - 1.7)
+          const bed = [[-2.6, 1.03, -2.45], [-2.7, 0.98, -2.9], [-1.75, 0.8, -2.6], [-2.15, 0.75, -1.6]][tr] ?? [-2.6, 1.03, -2.45];
+          A.g.position.set(bed[0] ?? -2.6, bed[1] ?? 1.03, bed[2] ?? -2.45);
+          A.g.rotation.x = 0;
+          A.g.rotation.z = Math.PI / 2 - 0.06;
+          zzzX = (bed[0] ?? -2.6) - 1.7; zzzY = (bed[1] ?? 1.03) + 0.35; zzzZ = bed[2] ?? -2.45;
+        } else {
+          A.g.position.set(-1.1, 0.68, -1.05);
+          A.g.rotation.x = -Math.PI / 2 + 0.1;
+          A.g.rotation.z = 0.04;
+        }
         const br = Math.sin(t * 1.4) * 0.03;
         A.torso.scale.set(1, 1 + br, 1);
         A.armL.rotation.x = 0.25; A.armR.rotation.x = 0.25;
         A.legL.rotation.x = 0.06; A.legR.rotation.x = -0.04;
         for (const sp of zzzSprites) {
           const ph = ((t * 0.3 + (sp.userData.phase as number)) % 1);
-          sp.position.set(-0.6 + ph * 0.7, 1.35 + ph * 1.1, -2.75);
+          sp.position.set(zzzX + ph * 0.7, zzzY + ph * 1.1, zzzZ);
           sp.scale.setScalar(0.3 + ph * 0.45);
           (sp.material as THREE.SpriteMaterial).opacity = Math.sin(ph * Math.PI);
         }
@@ -3326,11 +3353,13 @@ export function LifeStage3D(p: Props) {
         // seated on the carriage bench, phone in hand, city rushing past
         if (setKind === "flat") {
           const tr = Math.max(0, Math.min(3, propsRef.current.tier ?? 1));
+          // (round-9: sit y lowered 0.2 / 0.175 for tiers 2 / 3 — the sofa
+          // seats were lowered to the floor, so the seated hip drops too)
           const seat = [
             { x: -4.05, y: -0.12, z: -2.45, ry: 0.15 },
             { x: -4.15, y: -0.16, z: -2.7, ry: 0.25 },
-            { x: -3.15, y: -0.08, z: -2.55, ry: 0.12 },
-            { x: -3.5, y: -0.2, z: -1.45, ry: 0.08 },
+            { x: -3.15, y: -0.28, z: -2.55, ry: 0.12 },
+            { x: -3.5, y: -0.375, z: -1.45, ry: 0.08 },
           ][tr]!;
           A.g.position.set(seat.x, seat.y + Math.sin(t * 1.4) * 0.008, seat.z);
           A.g.rotation.y = seat.ry;

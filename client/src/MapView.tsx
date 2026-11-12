@@ -92,6 +92,13 @@ interface Props {
   /** Tapped a community pin: App opens the matching detail panel
       (stray / notice / snake warning / fishing spot). */
   onCommunityMarkerClick?: (marker: CommunityMapMarker) => void;
+  /** Round-9: player shops / bought flats as VISIBLE 3D buildings on the
+      map — one small building per shop/flat, at its stored locId, offset
+      beside the place's own building so nothing z-fights or moves. The
+      name rides the community-marker chip (same labels overlay as places);
+      the building itself carries a coloured shop sign. Clicking a building
+      selects its place (pick mesh with userData.locId). */
+  playerBuildings?: { id: string; kind: "shop" | "flat"; locId: string; name: string; color: number; emoji: string }[];
   /** Search focus: when focusNonce changes, the camera pans to focusLocId
       for a few seconds so a searched place is actually shown on the map. */
   focusLocId?: string;
@@ -432,6 +439,29 @@ function emojiSprite(emoji: string, ring: number, self = false): THREE.Sprite {
   return sp;
 }
 
+/* The head badge must always be a FACE, never a role object. The badge
+   used to show the person's role/identity emoji straight (a.emoji), and
+   most identities and NPCs carry an OBJECT for that — delivery rider 🛵,
+   taxi driver 🚕, salesperson 🛍️, 惠州躺平青年 🛋️, student 🎒 — so the
+   badge floating above the head read as a scooter / taxi / backpack
+   sitting ON the person's head. The role is not lost: the name chip
+   already carries it (`${name}·${job}`) and the detail panel shows it.
+   Person/face emojis that the game actually uses stay as-is; anything
+   else gets a stable face from the palette, picked by the actor's seed
+   (hash of name/id), so the same person always shows the same face.
+   No per-player face/avatar choice exists (RemotePlayer and the self
+   record carry only the identity emoji + hair + accessory), so players
+   get a neutral face from the same palette. */
+const BADGE_FACES = ["🧑", "👩", "👨", "👵", "👴", "👧", "👦", "🙂"];
+const FACE_EMOJIS = new Set([
+  "🧑‍🏭", "👨‍💻", "🧑‍🏫", "👷", "👨‍🍳", "👩‍⚕️", "💆", "🏋️", "💂", "👩‍💻",
+  "🧑‍💼", "🤰", "🧑", "👩", "👨", "👵", "👴", "👧", "👦", "👶", "🙂",
+]);
+function badgeFaceEmoji(emoji: string, seed: number): string {
+  if (FACE_EMOJIS.has(emoji)) return emoji;
+  return BADGE_FACES[Math.abs(seed) % BADGE_FACES.length] ?? "🧑";
+}
+
 /* The pet model's moving parts, kept on the group so the frame loop can
    animate them without re-querying the scene graph every frame. */
 interface PetParts {
@@ -626,6 +656,13 @@ export function MapView(p: Props) {
      creates in the labels overlay, positioned by the frame loop's
      declutter pass together with the place / NPC chips */
   const communityChipsRef = useRef<Chip[]>([]);
+  /* Round-9: the scene (built by the mount effect) so the player-buildings
+     effect can add/remove shop & flat meshes without rebuilding the city. */
+  const sceneRef = useRef<THREE.Scene | null>(null);
+  const playerBuildingsGroupRef = useRef<THREE.Group | null>(null);
+  /* Round-9: pick meshes of the player buildings, so a tap on a shop/flat
+     building selects its place (onUp raycasts these alongside pickMeshes). */
+  const playerPickMeshesRef = useRef<THREE.Object3D[]>([]);
   const propsRef = useRef(p);
   propsRef.current = p;
   const camRef = useRef({ az: 0, pol: CAM_POL, dist: 46, distCur: 46, tx: LAND_CX, tz: LAND_CZ, lastUser: 0, cut: 0 });
@@ -996,6 +1033,7 @@ export function MapView(p: Props) {
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xbfd9e8);
     scene.fog = new THREE.Fog(0xbfd9e8, 120, 240);
+    sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 500);
 
@@ -2580,6 +2618,19 @@ export function MapView(p: Props) {
         const body = new THREE.Group();
         v.add(body);
         (v.userData as { body?: THREE.Group }).body = body;
+        // round-9: generous invisible hit target so a moving person is
+        // tappable — the thin character mesh is nearly impossible to hit on
+        // touch, and a tap that misses it falls through to the building
+        // behind (place name instead of the person). The onUp raycast tests
+        // this cylinder, not the model. Never on yourself (you can't pick you).
+        if (a.key !== "self") {
+          const hitMat = new THREE.MeshBasicMaterial({ visible: false });
+          const hit = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 2.6, 8), hitMat);
+          hit.position.y = 1.3;
+          hit.userData.actorKey = a.key;
+          v.add(hit);
+          (v.userData as { hit?: THREE.Mesh }).hit = hit;
+        }
         const shirt = new THREE.MeshStandardMaterial({ color: a.shirt, roughness: 0.65 });
         const shirtDark = new THREE.MeshStandardMaterial({ color: new THREE.Color(a.shirt).multiplyScalar(0.78), roughness: 0.7 });
         const pants = new THREE.MeshStandardMaterial({ color: a.pants, roughness: 0.85 });
@@ -2628,10 +2679,14 @@ export function MapView(p: Props) {
         mkAcc("tie", (g) => { const m = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.44, 0.03), new THREE.MeshStandardMaterial({ color: 0x8c2b2e, roughness: 0.6 })); m.position.set(0, 1.32, 0.2); g.add(m); });
         mkAcc("apron", (g) => { const m = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.62, 0.03), new THREE.MeshStandardMaterial({ color: 0xf3ead8, roughness: 0.9 })); m.position.set(0, 1.14, 0.2); g.add(m); });
         mkAcc("vest", (g) => { const m = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.5, 0.43), new THREE.MeshStandardMaterial({ color: 0xff7a1a, roughness: 0.7, emissive: 0xff7a1a, emissiveIntensity: 0.18 })); m.position.y = 1.3; g.add(m); });
-        mkAcc("bag", (g) => { const m = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.44, 0.16), new THREE.MeshStandardMaterial({ color: 0x54432e, roughness: 0.85 })); m.position.set(0.42, 1.18, -0.16); m.castShadow = true; g.add(m); });
+        // round-9: bag centred on the back (x=0, z just behind the torso)
+        // — it was at x=0.42, reading as a side satchel, not a backpack.
+        mkAcc("bag", (g) => { const m = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.44, 0.16), new THREE.MeshStandardMaterial({ color: 0x54432e, roughness: 0.85 })); m.position.set(0, 1.18, -0.22); m.castShadow = true; g.add(m); });
         body.add(accGroup);
         (v.userData as { acc?: THREE.Group }).acc = accGroup;
-        const sp = emojiSprite(a.emoji, a.color, !!a.isSelf);
+        // round-9: the badge is a FACE, never the role emoji — a 🛵/🚕/🎒
+        // badge reads as a vehicle or a backpack sitting on the head.
+        const sp = emojiSprite(badgeFaceEmoji(a.emoji, a.seed), a.color, !!a.isSelf);
         // ROUND-2 (a): one consistent badge size at map scale — NPCs 1.45,
         // self 2.1 — instead of the default 1.3 that drowned at city zoom.
         // The sprite approach stays; only the sizing/bob changes.
@@ -2862,12 +2917,47 @@ export function MapView(p: Props) {
       dragging = false;
       dom.style.cursor = "grab";
       if (moved < 6) {
-        // treat as click: raycast buildings
+        // treat as click. Round-9: PEOPLE FIRST — the avatar itself is the tap
+        // target, not just the tiny floating name chip. A tap on a moving
+        // person must select the person even when a building is behind them
+        // (before this fix the ray hit the building and only the place name
+        // showed, so people were unselectable).
         const rect = dom.getBoundingClientRect();
         const ndc = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
         const rc = new THREE.Raycaster();
         rc.setFromCamera(ndc, camera);
-        const hits = rc.intersectObjects(pickMeshes, false);
+        const pickActor = (key: string) => {
+          propsRef.current.onPickActor?.(key.startsWith("npc-") ? { npc: key.slice(4) } : { player: key.slice(2) });
+        };
+        // 1) raycast the generous hit cylinders on every actor (not the thin
+        //    character mesh). Nearest hit wins; yourself is never pickable.
+        const hitMeshes: THREE.Object3D[] = [];
+        for (const v of actorViews.values()) {
+          const hit = (v.userData as { hit?: THREE.Mesh }).hit;
+          if (hit) hitMeshes.push(hit);
+        }
+        const actorHits = rc.intersectObjects(hitMeshes, false);
+        const actorKey = actorHits[0]?.object.userData.actorKey as string | undefined;
+        if (actorKey) { pickActor(actorKey); return; }
+        // 2) screen-space fallback for moving people + imprecise touch: a tap
+        //    within ~36px of a person's projected position picks the nearest
+        //    such person (the raycast can miss someone who just walked on).
+        {
+          let best: { key: string; d: number } | null = null;
+          const tmp = new THREE.Vector3();
+          for (const [key, v] of actorViews) {
+            if (key === "self") continue;
+            tmp.set(v.position.x, LAND + 1.3, v.position.z).project(camera);
+            if (tmp.z > 1) continue; // behind the camera
+            const sx = ((tmp.x + 1) / 2) * rect.width;
+            const sy = ((1 - tmp.y) / 2) * rect.height;
+            const d = Math.hypot(sx - (e.clientX - rect.left), sy - (e.clientY - rect.top));
+            if (d <= 36 && (!best || d < best.d)) best = { key, d };
+          }
+          if (best) { pickActor(best.key); return; }
+        }
+        // 3) buildings (places + round-9 player shop/flat buildings).
+        const hits = rc.intersectObjects([...pickMeshes, ...playerPickMeshesRef.current], false);
         const id = hits[0]?.object.userData.locId as string | undefined;
         if (id) {
           // a building was picked: select it, and stop any click-walk
@@ -4004,6 +4094,8 @@ export function MapView(p: Props) {
       cancelAnimationFrame(raf);
       fx?.dispose();
       ro.disconnect();
+      sceneRef.current = null;
+      playerBuildingsGroupRef.current = null;
       dom.removeEventListener("pointerdown", onDown);
       dom.removeEventListener("pointermove", onMove);
       dom.removeEventListener("pointerup", onUp);
@@ -4070,6 +4162,82 @@ export function MapView(p: Props) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [communityKey, p.cityKey]);
+
+  /* Round-9: player shops / flats as VISIBLE 3D buildings on the map. This
+     effect owns one group inside the scene (the scene effect owns the scene
+     itself); it re-runs whenever the list or city changes, so a building
+     appears as soon as the shop/flat is created and survives reload (the
+     list comes from the server). Each building sits offset from its place's
+     own building (dx +1.8, dz +1.3) so no surface is coplanar with it (no
+     z-fighting) and no existing place moves. Shops read as a shopfront
+     (small box + awning + neon sign); flats as a residential block with a
+     cone roof. The custom name rides the community-marker chip (same labels
+     overlay as places); the building also gets a coloured sign box. A pick
+     mesh (invisible box, userData.locId) makes the building clickable like
+     a place — onUp raycasts it alongside pickMeshes. */
+  const playerBuildingsKey = (p.playerBuildings ?? []).map((b) => `${b.id}|${b.kind}|${b.locId}|${b.name}|${b.color}`).join(";");
+  useEffect(() => {
+    const scene = sceneRef.current;
+    playerBuildingsGroupRef.current?.parent?.remove(playerBuildingsGroupRef.current);
+    playerBuildingsGroupRef.current = null;
+    playerPickMeshesRef.current = [];
+    const list = p.playerBuildings ?? [];
+    if (!scene || list.length === 0) return;
+    const locs = getLocations(p.cityKey);
+    const byId = new Map(locs.map((l) => [l.id, l]));
+    const group = new THREE.Group();
+    const pickMat = new THREE.MeshBasicMaterial({ visible: false });
+    for (const b of list) {
+      const loc = byId.get(b.locId) ?? resolveLoc(p.cityKey, b.locId);
+      if (!loc) continue;
+      const g = new THREE.Group();
+      const isShop = b.kind === "shop";
+      const w = isShop ? 1.3 : 1.4;
+      const h = isShop ? 1.15 : 1.9;
+      const bodyMat = new THREE.MeshStandardMaterial({ color: b.color, roughness: 0.8, metalness: 0.05 });
+      const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, w * 0.85), bodyMat);
+      body.position.y = h / 2;
+      body.castShadow = true;
+      body.receiveShadow = true;
+      g.add(body);
+      if (isShop) {
+        const awnMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(b.color).multiplyScalar(0.85), roughness: 0.7, emissive: 0xffb35c, emissiveIntensity: 0.12 });
+        const awn = new THREE.Mesh(new THREE.BoxGeometry(w * 0.9, 0.07, 0.55), awnMat);
+        awn.position.set(0, 0.95, w * 0.42 + 0.22);
+        awn.rotation.x = 0.38;
+        g.add(awn);
+        const signMat = new THREE.MeshStandardMaterial({ color: 0x1a1216, roughness: 0.5, emissive: b.color, emissiveIntensity: 0.4 });
+        const sign = new THREE.Mesh(new THREE.BoxGeometry(Math.min(1.1, w * 0.8), 0.32, 0.08), signMat);
+        sign.position.set(0, h * 0.62, w * 0.42 + 0.05);
+        g.add(sign);
+      } else {
+        const roof = new THREE.Mesh(
+          new THREE.ConeGeometry(w * 0.66, 0.7, 4),
+          new THREE.MeshStandardMaterial({ color: new THREE.Color(b.color).multiplyScalar(0.72), roughness: 0.9, flatShading: true }),
+        );
+        roof.position.y = h + 0.35;
+        roof.rotation.y = Math.PI / 4;
+        roof.castShadow = true;
+        g.add(roof);
+      }
+      const pick = new THREE.Mesh(new THREE.BoxGeometry(w + 0.3, h + 0.6, w + 0.3), pickMat);
+      pick.position.y = (h + 0.6) / 2;
+      pick.userData.locId = b.locId;
+      g.add(pick);
+      playerPickMeshesRef.current.push(pick);
+      // offset beside the place's own building (its body is ~w*0.82 wide)
+      g.position.set(loc.x + 1.8, LAND, loc.z + 1.3);
+      group.add(g);
+    }
+    scene.add(group);
+    playerBuildingsGroupRef.current = group;
+    return () => {
+      group.parent?.remove(group);
+      if (playerBuildingsGroupRef.current === group) playerBuildingsGroupRef.current = null;
+      playerPickMeshesRef.current = [];
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playerBuildingsKey, p.cityKey]);
 
   const zoomBy = (f: number) => {
     autoFitRef.current = false;
