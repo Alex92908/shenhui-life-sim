@@ -2011,11 +2011,20 @@ onSuccess: (data) => {
 if (data.me && data.me !== myPubRef.current) setMyPub(data.me);
 for (const g of data.inbox ?? []) receiveGift(g);
 /* the server keeps the real balance: earnings it could not account for are
-   taken back, and the game falls back to its figure */
+   taken back, and the game falls back to its figure. The reverse also holds:
+   money the server granted itself (admin compensation, sign-in rewards the
+   client never saw) must flow DOWN to the client — otherwise the next
+   heartbeat proposes the client's stale lower balance and settleMoney reads
+   the gap as spending and claws the grant back. */
 if (data.bank?.corrected) {
   const fix = data.bank.money;
   mutate((x) => { x.money = fix; });
   showToast(en ? "💳 Balance corrected to the server's books (earnings faster than the game allows were not counted)." : "💳 余额已按服务器账本校正：超出游戏节奏的进账没有入账。");
+} else if (typeof data.bank?.money === "number" && gsRef.current && data.bank.money > gsRef.current.money) {
+  const before = gsRef.current.money;
+  const fix = data.bank.money;
+  mutate((x) => { x.money = fix; });
+  showToast(en ? `💰 The server credited ${Y}${fix - before} to your wallet.` : `💰 服务器给你钱包里加了 ${Y}${fix - before}。`);
 }
 const s = gsRef.current;
 queryClient.setQueryData(["world", s?.cityKey?? "sz"], data);

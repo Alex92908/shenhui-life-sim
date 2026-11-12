@@ -421,12 +421,19 @@ async function settleMoney(db: ReturnType<Ctx["db"]>, prev: PlayerRow, proposed:
   }
   return { money, reported: corrected ? money : proposed, budget: Math.max(0, Math.min(EARN_CAP * 2, budget)), corrected, cheat: delta > EARN_CAP };
 }
-/** Server-granted money (rewards): goes straight onto both balances, so the client's own +amount is not counted twice. */
+/** Server-granted money (rewards): goes straight onto both balances, so the client's own +amount is not counted twice.
+   NOTE: only `money` is bumped — `reportedMoney` is the last balance the
+   CLIENT reported, and the client does not know about a server-side grant
+   (it restores its balance from localStorage). If reportedMoney were bumped
+   too, the next heartbeat would see the client's stale lower balance as a
+   ¥(grant) "spend" and claw the whole grant back (settleMoney treats any
+   client-proposed decrease as spending). The client picks the grant up from
+   the heartbeat reply instead (see syncPresence onSuccess). */
 async function creditMoney(db: ReturnType<Ctx["db"]>, playerId: string, amount: number, note: string) {
   const d = db as any;
   const [p] = await d.select().from(schema.players).where(eq(schema.players.id, playerId)).limit(1);
   if (!p || !amount) return;
-  await d.update(schema.players).set({ money: p.money + amount, reportedMoney: p.reportedMoney + amount }).where(eq(schema.players.id, playerId));
+  await d.update(schema.players).set({ money: p.money + amount }).where(eq(schema.players.id, playerId));
   await writeLedger(db, playerId, p.season, "reward", amount, p.money + amount, note);
 }
 
