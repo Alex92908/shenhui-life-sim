@@ -31,6 +31,7 @@ import { CITIES, LOC_EN, getLocations, resolveLoc, areaLocId, placesForCity, bil
 import { COMMUNITY_PIN_COLOR, type CommunityMapMarker } from "./round2/community";
 import { PET_MODEL, stepPetFollow, type Pet, type PetRuntime } from "./round2/pets";
 import { makePostFx, type PostFx } from "./postfx";
+import { makeDesktopFx, applyWetShader, type DesktopFx } from "./round2/desktopfx";
 import { getLang } from "./i18n";
 const tt = (zh: string, en: string) => (getLang() === "zh" ? zh : en);
 
@@ -670,6 +671,18 @@ export function MapView(p: Props) {
   const trackSelfRef = useRef(false);
   /* the searched place, pinned until the next search or ✕ */
   const pinRef = useRef<{ id: string; x: number; z: number; name: string } | null>(null);
+  /* ROUND-8 click-to-walk (desktop mouse): the ground point the player
+     clicked — the self actor walks there at travel-mode speed. Set by the
+     map's onUp, cleared on arrival / new click / trip / location change.
+     The ring mesh lives in the scene effect (next to pinRing). */
+  const clickWalkRef = useRef<{ x: number; z: number } | null>(null);
+  const clickMarkerRef = useRef<THREE.Mesh | null>(null);
+  /* a trip or teleport cancels any click-walk, so the figure never walks
+     back to a stale point after arriving somewhere else */
+  useEffect(() => {
+    clickWalkRef.current = null;
+    if (clickMarkerRef.current) clickMarkerRef.current.visible = false;
+  }, [p.selfLocId, p.cityKey]);
   useEffect(() => {
     const l = p.pinLocId ? resolveLoc(p.cityKey, p.pinLocId) : undefined;
     pinRef.current = l && p.pinLocId ? { id: p.pinLocId, x: l.x, z: l.z, name: document.documentElement.lang === "en" ? (LOC_EN[l.name] ?? l.name) : l.name } : null;
@@ -961,6 +974,13 @@ export function MapView(p: Props) {
        when it runs smoothly. Text and labels are HTML and always native. */
     const dpr = window.devicePixelRatio || 1;
     const phoneLike = lite || window.innerWidth < 768 || (typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches);
+    /* ROUND-7 desktop-only visual effects (rain-wet streets, neon night,
+       procedural textures, warm night haze): only on a real desktop — fine
+       pointer, not phone-like, not lite. Phones keep the exact previous
+       look and cost; nothing below runs for them. */
+    const pointerFine = typeof matchMedia === "function" && matchMedia("(pointer: fine)").matches;
+    const desktopFxOn = !lite && !phoneLike && pointerFine;
+    const dfx: DesktopFx | null = desktopFxOn ? makeDesktopFx() : null;
     const prTop = Math.min(phoneLike ? 3 : 2, dpr);
     const prLadder = [prTop, 2, 1.5, 1].filter((v, i, a) => v <= prTop && a.indexOf(v) === i);
     let prIdx = 0;
@@ -1301,6 +1321,11 @@ export function MapView(p: Props) {
 
     /* ---- roads ---- */
     const roadMat = new THREE.MeshStandardMaterial({ color: 0x3c4148, roughness: 0.95 });
+    // ROUND-7 desktop: procedural asphalt + rain-wet shader (phones: flat as before)
+    if (dfx) {
+      roadMat.map = dfx.asphaltTex;
+      applyWetShader(roadMat, dfx.wet);
+    }
     const lineMat = new THREE.MeshBasicMaterial({ color: 0xf5e9b8 });
     const roadMeshes: THREE.Mesh[] = [];
     const viaductMat = new THREE.MeshStandardMaterial({ color: 0xbfc3c7, roughness: 0.8 });
@@ -1412,6 +1437,11 @@ export function MapView(p: Props) {
     // sidewalks: a pale pavement strip hugging both sides of every road
     {
       const paveMat = new THREE.MeshStandardMaterial({ color: 0xcfc8b2, roughness: 1 });
+      // ROUND-7 desktop: procedural concrete + rain-wet shader (phones: flat as before)
+      if (dfx) {
+        paveMat.map = dfx.concreteTex;
+        applyWetShader(paveMat, dfx.wet);
+      }
       for (const r of roads) {
         const len = roadLen(r);
         const ang = Math.atan2(r.z2 - r.z1, r.x2 - r.x1);
@@ -1702,6 +1732,8 @@ export function MapView(p: Props) {
       // neon shop sign for the lively places — pulses after dark
       if (l.type === "food" || l.type === "mall" || l.type === "social" || l.type === "apec" || l.type === "market" || l.type === "electronics" || l.type === "oilpainting" || l.type === "secondhand" || l.type === "seafood" || l.type === "oldtown" || l.type === "womensstreet" || l.type === "museum" || l.type === "library" || l.type === "factory" || l.type === "transit" || l.type === "work" || l.type === "lodging" || l.type === "home") {
         const neonMat = new THREE.MeshStandardMaterial({ color: 0x1a1216, roughness: 0.5, emissive: l.color, emissiveIntensity: 0.35 });
+        // ROUND-7 desktop: neon-tube emissive map so signs read as tubing, not a flat glowing box
+        if (dfx) neonMat.emissiveMap = dfx.neonTex;
         const sign = new THREE.Mesh(new THREE.BoxGeometry(Math.min(2.2, l.w * 0.62), 0.55, 0.1), neonMat);
         sign.position.set(0, 0.5 + h * 0.52, l.w * 0.41 + 0.06);
         g.add(sign);
@@ -1882,8 +1914,14 @@ export function MapView(p: Props) {
       }
     }
     fillerMat = new THREE.MeshStandardMaterial({ roughness: 0.95, emissive: 0xffc873, emissiveMap: winTex, emissiveIntensity: 0 });
+    /* ROUND-8 spacious blocks: filler footprints were wall-to-wall on a 2.8
+       grid (1.9 wide = 68% of the cell, gaps under a unit). Scale the
+       footprint down so blocks read roomy — visible open ground between
+       buildings — without moving any place, road or the canvas. Heights
+       (and the skyline) are untouched; only the footprint shrinks. */
+    const FILLER_W = 0.72;
     const filler = new THREE.InstancedMesh(
-      new THREE.BoxGeometry(1.9, 1, 1.9),
+      new THREE.BoxGeometry(1.9 * FILLER_W, 1, 1.9 * FILLER_W),
       fillerMat,
       spots.length,
     );
@@ -1945,6 +1983,8 @@ export function MapView(p: Props) {
             awnS.rotation.x = 0.35;
             g.add(awnS);
             const signMatS = new THREE.MeshStandardMaterial({ color: 0x1a1216, roughness: 0.5, emissive: [0xe63a1f, 0xf5b942, 0x2dd4bf, 0xec4899, 0x3b82f6][Math.floor(rnd() * 5)] ?? 0xe63a1f, emissiveIntensity: 0.4 });
+            // ROUND-7 desktop: neon-tube emissive map on shop signs too
+            if (dfx) signMatS.emissiveMap = dfx.neonTex;
             const signS = new THREE.Mesh(new THREE.BoxGeometry(Math.min(1.9, gw * 0.7), 0.42, 0.08), signMatS);
             signS.position.set(0, Math.min(gh - 0.35, 1.95), 0.84);
             g.add(signS);
@@ -2498,6 +2538,14 @@ export function MapView(p: Props) {
     const pinRing = new THREE.Mesh(new THREE.RingGeometry(0.55, 0.8, 36), new THREE.MeshBasicMaterial({ color: 0xff3b30, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false }));
     pinRing.rotation.x = -Math.PI / 2;
     pinBeam.visible = pinRing.visible = false;
+    // ROUND-8 click-to-walk marker: a sky-blue ring on the clicked ground
+    // point, pulsing while the player walks there (teal-blue, distinct from
+    // the red search pin). Position/visibility are driven by the frame loop.
+    const clickMarker = new THREE.Mesh(new THREE.RingGeometry(0.45, 0.7, 36), new THREE.MeshBasicMaterial({ color: 0x0ea5e9, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false }));
+    clickMarker.rotation.x = -Math.PI / 2;
+    clickMarker.visible = false;
+    scene.add(clickMarker);
+    clickMarkerRef.current = clickMarker;
     scene.add(pinBeam, pinRing);
 
     /* ---- 📢 billboards: a real button per spot. The 「广告」 badge stays;
@@ -2821,7 +2869,23 @@ export function MapView(p: Props) {
         rc.setFromCamera(ndc, camera);
         const hits = rc.intersectObjects(pickMeshes, false);
         const id = hits[0]?.object.userData.locId as string | undefined;
-        if (id) propsRef.current.onSelect(id);
+        if (id) {
+          // a building was picked: select it, and stop any click-walk
+          clickWalkRef.current = null;
+          if (clickMarkerRef.current) clickMarkerRef.current.visible = false;
+          propsRef.current.onSelect(id);
+          return;
+        }
+        // ROUND-8 click-to-walk (mouse only — touch keeps its tap-to-select):
+        // no building hit, so raycast the ground plane and walk there.
+        // A trip in progress wins; a new click retargets, arrival clears.
+        if (e.pointerType === "mouse" && !propsRef.current.selfEtaAt) {
+          const ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), -LAND);
+          const pt = new THREE.Vector3();
+          if (rc.ray.intersectPlane(ground, pt) && isLand(cityKey, pt.x, pt.z)) {
+            clickWalkRef.current = { x: pt.x, z: pt.z };
+          }
+        }
       }
     };
     const onWheel = (e: WheelEvent) => {
@@ -2895,6 +2959,8 @@ export function MapView(p: Props) {
     const C_CLOUD_DUSK = new THREE.Color(0xffb37a);
     const C_CLOUD_GREY = new THREE.Color(0x707c85);
     const C_MOTE_NIGHT = new THREE.Color(0xffd98a);
+    // ROUND-7 desktop: warm amber the night sky/fog lean toward (night haze)
+    const C_HAZE_WARM = new THREE.Color(0xff9a5c);
     const carMat4 = new THREE.Matrix4();
     const carQuat = new THREE.Quaternion();
     const carScl = new THREE.Vector3(1, 1, 1);
@@ -2936,10 +3002,14 @@ export function MapView(p: Props) {
       }
       const rawDt = (now - last) / 1000;
       if (!document.hidden && rawDt < 1) { prFrames += 1; prTime += rawDt; }
-      if (prTime >= 2.5 && prChanges < 3) {
+      if (prTime >= 2.5) {
         const fps = prFrames / prTime;
         prFrames = 0; prTime = 0; prWindows += 1;
-        if (prWindows > 1) { // the first window is loading noise
+        // ROUND-7 desktop: the FPS guard for the new effects keeps measuring
+        // even after the pixel-ratio ladder is exhausted (3 changes), so a
+        // struggling desktop still steps its effects down
+        if (dfx) dfx.noteFps(fps);
+        if (prChanges < 3 && prWindows > 1) { // the first window is loading noise
           if (fps < 32 && prIdx < prLadder.length - 1) { prIdx += 1; prSmooth = 0; prWindows = 0; applyPixelRatio(); }
           else if (fps >= 57 && prIdx > 0) { prSmooth += 1; if (prSmooth >= 3) { prIdx -= 1; prSmooth = 0; prWindows = 0; applyPixelRatio(); } }
           else prSmooth = 0;
@@ -2982,21 +3052,36 @@ export function MapView(p: Props) {
         rainPts.position.x = Math.sin(tSec * 0.7) * 0.6;
       }
       const nightF = 1 - dayF;
+      // ROUND-7 desktop: ease the street wetness toward the weather, then
+      // lean the sky/fog warm amber after dark (warm night haze)
+      if (dfx) {
+        dfx.update({ raining, storm: wk === "storm", nightF, duskF, dt });
+        const hz = dfx.hazeF();
+        if (hz > 0) {
+          (scene.background as THREE.Color).lerp(C_HAZE_WARM, hz * 0.16);
+          scene.fog!.color.lerp(C_HAZE_WARM, hz * 0.16);
+        }
+      }
       waterMat.color.setHex(0x2e7fb8).lerp(C_WATER_NIGHT, nightF * 0.8);
       waterMat.roughness = 0.35 - dayF * 0.12 + nightF * 0.1;
       // ---- drive every animated material off the day cycle ----
       renderer.toneMappingExposure = 1.08 - nightF * 0.16 + duskF * 0.04;
-      (scene.fog as THREE.Fog).near = 120 - nightF * 32 - (wk === "fog" ? 55 : wk === "storm" ? 30 : wk === "rain" ? 18 : 0);
-      (scene.fog as THREE.Fog).far = 240 - nightF * 45 - (wk === "fog" ? 95 : wk === "storm" ? 55 : wk === "rain" ? 35 : 0);
+      const hazeD = dfx ? dfx.hazeF() : 0;
+      (scene.fog as THREE.Fog).near = 120 - nightF * 32 - hazeD * 14 - (wk === "fog" ? 55 : wk === "storm" ? 30 : wk === "rain" ? 18 : 0);
+      (scene.fog as THREE.Fog).far = 240 - nightF * 45 - hazeD * 28 - (wk === "fog" ? 95 : wk === "storm" ? 55 : wk === "rain" ? 35 : 0);
       moon.intensity = nightF * 0.55;
       playerLight.intensity = nightF * 26 + duskF * 8;
-      for (const m of buildingMats) m.emissiveIntensity = nightF * 0.95 + duskF * 0.3;
-      if (fillerMat) fillerMat.emissiveIntensity = nightF * 0.5;
-      if (bulbMat) bulbMat.emissiveIntensity = 0.15 + nightF * 2.4;
+      // ROUND-7 desktop: windows / bulbs / neon burn brighter after dark
+      // (the bloom pass turns the extra emissive into real glow)
+      const winB = dfx ? dfx.windowBoost() : 1;
+      const neoB = dfx ? dfx.neonBoost() : 1;
+      for (const m of buildingMats) m.emissiveIntensity = (nightF * 0.95 + duskF * 0.3) * winB;
+      if (fillerMat) fillerMat.emissiveIntensity = nightF * 0.5 * winB;
+      if (bulbMat) bulbMat.emissiveIntensity = (0.15 + nightF * 2.4) * winB;
       if (glowMat) glowMat.opacity = nightF * 0.75;
       if (foamMat) foamMat.opacity = 0.22 + 0.18 * (0.5 + 0.5 * Math.sin(tSec * 1.4));
       neonMats.forEach((m, i) => {
-        m.emissiveIntensity = 0.35 + nightF * 1.5 + Math.sin(tSec * 2.4 + i * 1.7) * (0.12 + nightF * 0.3);
+        m.emissiveIntensity = (0.35 + nightF * 1.5 + Math.sin(tSec * 2.4 + i * 1.7) * (0.12 + nightF * 0.3)) * neoB;
       });
       avLights.forEach((av, i) => {
         const m = av.material as THREE.MeshStandardMaterial;
@@ -3343,9 +3428,29 @@ export function MapView(p: Props) {
             if (dest) { a.tx = dest.x; a.tz = dest.z; }
           }
         }
+        // ROUND-8 click-to-walk: steer the self actor to the clicked ground
+        // point at travel-mode speed (the same tx/tz + speed path trips use,
+        // so walk cycle, heading and the player light all just work). A trip
+        // or a ride cancels it; arriving clears it and hides the marker.
+        if (a.isSelf) {
+          if (propsRef.current.selfEtaAt || trainPos.active) {
+            if (clickWalkRef.current) {
+              clickWalkRef.current = null;
+              if (clickMarkerRef.current) clickMarkerRef.current.visible = false;
+            }
+          } else if (clickWalkRef.current) {
+            a.tx = clickWalkRef.current.x;
+            a.tz = clickWalkRef.current.z;
+          }
+        }
         const dx = a.tx - a.x;
         const dz = a.tz - a.z;
         const dist = Math.hypot(dx, dz);
+        // arrived at the clicked point: stop here, hide the marker
+        if (a.isSelf && clickWalkRef.current && dist <= 0.25) {
+          clickWalkRef.current = null;
+          if (clickMarkerRef.current) clickMarkerRef.current.visible = false;
+        }
         if (dist > 0.06) {
           const eta = a.isSelf ? propsRef.current.selfEtaAt : undefined;
           const left = eta ? (eta - Date.now()) / 1000 : 0;
@@ -3881,6 +3986,19 @@ export function MapView(p: Props) {
           pinBeam.position.set(pin.x, LAND + 4.5, pin.z);
           pinRing.position.set(pin.x, LAND + 0.08, pin.z);
           const k = 1 + Math.sin(performance.now() / 260) * 0.18; pinRing.scale.set(k, k, k);
+        }
+      }
+      // ROUND-8 click-to-walk marker: show the ring on the target while the
+      // player walks there, pulsing gently; hidden otherwise
+      {
+        const cw = clickWalkRef.current;
+        const mk = clickMarkerRef.current;
+        if (mk) {
+          mk.visible = !!cw;
+          if (cw) {
+            mk.position.set(cw.x, LAND + 0.08, cw.z);
+            const k = 1 + Math.sin(performance.now() / 300) * 0.15; mk.scale.set(k, k, k);
+          }
         }
       }
       if (fx) fx.render();
