@@ -3176,7 +3176,7 @@ export function LifeStage3D(p: Props) {
         // camera: foreshortened end-on into a small dark box, and sunk into
         // the sofa (y too low for the seat). rotation.z = PI/2 tips the
         // figure sideways: head toward -X, chest facing the camera (+Z).
-        // y = surface + 0.25 rests the torso (0.50 wide, half 0.25) on the
+        // y = surface + 0.23 rests the torso (0.46 wide, half 0.23) on the
         // mattress/seat instead of sinking into it.
         let zzzX = -0.6, zzzY = 1.35, zzzZ = -2.75;
         if (setKind === "flat") {
