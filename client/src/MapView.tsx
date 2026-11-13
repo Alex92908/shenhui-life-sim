@@ -3194,7 +3194,11 @@ export function MapView(p: Props) {
       px = e.clientX;
       py = e.clientY;
       camRef.current.az -= dx * 0.005;
-      camRef.current.pol = Math.max(0.35, Math.min(1.35, camRef.current.pol - dy * 0.004));
+      // ROUND-10: street mode is near-horizontal (pol 1.55), so the drag
+      // ceiling must allow it — the old 1.35 cap kept the camera looking
+      // down like a map even after the street ease pulled it level.
+      const polMax = streetRef.current ? 1.55 : 1.35;
+      camRef.current.pol = Math.max(0.35, Math.min(polMax, camRef.current.pol - dy * 0.004));
     };
     const onUp = (e: PointerEvent) => {
       dragging = false;
@@ -4182,7 +4186,7 @@ export function MapView(p: Props) {
       // used to fight the street target — the two eases settled halfway
       // (~19), so the camera stayed far away and the street read as a
       // tilted map. The street distance is now the single target.
-      const streetDist = 5.5;
+      const streetDist = 4.5;
       const inStreet = streetRef.current && !trainPos.active && !propsRef.current.selfEtaAt;
       const wantDist = inStreet ? streetDist : tripDist * (1 - pulse * 0.16) * (1 - cutEase * 0.1);
       cam.distCur += (wantDist - cam.distCur) * Math.min(1, dt * 3.2);
@@ -4192,7 +4196,7 @@ export function MapView(p: Props) {
         // streams past at eye height like walking the real street.
         // Sleeping Dogs: while you walk, the camera swings in behind your
         // heading (unless you just dragged it somewhere yourself).
-        cam.pol += (1.47 - cam.pol) * Math.min(1, dt * 3);
+        cam.pol += (1.55 - cam.pol) * Math.min(1, dt * 3);
         cam.distCur += (streetDist - cam.distCur) * Math.min(1, dt * 3);
         const selfA = actorsRef.current.get("self");
         if (selfA && selfA.blend > 0.25 && performance.now() - cam.lastUser > 1500) {
