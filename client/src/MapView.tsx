@@ -3511,8 +3511,21 @@ export function MapView(p: Props) {
       waterMat.roughness = 0.35 - dayF * 0.12 + nightF * 0.1;
       // ---- drive every animated material off the day cycle ----
       renderer.toneMappingExposure = 1.08 - nightF * 0.16 + duskF * 0.04;
-      (scene.fog as THREE.Fog).near = 120 - nightF * 32 - (wk === "fog" ? 55 : wk === "storm" ? 30 : wk === "rain" ? 18 : 0);
-      (scene.fog as THREE.Fog).far = 240 - nightF * 45 - (wk === "fog" ? 95 : wk === "storm" ? 55 : wk === "rain" ? 35 : 0);
+      // ROUND-10: in street mode the fog closes in (Sleeping Dogs) — the
+      // distant city dissolves into haze and only the local street reads.
+      // The whole-city map is the navigation layer, not the street view.
+      // Fog eases toward its target so entering/leaving the street is smooth.
+      const mapNear = 120 - nightF * 32 - (wk === "fog" ? 55 : wk === "storm" ? 30 : wk === "rain" ? 18 : 0);
+      const mapFar = 240 - nightF * 45 - (wk === "fog" ? 95 : wk === "storm" ? 55 : wk === "rain" ? 35 : 0);
+      const fogK = Math.min(1, dt * 2);
+      const fog = scene.fog as THREE.Fog;
+      if (streetRef.current) {
+        fog.near += (14 - fog.near) * fogK;
+        fog.far += (42 - fog.far) * fogK;
+      } else {
+        fog.near += (mapNear - fog.near) * fogK;
+        fog.far += (mapFar - fog.far) * fogK;
+      }
       moon.intensity = nightF * 0.55;
       playerLight.intensity = nightF * 26 + duskF * 8;
       // ROUND-7 desktop: windows / bulbs / neon burn brighter after dark
@@ -4358,8 +4371,11 @@ export function MapView(p: Props) {
       const allChips = communityChipsRef.current.length > 0 ? chips.concat(communityChipsRef.current) : chips;
       for (const chip of allChips) {
         const pos = chip.getPos();
-        // far-off place / area / station labels: skip before any projection or DOM work
-        if ((chip.place || chip.area || chip.station) && !hover && (((chip.place || chip.station) && overview) || Math.hypot(pos.x - cam.tx, pos.z - cam.tz) > 32)) {
+        // far-off place / area / station labels: skip before any projection or DOM work.
+        // ROUND-10: in street mode the cutoff closes in too (20) — far place
+        // names must not float over the street fog.
+        const labelCut = streetRef.current ? 20 : 32;
+        if ((chip.place || chip.area || chip.station) && !hover && (((chip.place || chip.station) && overview) || Math.hypot(pos.x - cam.tx, pos.z - cam.tz) > labelCut)) {
           if (chip.visible || chip.el.style.display !== "none") { chip.visible = false; chip.el.style.display = "none"; }
           continue;
         }
