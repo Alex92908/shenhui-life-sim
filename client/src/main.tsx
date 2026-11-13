@@ -4,6 +4,7 @@ import { Component, StrictMode, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { App, LS_KEY } from "./App";
 import { AdminPage } from "./Admin";
+import { World2App } from "./world2/World2App";
 import { installErrorReporting, reportCrash } from "./analytics";
 import "./theme.css";
 
@@ -18,6 +19,8 @@ for (const t of ["gesturestart", "gesturechange"]) document.addEventListener(t, 
 installErrorReporting();
 /* 运营后台：网址后面加 #admin 打开（需要服务器上设置的 ADMIN_TOKEN） */
 const isAdminPage = window.location.hash === "#admin";
+/* 2.0 深圳切片：网址后面加 #world2 打开（Stage 1，不动 1.0 启动页） */
+const isWorld2 = window.location.hash === "#world2";
 
 const rootEl = document.querySelector<HTMLElement>("[data-generated-space-root]");
 if (!rootEl) {
@@ -79,7 +82,7 @@ createRoot(rootEl).render(
     <QueryClientProvider client={spaceQueryClient}>
       <div className="hatch-space-root" data-hatch-space-root>
         <RootErrorBoundary>
-          {isAdminPage ? <AdminPage /> : <App />}
+          {isAdminPage ? <AdminPage /> : isWorld2 ? <World2App /> : <App />}
         </RootErrorBoundary>
       </div>
     </QueryClientProvider>

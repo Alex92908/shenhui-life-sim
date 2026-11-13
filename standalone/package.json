@@ -10,12 +10,14 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@dimforge/rapier3d-compat": "0.21.0",
     "@hatch/space-sdk": "file:./sdk",
     "@tanstack/react-query": "5.100.10",
     "better-sqlite3": "11.10.0",
     "drizzle-orm": "0.45.2",
     "react": "19.2.5",
     "react-dom": "19.2.5",
+    "recast-navigation": "0.44.0",
     "recharts": "2.15.3",
     "three": "0.170.0",
     "tsx": "4.19.4",
