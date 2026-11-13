@@ -13,7 +13,7 @@
 // trees — plus the 3D figures themselves as the characters (no floating
 // avatar badges; the standard is the figure + a small name label).
 // Clicking a building (or its label chip) walks there.
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type MutableRefObject, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
@@ -401,6 +401,58 @@ export function streetNameAt(cityKey: CityKey, x: number, z: number): string {
   if (bestRoad && (!bestLoc || bestRoad.d <= bestLoc.d + 1)) return bestRoad.name;
   if (bestLoc) return bestLoc.name;
   return CITIES[cityKey].name;
+}
+
+/** ROUND-10: the street-mode direction stick — a fixed Lagos-style
+    joystick (bottom-left, above the minimap) so third-person walking
+    works by mouse or touch, not only WASD. Same vector as the interior
+    MoveStick (x = strafe right, y = forward, each −1…1); push to the
+    edge to run. Pointer capture keeps the drag off the map's own
+    drag-to-rotate handler. */
+function StreetStick({ stick }: { stick: MutableRefObject<{ x: number; y: number }> }) {
+  const [k, setK] = useState({ x: 0, y: 0 });
+  const R = 36;
+  const update = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const b = e.currentTarget.getBoundingClientRect();
+    const cx = b.left + b.width / 2;
+    const cy = b.top + b.height / 2;
+    let x = e.clientX - cx;
+    let y = e.clientY - cy;
+    const m = Math.hypot(x, y);
+    if (m > R) { x = (x / m) * R; y = (y / m) * R; }
+    setK({ x, y });
+    stick.current.x = x / R;
+    stick.current.y = -y / R;
+  };
+  const down = (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    update(e);
+  };
+  const move = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+    update(e);
+  };
+  const up = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+    setK({ x: 0, y: 0 });
+    stick.current.x = 0;
+    stick.current.y = 0;
+  };
+  return (
+    <div
+      aria-label="方向摇杆：按住拖动走路，推到底跑"
+      onPointerDown={down}
+      onPointerMove={move}
+      onPointerUp={up}
+      onPointerCancel={up}
+      className="pointer-events-auto absolute bottom-40 left-6 z-20 h-[112px] w-[112px] touch-none select-none"
+    >
+      <div className="pointer-events-none absolute inset-0 rounded-full border border-white/45 bg-black/30 shadow-[inset_0_0_0_12px_rgba(255,255,255,0.07)] backdrop-blur-[2px]" />
+      <div className="pointer-events-none absolute h-[54px] w-[54px] rounded-full border border-white/80 bg-white/88 shadow-[0_6px_16px_rgba(0,0,0,0.35)]" style={{ left: `calc(50% + ${k.x}px)`, top: `calc(50% + ${k.y}px)`, transform: "translate(-50%, -50%)" }} />
+    </div>
+  );
 }
 
 function hash(s: string): number {
@@ -833,6 +885,10 @@ export function MapView(p: Props) {
   const streetRef = useRef(streetDefault);
   /** keys held for street steering (WASD / arrows + Shift) */
   const streetKeysRef = useRef<Set<string>>(new Set());
+  /** ROUND-10: the on-screen direction stick in street mode (Lagos-style
+      joystick) — same move vector as WASD, so the frame loop needs no
+      separate path; push to the edge to run, like the interior stick. */
+  const streetStickRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   /** the current click-walk target was set by street steering (not a mouse click) */
   const streetWalkRef = useRef(false);
   const streetNameRef = useRef("");
@@ -3856,15 +3912,20 @@ export function MapView(p: Props) {
           // building footprints and water — slides along them instead.
           if (streetRef.current && !propsRef.current.selfEtaAt && !trainPos.active) {
             const keys = streetKeysRef.current;
-            const fwd = (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0) - (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0);
-            const str = (keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0) - (keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0);
+            const stk = streetStickRef.current;
+            // dead zone: a resting thumb must not creep the player forward
+            const sm = Math.hypot(stk.x, stk.y);
+            const sx = sm < 0.15 ? 0 : stk.x;
+            const sy = sm < 0.15 ? 0 : stk.y;
+            const fwd = (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0) - (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0) + sy;
+            const str = (keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0) - (keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0) + sx;
             if (fwd !== 0 || str !== 0) {
               const az = camRef.current.az;
               const fx = -Math.sin(az), fz = -Math.cos(az);
               const rx = Math.cos(az), rz = -Math.sin(az);
               let mx = fx * fwd + rx * str, mz = fz * fwd + rz * str;
               const ml = Math.hypot(mx, mz) || 1; mx /= ml; mz /= ml;
-              const run = keys.has("ShiftLeft") || keys.has("ShiftRight");
+              const run = keys.has("ShiftLeft") || keys.has("ShiftRight") || sm > 0.9;
               a.speed = run ? 4.2 : 2.6;
               followActorRef.current = null;
               pendingActorRef.current = null;
@@ -4186,7 +4247,7 @@ export function MapView(p: Props) {
       // used to fight the street target — the two eases settled halfway
       // (~19), so the camera stayed far away and the street read as a
       // tilted map. The street distance is now the single target.
-      const streetDist = 4.5;
+      const streetDist = 3.5;
       const inStreet = streetRef.current && !trainPos.active && !propsRef.current.selfEtaAt;
       const wantDist = inStreet ? streetDist : tripDist * (1 - pulse * 0.16) * (1 - cutEase * 0.1);
       cam.distCur += (wantDist - cam.distCur) * Math.min(1, dt * 3.2);
@@ -4783,6 +4844,8 @@ export function MapView(p: Props) {
       removeStreetFacades();
       streetWalkRef.current = false;
       streetKeysRef.current.clear();
+      streetStickRef.current.x = 0;
+      streetStickRef.current.y = 0;
       clickWalkRef.current = null;
       const s = actorsRef.current.get("self");
       if (s) s.speed = modeById((propsRef.current.travelModeId ?? "walk") as TransportModeId).mapSpeed;
@@ -5058,10 +5121,11 @@ export function MapView(p: Props) {
         <div className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2">
           <div className="flex max-w-[calc(100vw-32px)] items-center gap-2 rounded-full border border-black/40 bg-[#0b1622]/85 px-3.5 py-1.5 text-xs font-black text-white shadow-xl">
             <span className="truncate">📍 {streetName || CITIES[p.cityKey].name}</span>
-            <span className="hidden font-bold text-white/60 sm:inline">WASD 走 · Shift 跑 · 拖动看四周 · V 回地图</span>
+            <span className="hidden font-bold text-white/60 sm:inline">WASD / 摇杆走 · Shift 跑 · 拖动看四周 · V 回地图</span>
           </div>
         </div>
       )}
+      {streetCam && <StreetStick stick={streetStickRef} />}
       {p.navOverlay}
     </div>
   );
