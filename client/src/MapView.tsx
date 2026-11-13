@@ -4178,16 +4178,22 @@ export function MapView(p: Props) {
       const tripping = !!propsRef.current.selfEtaAt || trainPos.active;
       const userZoomedRecently = performance.now() - cam.lastUser < 4000;
       const tripDist = tripping && !userZoomedRecently ? Math.min(cam.dist, (fitDistRef.current || 46) * 0.42) : cam.dist;
-      const wantDist = tripDist * (1 - pulse * 0.16) * (1 - cutEase * 0.1);
+      // ROUND-10 fix: in street mode the map zoom (cam.dist, often ~30)
+      // used to fight the street target — the two eases settled halfway
+      // (~19), so the camera stayed far away and the street read as a
+      // tilted map. The street distance is now the single target.
+      const streetDist = 5.5;
+      const inStreet = streetRef.current && !trainPos.active && !propsRef.current.selfEtaAt;
+      const wantDist = inStreet ? streetDist : tripDist * (1 - pulse * 0.16) * (1 - cutEase * 0.1);
       cam.distCur += (wantDist - cam.distCur) * Math.min(1, dt * 3.2);
-      if (streetRef.current && !trainPos.active && !propsRef.current.selfEtaAt) {
+      if (inStreet) {
         // street level: near-horizontal lens, close behind the player —
         // the follow logic above already tracks the figure, so the world
         // streams past at eye height like walking the real street.
         // Sleeping Dogs: while you walk, the camera swings in behind your
         // heading (unless you just dragged it somewhere yourself).
         cam.pol += (1.47 - cam.pol) * Math.min(1, dt * 3);
-        cam.distCur += (7.5 - cam.distCur) * Math.min(1, dt * 3);
+        cam.distCur += (streetDist - cam.distCur) * Math.min(1, dt * 3);
         const selfA = actorsRef.current.get("self");
         if (selfA && selfA.blend > 0.25 && performance.now() - cam.lastUser > 1500) {
           const wantAz = selfA.heading + Math.PI;
@@ -4218,7 +4224,10 @@ export function MapView(p: Props) {
       const cx = cam.tx + Math.sin(azNow) * Math.sin(polNow) * distNow;
       const cy = Math.cos(polNow) * distNow + 2;
       const cz = cam.tz + Math.cos(azNow) * Math.sin(polNow) * distNow;
-      camera.position.set(cx, Math.max(4, cy), cz);
+      // ROUND-10 fix: the old Math.max(4, cy) floor lifted the street
+      // camera to 4 units — above the player's head — so it looked DOWN
+      // at the figure like a map. In street mode the floor is eye level.
+      camera.position.set(cx, Math.max(streetRef.current ? 1.6 : 4, cy), cz);
       // street mode looks at chest height, so the horizon sits mid-frame
       // and the player is centred instead of sunk to the bottom edge
       camera.lookAt(cam.tx, LAND + (streetRef.current ? 1.3 : 0), cam.tz);
