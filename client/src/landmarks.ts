@@ -28,9 +28,17 @@ export interface BuiltLandmark {
 }
 export interface DecorLandmark extends BuiltLandmark { x: number; z: number; r: number; name: string; ry?: number }
 
+/** ROUND-10g: a decor landmark NOT yet built — its position and a builder
+    closure, so a chunk can build it on demand when the chunk streams in
+    instead of all decor models being built at city start. The builder
+    takes the same (kit, group, spin) triple the old eager `add` used. */
+export interface DecorDesc { x: number; z: number; r: number; name: string; ry?: number; build: (k: Kit, g: THREE.Group, spin: THREE.Object3D[]) => number }
+
 interface MatOpts { double?: boolean; rough?: number; metal?: number; flat?: boolean; wire?: boolean; glass?: boolean; neon?: boolean; opacity?: number; emissive?: number }
 
-class Kit {
+/** ROUND-10g: exported so chunks.ts can build a decor descriptor on
+    demand (previously Kit was private to this module). */
+export class Kit {
   private parts = new Map<THREE.Material, THREE.BufferGeometry[]>();
   private m4 = new THREE.Matrix4();
   private q = new THREE.Quaternion();
@@ -105,8 +113,22 @@ export function createLandmarks(winTex: THREE.Texture) {
     if (o.glass) { m.emissive.setHex(0xffc873); m.emissiveMap = winTex; m.emissiveIntensity = 0; litMats.push(m); }
     else if (o.neon) { m.emissive.setHex(o.emissive ?? color); m.emissiveIntensity = 0.35; neonMats.push(m); }
     else if (o.emissive !== undefined) { m.emissive.setHex(o.emissive); m.emissiveIntensity = 0.6; }
+    // ROUND-10g: the cache key travels with the material so a worker can
+    // name the material a merged geometry belongs to (the worker builds
+    // geometry only; the main thread resolves the key back to a material).
+    m.userData.matKey = key;
     cache.set(key, m);
     return m;
+  };
+  /** Resolve a matKey (the `${color}|${opts}` string M() caches by) back
+      to the shared material, creating it on first use — so a worker-built
+      chunk's merged geometry lands on the same material the factory uses. */
+  const materialForKey = (key: string): THREE.MeshStandardMaterial => {
+    const i = key.indexOf("|");
+    const color = Number(key.slice(0, i));
+    let opts: MatOpts = {};
+    try { opts = JSON.parse(key.slice(i + 1)) as MatOpts; } catch { opts = {}; }
+    return M(color, opts);
   };
 
   /* ---- palette ---- */
@@ -1020,18 +1042,18 @@ export function createLandmarks(winTex: THREE.Texture) {
     return { group: g, top, spin };
   }
 
-  /** Free-standing skyline landmarks that are not playable locations. */
-  function decor(cityKey: CityKey): DecorLandmark[] {
+  /** Free-standing skyline landmarks that are not playable locations.
+      ROUND-10g: returns lazy descriptors (position + builder) instead of
+      built groups, so a chunk builds its decor on demand when it streams
+      in. The builder runs with a fresh Kit/group/spin at build time. */
+  function decor(cityKey: CityKey): DecorDesc[] {
     if (cityKey === "hz") return decorHz();
     if (cityKey === "hk") return decorHk();
-    const out: DecorLandmark[] = [];
+    const out: DecorDesc[] = [];
     const st = (n: string) => { for (const l of SZ_METRO_LINES) { const s = l.stations.find((x) => x.name === n); if (s) return s; } return null; };
     const pl = (n: string) => SZ_PLACES.find((p) => p.name === n) ?? null;
     const add = (name: string, x: number, z: number, r: number, build: (k: Kit, g: THREE.Group, spin: THREE.Object3D[]) => number, ry = 0) => {
-      const g = new THREE.Group(); const k = new Kit(); const spin: THREE.Object3D[] = [];
-      const top = build(k, g, spin);
-      k.into(g);
-      out.push({ name, x, z, r, group: g, top, spin, ry });
+      out.push({ name, x, z, r, ry, build });
     };
     /** A cable-stayed sea bridge along local x, deck ~1.1 above land level
         (the decor group sits at land height, the sea is below it). */
@@ -1199,13 +1221,10 @@ export function createLandmarks(winTex: THREE.Texture) {
 
   /** Hong Kong skyline landmarks: 环球贸易广场 (ICC) over West Kowloon, 国际金融中心 (IFC)
       on the Central waterfront, and the 青马大桥 suspension bridge to Lantau. */
-  function decorHk(): DecorLandmark[] {
-    const out: DecorLandmark[] = [];
-    const add = (name: string, x: number, z: number, r: number, build: (k: Kit) => number, ry = 0) => {
-      const g = new THREE.Group(); const k = new Kit();
-      const top = build(k);
-      k.into(g);
-      out.push({ name, x, z, r, group: g, top, spin: [], ry });
+  function decorHk(): DecorDesc[] {
+    const out: DecorDesc[] = [];
+    const add = (name: string, x: number, z: number, r: number, build: (k: Kit, g: THREE.Group, spin: THREE.Object3D[]) => number, ry = 0) => {
+      out.push({ name, x, z, r, ry, build });
     };
     const wk = HK_WK(); add("环球贸易广场", wk.x + 1.2, wk.z - 2.2, 0.9,  // just north of 西九龙站 (its real spot is on top of the station)
       (k) => {
@@ -1233,14 +1252,11 @@ export function createLandmarks(winTex: THREE.Texture) {
   }
 
   /** Huizhou skyline landmarks, placed from their real OSM spots (places-hz.ts). */
-  function decorHz(): DecorLandmark[] {
-    const out: DecorLandmark[] = [];
+  function decorHz(): DecorDesc[] {
+    const out: DecorDesc[] = [];
     const pl = (n: string) => HZ_PLACES.find((p) => p.name === n) ?? null;
-    const add = (name: string, x: number, z: number, r: number, build: (k: Kit) => number) => {
-      const g = new THREE.Group(); const k = new Kit();
-      const top = build(k);
-      k.into(g);
-      out.push({ name, x, z, r, group: g, top, spin: [] });
+    const add = (name: string, x: number, z: number, r: number, build: (k: Kit, g: THREE.Group, spin: THREE.Object3D[]) => number) => {
+      out.push({ name, x, z, r, build });
     };
     // 惠州奥林匹克体育场: an open bowl ringed by a white sail roof
     const oly = pl("惠州奥林匹克体育场");
@@ -1266,7 +1282,7 @@ export function createLandmarks(winTex: THREE.Texture) {
   /** The ferris wheel that used to stand alone near 欢乐谷. */
   const wheel = (R: number, rim: number, cabin: number) => ferrisWheel(R, rim, cabin);
 
-  return { forLoc, decor, wheel, litMats, neonMats };
+  return { forLoc, decor, wheel, litMats, neonMats, materialForKey };
 }
 
 /** Merge every static landmark mesh under `roots` into one mesh per
@@ -1274,8 +1290,15 @@ export function createLandmarks(winTex: THREE.Texture) {
     become a few dozen draw calls city-wide. Objects in `keep` (spinning
     wheels) and their children, invisible meshes (pick boxes) and meshes
     flagged `userData.keep` (animated flags) stay as they are. */
-export function mergeStatic(roots: THREE.Object3D[], parent: THREE.Object3D, keep: Set<THREE.Object3D>): void {
-  const buckets = new Map<THREE.Material, THREE.BufferGeometry[]>();
+/** The geometry half of mergeStatic: merge every static landmark mesh
+    under `roots` into one BufferGeometry per material (world space) and
+    return them with their material and matKey, instead of wrapping them in
+    meshes. The worker runs this and posts the geometries back as
+    transferable arrays (it only needs the matKey); mergeStatic below wraps
+    them in meshes on the main thread. Source meshes are dropped and their
+    geometries disposed, as in mergeStatic. */
+export function mergeStaticGeometries(roots: THREE.Object3D[], keep: Set<THREE.Object3D>): { mat: THREE.Material; matKey: string; geometry: THREE.BufferGeometry }[] {
+  const buckets = new Map<THREE.Material, { matKey: string; geos: THREE.BufferGeometry[] }>();
   const drop: THREE.Mesh[] = [];
   for (const root of roots) {
     root.updateWorldMatrix(true, true);
@@ -1284,18 +1307,48 @@ export function mergeStatic(roots: THREE.Object3D[], parent: THREE.Object3D, kee
       if (!mesh.isMesh || Array.isArray(mesh.material) || !mesh.material.visible || mesh.userData.keep) return;
       for (let a: THREE.Object3D | null = o; a; a = a.parent) if (keep.has(a)) return;
       const geo = mesh.geometry.clone().applyMatrix4(mesh.matrixWorld);
-      const arr = buckets.get(mesh.material) ?? [];
-      arr.push(geo);
-      buckets.set(mesh.material, arr);
+      const matKey = (mesh.material as THREE.MeshStandardMaterial).userData?.matKey as string | undefined;
+      if (!matKey) return;
+      const bucket = buckets.get(mesh.material) ?? { matKey, geos: [] };
+      bucket.geos.push(geo);
+      buckets.set(mesh.material, bucket);
       drop.push(mesh);
     });
   }
   for (const m of drop) { m.removeFromParent(); m.geometry.dispose(); }
-  for (const [mat, geos] of buckets) {
+  const out: { mat: THREE.Material; matKey: string; geometry: THREE.BufferGeometry }[] = [];
+  for (const [mat, { matKey, geos }] of buckets) {
     const merged = mergeGeometries(geos, false);
     geos.forEach((g) => g.dispose());
     if (!merged) continue;
-    const mesh = new THREE.Mesh(merged, mat);
+    out.push({ mat, matKey, geometry: merged });
+  }
+  return out;
+}
+
+/** Collect a kept object's meshes (a spinning wheel, the Ping An miniature)
+    as serializable parts: each mesh's geometry baked into the object's
+    local space, with its matKey, plus the object's world matrix so the main
+    thread can place the recreated group. The source meshes are left alone
+    (the caller disposes the group). */
+export function collectKept(obj: THREE.Object3D): { matrix: number[]; parts: { matKey: string; geometry: THREE.BufferGeometry }[] } {
+  obj.updateWorldMatrix(true, true);
+  const inv = new THREE.Matrix4().copy(obj.matrixWorld).invert();
+  const parts: { matKey: string; geometry: THREE.BufferGeometry }[] = [];
+  obj.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh || Array.isArray(mesh.material) || !mesh.material.visible) return;
+    const matKey = (mesh.material as THREE.MeshStandardMaterial).userData?.matKey as string | undefined;
+    if (!matKey) return;
+    const rel = new THREE.Matrix4().multiplyMatrices(inv, mesh.matrixWorld);
+    parts.push({ matKey, geometry: mesh.geometry.clone().applyMatrix4(rel) });
+  });
+  return { matrix: obj.matrixWorld.toArray(), parts };
+}
+
+export function mergeStatic(roots: THREE.Object3D[], parent: THREE.Object3D, keep: Set<THREE.Object3D>): void {
+  for (const { mat, geometry } of mergeStaticGeometries(roots, keep)) {
+    const mesh = new THREE.Mesh(geometry, mat);
     const wire = (mat as THREE.MeshStandardMaterial).wireframe;
     mesh.castShadow = !wire;
     mesh.receiveShadow = !wire;

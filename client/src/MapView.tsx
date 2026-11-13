@@ -17,7 +17,15 @@ import { useEffect, useRef, useState, type MutableRefObject, type PointerEvent a
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { createLandmarks, mergeStatic } from "./landmarks";
+import { createLandmarks } from "./landmarks";
+import {
+  ROAD_W, buildCityData, generateChunkData, buildChunkMesh, buildSilhouetteGroup,
+  createSharedChunkMats, applyPinganGlb, ChunkManager, removeAll, makeNearChecks,
+  materializeChunk, chunkKeyOf,
+  type ChunkPayload, type PlayerBuildingData, type FacadeTarget,
+  type ChunkMaterializeCtx, type ChunkBuildResult, type ChunkRecord, type ShopPt,
+} from "./chunks";
+import { setCpuReleaseEnabled } from "./round2/texCpuRelease";
 import { AREA_LABELS } from "./areas";
 import { ACCESSORIES, HAIRS } from "./living";
 import { makeFigure, faceSpecFor, addAccessory, disposeGroup, type FaceSpec } from "./figure";
@@ -455,28 +463,8 @@ function StreetStick({ stick }: { stick: MutableRefObject<{ x: number; y: number
   );
 }
 
-/** ROUND-10 chunked streaming: the city is cut into a spatial grid so the
-    street only renders the blocks around the player (Sleeping Dogs streams
-    its city the same way — the local area is the detail layer, the rest of
-    the city is not rendered). Chunk groups sit at the origin, so children
-    keep absolute world coords and every position-based lookup (facades,
-    picking, NPC anchors) keeps working unchanged. */
-const CHUNK = 16;
-const chunkKeyOf = (x: number, z: number) => `${Math.floor(x / CHUNK)},${Math.floor(z / CHUNK)}`;
-/** chunk keys within Chebyshev radius r of (x, z). r=1 is the 3x3 neighbourhood (48x48 units). */
-const chunksNear = (x: number, z: number, r: number): string[] => {
-  const cx = Math.floor(x / CHUNK), cz = Math.floor(z / CHUNK);
-  const out: string[] = [];
-  for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) out.push(`${cx + dx},${cz + dz}`);
-  return out;
-};
-/** get-or-create the chunk group for a position. */
-const chunkGroupFor = (groups: Map<string, THREE.Group>, scene: THREE.Object3D, x: number, z: number): THREE.Group => {
-  const key = chunkKeyOf(x, z);
-  let g = groups.get(key);
-  if (!g) { g = new THREE.Group(); g.name = `chunk-${key}`; scene.add(g); groups.set(key, g); }
-  return g;
-};
+/* ROUND-10g: the chunk grid (CHUNK, chunkKeyOf, chunksNear) and the
+   ChunkManager live in chunks.ts now — this file only keeps `hash`. */
 
 function hash(s: string): number {
   let h = 0;
@@ -857,7 +845,6 @@ export function MapView(p: Props) {
   /* Round-9: the scene (built by the mount effect) so the player-buildings
      effect can add/remove shop & flat meshes without rebuilding the city. */
   const sceneRef = useRef<THREE.Scene | null>(null);
-  const playerBuildingsGroupRef = useRef<THREE.Group | null>(null);
   /* Round-9: pick meshes of the player buildings, so a tap on a shop/flat
      building selects its place (onUp raycasts these alongside pickMeshes). */
   const playerPickMeshesRef = useRef<THREE.Object3D[]>([]);
@@ -912,16 +899,25 @@ export function MapView(p: Props) {
       joystick) — same move vector as WASD, so the frame loop needs no
       separate path; push to the edge to run, like the interior stick. */
   const streetStickRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
-  /** ROUND-10 chunked streaming: chunkKey -> parent Group (built in the scene effect). */
-  const chunkGroupsRef = useRef<Map<string, THREE.Group>>(new Map());
+  /** ROUND-10g: the ChunkManager for this city (owned by the scene effect);
+      the player-buildings effect and the street functions reach it here. */
+  const chunkManagerRef = useRef<ChunkManager | null>(null);
+  /** ROUND-10g: player shops/flats as data (the manager builds them into
+      their chunks at build time); the player-buildings effect is now a
+      registry — it updates this list and asks the manager to refresh the
+      affected chunks, instead of building meshes itself. */
+  const playerBuildingsDataRef = useRef<PlayerBuildingData[]>([]);
   /** the current click-walk target was set by street steering (not a mouse click) */
   const streetWalkRef = useRef(false);
   const streetNameRef = useRef("");
   const [streetName, setStreetName] = useState("");
-  /** buildings currently wearing a street facade (mesh + original material + created materials) */
-  const streetFacadeRef = useRef<{ mesh: THREE.Mesh; orig: THREE.Material | THREE.Material[]; mats: THREE.Material[] }[]>([]);
-  /** every generic building body that can wear a facade (captured at build) */
-  const streetFacadeTargetsRef = useRef<{ mesh: THREE.Mesh; w: number; h: number }[]>([]);
+  /** ROUND-10g: buildings currently wearing a street facade — overlay boxes
+      (bodies are merged now, so a facade is a slightly larger box with
+      lit-window materials, added to the scene, not a material swap). */
+  const streetFacadeRef = useRef<{ id: string; group: THREE.Group; mats: THREE.Material[]; chunkKey: string }[]>([]);
+  /** every building that can wear a facade (plain data, captured at build):
+      position + size + rotation + chunk, so overlays land exactly. */
+  const streetFacadeTargetsRef = useRef<FacadeTarget[]>([]);
   const streetFacadeTexRef = useRef<THREE.Texture | null>(null);
   const streetFacadeEmTexRef = useRef<THREE.Texture | null>(null);
   /** facade materials, driven with the day cycle like buildingMats */
@@ -1237,9 +1233,6 @@ export function MapView(p: Props) {
     streetFacadeTargetsRef.current = [];
     streetFacadeRef.current = [];
     streetFacadeMatsRef.current = [];
-    // ROUND-10 chunked streaming: fresh chunk map for the new city; the
-    // groups are filled in below as buildings / decor / shops are built.
-    chunkGroupsRef.current = new Map();
     /* ROUND-2 (a) wider streets: the map's roads read cramped ("太急了").
        Safest fix — do NOT rescale the canvas / move any place: widen every
        road at the source (×1.35, so 深南大道 2.8 → 3.8). Every downstream
@@ -1250,10 +1243,9 @@ export function MapView(p: Props) {
        ROUND-6: still too narrow / the map reads thin ("瘦") — bump to
        ×1.8 (深南大道 2.8 → 5.0) and widen the sidewalks to match, so the
        whole street corridor scales up proportionally. */
-    const ROAD_W = 1.8;
     const SIDEWALK_W = 1.5;
     const roads: Road[] = ROADS[cityKey].map((r) => ({ ...r, w: r.w * ROAD_W }));
-    const flagGroups: THREE.Group[] = [];
+    const flagMeshes: THREE.Mesh[] = [];
     const wheelGroups: THREE.Object3D[] = [];
     const rnd = mulberry(cityKey === "sz" ? 2026 : cityKey === "hk" ? 2088 : 2077);
 
@@ -1992,300 +1984,181 @@ export function MapView(p: Props) {
     }
 
     /* ---- location buildings ---- */
+    /* ---- ROUND-10g: TRUE on-demand chunk streaming ----
+       The city is no longer built all at once. chunks.ts owns the pure
+       data (buildCityData, once per city) and the mesh builders
+       (buildChunkPayload / materializeChunk, per chunk, on a worker);
+       the ChunkManager below decides which chunks live, at which detail
+       tier, and disposes them on unload. This effect only builds the
+       GLOBAL layer (terrain, water, roads, lights, mountains, trees,
+       clouds, traffic, pedestrians, labels) and hands the manager the
+       callbacks that register / un-register a chunk's bookkeeping. */
     const winTex = windowsTexture();
     const pickMeshes: THREE.Object3D[] = [];
-    const flagMats: THREE.MeshStandardMaterial[] = [];
     /* Real-place miniatures (landmarks.ts): a location with a model gets it
        instead of the generic box + roof. Label height follows the model. */
     const landmarks = createLandmarks(winTex);
     const labelTop = new Map<string, number>();
-    // ROUND-10 (Three-Live): the 平安金融中心 group, captured below and kept
-    // out of the city-wide merge so a compiled .glb can replace the
-    // miniature in place (see the loadModel call after mergeStatic)
-    let pinganRoot: THREE.Group | null = null;
-    const decorSpots = landmarks.decor(cityKey);
-    // ROUND-10 chunked streaming: landmark models merge per chunk (not one
-    // city-wide merge), so a far chunk's landmarks stop rendering in street
-    // mode. The pick box stays in the group, so it hides with its chunk.
-    const landmarkByChunk = new Map<string, THREE.Object3D[]>();
-    const decorByChunk = new Map<string, THREE.Object3D[]>();
     const pickMat = new THREE.MeshBasicMaterial({ visible: false });
-    for (const l of locs) {
-      const g = new THREE.Group();
-      const built = landmarks.forLoc(cityKey, l);
-      if (built) {
-        g.add(built.group);
-        wheelGroups.push(...built.spin);
-        const key = chunkKeyOf(l.x, l.z);
-        const arr = landmarkByChunk.get(key) ?? [];
-        arr.push(g);
-        landmarkByChunk.set(key, arr);
-        if (l.id === "bank" && cityKey === "sz") pinganRoot = g;
-        // the model itself gets merged per chunk below; clicks hit this
-        // invisible box (raycasting ignores visibility)
-        const pick = new THREE.Mesh(new THREE.BoxGeometry(l.w, built.top, l.w), pickMat);
-        pick.position.y = built.top / 2;
-        pick.userData.locId = l.id;
-        g.add(pick);
-        pickMeshes.push(pick);
-        labelTop.set(l.id, built.top);
-        if (l.type === "apec") {
-          const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.4), new THREE.MeshStandardMaterial({ color: 0x222222 }));
-          pole.position.y = built.top + 1.2;
-          pole.userData.keep = true;
-          g.add(pole);
-          const flagMat = new THREE.MeshStandardMaterial({ color: 0xe63a1f, side: THREE.DoubleSide, emissive: 0xe63a1f, emissiveIntensity: 0.25 });
-          const flag = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.9), flagMat);
-          flag.position.set(0.78, built.top + 1.95, 0);
-          flag.userData.keep = true;
-          g.add(flag);
-          flagMats.push(flagMat);
-          (g.userData as { flag?: THREE.Mesh }).flag = flag;
-          flagGroups.push(g);
-        }
-        g.position.set(l.x, LAND, l.z);
-        chunkGroupFor(chunkGroupsRef.current, scene, l.x, l.z).add(g);
-        continue;
-      }
-      const h = l.h * 1.7;
-      const base = new THREE.Mesh(
-        new THREE.BoxGeometry(l.w, 0.5, l.w),
-        new THREE.MeshStandardMaterial({ color: 0xb8ad92, roughness: 1 }),
-      );
-      base.position.y = 0.25;
-      base.receiveShadow = true;
-      g.add(base);
-      const glassy = h > 6.5;
-      const bodyMat = new THREE.MeshStandardMaterial({
-        color: l.color,
-        roughness: glassy ? 0.32 : 0.78,
-        metalness: glassy ? 0.45 : 0.05,
-        emissive: 0xffc873,
-        emissiveMap: winTex,
-        emissiveIntensity: 0,
-      });
-      buildingMats.push(bodyMat);
-      const body = new THREE.Mesh(new THREE.BoxGeometry(l.w * 0.82, h, l.w * 0.82), bodyMat);
-      body.position.y = 0.5 + h / 2;
-      body.castShadow = true;
-      body.receiveShadow = true;
-      body.userData.locId = l.id;
-      g.add(body);
-      pickMeshes.push(body);
-      // ROUND-10: a street-mode facade candidate (lit windows at eye level)
-      streetFacadeTargetsRef.current.push({ mesh: body, w: l.w * 0.82, h });
-      const roof = new THREE.Mesh(
-        new THREE.ConeGeometry(l.w * 0.66, Math.min(1.6, h * 0.22 + 0.5), 4),
-        new THREE.MeshStandardMaterial({ color: new THREE.Color(l.color).multiplyScalar(0.72), roughness: 0.9, flatShading: true }),
-      );
-      roof.position.y = 0.5 + h + Math.min(1.6, h * 0.22 + 0.5) / 2;
-      roof.rotation.y = Math.PI / 4;
-      roof.castShadow = true;
-      g.add(roof);
-      // neon shop sign for the lively places — pulses after dark
-      if (l.type === "food" || l.type === "mall" || l.type === "social" || l.type === "apec" || l.type === "market" || l.type === "electronics" || l.type === "oilpainting" || l.type === "secondhand" || l.type === "seafood" || l.type === "oldtown" || l.type === "womensstreet" || l.type === "museum" || l.type === "library" || l.type === "factory" || l.type === "transit" || l.type === "work" || l.type === "lodging" || l.type === "home") {
-        const neonMat = new THREE.MeshStandardMaterial({ color: 0x1a1216, roughness: 0.5, emissive: l.color, emissiveIntensity: 0.35 });
-        // ROUND-7 desktop: neon-tube emissive map so signs read as tubing, not a flat glowing box
-        if (dfx) neonMat.emissiveMap = dfx.neonTex;
-        const sign = new THREE.Mesh(new THREE.BoxGeometry(Math.min(2.2, l.w * 0.62), 0.55, 0.1), neonMat);
-        sign.position.set(0, 0.5 + h * 0.52, l.w * 0.41 + 0.06);
-        g.add(sign);
-        neonMats.push(neonMat);
-      }
-      // storefront awning with a warm under-glow for the street-level places
-      if (l.type === "food" || l.type === "mall" || l.type === "market" || l.type === "electronics" || l.type === "oilpainting" || l.type === "secondhand" || l.type === "seafood" || l.type === "oldtown" || l.type === "womensstreet" || l.type === "social") {
-        const awnMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(l.color).multiplyScalar(0.85), roughness: 0.7, emissive: 0xffb35c, emissiveIntensity: 0.12 });
-        const awn = new THREE.Mesh(new THREE.BoxGeometry(l.w * 0.72, 0.08, 0.9), awnMat);
-        awn.position.set(0, 1.55, l.w * 0.41 + 0.42);
-        awn.rotation.x = 0.38;
-        awn.castShadow = true;
-        g.add(awn);
-        neonMats.push(awnMat);
-        // ROUND-10 chunked streaming: street-level detail at the door — now
-        // that only nearby chunks render, the local street can afford props
-        // (a standing signboard, crates, a planter). They ride in the
-        // building group, so they stream in and out with its chunk.
-        const sb = new THREE.Mesh(
-          new THREE.BoxGeometry(0.9, 1.1, 0.06),
-          new THREE.MeshStandardMaterial({ color: 0x2b2118, roughness: 0.8 }),
-        );
-        sb.position.set(l.w * 0.3, 0.75, l.w * 0.41 + 0.18);
-        sb.rotation.y = 0.15;
-        sb.castShadow = true;
-        g.add(sb);
-        const crMat = new THREE.MeshStandardMaterial({ color: 0x8a6b45, roughness: 0.95 });
-        const cr1 = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.45, 0.45), crMat);
-        cr1.position.set(-l.w * 0.28, 0.22, l.w * 0.41 + 0.32);
-        cr1.castShadow = true;
-        g.add(cr1);
-        const cr2 = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.38, 0.38), crMat);
-        cr2.position.set(-l.w * 0.28, 0.6, l.w * 0.41 + 0.32);
-        cr2.rotation.y = 0.3;
-        cr2.castShadow = true;
-        g.add(cr2);
-        const pot = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.22, 0.16, 0.3, 8),
-          new THREE.MeshStandardMaterial({ color: 0x9a5a3c, roughness: 0.9 }),
-        );
-        pot.position.set(l.w * 0.34, 0.15, l.w * 0.41 + 0.38);
-        pot.castShadow = true;
-        g.add(pot);
-        const bush = new THREE.Mesh(
-          new THREE.ConeGeometry(0.26, 0.55, 8),
-          new THREE.MeshStandardMaterial({ color: 0x4a7a3f, roughness: 1, flatShading: true }),
-        );
-        bush.position.set(l.w * 0.34, 0.55, l.w * 0.41 + 0.38);
-        bush.castShadow = true;
-        g.add(bush);
-      }
-      // blinking aviation light on the tall towers
-      if (h > 7) {
-        const avMat = new THREE.MeshStandardMaterial({ color: 0x330b0b, emissive: 0xff2a1e, emissiveIntensity: 0.2 });
-        const av = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 8), avMat);
-        av.position.y = 0.5 + h + Math.min(1.6, h * 0.22 + 0.5) + 0.25;
-        g.add(av);
-        avLights.push(av);
-      }
-      // cooking steam drifting up from the food streets
-      if (l.type === "food") {
-        const smokeTex = glowTexture();
-        for (let i = 0; i < 9; i++) {
-          const sm = new THREE.SpriteMaterial({ map: smokeTex, color: 0xe8e2d6, transparent: true, opacity: 0.16, depthWrite: false });
-          const sp = new THREE.Sprite(sm);
-          const ph = i / 9;
-          sp.position.set(l.x + (rnd() - 0.5) * 1.6, LAND + 1.6 + ph * 3.4, l.z + (rnd() - 0.5) * 1.2);
-          const sc = 1.1 + ph * 1.8;
-          sp.scale.set(sc, sc, 1);
-          chunkGroupFor(chunkGroupsRef.current, scene, l.x, l.z).add(sp);
-          smokeSprites.push({ sp, phase: ph, x: l.x, z: l.z });
-        }
-      }
-      if (l.type === "apec") {
-        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.4), new THREE.MeshStandardMaterial({ color: 0x222222 }));
-        pole.position.y = 0.5 + h + 1.6;
-        g.add(pole);
-        const flagMat = new THREE.MeshStandardMaterial({ color: 0xe63a1f, side: THREE.DoubleSide, emissive: 0xe63a1f, emissiveIntensity: 0.25 });
-        const flag = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.9), flagMat);
-        flag.position.set(0.78, 0.5 + h + 2.35, 0);
-        g.add(flag);
-        flagMats.push(flagMat);
-        (g.userData as { flag?: THREE.Mesh }).flag = flag;
-      }
-      g.position.set(l.x, LAND, l.z);
-      chunkGroupFor(chunkGroupsRef.current, scene, l.x, l.z).add(g);
-      if (l.type === "apec" && (g.userData as { flag?: THREE.Mesh }).flag) {
-        flagGroups.push(g);
-      }
-    }
-
-    /* ---- landmarks & filler ---- */
-    // skyline landmarks that are not playable places (春笋, 京基100, 地王, 湾区之光)
-    for (const d of decorSpots) {
-      d.group.position.set(d.x, LAND, d.z);
-      d.group.rotation.y = d.ry ?? 0;
-      chunkGroupFor(chunkGroupsRef.current, scene, d.x, d.z).add(d.group);
-      wheelGroups.push(...d.spin);
-      const key = chunkKeyOf(d.x, d.z);
-      const arr = decorByChunk.get(key) ?? [];
-      arr.push(d.group);
-      decorByChunk.set(key, arr);
-    }
-    // ROUND-10 chunked streaming: the old one-shot city-wide merge is now
-    // one merge per chunk — each chunk's landmarks become its own merged
-    // static meshes under the chunk group, so hiding the group hides them.
-    const keepSet = new Set([...wheelGroups, ...(pinganRoot ? [pinganRoot] : [])]);
-    for (const [key, roots] of landmarkByChunk) {
-      mergeStatic(roots, chunkGroupsRef.current.get(key)!, keepSet);
-    }
-    for (const [key, roots] of decorByChunk) {
-      mergeStatic(roots, chunkGroupsRef.current.get(key)!, keepSet);
-    }
-    buildingMats.push(...landmarks.litMats);
+    // the filler towers' material is global (one InstancedMesh per chunk
+    // shares it); the frame loop drives its night glow
+    const fillerMatLocal = new THREE.MeshStandardMaterial({ roughness: 0.95, emissive: 0xffc873, emissiveMap: winTex, emissiveIntensity: 0 });
+    fillerMat = fillerMatLocal;
+    const chunkMats = createSharedChunkMats(winTex);
+    // the day-cycle registries hold ONLY the shared materials now (one
+    // windows + one glassy + the landmark lit/neon sets) — per-building
+    // materials are gone; the merged buckets wear these
+    buildingMats.push(chunkMats.windows, chunkMats.glassy, ...landmarks.litMats);
     neonMats.push(...landmarks.neonMats);
-    // ROUND-10 (Three-Live): 平安金融中心 — if the compiled .glb is present
-    // (built on a Mac from client/public/models-src/pingan-scene.js:
-    //   npm i -g three-live@1.4.0
-    //   three-live-cli convert pingan-scene.js -o pingan.glb
-    //   cp pingan.glb <game-repo>/client/public/models/pingan.glb
-    // binaries can't ride the snapshot push, so the .glb itself is NOT in
-    // the repo). It replaces the landmarks.ts miniature in place. No .glb
-    // -> the miniature stays; nothing breaks.
-    if (pinganRoot) {
-      const root = pinganRoot;
-      void loadModel("pingan.glb").then((m) => {
-        if (!m || !root.parent) return;
-        const inner = m.clone(true);
-        // drop the 16-wide plaza slab (GLB units: wider than 10, flatter
-        // than 0.5) — it would pave over the road beside the plot
-        const plaza: THREE.Mesh[] = [];
-        inner.traverse((o) => {
-          const me = o as THREE.Mesh;
-          if (!me.isMesh) return;
-          const b = new THREE.Box3().setFromObject(me);
-          const s = b.getSize(new THREE.Vector3());
-          if (s.x > 10 && s.z > 10 && s.y < 0.5) plaza.push(me);
-        });
-        for (const me of plaza) { me.removeFromParent(); me.geometry.dispose(); }
-        // fit by height: the GLB is 62.56 units tall at 1 unit = 10 m;
-        // ~19 units keeps the tower the tallest on the map, with a
-        // ~3.3-wide podium that fits the plot
-        const box = new THREE.Box3().setFromObject(inner);
-        const size = box.getSize(new THREE.Vector3());
-        inner.scale.setScalar(19 / Math.max(1e-3, size.y));
-        const box2 = new THREE.Box3().setFromObject(inner);
-        const c2 = box2.getCenter(new THREE.Vector3());
-        inner.position.set(-c2.x, -box2.min.y, -c2.z);
-        // clear the miniature (dispose its geometries; the materials are
-        // shared with the other landmarks, so they stay) and keep the
-        // invisible click box
-        for (const ch of root.children.slice()) {
-          if ((ch as THREE.Mesh).userData?.locId) continue;
-          ch.traverse((o) => { const me = o as THREE.Mesh; if (me.isMesh) me.geometry.dispose(); });
-          root.remove(ch);
+    // city-wide pure data, computed once per city (filler spots, shop
+    // spots, decor descriptors, locations, chunk keys)
+    const cityData = buildCityData(cityKey, roads, landmarks);
+    // clearance tests for the (global) tree placement below — the same
+    // tests the chunk data used, from the same inputs
+    const { nearLoc, nearRoad, nearMountain, nearLake } = makeNearChecks(cityKey, locs, cityData.decor, roads);
+    const shopPts: ShopPt[] = [];
+    // ROUND-10 (Three-Live): the compiled 平安金融中心 .glb, loaded once;
+    // a chunk built after it lands applies the tower at build time, and
+    // the live root (if already built) is swapped in place below
+    const pinganModelRef = { current: null as THREE.Object3D | null };
+    const pinganRootRef = { current: null as THREE.Group | null };
+    const mctx: ChunkMaterializeCtx = {
+      cityKey, landmarks, mats: chunkMats, fillerMat: fillerMatLocal, pickMat, labelTop,
+      glowTexture, pinganModel: pinganModelRef,
+    };
+    // remove the street-facade overlays that belong to one chunk (called
+    // when the chunk unloads, so a facade never floats over empty ground)
+    const removeFacadesForChunk = (chunkKey: string) => {
+      for (let i = streetFacadeRef.current.length - 1; i >= 0; i--) {
+        const e = streetFacadeRef.current[i]!;
+        if (e.chunkKey !== chunkKey) continue;
+        e.group.removeFromParent();
+        for (const m of e.mats) {
+          const sm = m as THREE.MeshStandardMaterial;
+          (sm.map as THREE.Texture | null)?.dispose?.();
+          (sm.emissiveMap as THREE.Texture | null)?.dispose?.();
+          m.dispose();
         }
-        root.add(inner);
-        labelTop.set("bank", 19);
-      });
+        const mi = streetFacadeMatsRef.current.indexOf(e.mats[0] as THREE.MeshStandardMaterial);
+        if (mi >= 0) streetFacadeMatsRef.current.splice(mi, 1);
+        streetFacadeRef.current.splice(i, 1);
+      }
+    };
+    // register one built chunk: add it to the scene and to every
+    // bookkeeping array the frame loop / picking / facades read
+    const registerChunk = (res: ChunkBuildResult) => {
+      scene.add(res.group);
+      pickMeshes.push(...res.picks);
+      playerPickMeshesRef.current.push(...res.playerPicks);
+      smokeSprites.push(...res.smokes);
+      avLights.push(...res.avs);
+      wheelGroups.push(...res.wheels);
+      flagMeshes.push(...res.flags);
+      streetFacadeTargetsRef.current.push(...res.facades);
+      shopPts.push(...res.shopPts);
+      for (const [id, top] of res.labelTops) labelTop.set(id, top);
+      if (res.pinganRoot) pinganRootRef.current = res.pinganRoot;
+    };
+    const unregisterChunk = (rec: ChunkRecord) => {
+      removeAll(pickMeshes, new Set(rec.picks));
+      removeAll(playerPickMeshesRef.current, new Set(rec.playerPicks));
+      removeAll(smokeSprites, new Set(rec.smokes));
+      removeAll(avLights, new Set(rec.avs));
+      removeAll(wheelGroups, new Set(rec.wheels));
+      removeAll(flagMeshes, new Set(rec.flags));
+      removeAll(streetFacadeTargetsRef.current, new Set(rec.facades));
+      removeAll(shopPts, new Set(rec.shopPts));
+      for (const [id] of rec.labelTops) labelTop.delete(id);
+      removeFacadesForChunk(rec.key);
+      if (pinganRootRef.current && rec.pinganRoot === pinganRootRef.current) pinganRootRef.current = null;
+    };
+    // ROUND-10g Step 2: the chunk worker. It owns its own city data +
+    // landmarks factory (init once per city) and builds payloads off the
+    // main thread; the main thread only materializes (~2.4 ms). If the
+    // worker fails to construct, the manager falls back to sync builds.
+    let chunkWorker: Worker | null = null;
+    try {
+      chunkWorker = new Worker(new URL("./chunk.worker.ts", import.meta.url), { type: "module" });
+    } catch {
+      chunkWorker = null;
+    }
+    const manager = new ChunkManager(
+      (key) => {
+        const data = generateChunkData(cityData, key, playerBuildingsDataRef.current);
+        const res = buildChunkMesh(data, { ...mctx, scene, locById: cityData.locById });
+        registerChunk(res);
+        return res;
+      },
+      unregisterChunk,
+      chunkWorker
+        ? {
+            post: (key, buildId) => {
+              chunkWorker!.postMessage({ type: "build", key, buildId, playerBuildings: playerBuildingsDataRef.current });
+            },
+            cancel: (key) => { chunkWorker!.postMessage({ type: "cancel", key }); },
+            materialize: (payload: ChunkPayload) => {
+              const res = materializeChunk(payload, mctx);
+              registerChunk(res);
+              return res;
+            },
+          }
+        : undefined,
+      (key) => {
+        const data = generateChunkData(cityData, key, playerBuildingsDataRef.current);
+        const g = buildSilhouetteGroup(data, chunkMats.matte, cityData.locById);
+        scene.add(g);
+        return g;
+      },
+    );
+    chunkManagerRef.current = manager;
+    manager.setContent(cityData.chunkKeys);
+    if (chunkWorker) {
+      chunkWorker.postMessage({ type: "init", cityKey });
+      chunkWorker.onmessage = (e: MessageEvent) => {
+        const msg = e.data as { type: string; key?: string; buildId?: number; payload?: ChunkPayload };
+        if (msg.type === "built" && msg.key && msg.buildId !== undefined && msg.payload) {
+          manager.onWorkerBuilt(msg.key, msg.buildId, msg.payload);
+        }
+      };
     }
     if (cityKey === "sz") {
-      // (平安金融中心 is now the 平安金融中心 location's own model)
-      // (深圳湾大桥 and 深中通道 are decor landmarks in landmarks.ts)
-      // 华侨城 ferris wheel by 欢乐谷: rim, spokes and cabins, on two legs
-      const wheel = landmarks.wheel(2.6, 0xf472b6, 0xfacc15);
-      const hv = getLocations("sz").find((l) => l.id === "happyvalley")!; // the wheel stands beside 欢乐谷
-      wheel.position.set(hv.x - 1.2, LAND + 3.4, hv.z - 2.2);
-      chunkGroupFor(chunkGroupsRef.current, scene, hv.x - 1.2, hv.z - 2.2).add(wheel);
-      wheelGroups.push(wheel);
-      for (const s of [-1, 1]) {
-        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.12, 3.6, 0.12), new THREE.MeshStandardMaterial({ color: 0xc9d3da, roughness: 0.4, metalness: 0.5 }));
-        leg.position.set(hv.x - 1.2 + s * 0.5, LAND + 1.7, hv.z - 2.2);
-        leg.rotation.z = s * 0.15;
-        chunkGroupFor(chunkGroupsRef.current, scene, hv.x - 1.2, hv.z - 2.2).add(leg);
-      }
-    } else {
-      // Sizhou pagoda beside West Lake
-      const pagoda = new THREE.Group();
-      for (let i = 0; i < 5; i++) {
-        const tier = new THREE.Mesh(
-          new THREE.CylinderGeometry(1.45 - i * 0.2, 1.65 - i * 0.2, 1.15, 6),
-          new THREE.MeshStandardMaterial({ color: 0xd8cfc0, roughness: 0.9 }),
-        );
-        tier.position.y = 0.6 + i * 1.15;
-        tier.castShadow = true;
-        pagoda.add(tier);
-        const eave = new THREE.Mesh(
-          new THREE.ConeGeometry(1.95 - i * 0.24, 0.5, 6),
-          new THREE.MeshStandardMaterial({ color: 0x8a4b2d, roughness: 0.9, flatShading: true }),
-        );
-        eave.position.y = 1.2 + i * 1.15;
-        eave.castShadow = true;
-        pagoda.add(eave);
-      }
-      const tip = new THREE.Mesh(new THREE.ConeGeometry(0.22, 1.4, 6), new THREE.MeshStandardMaterial({ color: 0xf5b942, roughness: 0.4, metalness: 0.6 }));
-      tip.position.y = 7.1;
-      pagoda.add(tip);
-      { const xh = getLocations("hz").find((l) => l.id === "xihu")!; pagoda.position.set(xh.x + 2.2, LAND, xh.z + 1.6); chunkGroupFor(chunkGroupsRef.current, scene, xh.x + 2.2, xh.z + 1.6).add(pagoda); } // 泗洲塔, on 西湖's shore beside the lake location
+      void loadModel("pingan.glb").then((m) => {
+        if (!m) return;
+        pinganModelRef.current = m;
+        const root = pinganRootRef.current;
+        if (root) applyPinganGlb(root, m, labelTop);
+      });
     }
+    // ROUND-10g (home-designer texCpuRelease): mobile-only — the CPU copy
+    // of a texture is released after its first GPU upload. Desktop keeps
+    // its copies (context-loss safety); the game has no KTX2/ImageBitmap
+    // textures today, so this is dormant until those arrive.
+    setCpuReleaseEnabled(phoneLike || lite);
+    // the player's own chunk is built synchronously, so the map is never
+    // empty on arrival; the rest fills in within the frame budget.
+    // (playerBuildingsDataRef is seeded here so the first builds already
+    // include the shops/flats — the registry effect below keeps it fresh.)
+    playerBuildingsDataRef.current = (propsRef.current.playerBuildings ?? []).map((b) => ({
+      id: b.id, kind: b.kind, locId: b.locId, name: b.name, color: b.color,
+    }));
+    const selfLoc = propsRef.current.selfLocId ? resolveLoc(cityKey, propsRef.current.selfLocId) : undefined;
+    const px0 = selfLoc?.x ?? 0;
+    const pz0 = selfLoc?.z ?? 0;
+    manager.buildNow(chunkKeyOf(px0, pz0));
+    if (streetRef.current) manager.syncStreet(px0, pz0);
+    else manager.loadAll(px0, pz0);
+    // dev check: memory + chunk state in the console
+    //   window.__chunks.stats() -> {loaded, simple, queued, inFlight, pending, total, chunks, geometryMB, unreferencedMB, budgetMB, geometries, textures, calls, triangles}
+    (window as unknown as { __chunks?: unknown }).__chunks = {
+      stats: () => ({
+        ...manager.stats(),
+        ...manager.ledgerStats(),
+        geometries: renderer.info.memory.geometries,
+        textures: renderer.info.memory.textures,
+        calls: renderer.info.render.calls,
+        triangles: renderer.info.render.triangles,
+      }),
+    };
 
     /* ---- terrain: mountain ranges as flat-shaded cone clusters ---- */
     const mtnMat = new THREE.MeshStandardMaterial({ color: 0x5d8a4f, roughness: 1, flatShading: true });
@@ -2309,147 +2182,6 @@ export function MapView(p: Props) {
           const tree = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.3, 6), new THREE.MeshStandardMaterial({ color: 0x3f7d46, roughness: 1, flatShading: true }));
           tree.position.set(tx, ty + 0.5, tz);
           scene.add(tree);
-        }
-      }
-    }
-
-    // filler buildings (instanced)
-    const nearLoc = (x: number, z: number) =>
-      locs.some((l) => Math.abs(l.x - x) < 3.4 && Math.abs(l.z - z) < 3.4) ||
-      decorSpots.some((d) => Math.hypot(d.x - x, d.z - z) < d.r + 1.4);
-    const nearMountain = (x: number, z: number) =>
-      MOUNTAINS[cityKey].some((range) => range.peaks.some((pk) => Math.hypot(x - pk.x, z - pk.z) < pk.r + 0.8));
-    const nearLake = (x: number, z: number) =>
-      LAKES[cityKey].some((lk) => Math.hypot(x - lk.x, z - lk.z) < lk.r + 0.9);
-    const nearRoad = (x: number, z: number) =>
-      roads.some((r) => {
-        const dx = r.x2 - r.x1;
-        const dz = r.z2 - r.z1;
-        const t = Math.max(0, Math.min(1, ((x - r.x1) * dx + (z - r.z1) * dz) / (dx * dx + dz * dz)));
-        return Math.hypot(x - (r.x1 + dx * t), z - (r.z1 + dz * t)) < r.w / 2 + 1.1;
-      });
-    /* Real skyline: cells where OpenStreetMap has tall buildings get towers
-       as tall as the real 90th-percentile height (and a second tower where
-       they are dense); everywhere else stays low-rise. Cities with little
-       OSM height data keep the old random mix outside the mapped cells. */
-    const spots: { x: number; z: number; h: number; c: THREE.Color; w?: number }[] = [];
-    const palette = [0xe8e0cc, 0xd8cfb8, 0xc9d4d8, 0xe3d3c2, 0xd5dde3, 0xe9dcc8, 0xcfc4ae];
-    const towerPalette = [0xb9cbd6, 0xa7bccb, 0xc9d4d8, 0x9fb4c2, 0xd5dde3];
-    const sky = (SKYLINE as Record<string, Record<string, [number, number]>>)[cityKey] ?? {};
-    const skyRich = Object.keys(sky).length >= 60;
-    for (let gx = -36; gx <= 36; gx += 2.8) {
-      for (let gz = -20; gz <= 14; gz += 2.8) {
-        const real = sky[`${Math.round((gx + 36) / 2.8)},${Math.round((gz + 20) / 2.8)}`];
-        const x = gx + (rnd() - 0.5) * 1.3;
-        const z = gz + (rnd() - 0.5) * 1.3;
-        if (!isLand(cityKey, x, z, 1.6)) continue;
-        if (nearLoc(x, z) || nearRoad(x, z) || nearMountain(x, z) || nearLake(x, z)) continue;
-        if (real) {
-          const [n, h90] = real;
-          const tall = Math.min(13, 1.4 + h90 / 20);
-          const tc = () => new THREE.Color(towerPalette[Math.floor(rnd() * towerPalette.length)] ?? 0xc9d4d8);
-          if (n >= 30) {
-            spots.push({ x: x - 0.45, z: z - 0.3, h: tall * (0.85 + rnd() * 0.15), c: tc(), w: 0.5 });
-            spots.push({ x: x + 0.5, z: z + 0.35, h: tall * (0.6 + rnd() * 0.25), c: tc(), w: 0.55 });
-          } else spots.push({ x, z, h: Math.max(1.5, tall * (0.7 + rnd() * 0.3)), c: tc(), w: n >= 8 ? 0.7 : 0.85 });
-          continue;
-        }
-        if (rnd() < (skyRich ? 0.45 : 0.33)) continue;
-        const c = new THREE.Color(palette[Math.floor(rnd() * palette.length)] ?? 0xe8e0cc);
-        spots.push({ x, z, h: skyRich ? 0.8 + rnd() * 1.8 : 1.2 + rnd() * rnd() * 7.5, c });
-      }
-    }
-    fillerMat = new THREE.MeshStandardMaterial({ roughness: 0.95, emissive: 0xffc873, emissiveMap: winTex, emissiveIntensity: 0 });
-    /* ROUND-8 spacious blocks: filler footprints were wall-to-wall on a 2.8
-       grid (1.9 wide = 68% of the cell, gaps under a unit). Scale the
-       footprint down so blocks read roomy — visible open ground between
-       buildings — without moving any place, road or the canvas. Heights
-       (and the skyline) are untouched; only the footprint shrinks. */
-    const FILLER_W = 0.72;
-    // ROUND-10 chunked streaming: the filler towers are one InstancedMesh
-    // per chunk (same shared geometry + material) instead of one city-wide
-    // mesh, so far chunks stop rendering their background towers too.
-    const fillerGeo = new THREE.BoxGeometry(1.9 * FILLER_W, 1, 1.9 * FILLER_W);
-    const fillerByChunk = new Map<string, { x: number; z: number; h: number; c: THREE.Color; w?: number }[]>();
-    for (const s of spots) {
-      const key = chunkKeyOf(s.x, s.z);
-      const arr = fillerByChunk.get(key) ?? [];
-      arr.push(s);
-      fillerByChunk.set(key, arr);
-    }
-    for (const list of fillerByChunk.values()) {
-      const filler = new THREE.InstancedMesh(fillerGeo, fillerMat, list.length);
-      const mat4 = new THREE.Matrix4();
-      list.forEach((s, i) => {
-        mat4.makeScale(s.w ?? 1, s.h, s.w ?? 1).setPosition(s.x, LAND + s.h / 2, s.z);
-        filler.setMatrixAt(i, mat4);
-        filler.setColorAt(i, s.c);
-      });
-      filler.castShadow = true;
-      filler.receiveShadow = true;
-      chunkGroupFor(chunkGroupsRef.current, scene, list[0]!.x, list[0]!.z).add(filler);
-    }
-
-    /* ---- street frontage: shop rows lining the roads ----
-       The corridors get street walls: small shop blocks shoulder to
-       shoulder along both pavements, awnings and lit signs facing the
-       road, windows that light up at night with the towers. This is what
-       makes a street read as a street at ground level. Door points are
-       kept in shopPts — pedestrians below walk in and out of them. */
-    const shopPts: { x: number; z: number; dx: number; dz: number }[] = [];
-    {
-      const shopPalette = [0xe8dcc4, 0xdcc7a8, 0xc9d4d8, 0xe3cdb4, 0xd8e0d2, 0xead9c2, 0xd5c6e0, 0xf0dfc0];
-      let shopCount = 0;
-      for (const r of roads) {
-        if (shopCount >= 120) break;
-        const len = roadLen(r);
-        const ang = Math.atan2(r.z2 - r.z1, r.x2 - r.x1);
-        const steps = Math.floor(len / 3.3);
-        for (let i = 1; i < steps && shopCount < 120; i++) {
-          for (const side of [1, -1]) {
-            if (shopCount >= 120) break;
-            if (rnd() < 0.3) continue;
-            const t = (i + (rnd() - 0.5) * 0.3) / steps;
-            const off = r.w / 2 + 1.85;
-            const x = r.x1 + (r.x2 - r.x1) * t + Math.sin(ang) * off * side;
-            const z = r.z1 + (r.z2 - r.z1) * t - Math.cos(ang) * off * side;
-            if (!isLand(cityKey, x, z, 1.4)) continue;
-            if (nearLoc(x, z) || nearMountain(x, z) || nearLake(x, z)) continue;
-            if (roads.some((o) => o !== r && (() => { const dx = o.x2 - o.x1; const dz = o.z2 - o.z1; const tt = Math.max(0, Math.min(1, ((x - o.x1) * dx + (z - o.z1) * dz) / (dx * dx + dz * dz))); return Math.hypot(x - (o.x1 + dx * tt), z - (o.z1 + dz * tt)) < o.w / 2 + 1.5; })())) continue;
-            if (shopPts.some((s) => Math.hypot(s.x - x, s.z - z) < 2.3)) continue;
-            const gh = 1.5 + rnd() * 2.1;
-            const gw = 2 + rnd() * 0.9;
-            const g = new THREE.Group();
-            const bodyMatS = new THREE.MeshStandardMaterial({ color: shopPalette[Math.floor(rnd() * shopPalette.length)] ?? 0xe8dcc4, roughness: 0.85, emissive: 0xffc873, emissiveMap: winTex, emissiveIntensity: 0 });
-            buildingMats.push(bodyMatS);
-            const bodyS = new THREE.Mesh(new THREE.BoxGeometry(gw, gh, 1.6), bodyMatS);
-            bodyS.position.y = gh / 2;
-            bodyS.castShadow = true;
-            bodyS.receiveShadow = true;
-            g.add(bodyS);
-            // ROUND-10: a street-mode facade candidate (shopfront windows)
-            streetFacadeTargetsRef.current.push({ mesh: bodyS, w: gw, h: gh });
-            // awning + sign strip on the road-facing side: with the group
-            // rotation chosen below, the street face is local +z for both
-            // sides of the road
-            const awnMatS = new THREE.MeshStandardMaterial({ color: new THREE.Color(shopPalette[Math.floor(rnd() * shopPalette.length)] ?? 0xe8dcc4).multiplyScalar(0.7), roughness: 0.8, emissive: 0xffb35c, emissiveIntensity: 0.1 });
-            const awnS = new THREE.Mesh(new THREE.BoxGeometry(gw * 0.82, 0.07, 0.6), awnMatS);
-            awnS.position.set(0, 1.32, 1.06);
-            awnS.rotation.x = 0.35;
-            g.add(awnS);
-            const signMatS = new THREE.MeshStandardMaterial({ color: 0x1a1216, roughness: 0.5, emissive: [0xe63a1f, 0xf5b942, 0x2dd4bf, 0xec4899, 0x3b82f6][Math.floor(rnd() * 5)] ?? 0xe63a1f, emissiveIntensity: 0.4 });
-            // ROUND-7 desktop: neon-tube emissive map on shop signs too
-            if (dfx) signMatS.emissiveMap = dfx.neonTex;
-            const signS = new THREE.Mesh(new THREE.BoxGeometry(Math.min(1.9, gw * 0.7), 0.42, 0.08), signMatS);
-            signS.position.set(0, Math.min(gh - 0.35, 1.95), 0.84);
-            g.add(signS);
-            neonMats.push(signMatS);
-            g.position.set(x, LAND, z);
-            g.rotation.y = -ang + (side > 0 ? 0 : Math.PI);
-            chunkGroupFor(chunkGroupsRef.current, scene, x, z).add(g);
-            shopPts.push({ x, z, dx: x - Math.sin(ang) * side * 1.15, dz: z + Math.cos(ang) * side * 1.15 });
-            shopCount++;
-          }
         }
       }
     }
@@ -3565,6 +3297,9 @@ export function MapView(p: Props) {
       }
       const dt = Math.min(0.05, rawDt);
       last = now;
+      // ROUND-10g: chunk work within the per-frame time budget (8 ms) —
+      // materialize landed worker results first, then post new builds
+      manager.processQueue();
       const tSec = (now - clockStart) / 1000;
 
       // day cycle: the phase advances at the REAL rate (one day per
@@ -3644,6 +3379,10 @@ export function MapView(p: Props) {
       neonMats.forEach((m, i) => {
         m.emissiveIntensity = (0.35 + nightF * 1.5 + Math.sin(tSec * 2.4 + i * 1.7) * (0.12 + nightF * 0.3)) * neoB;
       });
+      // ROUND-10g: the instanced signs share one material — day/night
+      // brightness via its colour (day dimmed, night full) + a subtle
+      // global shimmer; the per-sign pulse is gone (one InstancedMesh now)
+      chunkMats.sign.color.setScalar(Math.min(1, 0.45 + nightF * 0.55 + Math.sin(tSec * 2.4) * 0.04));
       avLights.forEach((av, i) => {
         const m = av.material as THREE.MeshStandardMaterial;
         m.emissiveIntensity = nightF > 0.25 && Math.sin(tSec * 2 + i * 1.3) > 0 ? 2.4 : 0.15;
@@ -3664,10 +3403,9 @@ export function MapView(p: Props) {
         s.sp.scale.set(sc, sc, 1);
         (s.sp.material as THREE.SpriteMaterial).opacity = 0.17 * Math.sin(ph * Math.PI) * (0.5 + dayF * 0.5);
       }
-      for (const g of flagGroups) {
-        const f = (g.userData as { flag?: THREE.Mesh }).flag;
-        if (f) f.rotation.y = Math.sin(tSec * 3 + g.position.x) * 0.35;
-      }
+      // ROUND-10g: flags are meshes now (the chunk owns them); wx is the
+      // building's x, the wave phase
+      for (const f of flagMeshes) f.rotation.y = Math.sin(tSec * 3 + (f.userData.wx as number)) * 0.35;
       for (const w of wheelGroups) w.rotation.z = tSec * 0.25;
       for (const cl of clouds) {
         cl.position.x += dt * 0.55;
@@ -4414,6 +4152,14 @@ export function MapView(p: Props) {
         camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 3);
         camera.updateProjectionMatrix();
       }
+      // ROUND-10g: fog = load distance — the street only loads ~48 m out,
+      // so the far plane pulls in to 64 (just past the fog) and the map
+      // keeps the full 500
+      const targetFar = streetRef.current ? 64 : 500;
+      if (Math.abs(camera.far - targetFar) > 0.5) {
+        camera.far += (targetFar - camera.far) * Math.min(1, dt * 3);
+        camera.updateProjectionMatrix();
+      }
 
       // ROUND-10 street mode, throttled to ~4 Hz so React state doesn't
       // churn every frame: street name, facade refresh, state report.
@@ -4426,7 +4172,7 @@ export function MapView(p: Props) {
             const nm = streetNameAt(propsRef.current.cityKey, s.x, s.z);
             if (nm !== streetNameRef.current) { streetNameRef.current = nm; setStreetName(nm); }
             syncStreetFacades(s.x, s.z);
-            syncStreetChunks(s.x, s.z);
+            manager.syncStreet(s.x, s.z);
           }
         }
         const walking = streetWalkRef.current || (streetRef.current && !!clickWalkRef.current);
@@ -4703,9 +4449,9 @@ export function MapView(p: Props) {
       if (fx) fx.render();
       else renderer.render(scene, camera);
     };
-    // ROUND-10 chunked streaming: the scene starts fully visible (map
-    // mode); the street tick narrows it to the neighbourhood when the
-    // player is on the street, and leaving the street restores it.
+    // ROUND-10g: the manager owns chunk state now; the frame loop above
+    // drains its queue within the per-frame budget, and the street tick
+    // narrows it to the neighbourhood on the street.
     raf = requestAnimationFrame(frame);
 
     return () => {
@@ -4713,8 +4459,10 @@ export function MapView(p: Props) {
       fx?.dispose();
       ro.disconnect();
       sceneRef.current = null;
-      playerBuildingsGroupRef.current = null;
-      chunkGroupsRef.current = new Map();
+      chunkManagerRef.current = null;
+      manager.dispose();
+      chunkWorker?.terminate();
+      delete (window as unknown as { __chunks?: unknown }).__chunks;
       dom.removeEventListener("pointerdown", onDown);
       dom.removeEventListener("pointermove", onMove);
       dom.removeEventListener("pointerup", onUp);
@@ -4782,82 +4530,36 @@ export function MapView(p: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [communityKey, p.cityKey]);
 
-  /* Round-9: player shops / flats as VISIBLE 3D buildings on the map. This
-     effect owns one group inside the scene (the scene effect owns the scene
-     itself); it re-runs whenever the list or city changes, so a building
-     appears as soon as the shop/flat is created and survives reload (the
-     list comes from the server). Each building sits offset from its place's
-     own building (dx +1.8, dz +1.3) so no surface is coplanar with it (no
-     z-fighting) and no existing place moves. Shops read as a shopfront
-     (small box + awning + neon sign); flats as a residential block with a
-     cone roof. The custom name rides the community-marker chip (same labels
-     overlay as places); the building also gets a coloured sign box. A pick
-     mesh (invisible box, userData.locId) makes the building clickable like
-     a place — onUp raycasts it alongside pickMeshes. */
+  /* Round-9 + ROUND-10g: player shops / flats as VISIBLE 3D buildings on
+     the map. This effect is now a REGISTRY: it turns the prop list into
+     PlayerBuildingData (id/kind/locId/name/color) and hands it to the
+     ChunkManager, which builds each shop/flat into its chunk at build
+     time (body/roof/awning -> the matte bucket, the shop sign -> the
+     chunk's sign InstancedMesh, the pick box -> playerPicks). A building
+     in an unloaded chunk reappears when the chunk rebuilds — it reads the
+     current list at build time. Changing the list refreshes only the
+     chunks that gained or lost a building. (The scene effect seeds the
+     ref before its first builds, so the first run below is a no-op when
+     nothing changed since.) */
   const playerBuildingsKey = (p.playerBuildings ?? []).map((b) => `${b.id}|${b.kind}|${b.locId}|${b.name}|${b.color}`).join(";");
   useEffect(() => {
-    const scene = sceneRef.current;
-    playerBuildingsGroupRef.current?.parent?.remove(playerBuildingsGroupRef.current);
-    playerBuildingsGroupRef.current = null;
-    playerPickMeshesRef.current = [];
-    const list = p.playerBuildings ?? [];
-    if (!scene || list.length === 0) return;
-    const locs = getLocations(p.cityKey);
-    const byId = new Map(locs.map((l) => [l.id, l]));
-    // ROUND-10 chunked streaming: each shop/flat joins the chunk of its
-    // plot (the shared group is kept only as a handle for cleanup).
-    const group = new THREE.Group();
-    const added: THREE.Group[] = [];
-    const pickMat = new THREE.MeshBasicMaterial({ visible: false });
-    for (const b of list) {
-      const loc = byId.get(b.locId) ?? resolveLoc(p.cityKey, b.locId);
+    const prev = playerBuildingsDataRef.current;
+    const next: PlayerBuildingData[] = (p.playerBuildings ?? []).map((b) => ({
+      id: b.id, kind: b.kind, locId: b.locId, name: b.name, color: b.color,
+    }));
+    const prevKey = prev.map((b) => `${b.id}|${b.kind}|${b.locId}|${b.name}|${b.color}`).join(";");
+    const nextKey = next.map((b) => `${b.id}|${b.kind}|${b.locId}|${b.name}|${b.color}`).join(";");
+    playerBuildingsDataRef.current = next;
+    if (prevKey === nextKey) return; // nothing changed (incl. the first run, seeded by the scene effect)
+    const mgr = chunkManagerRef.current;
+    if (!mgr) return; // scene effect not built yet — the list is read at build time anyway
+    const affected = new Set<string>();
+    for (const b of [...prev, ...next]) {
+      const loc = getLocations(p.cityKey).find((l) => l.id === b.locId) ?? resolveLoc(p.cityKey, b.locId);
       if (!loc) continue;
-      const g = new THREE.Group();
-      const isShop = b.kind === "shop";
-      const w = isShop ? 1.3 : 1.4;
-      const h = isShop ? 1.15 : 1.9;
-      const bodyMat = new THREE.MeshStandardMaterial({ color: b.color, roughness: 0.8, metalness: 0.05 });
-      const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, w * 0.85), bodyMat);
-      body.position.y = h / 2;
-      body.castShadow = true;
-      body.receiveShadow = true;
-      g.add(body);
-      if (isShop) {
-        const awnMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(b.color).multiplyScalar(0.85), roughness: 0.7, emissive: 0xffb35c, emissiveIntensity: 0.12 });
-        const awn = new THREE.Mesh(new THREE.BoxGeometry(w * 0.9, 0.07, 0.55), awnMat);
-        awn.position.set(0, 0.95, w * 0.42 + 0.22);
-        awn.rotation.x = 0.38;
-        g.add(awn);
-        const signMat = new THREE.MeshStandardMaterial({ color: 0x1a1216, roughness: 0.5, emissive: b.color, emissiveIntensity: 0.4 });
-        const sign = new THREE.Mesh(new THREE.BoxGeometry(Math.min(1.1, w * 0.8), 0.32, 0.08), signMat);
-        sign.position.set(0, h * 0.62, w * 0.42 + 0.05);
-        g.add(sign);
-      } else {
-        const roof = new THREE.Mesh(
-          new THREE.ConeGeometry(w * 0.66, 0.7, 4),
-          new THREE.MeshStandardMaterial({ color: new THREE.Color(b.color).multiplyScalar(0.72), roughness: 0.9, flatShading: true }),
-        );
-        roof.position.y = h + 0.35;
-        roof.rotation.y = Math.PI / 4;
-        roof.castShadow = true;
-        g.add(roof);
-      }
-      const pick = new THREE.Mesh(new THREE.BoxGeometry(w + 0.3, h + 0.6, w + 0.3), pickMat);
-      pick.position.y = (h + 0.6) / 2;
-      pick.userData.locId = b.locId;
-      g.add(pick);
-      playerPickMeshesRef.current.push(pick);
-      // offset beside the place's own building (its body is ~w*0.82 wide)
-      g.position.set(loc.x + 1.8, LAND, loc.z + 1.3);
-      chunkGroupFor(chunkGroupsRef.current, scene, loc.x + 1.8, loc.z + 1.3).add(g);
-      added.push(g);
+      affected.add(chunkKeyOf(loc.x + 1.8, loc.z + 1.3));
     }
-    playerBuildingsGroupRef.current = group;
-    return () => {
-      for (const g of added) g.parent?.remove(g);
-      if (playerBuildingsGroupRef.current === group) playerBuildingsGroupRef.current = null;
-      playerPickMeshesRef.current = [];
-    };
+    mgr.refreshKeys([...affected]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playerBuildingsKey, p.cityKey]);
 
@@ -4879,41 +4581,30 @@ export function MapView(p: Props) {
   /* ---- ROUND-10 street facades ---- */
   /** Nearest buildings wear lit facades while on the street; the map keeps
       its clean look. Synced on entry and refreshed as you walk (the frame
-      loop calls this ~4 Hz). At most 12 buildings, within 16 units. */
-  /** ROUND-10 chunked streaming: only the 3x3 chunks around the player
-      render on the street (48x48 units — just past the fog's far edge, so
-      a chunk appears as it emerges from the haze, never popping in from
-      clear air). Called from the same ~4 Hz street tick as the facades. */
-  const syncStreetChunks = (px: number, pz: number) => {
-    if (!streetRef.current) return;
-    const want = new Set(chunksNear(px, pz, 1));
-    for (const [key, g] of chunkGroupsRef.current) {
-      if (g.visible !== want.has(key)) g.visible = want.has(key);
-    }
-  };
-  /** Back to the map: every chunk renders again. */
-  const showAllChunks = () => {
-    for (const g of chunkGroupsRef.current.values()) g.visible = true;
-  };
+      loop calls this ~4 Hz). At most 12 buildings, within 16 units.
+      ROUND-10g: bodies are merged now, so a facade is an OVERLAY BOX — a
+      slightly larger box (w+0.06, h, d+0.06) with the same lit-window
+      materials, placed at the building's world position/rotation and
+      added to the scene (not the chunk group). It is removed when the
+      building leaves the nearest 12, when its chunk unloads, or when the
+      street is left. */
   const syncStreetFacades = (px: number, pz: number) => {
     if (!streetRef.current) return;
     const mapTex = streetFacadeTexRef.current ?? (streetFacadeTexRef.current = facadeTexture());
     const emTex = streetFacadeEmTexRef.current ?? (streetFacadeEmTexRef.current = facadeEmissiveTexture());
-    const scored: { t: { mesh: THREE.Mesh; w: number; h: number }; d: number }[] = [];
+    const scored: { t: FacadeTarget; d: number }[] = [];
     for (const t of streetFacadeTargetsRef.current) {
-      const gp = t.mesh.parent?.position;
-      if (!gp) continue;
-      const d = Math.hypot(gp.x - px, gp.z - pz);
+      const d = Math.hypot(t.x - px, t.z - pz);
       if (d < 16) scored.push({ t, d });
     }
     scored.sort((a, b) => a.d - b.d);
     const near = scored.slice(0, 12);
-    const want = new Set(near.map((s) => s.t.mesh));
-    const have = new Set(streetFacadeRef.current.map((e) => e.mesh));
+    const want = new Set(near.map((s) => s.t.id));
+    const have = new Set(streetFacadeRef.current.map((e) => e.id));
     for (let i = streetFacadeRef.current.length - 1; i >= 0; i--) {
       const e = streetFacadeRef.current[i]!;
-      if (want.has(e.mesh)) continue;
-      e.mesh.material = e.orig;
+      if (want.has(e.id)) continue;
+      e.group.removeFromParent();
       for (const m of e.mats) {
         const sm = m as THREE.MeshStandardMaterial;
         (sm.map as THREE.Texture | null)?.dispose?.();
@@ -4925,10 +4616,7 @@ export function MapView(p: Props) {
       streetFacadeRef.current.splice(i, 1);
     }
     for (const { t } of near) {
-      if (have.has(t.mesh)) continue;
-      const mesh = t.mesh;
-      const orig = mesh.material as THREE.Material | THREE.Material[];
-      const base = (Array.isArray(orig) ? orig[0] : orig) as THREE.MeshStandardMaterial;
+      if (have.has(t.id)) continue;
       const rx = Math.max(1, Math.round(t.w / 2.6));
       const ry = Math.max(1, Math.round(t.h / 2.6));
       const mapTile = mapTex.clone();
@@ -4938,20 +4626,24 @@ export function MapView(p: Props) {
       emTile.needsUpdate = true;
       emTile.repeat.set(rx, ry);
       const side = new THREE.MeshStandardMaterial({
-        color: base.color.clone(), roughness: 0.85, metalness: 0.05,
+        color: new THREE.Color(t.color), roughness: 0.85, metalness: 0.05,
         map: mapTile, emissive: 0xffc873, emissiveMap: emTile, emissiveIntensity: 0,
       });
-      const plain = new THREE.MeshStandardMaterial({ color: base.color.clone(), roughness: 0.9 });
-      // BoxGeometry groups: +x, -x, +y (roof), -y, +z, -z — only the four
-      // sides wear the facade; the roof stays plain.
-      mesh.material = [side, side, plain, plain, side, side];
+      const plain = new THREE.MeshStandardMaterial({ color: new THREE.Color(t.color), roughness: 0.9 });
+      const g = new THREE.Group();
+      const box = new THREE.Mesh(new THREE.BoxGeometry(t.w + 0.06, t.h, t.d + 0.06), [side, side, plain, plain, side, side]);
+      box.position.y = t.h / 2;
+      g.add(box);
+      g.position.set(t.x, LAND, t.z);
+      g.rotation.y = t.rot;
+      sceneRef.current?.add(g);
       streetFacadeMatsRef.current.push(side);
-      streetFacadeRef.current.push({ mesh, orig, mats: [side, plain] });
+      streetFacadeRef.current.push({ id: t.id, group: g, mats: [side, plain], chunkKey: t.chunkKey });
     }
   };
   const removeStreetFacades = () => {
     for (const e of streetFacadeRef.current) {
-      e.mesh.material = e.orig;
+      e.group.removeFromParent();
       for (const m of e.mats) {
         const sm = m as THREE.MeshStandardMaterial;
         (sm.map as THREE.Texture | null)?.dispose?.();
@@ -4977,11 +4669,12 @@ export function MapView(p: Props) {
       // facades come on with the street: the nearest buildings get lit
       // windows (refreshed as you walk); the map keeps its clean look
       const s = actorsRef.current.get("self");
-      if (s) { syncStreetFacades(s.x, s.z); syncStreetChunks(s.x, s.z); }
+      if (s) { syncStreetFacades(s.x, s.z); chunkManagerRef.current?.syncStreet(s.x, s.z); }
     } else {
       camRef.current.pol = CAM_POL;
       removeStreetFacades();
-      showAllChunks();
+      const s0 = actorsRef.current.get("self");
+      chunkManagerRef.current?.loadAll(s0?.x ?? 0, s0?.z ?? 0);
       streetWalkRef.current = false;
       streetKeysRef.current.clear();
       streetStickRef.current.x = 0;

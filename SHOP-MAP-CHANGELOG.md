@@ -773,3 +773,69 @@ lee 在街景里截了图：镜头离人很远、很高，整条街+摩天轮+�
 - **几何体仍是启动时全量生成、只是按块显隐**——这不是真·按需加载（不从服务器/磁盘流式取数据）。全城楼的几何体在进城时一次建好，分块只决定哪些渲染。好处是切换块零延迟、无加载卡顿；代价是启动内存没省。真·按需生成（走到哪块现建哪块）是下一步，得把建楼逻辑拆成按块调用。
 - NPC、车、路灯、红绿灯是动态/基础设施，全局渲染（数量少，雾盖住远的）。NPC 名字牌本来就只显示 5 米内。
 - 惠州/香港城小，3×3 几乎盖住全城，流式的效果在深圳最明显。
+
+## 二十八、真·按需分块流式加载（lee：“你去帮我做到最优吧”）
+
+二十七的流式只是显隐：全城几何体启动时一次建好，分块只决定哪些渲染。这一节是真按需：走到哪块现建哪块，走远了真 dispose 掉；中间档只留盒子剪影；远处直接剔除。启动时只建玩家脚下那块，其余在帧预算内慢慢补。
+
+### 思路来源（先说清楚，不藏着）
+
+- **三档细节是 lee 自己的设计**：home-designer 里 `docs/walkthrough-lod-references.md`，cell-and-portal（Teller 1991），三档——“当前房间全细节、可达房间简化、远房间剔除”，切换 cell 时 dispose 旧的高细节资产再加载新的。10g 是把“房间 → chunk”的映射：近处全细节、中间简化轮廓、远处剔除。
+- **释放实现参考了 lee home-designer 里实测过的代码**（之前说“没有可复用的运行时代码”是错的，那次 grep 到的是 blob:none 克隆的 0 字节占位文件）：`src/lib/texCpuRelease.ts`（贴图 GPU 上传完释 CPU 副本，iPhone 实测 CPU 残留贴图 546MB → 7MB，JS 堆 1.1GB → ~323MB）、`src/app/showcase/ShowcaseViewer.tsx`（房间切换时 `useGLTF.clear(url)` 清掉上一间独有的 GLB，卸载时延迟 400ms 再清缓存）、`src/lib/device.ts`（iOS 单页内存硬上限约 1–1.5GB，移动端 DPR 封顶 1.5、跳过 EffectComposer）。10g 搬了 texCpuRelease 的模式（见下）；useGLTF.clear 搬不了（游戏是代码生成几何体，没有 GLTF 缓存），drei `<Detailed>` 和 R3F 组件也搬不了（游戏是纯 Three.js）。
+- **ChunkManager 的语义抄了 threeforge**（tallslab/threeforge，19 stars，2026-10-23，唯一专为 Three.js 做的 chunk streamer）：chunk 在“到 chunk 的距离 ≤ radius（默认 camera.far）”时驻留，超出 `radius + margin × chunkSize`（margin 默认 1 格）就卸载——正是“卸载 = 加载 + 1 块”的迟滞规则；`ResourceTracker` 引用计数 dispose，注册表拥有的共享材质永不 dispose，ledger 报 `memory.unreferenced` 和分档预算（贴图 512/192/96MB、几何 256/96/48MB，桌面/中端手机/低端手机）；实测 zen 场景贴图 85MB → 43MB，draw call 3540 → 88；流式 e2e 对比未流式首帧像素变化 <0.5%（前提是雾拉到 far 平面）。**没有直接引入这个库**：它是一整套优化框架（compile + 合并 + LOD + BVH），只认 r186，而且 `World.compile()` 假设场景是预先搭好再编译分块——我们的城市是代码按需生成的，不匹配。只抄语义。
+- **其他候选为什么不行**（lee 要求重搜 npm、GitHub、全网后核实）：3d-tiles-renderer（NASA JPL）成熟但只认预先烘焙好的地理 tileset（摄影测量、Google 3D Tiles），我们的城市是代码生成的，没有 tileset 可供它加载；@bendyline/molen-terrain 是 0.0.15、只做高度场地形；MineRender 只读 Minecraft 存档；world-explorer 只做高程地形瓦片；HighRoads、backrooms、openworld-blocks 都是某个游戏自己的代码或 0 星 demo，不是库。**结论：没有现成的、广泛采用的库适合程序化生成城市**，所以 10g 是自定义 ChunkManager + threeforge 的流式规则 + lee 的三档 cell 设计 + lee 的 texCpuRelease。
+- **每帧工作量改成时间预算**（来自 HighRoads，一个已上线的 Three.js 驾驶游戏，实测数据）：它的流式加载是按每帧时间预算切分的（`CHUNK.frameBudgetMs`，生成器在预算内续跑），而不是“每帧固定 N 块”。10g 的 `processQueue()` 改成每帧 8ms 预算内做事，超预算就停到下帧（不是“每帧 1 块”）。HighRoads 优化后 40 秒高速行驶 0 帧 >16ms、最差 15ms；我们的主线程单次 materialize 中位数 2.05ms，远低于 16ms 帧预算——但这是 Node 实测推断，不是浏览器实测，见“已知局限”。
+
+### 做法
+
+- **数据/网格分离**（`client/src/chunks.ts`，新文件，约 1490 行）：`buildCityData(cityKey, roads, landmarks)` 每城算一次纯数据（填充楼点、店排点、装饰地标描述、地点、块键）；`generateChunkData(cityData, key, playerBuildings)` 纯过滤（无 THREE）；`buildChunkPayload(data, ctx)` 产出可序列化的 payload（typed arrays，可 transfer）；`materializeChunk(payload, ctx)` 只在主线程包 BufferGeometry。地标模型是工厂现建的（`forLoc` / `decor` 描述符），完整的数据/网格分离对地标不适用——changelog 老实写：地标仍在 payload 构建时现建，这是 worker 里最贵的部分。
+- **ChunkManager**（`chunks.ts`，命令式，React 之外）：`Map<string, ChunkRecord>`，状态 unloaded → queued → generating → ready（+ unloading 瞬态），buildId 拒收过期构建。`syncStreet(px, pz)` / `loadAll(px, pz)` / `buildNow(key)` / `refreshKeys(keys)` / `processQueue(budgetMs)` / `stats()` / `ledgerStats()` / `dispose()`。
+- **三档细节**（lee 的 cell-and-portal，房间 → chunk）：`FULL_R = 2`（进入全细节）、`FULL_KEEP_R = 3`（保持全细节）、`SIMPLE_R = 3`（进入简化）、`SIMPLE_KEEP_R = 4`（保持简化，超出剔除）。每档的保持半径正好比进入半径宽 1 块（迟滞，threeforge 的 radius + 1 格 margin）。全细节半径仍盖过街景雾远端（42 米）：距离 2 的块跨 16–48 米。简化档（`buildSilhouetteGroup`）是一块合并的盒子剪影——每地点一个盒子（宽 × 高，地点颜色）、每店一个、每填充楼一个，顶点色 + 共用 matte 材质，1 个 draw call，无点选盒、无炊烟、无招牌、无地标细节（装饰地标没有盒子描述，等块升全细节时才出现，在雾里）。升级时剪影先留着当占位，全细节落袋后再撤掉，块不留洞；降级时同一 tick 内 dispose 全细节组并立起剪影。
+- **块大小：16 米**（数据块和渲染块都是 16 米，不用 64 米——64 米一块会吞掉整座小城；深圳约 x −35…+15、z −15…+15，16 米得深圳 13 块内容块、惠州 9、香港 12）。雾 = 加载距离：街景雾近 14 / 远 42，加载覆盖 48 米（全细节）/ 64 米（剪影环），相机 far 街景 64 / 地图 500（帧循环里渐变），新块在雾里浮现。
+- **每块内容**：3 个合并网格（`mergeGeometries`，顶点色 + 全局共用材质：matte——底座/屋顶/门口小物/雨棚/玩家建筑；windows——h ≤ 6.5 的通用楼体 + 店体，winTex 夜光；glassy——h > 6.5 的高楼，粗糙 0.32 / 金属 0.45）+ 招牌一个 InstancedMesh（单位盒子几何，共用 MeshBasicMaterial，instanceColor 每招牌一色）+ 填充楼一个 InstancedMesh（共用 FILLER_GEO + fillerMat）+ 地标合并网格（每种材质一个，`mergeStaticGeometries`）。每块约 10 个 draw call，全城约 145（含全局约 25），原来约 1200。
+- **Worker**（`client/src/chunk.worker.ts`，Vite worker，`new Worker(new URL('./chunk.worker.ts', import.meta.url), {type:'module'})`）：worker 自带一份城数据 + 地标工厂（`init` 一次）；主 → worker：`{init, cityKey}` / `{build, key, buildId, playerBuildings}` / `{cancel, key}`；worker → 主：`{ready, cityKey, chunks}` / `{built, key, buildId, payload}`（payload 数组 transfer）。主线程只 materialize（约 2ms），每帧预算内做；worker 结果先排队，在 `processQueue()` 里按预算 materialize，不是一到就 materialize（防一 burst 到达卡一帧）。`maxInFlight = 4`（worker 队列是串行的，贴太远只会建玩家已经走开的块）。不用 OffscreenCanvas（那是整个渲染器离线线程，不适合）。
+- **Dispose**（关键修补）：卸载时 traverse 整块 dispose 每个几何体（含共用几何体——dispose 共用几何体只是释 GPU 缓冲，下次渲染自动重传，安全），Sprite 几何跳过（共用，无物可释），InstancedMesh dispose 实例缓冲；材质只 dispose 该块 `ownedMats` / `ownedTexs` 里的（每栋楼/店/宝塔/腿/航灯/炊烟的材质 + 炊烟贴图），**永不 dispose 共用材质**（地标缓存 `M()`、fillerMat、合并桶、pickMat、winTex、dfx 贴图）。卸载时还把该块的点选盒、玩家点选盒、炊烟、航灯、摩天轮、旗子、立面目标、店门口点、labelTop 从 MapView 的数组里摘掉（`removeAll` 原地改，数组是 effect 里的 `const`），并撤掉该块的立面覆盖盒。`window.__chunks.stats()` 可看内存 + 块状态。
+- **内存账本**（threeforge 的 ResourceTracker 思路，按我们规模来）：`ChunkLedger` 按块记几何字节（建时记、卸时释），`ledgerStats()` 报 `geometryMB` / `unreferencedMB`（记了但管理器已不持有的内存——>0 就是泄漏）/ `budgetMB`（桌面几何预算 256MB）。注册表拥有的共用材质永不 dispose（threeforge 的规则）。深圳全城块几何约 3.7MB，远低于最低档预算——账本是开发诊断，不是限流器。
+- **texCpuRelease 移植**（`client/src/round2/texCpuRelease.ts`，约 73 行，基本原样搬）：`releaseCpuAfterUpload(tex)` 给贴图挂 `texture.onUpdate`，GPU 上传完释 CPU 副本（`source.data = null`、ImageBitmap 显式 `close()`、`mipmaps = []`）；只动压缩贴图（KTX2/ASTC）+ ImageBitmap，绝不碰 canvas/image 贴图（跨视图共享，新 context 会黑墙——home-designer 真机实拍过车、门全黑），动态重绘贴图用 WeakSet（`markTexDynamic`）排除；只在移动端启用（context 丢失后无法重传，iOS 单页硬上限约 1–1.5GB，桌面内存有富余）。在 `materializeChunk` 里给块自有贴图挂钩。**老实说：今天它是休眠的**——游戏的贴图是程序化 canvas（窗光、霓虹、炊烟）+ 标准 GLB 图片，没有一个符合条件。下一步是给 GLB 贴图上 KTX2 / ImageBitmap，钩子到时自动生效。
+- **立面改成覆盖盒**：楼体合并后没法再换材质。最近 12 栋楼各加一个稍大的盒子（w+0.06、h、d+0.06），同样 `[side, side, plain, plain, side, side]` 立面材质，放在楼的世界位置/旋转上，加进场景（不进块组）；楼离开最近 12 栋、块卸载、离街景时都撤掉并 dispose 材质。立面目标现在是纯数据 `{id, x, z, w, h, d, rot, chunkKey, color}`。
+- **平安金融中心 .glb**：`applyPinganGlb(root, model, labelTop)` 从 chunks.ts 导出（原 MapView 换装逻辑原样搬，减去“还在加载中”的守卫——那是调用方的事）。`buildChunkMesh` / `materializeChunk` 在建块时读 `pinganModel.current`，已加载就当场换；MapView 在 phase A 里 `loadModel("pingan.glb")` 一次（只在深圳），加载完存进 `pinganModelRef`，已建好的根节点当场换（`pinganRootRef`，建块回调设、卸载回调清）。
+- **玩家店/房改成注册表**：原来的 player-buildings effect 自己建 mesh，现在只把列表写进 `playerBuildingsDataRef`，建块时读当前列表（体/顶/雨棚进 matte 桶，店招牌进块招牌 InstancedMesh，点选盒进 playerPicks）。列表变了只刷新受影响的块（`refreshKeys`，按地点偏移 +1.8/+1.3 算块键）。未加载块里的店，块重建时自动回来。
+- **MapView 重构**（`client/src/MapView.tsx`，5272 → 4965 行）：建城 effect 现在只建全局层（地形、水、路、灯、山、树、云、交通、行人、标签）+ phase A（winTex、地标工厂、共用块材质、`buildCityData`、manager、worker、平安 .glb、texCpuRelease 开关、玩家自己的块同步建、`window.__chunks`）。地点循环、地标/装饰合并、填充楼、店排、摩天轮/宝塔的内联代码全删了（逻辑搬进 chunks.ts，按块调用）。帧循环每帧调 `manager.processQueue()`；街景 tick 调 `manager.syncStreet`；V/M 回地图调 `manager.loadAll`。`buildingMats` / `neonMats` 现在只放共用材质（windows、glassy、地标 lit/neon），帧循环照常驱动；招牌亮度改走共用 sign 材质的 `color`（白天 ~0.45 暗、夜里满 + 微闪）；旗子改成直接遍历旗 mesh（`flag.userData.wx` 当相位）；`flagMats`（死的，从没被读过）删了。点选仍保留父链 `chunk-` 过滤当安全网（未加载的块根本没有点选盒，剪影块也没有）。
+- **确定性**：原来一条顺序 `rnd()` 流改成每点位独立种子流（`mulberry(hash(...))`，填充格、店候选、炊烟各自 key），同一块的数据两次生成结果完全相同，且与建块顺序无关。代价：填充楼/店排的位置比原来轻微洗牌了一次，但此后每次进城都一样。
+
+### 改动文件
+
+- `client/src/chunks.ts`（新，约 1490 行）：地形判定（`LAND` / `landAt` / `isLand` / `nearestLand`，从 MapView 搬过来）、块网格（`CHUNK = 16`、`chunkKeyOf`、`chunksNear`、`hash`、`mulberry`、`spotRnd`）、纯数据（`buildCityData` / `generateChunkData`，填充点/店点/装饰描述/地点/块键，每城算一次）、共用材质（`createSharedChunkMats`，matte/windows/glassy/sign）、合并工具（`paint` / `bake` / `shade`）、`buildChunkPayload` + `materializeChunk` + `buildChunkMesh`（同步组合）、`buildSilhouetteGroup`、`applyPinganGlb`、`disposeChunk`、`ChunkManager`（三档 + 时间预算 + 账本 + worker）、`ChunkLedger` + `groupGeometryBytes` + `CHUNK_MEMORY_BUDGETS`、`removeAll`。
+- `client/src/chunk.worker.ts`（新，约 59 行）：Vite worker，协议见上。
+- `client/src/landmarks.ts`：`Kit` 导出；`decor()` / `decorHk()` / `decorHz()` 改回懒描述符 `DecorDesc[]`（位置 + 构建闭包，不再急着建组）；`M()` 存 `m.userData.matKey`；`materialForKey(key)`；`mergeStaticGeometries(roots, keep)`（`mergeStatic` 包一层它，主线程行为不变）；`collectKept(obj)`（旋转的摩天轮、平安小楼的 kept 部分，矩阵 + 烘焙后几何）。
+- `client/src/round2/texCpuRelease.ts`（新，约 73 行）：home-designer `texCpuRelease.ts` 的移植（见上）。
+- `client/src/MapView.tsx`：见上（phase A、manager 回调、worker 接线、帧循环 processQueue + 相机 far、街景 tick、清理、玩家建筑注册表、立面覆盖盒、招牌/旗子动画）。
+- `SHOP-MAP-CHANGELOG.md`：本节。
+
+### 验证
+
+- `bun x tsc` 只剩原有的 bun-types 报错；`npm run build` 通过，产物 `index-Od4XrrMo.js`（2,173KB），worker 单独成包 `chunk.worker-CZDA8F6C.js`（711KB）。
+- Node 实测（tsx 跑真实数据，深圳）：
+  - 确定性：`generateChunkData` 两次结果完全相同；`buildCityData` 确定。**通过。**
+  - 最密块 `-2,0`（22 个地点，20 个地标模型，4 个装饰，0 填充，0 店）：同步 `buildChunkMesh` 中位数 **18.39ms**；worker 侧 `buildChunkPayload` 中位数 **20.60ms**；主线程 `materializeChunk` 中位数 **2.05ms**——远低于 8ms 线。**所以 worker 是必需的**（>8ms 规则）。
+  - 分解：纯数据生成 0.02ms；`forLoc` 全部 22 个地点 7.62ms；`forLoc` 桩掉后建块 4.78ms；轻块 `-1,-2`（1 地点、4 填充、1 店）0.62ms。
+  - 全 13 块分布：`-2,0` 19.99ms（22 地点）；`-1,-1` 14.16ms（12 地点）；`0,-1` 7.69ms（13 地点）；其余 ≤5.25ms。**>8ms 的块：2/13；中位数 3.02ms。**
+  - Worker 往返模拟（`structuredClone` 后 `materializeChunk`）：组子节点 106 对 106，点选盒 22 对 22，炊烟 0 对 0，立面 2 对 2，店门口点 0 对 0——**输出完全相同**。最密块 payload 合并几何 1,044KB，80 个 mesh。
+  - 剪影构建中位数 **0.73ms**（21 次）——主线程同步建很便宜。
+  - 三档 + worker 模拟走路（mock worker）：(0,0) 处 `{loaded:11, simple:2}`；向东走到 (32,0) 时两个西边块卸载 → `{loaded:8, simple:3}`；回地图 `loadAll` → `{loaded:13, simple:0}`。过期构建三项守卫全过（未知 key / 错 buildId / 卸载后才送达，都丢弃）。
+  - 内存账本：地图模式全城块几何 **3.69MB**；街景 (0,0) 处 3.38MB；走到 (32,0) 后 **1.92MB**；走到 (64,0) 后 **0.55MB**；`unreferencedMB` 全程 **0**——卸载是真释，不是只藏。
+- **还需 lee 在浏览器里验证**（pull + rebuild + restart，feature/round-2）：进街景走 5 分钟，看内存是不是平的（`window.__chunks.stats()` 看 `geometryMB` / `unreferencedMB`，后者必须是 0）；过块边界时有没有卡顿、有没有洞；走远了楼是不是变成盒子剪影、再走近变回全细节；V 回地图后楼是不是全在（约 0.2 秒内补齐）、都能点；平安 .glb 还在不在（如果已拷）；门口立牌/货箱/绿植、炊烟、航灯、旗子、摩天轮是不是还在；街景立面（最近 12 栋亮窗）是不是还在；玩家自己开的店/买的房是不是还在地图上。
+
+### 已知局限（老实说）
+
+- **地图回填要约 0.2 秒**：V 回地图时 13 块在帧预算内逐个补（1 帧约 2–3 块），不是瞬间全出；玩家自己的块是同步建的，所以落点处从不空。
+- **深圳街景的内存收益不大**：全城只有 13 块内容块，市中心 5×5 窗口基本盖住大半个城；省内存最明显的是走到城边（0.55MB）或在惠州/香港（城小，块少）。启动内存也省了（启动只建玩家那块，不是一次建全城）。
+- **招牌丢了逐个脉冲和霓虹管贴图**：现在是整城一个 InstancedMesh + 共用材质，只能整批亮暗 + 微闪；雨棚丢了 0.12 的暖色自发光（进 matte 桶，顶点色）。楼体窗光还在（windows/glassy 的 winTex 夜光）。
+- **填充楼/店排位置轻微洗牌**：顺序 `rnd()` 流改成每点位种子流，位置和原来不完全一样，但此后每次进城都一样；全局装饰（山上树、云、鸟、鱼、行人）也轻微移了位（同一条流少了地点/填充/店排的抽数），仍是每城确定的。
+- **剪影 → 全细节在约 16 米处有个可见的跳变**：剪影的占位和楼的 footprint/颜色一致，但细节是突然长出来的，不是渐变；雾盖住了 42 米外，跳变只在雾的内沿发生。
+- **装饰地标没有剪影**：春笋、京基 100 这类装饰地标在简化档里直接不出现，等块升全细节才回来（在雾里）。
+- **全城块 mesh 共 348 个**（深圳）：地标材质种类多（每种颜色+参数一个合并 mesh）是主要驱动，和 10f 一样；通用楼 + 招牌已经合并了（原来每通用楼约 6 个 mesh、招牌约 200 个独立 mesh）。比研究的 <150 指引高，但在桌面端没问题（lee 的目标是桌面）；下一步可以把地标颜色也画进顶点色再跨材质合并，但会丢玻璃自发光/霓虹/粗糙度的区别。
+- **帧卡顿的说法是推断**：主线程单次 materialize 2.05ms ≪ 16ms，所以理论上过块边界不卡；但浏览器里真实走路的帧时间还没测过，lee 走路时留意有没有顿。
+- **宝塔在香港也建在惠州西湖坐标上**（`getLocations("hz")` 的 else 分支）——这是原来就有的行为，保留了，顺带记一笔。
+- **texCpuRelease 今天是休眠的**：游戏没有 KTX2/ImageBitmap 贴图，钩子不生效；等 GLB 贴图上了 KTX2 / ImageBitmap 才开始省内存（下一步，见“思路来源”）。
+- **`nearLake` 是死代码**（LAKES 全空），`flagMats` 已删（死的）。
