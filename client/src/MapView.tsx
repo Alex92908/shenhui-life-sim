@@ -455,6 +455,29 @@ function StreetStick({ stick }: { stick: MutableRefObject<{ x: number; y: number
   );
 }
 
+/** ROUND-10 chunked streaming: the city is cut into a spatial grid so the
+    street only renders the blocks around the player (Sleeping Dogs streams
+    its city the same way — the local area is the detail layer, the rest of
+    the city is not rendered). Chunk groups sit at the origin, so children
+    keep absolute world coords and every position-based lookup (facades,
+    picking, NPC anchors) keeps working unchanged. */
+const CHUNK = 16;
+const chunkKeyOf = (x: number, z: number) => `${Math.floor(x / CHUNK)},${Math.floor(z / CHUNK)}`;
+/** chunk keys within Chebyshev radius r of (x, z). r=1 is the 3x3 neighbourhood (48x48 units). */
+const chunksNear = (x: number, z: number, r: number): string[] => {
+  const cx = Math.floor(x / CHUNK), cz = Math.floor(z / CHUNK);
+  const out: string[] = [];
+  for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) out.push(`${cx + dx},${cz + dz}`);
+  return out;
+};
+/** get-or-create the chunk group for a position. */
+const chunkGroupFor = (groups: Map<string, THREE.Group>, scene: THREE.Object3D, x: number, z: number): THREE.Group => {
+  const key = chunkKeyOf(x, z);
+  let g = groups.get(key);
+  if (!g) { g = new THREE.Group(); g.name = `chunk-${key}`; scene.add(g); groups.set(key, g); }
+  return g;
+};
+
 function hash(s: string): number {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
@@ -889,6 +912,8 @@ export function MapView(p: Props) {
       joystick) — same move vector as WASD, so the frame loop needs no
       separate path; push to the edge to run, like the interior stick. */
   const streetStickRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  /** ROUND-10 chunked streaming: chunkKey -> parent Group (built in the scene effect). */
+  const chunkGroupsRef = useRef<Map<string, THREE.Group>>(new Map());
   /** the current click-walk target was set by street steering (not a mouse click) */
   const streetWalkRef = useRef(false);
   const streetNameRef = useRef("");
@@ -1212,6 +1237,9 @@ export function MapView(p: Props) {
     streetFacadeTargetsRef.current = [];
     streetFacadeRef.current = [];
     streetFacadeMatsRef.current = [];
+    // ROUND-10 chunked streaming: fresh chunk map for the new city; the
+    // groups are filled in below as buildings / decor / shops are built.
+    chunkGroupsRef.current = new Map();
     /* ROUND-2 (a) wider streets: the map's roads read cramped ("太急了").
        Safest fix — do NOT rescale the canvas / move any place: widen every
        road at the source (×1.35, so 深南大道 2.8 → 3.8). Every downstream
@@ -1976,7 +2004,11 @@ export function MapView(p: Props) {
     // miniature in place (see the loadModel call after mergeStatic)
     let pinganRoot: THREE.Group | null = null;
     const decorSpots = landmarks.decor(cityKey);
-    const landmarkRoots: THREE.Object3D[] = [];
+    // ROUND-10 chunked streaming: landmark models merge per chunk (not one
+    // city-wide merge), so a far chunk's landmarks stop rendering in street
+    // mode. The pick box stays in the group, so it hides with its chunk.
+    const landmarkByChunk = new Map<string, THREE.Object3D[]>();
+    const decorByChunk = new Map<string, THREE.Object3D[]>();
     const pickMat = new THREE.MeshBasicMaterial({ visible: false });
     for (const l of locs) {
       const g = new THREE.Group();
@@ -1984,9 +2016,12 @@ export function MapView(p: Props) {
       if (built) {
         g.add(built.group);
         wheelGroups.push(...built.spin);
-        landmarkRoots.push(g);
+        const key = chunkKeyOf(l.x, l.z);
+        const arr = landmarkByChunk.get(key) ?? [];
+        arr.push(g);
+        landmarkByChunk.set(key, arr);
         if (l.id === "bank" && cityKey === "sz") pinganRoot = g;
-        // the model itself gets merged city-wide below; clicks hit this
+        // the model itself gets merged per chunk below; clicks hit this
         // invisible box (raycasting ignores visibility)
         const pick = new THREE.Mesh(new THREE.BoxGeometry(l.w, built.top, l.w), pickMat);
         pick.position.y = built.top / 2;
@@ -2009,7 +2044,7 @@ export function MapView(p: Props) {
           flagGroups.push(g);
         }
         g.position.set(l.x, LAND, l.z);
-        scene.add(g);
+        chunkGroupFor(chunkGroupsRef.current, scene, l.x, l.z).add(g);
         continue;
       }
       const h = l.h * 1.7;
@@ -2066,6 +2101,42 @@ export function MapView(p: Props) {
         awn.castShadow = true;
         g.add(awn);
         neonMats.push(awnMat);
+        // ROUND-10 chunked streaming: street-level detail at the door — now
+        // that only nearby chunks render, the local street can afford props
+        // (a standing signboard, crates, a planter). They ride in the
+        // building group, so they stream in and out with its chunk.
+        const sb = new THREE.Mesh(
+          new THREE.BoxGeometry(0.9, 1.1, 0.06),
+          new THREE.MeshStandardMaterial({ color: 0x2b2118, roughness: 0.8 }),
+        );
+        sb.position.set(l.w * 0.3, 0.75, l.w * 0.41 + 0.18);
+        sb.rotation.y = 0.15;
+        sb.castShadow = true;
+        g.add(sb);
+        const crMat = new THREE.MeshStandardMaterial({ color: 0x8a6b45, roughness: 0.95 });
+        const cr1 = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.45, 0.45), crMat);
+        cr1.position.set(-l.w * 0.28, 0.22, l.w * 0.41 + 0.32);
+        cr1.castShadow = true;
+        g.add(cr1);
+        const cr2 = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.38, 0.38), crMat);
+        cr2.position.set(-l.w * 0.28, 0.6, l.w * 0.41 + 0.32);
+        cr2.rotation.y = 0.3;
+        cr2.castShadow = true;
+        g.add(cr2);
+        const pot = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.22, 0.16, 0.3, 8),
+          new THREE.MeshStandardMaterial({ color: 0x9a5a3c, roughness: 0.9 }),
+        );
+        pot.position.set(l.w * 0.34, 0.15, l.w * 0.41 + 0.38);
+        pot.castShadow = true;
+        g.add(pot);
+        const bush = new THREE.Mesh(
+          new THREE.ConeGeometry(0.26, 0.55, 8),
+          new THREE.MeshStandardMaterial({ color: 0x4a7a3f, roughness: 1, flatShading: true }),
+        );
+        bush.position.set(l.w * 0.34, 0.55, l.w * 0.41 + 0.38);
+        bush.castShadow = true;
+        g.add(bush);
       }
       // blinking aviation light on the tall towers
       if (h > 7) {
@@ -2085,7 +2156,7 @@ export function MapView(p: Props) {
           sp.position.set(l.x + (rnd() - 0.5) * 1.6, LAND + 1.6 + ph * 3.4, l.z + (rnd() - 0.5) * 1.2);
           const sc = 1.1 + ph * 1.8;
           sp.scale.set(sc, sc, 1);
-          scene.add(sp);
+          chunkGroupFor(chunkGroupsRef.current, scene, l.x, l.z).add(sp);
           smokeSprites.push({ sp, phase: ph, x: l.x, z: l.z });
         }
       }
@@ -2101,7 +2172,7 @@ export function MapView(p: Props) {
         (g.userData as { flag?: THREE.Mesh }).flag = flag;
       }
       g.position.set(l.x, LAND, l.z);
-      scene.add(g);
+      chunkGroupFor(chunkGroupsRef.current, scene, l.x, l.z).add(g);
       if (l.type === "apec" && (g.userData as { flag?: THREE.Mesh }).flag) {
         flagGroups.push(g);
       }
@@ -2112,10 +2183,23 @@ export function MapView(p: Props) {
     for (const d of decorSpots) {
       d.group.position.set(d.x, LAND, d.z);
       d.group.rotation.y = d.ry ?? 0;
-      scene.add(d.group);
+      chunkGroupFor(chunkGroupsRef.current, scene, d.x, d.z).add(d.group);
       wheelGroups.push(...d.spin);
+      const key = chunkKeyOf(d.x, d.z);
+      const arr = decorByChunk.get(key) ?? [];
+      arr.push(d.group);
+      decorByChunk.set(key, arr);
     }
-    mergeStatic([...landmarkRoots, ...decorSpots.map((d) => d.group)], scene, new Set([...wheelGroups, ...(pinganRoot ? [pinganRoot] : [])]));
+    // ROUND-10 chunked streaming: the old one-shot city-wide merge is now
+    // one merge per chunk — each chunk's landmarks become its own merged
+    // static meshes under the chunk group, so hiding the group hides them.
+    const keepSet = new Set([...wheelGroups, ...(pinganRoot ? [pinganRoot] : [])]);
+    for (const [key, roots] of landmarkByChunk) {
+      mergeStatic(roots, chunkGroupsRef.current.get(key)!, keepSet);
+    }
+    for (const [key, roots] of decorByChunk) {
+      mergeStatic(roots, chunkGroupsRef.current.get(key)!, keepSet);
+    }
     buildingMats.push(...landmarks.litMats);
     neonMats.push(...landmarks.neonMats);
     // ROUND-10 (Three-Live): 平安金融中心 — if the compiled .glb is present
@@ -2170,13 +2254,13 @@ export function MapView(p: Props) {
       const wheel = landmarks.wheel(2.6, 0xf472b6, 0xfacc15);
       const hv = getLocations("sz").find((l) => l.id === "happyvalley")!; // the wheel stands beside 欢乐谷
       wheel.position.set(hv.x - 1.2, LAND + 3.4, hv.z - 2.2);
-      scene.add(wheel);
+      chunkGroupFor(chunkGroupsRef.current, scene, hv.x - 1.2, hv.z - 2.2).add(wheel);
       wheelGroups.push(wheel);
       for (const s of [-1, 1]) {
         const leg = new THREE.Mesh(new THREE.BoxGeometry(0.12, 3.6, 0.12), new THREE.MeshStandardMaterial({ color: 0xc9d3da, roughness: 0.4, metalness: 0.5 }));
         leg.position.set(hv.x - 1.2 + s * 0.5, LAND + 1.7, hv.z - 2.2);
         leg.rotation.z = s * 0.15;
-        scene.add(leg);
+        chunkGroupFor(chunkGroupsRef.current, scene, hv.x - 1.2, hv.z - 2.2).add(leg);
       }
     } else {
       // Sizhou pagoda beside West Lake
@@ -2200,8 +2284,7 @@ export function MapView(p: Props) {
       const tip = new THREE.Mesh(new THREE.ConeGeometry(0.22, 1.4, 6), new THREE.MeshStandardMaterial({ color: 0xf5b942, roughness: 0.4, metalness: 0.6 }));
       tip.position.y = 7.1;
       pagoda.add(tip);
-      { const xh = getLocations("hz").find((l) => l.id === "xihu")!; pagoda.position.set(xh.x + 2.2, LAND, xh.z + 1.6); } // 泗洲塔, on 西湖's shore beside the lake location
-      scene.add(pagoda);
+      { const xh = getLocations("hz").find((l) => l.id === "xihu")!; pagoda.position.set(xh.x + 2.2, LAND, xh.z + 1.6); chunkGroupFor(chunkGroupsRef.current, scene, xh.x + 2.2, xh.z + 1.6).add(pagoda); } // 泗洲塔, on 西湖's shore beside the lake location
     }
 
     /* ---- terrain: mountain ranges as flat-shaded cone clusters ---- */
@@ -2283,22 +2366,29 @@ export function MapView(p: Props) {
        buildings — without moving any place, road or the canvas. Heights
        (and the skyline) are untouched; only the footprint shrinks. */
     const FILLER_W = 0.72;
-    const filler = new THREE.InstancedMesh(
-      new THREE.BoxGeometry(1.9 * FILLER_W, 1, 1.9 * FILLER_W),
-      fillerMat,
-      spots.length,
-    );
-    {
+    // ROUND-10 chunked streaming: the filler towers are one InstancedMesh
+    // per chunk (same shared geometry + material) instead of one city-wide
+    // mesh, so far chunks stop rendering their background towers too.
+    const fillerGeo = new THREE.BoxGeometry(1.9 * FILLER_W, 1, 1.9 * FILLER_W);
+    const fillerByChunk = new Map<string, { x: number; z: number; h: number; c: THREE.Color; w?: number }[]>();
+    for (const s of spots) {
+      const key = chunkKeyOf(s.x, s.z);
+      const arr = fillerByChunk.get(key) ?? [];
+      arr.push(s);
+      fillerByChunk.set(key, arr);
+    }
+    for (const list of fillerByChunk.values()) {
+      const filler = new THREE.InstancedMesh(fillerGeo, fillerMat, list.length);
       const mat4 = new THREE.Matrix4();
-      spots.forEach((s, i) => {
+      list.forEach((s, i) => {
         mat4.makeScale(s.w ?? 1, s.h, s.w ?? 1).setPosition(s.x, LAND + s.h / 2, s.z);
         filler.setMatrixAt(i, mat4);
         filler.setColorAt(i, s.c);
       });
+      filler.castShadow = true;
+      filler.receiveShadow = true;
+      chunkGroupFor(chunkGroupsRef.current, scene, list[0]!.x, list[0]!.z).add(filler);
     }
-    filler.castShadow = true;
-    filler.receiveShadow = true;
-    scene.add(filler);
 
     /* ---- street frontage: shop rows lining the roads ----
        The corridors get street walls: small shop blocks shoulder to
@@ -2356,7 +2446,7 @@ export function MapView(p: Props) {
             neonMats.push(signMatS);
             g.position.set(x, LAND, z);
             g.rotation.y = -ang + (side > 0 ? 0 : Math.PI);
-            scene.add(g);
+            chunkGroupFor(chunkGroupsRef.current, scene, x, z).add(g);
             shopPts.push({ x, z, dx: x - Math.sin(ang) * side * 1.15, dz: z + Math.cos(ang) * side * 1.15 });
             shopCount++;
           }
@@ -3298,7 +3388,17 @@ export function MapView(p: Props) {
           if (best) { pickActor(best.key); return; }
         }
         // 3) buildings (places + round-9 player shop/flat buildings).
-        const hits = rc.intersectObjects([...pickMeshes, ...playerPickMeshesRef.current], false);
+        // ROUND-10 chunked streaming: raycasting ignores object visibility,
+        // so a hidden chunk's pick box would still be hit — walk up to the
+        // chunk group and skip the hit when that group is hidden.
+        const hits = rc.intersectObjects([...pickMeshes, ...playerPickMeshesRef.current], false).filter((h) => {
+          let o: THREE.Object3D | null = h.object;
+          while (o) {
+            if (o.name.startsWith("chunk-") && !o.visible) return false;
+            o = o.parent;
+          }
+          return true;
+        });
         const id = hits[0]?.object.userData.locId as string | undefined;
         if (id) {
           // a building was picked: select it, and stop any click-walk /
@@ -4326,6 +4426,7 @@ export function MapView(p: Props) {
             const nm = streetNameAt(propsRef.current.cityKey, s.x, s.z);
             if (nm !== streetNameRef.current) { streetNameRef.current = nm; setStreetName(nm); }
             syncStreetFacades(s.x, s.z);
+            syncStreetChunks(s.x, s.z);
           }
         }
         const walking = streetWalkRef.current || (streetRef.current && !!clickWalkRef.current);
@@ -4602,6 +4703,9 @@ export function MapView(p: Props) {
       if (fx) fx.render();
       else renderer.render(scene, camera);
     };
+    // ROUND-10 chunked streaming: the scene starts fully visible (map
+    // mode); the street tick narrows it to the neighbourhood when the
+    // player is on the street, and leaving the street restores it.
     raf = requestAnimationFrame(frame);
 
     return () => {
@@ -4610,6 +4714,7 @@ export function MapView(p: Props) {
       ro.disconnect();
       sceneRef.current = null;
       playerBuildingsGroupRef.current = null;
+      chunkGroupsRef.current = new Map();
       dom.removeEventListener("pointerdown", onDown);
       dom.removeEventListener("pointermove", onMove);
       dom.removeEventListener("pointerup", onUp);
@@ -4699,7 +4804,10 @@ export function MapView(p: Props) {
     if (!scene || list.length === 0) return;
     const locs = getLocations(p.cityKey);
     const byId = new Map(locs.map((l) => [l.id, l]));
+    // ROUND-10 chunked streaming: each shop/flat joins the chunk of its
+    // plot (the shared group is kept only as a handle for cleanup).
     const group = new THREE.Group();
+    const added: THREE.Group[] = [];
     const pickMat = new THREE.MeshBasicMaterial({ visible: false });
     for (const b of list) {
       const loc = byId.get(b.locId) ?? resolveLoc(p.cityKey, b.locId);
@@ -4741,12 +4849,12 @@ export function MapView(p: Props) {
       playerPickMeshesRef.current.push(pick);
       // offset beside the place's own building (its body is ~w*0.82 wide)
       g.position.set(loc.x + 1.8, LAND, loc.z + 1.3);
-      group.add(g);
+      chunkGroupFor(chunkGroupsRef.current, scene, loc.x + 1.8, loc.z + 1.3).add(g);
+      added.push(g);
     }
-    scene.add(group);
     playerBuildingsGroupRef.current = group;
     return () => {
-      group.parent?.remove(group);
+      for (const g of added) g.parent?.remove(g);
       if (playerBuildingsGroupRef.current === group) playerBuildingsGroupRef.current = null;
       playerPickMeshesRef.current = [];
     };
@@ -4772,6 +4880,21 @@ export function MapView(p: Props) {
   /** Nearest buildings wear lit facades while on the street; the map keeps
       its clean look. Synced on entry and refreshed as you walk (the frame
       loop calls this ~4 Hz). At most 12 buildings, within 16 units. */
+  /** ROUND-10 chunked streaming: only the 3x3 chunks around the player
+      render on the street (48x48 units — just past the fog's far edge, so
+      a chunk appears as it emerges from the haze, never popping in from
+      clear air). Called from the same ~4 Hz street tick as the facades. */
+  const syncStreetChunks = (px: number, pz: number) => {
+    if (!streetRef.current) return;
+    const want = new Set(chunksNear(px, pz, 1));
+    for (const [key, g] of chunkGroupsRef.current) {
+      if (g.visible !== want.has(key)) g.visible = want.has(key);
+    }
+  };
+  /** Back to the map: every chunk renders again. */
+  const showAllChunks = () => {
+    for (const g of chunkGroupsRef.current.values()) g.visible = true;
+  };
   const syncStreetFacades = (px: number, pz: number) => {
     if (!streetRef.current) return;
     const mapTex = streetFacadeTexRef.current ?? (streetFacadeTexRef.current = facadeTexture());
@@ -4854,10 +4977,11 @@ export function MapView(p: Props) {
       // facades come on with the street: the nearest buildings get lit
       // windows (refreshed as you walk); the map keeps its clean look
       const s = actorsRef.current.get("self");
-      if (s) syncStreetFacades(s.x, s.z);
+      if (s) { syncStreetFacades(s.x, s.z); syncStreetChunks(s.x, s.z); }
     } else {
       camRef.current.pol = CAM_POL;
       removeStreetFacades();
+      showAllChunks();
       streetWalkRef.current = false;
       streetKeysRef.current.clear();
       streetStickRef.current.x = 0;
