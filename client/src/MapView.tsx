@@ -6,7 +6,13 @@
 // as raised roadways with moving traffic. Desktop rendering: shadow-mapped
 // sun, a slow day–night cycle with lit windows at dusk, instanced filler
 // buildings and trees, animated bay water, orbit + zoom camera that follows
-// the player. Clicking a building (or its label chip) walks there.
+// the player. ROUND-2 (a): wider streets (roads ×1.35 at the source),
+// a real-time water shader (waves + ripples + Fresnel + foam), refined
+// traffic (headlights / brake lights / wheels / suspension bob), and live
+// ambient life — circling birds, park butterflies, schooling fish, swaying
+// trees — plus the 3D figures themselves as the characters (no floating
+// avatar badges; the standard is the figure + a small name label).
+// Clicking a building (or its label chip) walks there.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
@@ -14,6 +20,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { createLandmarks, mergeStatic } from "./landmarks";
 import { AREA_LABELS } from "./areas";
 import { ACCESSORIES, HAIRS } from "./living";
+import { makeFigure, faceSpecFor, addAccessory, disposeGroup, type FaceSpec } from "./figure";
 import { activitiesAt } from "./activities";
 import { SKYLINE } from "./skyline";
 import * as TSZ from "./terrain-sz";
@@ -22,8 +29,11 @@ import * as THK from "./terrain-hk";
 import { ROADS as REAL_ROADS } from "./roads";
 /* Real land / inland water / bridges / rivers per city (tools/terrain/gen_terrain.py). */
 const TERRAIN: Record<CityKey, typeof THK> = { sz: TSZ, hz: THZ, hk: THK };
-import { CITIES, LOC_EN, getLocations, resolveLoc, areaLocId, placesForCity, billboardSpots, PLACE_KINDS, stationLocId, metroLinesForCity, modeById, npcsForCity, outfitOf, type CityKey, type Loc, type LocType, type Npc, type TransportModeId } from "./data";
+import { CITIES, LOC_EN, getLocations, resolveLoc, areaLocId, placesForCity, billboardSpots, PLACE_KINDS, stationLocId, metroLinesForCity, modeById, npcsForCity, npcAllowedAt, outfitOf, type CityKey, type Loc, type LocType, type Npc, type TransportModeId } from "./data";
+import { COMMUNITY_PIN_COLOR, type CommunityMapMarker } from "./round2/community";
+import { PET_MODEL, stepPetFollow, type Pet, type PetRuntime } from "./round2/pets";
 import { makePostFx, type PostFx } from "./postfx";
+import { makeDesktopFx, applyWetShader, type DesktopFx } from "./round2/desktopfx";
 import { getLang } from "./i18n";
 const tt = (zh: string, en: string) => (getLang() === "zh" ? zh : en);
 
@@ -37,6 +47,14 @@ export interface RemotePlayer {
   hair?: number;
   /** accessory index into ACCESSORIES */
   accessory?: number;
+  /** character creator: the player's hand-picked face (null = seed face) */
+  faceSpec?: FaceSpec | null;
+}
+
+/** identity of the face an actor's 3D view should show: the custom spec
+    as JSON, or `seed:<faceSeed>` for a seed-derived face. */
+export function faceKeyFor(faceSpec: FaceSpec | null | undefined, faceSeed: string): string {
+  return faceSpec ? `c:${JSON.stringify(faceSpec)}` : `s:${faceSeed}`;
 }
 
 interface Props {
@@ -53,6 +71,11 @@ interface Props {
   scenic?: { x: number; z: number; phase: number; az: number; pol: number; dist: number; path?: [number, number][]; durMs: number; nonce: number } | null;
   onMapMode?: (m: "city" | "follow") => void;
   selfEmoji: string;
+  /** the player's face seed (same value LifeStage gets as faceId) — so the
+      player has the same face on the map and in interiors */
+  selfFaceId?: string;
+  /** character creator: the player's hand-picked face (null = seed face) */
+  selfFaceSpec?: FaceSpec | null;
   selfColor: number;
   selfName: string;
   remotePlayers: RemotePlayer[];
@@ -73,6 +96,24 @@ interface Props {
   onSelect: (locId: string) => void;
   /** Tapped a person on the map: an NPC (by name) or another player (by public id). */
   onPickActor?: (who: { npc: string } | { player: string }) => void;
+  /** Round-3 (C): community pins for this city — the return value of
+      toMapMarkers() (round2/community.ts) over App's server queries
+      (strays / notices / snake warnings / fishing spots). Absent or empty
+      = no pins. Clicks go to onCommunityMarkerClick. */
+  communityMarkers?: CommunityMapMarker[];
+  /** Round-3 (C): the pet currently following the player
+      (getActivePet(pets) in App). Absent / null = no pet on the map. */
+  activePet?: Pet | null;
+  /** Tapped a community pin: App opens the matching detail panel
+      (stray / notice / snake warning / fishing spot). */
+  onCommunityMarkerClick?: (marker: CommunityMapMarker) => void;
+  /** Round-9: player shops / bought flats as VISIBLE 3D buildings on the
+      map — one small building per shop/flat, at its stored locId, offset
+      beside the place's own building so nothing z-fights or moves. The
+      name rides the community-marker chip (same labels overlay as places);
+      the building itself carries a coloured shop sign. Clicking a building
+      selects its place (pick mesh with userData.locId). */
+  playerBuildings?: { id: string; kind: "shop" | "flat"; locId: string; name: string; color: number; emoji: string }[];
   /** Search focus: when focusNonce changes, the camera pans to focusLocId
       for a few seconds so a searched place is actually shown on the map. */
   focusLocId?: string;
@@ -164,6 +205,17 @@ interface Actor {
   behavior: string;
   speed: number;
   seed: number;
+  /** face seed for the shared figure builder — the SAME seed LifeStage
+      uses for this person, so the face matches between map and interior:
+      the player's faceId, an NPC's name, a remote player's id */
+  faceSeed?: string;
+  /** character creator: a hand-picked face. When set it wins over the
+      seed face (same override LifeStage uses). */
+  faceSpec?: FaceSpec | null;
+  /** identity of the face currently built into this actor's 3D view —
+      custom spec JSON, or `seed:<faceSeed>`; when it changes, the view's
+      figure is rebuilt (a face is geometry, it can't be recoloured) */
+  faceKey?: string;
   heading: number;
   phase: number;
   blend: number;
@@ -301,6 +353,28 @@ export function isLand(cityKey: CityKey, x: number, z: number, margin = 0): bool
   return margin <= 0 || [[margin, 0], [-margin, 0], [0, margin], [0, -margin]].every(([dx, dz]) => landAt(cityKey, x + dx!, z + dz!));
 }
 
+/** Nearest dry land to (x, z): the point itself if it is land, else the
+    closest point on an expanding ring (step 0.5, out to 10 units). The
+    waterfront promenade / beach at the Shenzhen Bay coast renders as a
+    walkable-looking strip but sits outside the terrain LAND polygons, so a
+    click there used to be silently dropped; clamping walks the player to
+    the nearest shore instead. Null when there is no land within 10 units
+    (e.g. clicked far out in the sea) — the click stays a no-op. */
+export function nearestLand(cityKey: CityKey, x: number, z: number, maxR = 10, step = 0.5): { x: number; z: number } | null {
+  if (isLand(cityKey, x, z)) return { x, z };
+  for (let r = step; r <= maxR + 1e-9; r += step) {
+    // samples ~step apart along the ring, at least 8 so small rings are covered
+    const n = Math.max(8, Math.ceil((2 * Math.PI * r) / step));
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const sx = x + Math.cos(a) * r;
+      const sz = z + Math.sin(a) * r;
+      if (isLand(cityKey, sx, sz)) return { x: sx, z: sz };
+    }
+  }
+  return null;
+}
+
 function hash(s: string): number {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
@@ -316,15 +390,23 @@ function hash(s: string): number {
 function npcAnchorLocId(n: Npc, hour: number, locs: Loc[]): string {
   const first = locs[0];
   if (!first) return "home";
+  /* Round-3 (C): npcAllowedAt (data.ts) decides — onlyLocIds / neverLocIds
+     win over preferTypes, so e.g. 阿海 never gets sent to a second-hand
+     market for lunch and 大芬姐 never to Dafen / 华强北. The type-only
+     fallback below runs only for NPCs without an allow-list; an NPC whose
+     allow-list matches nothing here (e.g. 郭叔, onlyLocIds: []) is not
+     placed on this city's map at all (actor sync filters them out), so the
+     `allowedFirst ?? first` fallback here is only a safety net. */
+  const allowedFirst = locs.find((l) => npcAllowedAt(n, l));
   const byType = (types: LocType[]): Loc | undefined =>
-    locs.find((l) => types.includes(l.type) && n.preferTypes.includes(l.type)) ??
-    locs.find((l) => types.includes(l.type));
-  if (n.behavior === "stay") return (locs.find((l) => n.preferTypes.includes(l.type)) ?? first).id;
-  if (hour >= 7 && hour < 9) return (byType(["transit", "work"]) ?? first).id;
-  if (hour >= 12 && hour < 14) return (byType(["food", "market"]) ?? first).id;
-  if (hour >= 18 && hour < 22) return (byType(["food", "social", "mall", "fun"]) ?? first).id;
-  if (hour >= 22 || hour < 7) return (byType(["home", "fun"]) ?? first).id;
-  return (byType(n.preferTypes) ?? first).id;
+    locs.find((l) => types.includes(l.type) && npcAllowedAt(n, l)) ??
+    (n.onlyLocIds ? undefined : locs.find((l) => types.includes(l.type)));
+  if (n.behavior === "stay") return (allowedFirst ?? first).id;
+  if (hour >= 7 && hour < 9) return (byType(["transit", "work"]) ?? allowedFirst ?? first).id;
+  if (hour >= 12 && hour < 14) return (byType(["food", "market"]) ?? allowedFirst ?? first).id;
+  if (hour >= 18 && hour < 22) return (byType(["food", "social", "mall", "fun"]) ?? allowedFirst ?? first).id;
+  if (hour >= 22 || hour < 7) return (byType(["home", "fun"]) ?? allowedFirst ?? first).id;
+  return (byType(n.preferTypes) ?? allowedFirst ?? first).id;
 }
 
 /* Street greetings: when two named neighbours pass on the pavement, one
@@ -405,10 +487,153 @@ function emojiSprite(emoji: string, ring: number, self = false): THREE.Sprite {
   return sp;
 }
 
+/* The pet model's moving parts, kept on the group so the frame loop can
+   animate them without re-querying the scene graph every frame. */
+interface PetParts {
+  body?: THREE.Group;
+  tail?: THREE.Group;
+  legFL?: THREE.Group;
+  legFR?: THREE.Group;
+  legBL?: THREE.Group;
+  legBR?: THREE.Group;
+}
+
+/** Dispose a pet group built by makePetGroup (geometries + materials +
+    the badge sprite's canvas texture) when the pet changes. */
+function disposeObject(root: THREE.Object3D): void {
+  root.traverse((o) => {
+    if (o instanceof THREE.Mesh || o instanceof THREE.Sprite) {
+      const mesh = o as THREE.Mesh;
+      mesh.geometry?.dispose?.();
+      const m = mesh.material as THREE.Material | THREE.Material[];
+      const disposeOne = (x: THREE.Material) => {
+        if (x instanceof THREE.SpriteMaterial) x.map?.dispose();
+        x.dispose();
+      };
+      if (Array.isArray(m)) m.forEach(disposeOne);
+      else if (m) disposeOne(m);
+    }
+  });
+}
+
+/* Round-3 (C): the player's pet as a low-poly animal, built from the same
+   primitive-geometry language as the map figures above (LifeStage's
+   makeFigure works the same way) — no new .glb. Facing +Z, like the
+   actors: rotation.y = heading from stepPetFollow().
+   Cat vs dog is read off PET_MODEL (round2/pets.ts): pointed triangle ears
+   + up-curved thin tail + smaller frame for a cat; floppy ears + level
+   thick tail + snout + bigger frame for a dog. Both get real geometry eyes
+   (the round-2 faces rule: nothing faceless). Coat colour is the pet's own
+   pet.color; belly / muzzle are the same colour lightened. */
+function makePetGroup(pet: Pet): THREE.Group {
+  const spec = PET_MODEL[pet.kind];
+  const g = new THREE.Group();
+  const s = pet.kind === "dog" ? 1.28 : 1; // dogs read bigger than cats at map scale
+  const coat = new THREE.MeshStandardMaterial({ color: pet.color, roughness: 0.85 });
+  const light = new THREE.MeshStandardMaterial({ color: new THREE.Color(pet.color).lerp(new THREE.Color(0xffffff), 0.45), roughness: 0.85 });
+  const dark = new THREE.MeshStandardMaterial({ color: new THREE.Color(pet.color).multiplyScalar(0.55), roughness: 0.9 });
+  const mkLeg = (x: number, z: number) => {
+    const pivot = new THREE.Group();
+    pivot.position.set(x, 0.22 * s, z);
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.05 * s, 0.045 * s, 0.22 * s, 8), dark);
+    m.position.y = -0.11 * s;
+    m.castShadow = true;
+    pivot.add(m);
+    g.add(pivot);
+    return pivot;
+  };
+  const legFL = mkLeg(-0.11 * s, 0.17 * s);
+  const legFR = mkLeg(0.11 * s, 0.17 * s);
+  const legBL = mkLeg(-0.11 * s, -0.17 * s);
+  const legBR = mkLeg(0.11 * s, -0.17 * s);
+  // body parts live in their own subgroup so the sit pose can lift the
+  // chest (rotation.x) while the legs stay planted on the ground
+  const body = new THREE.Group();
+  body.position.y = 0.22 * s;
+  g.add(body);
+  const torso = new THREE.Mesh(new THREE.SphereGeometry(0.26 * s, 14, 10), coat);
+  torso.scale.set(0.85, 0.78, 1.3);
+  torso.position.y = 0.12 * s;
+  torso.castShadow = true;
+  body.add(torso);
+  const belly = new THREE.Mesh(new THREE.SphereGeometry(0.2 * s, 12, 8), light);
+  belly.scale.set(0.7, 0.55, 1.1);
+  belly.position.set(0, 0.02 * s, 0.08 * s);
+  body.add(belly);
+  const head = new THREE.Group();
+  head.position.set(0, 0.32 * s, 0.34 * s);
+  body.add(head);
+  const skull = new THREE.Mesh(new THREE.SphereGeometry(0.19 * s, 14, 10), coat);
+  skull.castShadow = true;
+  head.add(skull);
+  const eyeMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.3 });
+  for (const ex of [-0.07, 0.07]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.028 * s, 8, 6), eyeMat);
+    eye.position.set(ex * s, 0.05 * s, 0.165 * s);
+    head.add(eye);
+  }
+  if (pet.kind === "cat") {
+    for (const ex of [-0.1, 0.1]) {
+      const ear = new THREE.Mesh(new THREE.ConeGeometry(0.085 * s, 0.17 * s, 4), coat);
+      ear.position.set(ex * s, 0.2 * s, 0);
+      ear.rotation.y = Math.PI / 4;
+      ear.castShadow = true;
+      head.add(ear);
+      const inner = new THREE.Mesh(new THREE.ConeGeometry(0.045 * s, 0.1 * s, 4), new THREE.MeshStandardMaterial({ color: 0xf5a8b8, roughness: 0.9 }));
+      inner.position.set(ex * s, 0.18 * s, 0.03 * s);
+      inner.rotation.y = Math.PI / 4;
+      head.add(inner);
+    }
+    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.05 * s, 0.03 * s, 0.02), new THREE.MeshStandardMaterial({ color: 0xe87a90, roughness: 0.7 }));
+    nose.position.set(0, -0.01 * s, 0.19 * s);
+    head.add(nose);
+  } else {
+    for (const ex of [-0.17, 0.17]) {
+      const ear = new THREE.Mesh(new THREE.BoxGeometry(0.07 * s, 0.24 * s, 0.05 * s), dark);
+      ear.position.set(ex * s, 0.02 * s, 0.02 * s);
+      ear.rotation.z = ex < 0 ? 0.25 : -0.25;
+      ear.castShadow = true;
+      head.add(ear);
+    }
+    const muzzle = new THREE.Mesh(new THREE.BoxGeometry(0.15 * s, 0.11 * s, 0.13 * s), light);
+    muzzle.position.set(0, -0.05 * s, 0.18 * s);
+    muzzle.castShadow = true;
+    head.add(muzzle);
+    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.06 * s, 0.04 * s, 0.03), new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.5 }));
+    nose.position.set(0, -0.02 * s, 0.25 * s);
+    head.add(nose);
+  }
+  // tail on its own pivot so the frame loop can wag it: cat up-curved,
+  // dog out level and slightly up
+  const tail = new THREE.Group();
+  tail.position.set(0, 0.14 * s, -0.33 * s);
+  const tailLen = pet.kind === "cat" ? 0.42 : 0.3;
+  const tailMesh = new THREE.Mesh(new THREE.CylinderGeometry(pet.kind === "cat" ? 0.028 * s : 0.042 * s, pet.kind === "cat" ? 0.022 * s : 0.035 * s, tailLen * s, 8), coat);
+  tailMesh.position.y = (tailLen / 2) * s;
+  tailMesh.castShadow = true;
+  tail.add(tailMesh);
+  tail.rotation.x = pet.kind === "cat" ? -0.35 : -1.15;
+  body.add(tail);
+  const badge = emojiSprite(spec.emoji, pet.color);
+  badge.scale.set(0.9, 0.9, 1);
+  badge.position.y = 0.85 * s;
+  g.add(badge);
+  const parts = g.userData as PetParts;
+  parts.body = body;
+  parts.tail = tail;
+  parts.legFL = legFL;
+  parts.legFR = legFR;
+  parts.legBL = legBL;
+  parts.legBR = legBR;
+  return g;
+}
+
 interface Chip {
   el: HTMLButtonElement | HTMLDivElement;
   getPos: () => { x: number; y: number; z: number };
-  kind: "loc" | "road" | "actor";
+  kind: "loc" | "road" | "actor" | "community";
+  /** round-3 (C): community pin kind (stray / notice / snake / fishing) */
+  community?: CommunityMapMarker["kind"];
   /** a scripted neighbour (not a real player): name shows only near you */
   npc?: boolean;
   locId?: string;
@@ -449,6 +674,20 @@ export function MapView(p: Props) {
   /* each NPC's current schedule anchor (locId), so a changed beat only
      retargets them once — they then walk there across the map */
   const npcAnchorRef = useRef<Map<string, string>>(new Map());
+  /* round-3 (C): the following pet's live position, driven every frame by
+     stepPetFollow() (round2/pets.ts); not saved, rebuilt when the pet changes */
+  const petRuntimeRef = useRef<PetRuntime>({ pos: { x: 0, z: 0 }, heading: 0, pose: "sit" });
+  /* round-3 (C): community pins — the chip divs the sync effect below
+     creates in the labels overlay, positioned by the frame loop's
+     declutter pass together with the place / NPC chips */
+  const communityChipsRef = useRef<Chip[]>([]);
+  /* Round-9: the scene (built by the mount effect) so the player-buildings
+     effect can add/remove shop & flat meshes without rebuilding the city. */
+  const sceneRef = useRef<THREE.Scene | null>(null);
+  const playerBuildingsGroupRef = useRef<THREE.Group | null>(null);
+  /* Round-9: pick meshes of the player buildings, so a tap on a shop/flat
+     building selects its place (onUp raycasts these alongside pickMeshes). */
+  const playerPickMeshesRef = useRef<THREE.Object3D[]>([]);
   const propsRef = useRef(p);
   propsRef.current = p;
   const camRef = useRef({ az: 0, pol: CAM_POL, dist: 46, distCur: 46, tx: LAND_CX, tz: LAND_CZ, lastUser: 0, cut: 0 });
@@ -494,6 +733,34 @@ export function MapView(p: Props) {
   const trackSelfRef = useRef(false);
   /* the searched place, pinned until the next search or ✕ */
   const pinRef = useRef<{ id: string; x: number; z: number; name: string } | null>(null);
+  /* ROUND-8 click-to-walk (desktop mouse): the ground point the player
+     clicked — the self actor walks there at travel-mode speed. Set by the
+     map's onUp, cleared on arrival / new click / trip / location change.
+     The ring mesh lives in the scene effect (next to pinRing). */
+  const clickWalkRef = useRef<{ x: number; z: number } | null>(null);
+  const clickMarkerRef = useRef<THREE.Mesh | null>(null);
+  /* Walk-to-person: tapping an NPC / player walks you up to them (before
+     this, tapping only opened the chat/card and the player never moved).
+     The frame loop re-targets clickWalkRef to the person's current spot
+     each frame, so a wandering NPC is followed until close. followActorRef
+     = the actor being followed; pendingActorRef = the actor whose chat/card
+     opens on arrival (NPCs only — a remote player's card opens at once,
+     the walk just follows in the background). */
+  const followActorRef = useRef<string | null>(null);
+  const pendingActorRef = useRef<string | null>(null);
+  /* LoL-style move-click ripple: performance.now() of the last click-to-walk
+     click (-1 = none). The frame loop expands + fades the ring for ~500ms
+     from this timestamp, then the ring settles into the faint persistent
+     destination marker while the player walks there. */
+  const clickRippleAtRef = useRef<number>(-1);
+  /* a trip or teleport cancels any click-walk, so the figure never walks
+     back to a stale point after arriving somewhere else */
+  useEffect(() => {
+    clickWalkRef.current = null;
+    followActorRef.current = null;
+    pendingActorRef.current = null;
+    if (clickMarkerRef.current) clickMarkerRef.current.visible = false;
+  }, [p.selfLocId, p.cityKey]);
   useEffect(() => {
     const l = p.pinLocId ? resolveLoc(p.cityKey, p.pinLocId) : undefined;
     pinRef.current = l && p.pinLocId ? { id: p.pinLocId, x: l.x, z: l.z, name: document.documentElement.lang === "en" ? (LOC_EN[l.name] ?? l.name) : l.name } : null;
@@ -648,7 +915,7 @@ export function MapView(p: Props) {
   // App rebuilds remotePlayers / npcMoodEmoji as fresh objects on EVERY
   // render, so depending on them by identity re-ran this sync constantly;
   // depend on their content instead.
-  const remoteKey = p.remotePlayers.map((rp) => `${rp.id}|${rp.name}|${rp.emoji}|${rp.color}|${rp.locId}|${rp.hair ?? ""}|${rp.accessory ?? ""}`).join(";");
+  const remoteKey = p.remotePlayers.map((rp) => `${rp.id}|${rp.name}|${rp.emoji}|${rp.color}|${rp.locId}|${rp.hair ?? ""}|${rp.accessory ?? ""}|${faceKeyFor(rp.faceSpec ?? null, rp.id)}`).join(";");
   const moodKey = p.npcMoodEmoji ? Object.entries(p.npcMoodEmoji).map(([k, v]) => `${k}=${v}`).join(";") : "";
   const cityRef = useRef(p.cityKey);
   useEffect(() => {
@@ -665,6 +932,8 @@ export function MapView(p: Props) {
       if (!cur) {
         actors.set(a.key, {
           ...a,
+          faceSpec: a.faceSpec ?? null,
+          faceKey: faceKeyFor(a.faceSpec ?? null, a.faceSeed ?? a.key),
           x: (loc?.x ?? 0) + ((a.seed % 5) - 2) * 0.35,
           z: (loc?.z ?? 0) + ((a.seed % 3) - 1) * 0.35,
           tx: loc?.x ?? 0,
@@ -680,6 +949,9 @@ export function MapView(p: Props) {
         cur.pants = a.pants;
         cur.accessory = a.accessory;
         cur.hair = a.hair;
+        cur.faceSeed = a.faceSeed;
+        cur.faceSpec = a.faceSpec ?? null;
+        cur.faceKey = faceKeyFor(a.faceSpec ?? null, a.faceSeed ?? a.key);
         cur.behavior = a.behavior;
         cur.speed = a.speed;
         if (!a.wander) {
@@ -702,19 +974,27 @@ export function MapView(p: Props) {
     // visibly slow, a taxi crosses the miniature ~3× faster, rail fastest.
     // App's trip timer derives from the same table, so arrival matches.
     const selfSpeed = modeById((p.travelModeId ?? "walk") as TransportModeId).mapSpeed;
-    upsert({ key: "self", name: p.selfName, emoji: p.selfEmoji, color: p.selfColor, isSelf: true, seed: 7, heading: 0, phase: 0, blend: 0, startLoc: p.selfLocId, shirt: selfOutfit.shirt, pants: selfOutfit.pants, accessory: p.selfAccessory && p.selfAccessory !== "none" ? p.selfAccessory : (selfOutfit.id === "formal" ? "tie" : "none"), hair: p.selfHair ?? 0, behavior: "self", speed: selfSpeed });
+    upsert({ key: "self", name: p.selfName, emoji: p.selfEmoji, color: p.selfColor, isSelf: true, seed: 7, faceSeed: p.selfFaceId ?? `player-${p.selfEmoji}`, faceSpec: p.selfFaceSpec ?? null, heading: 0, phase: 0, blend: 0, startLoc: p.selfLocId, shirt: selfOutfit.shirt, pants: selfOutfit.pants, accessory: p.selfAccessory && p.selfAccessory !== "none" ? p.selfAccessory : (selfOutfit.id === "formal" ? "tie" : "none"), hair: p.selfHair ?? 0, behavior: "self", speed: selfSpeed });
     for (const rp of p.remotePlayers) {
-      upsert({ key: `p-${rp.id}`, name: rp.name, emoji: rp.emoji, color: rp.color, seed: hash(rp.id), heading: 0, phase: hash(rp.id) % 6, blend: 0, startLoc: rp.locId, shirt: rp.color, pants: 0x2e3440, accessory: ACCESSORIES[rp.accessory ?? 0]?.id ?? "none", hair: rp.hair ?? hash(rp.id) % 4, behavior: "wander", speed: 2.4 });
+      upsert({ key: `p-${rp.id}`, name: rp.name, emoji: rp.emoji, color: rp.color, seed: hash(rp.id), faceSeed: rp.id, faceSpec: rp.faceSpec ?? null, heading: 0, phase: hash(rp.id) % 6, blend: 0, startLoc: rp.locId, shirt: rp.color, pants: 0x2e3440, accessory: ACCESSORIES[rp.accessory ?? 0]?.id ?? "none", hair: rp.hair ?? hash(rp.id) % 4, behavior: "wander", speed: 2.4 });
     }
     /* NPCs keep a quiet city company: each real player in town sends one neighbour home
-       (at least two stay), so the map belongs to real people as soon as they show up */
-    const cast = npcsForCity(p.cityKey);
+       (at least two stay), so the map belongs to real people as soon as they show up.
+       Round-3 (C): npcAllowedAt decides where an NPC may stand — an NPC whose
+       onlyLocIds matches nothing in this city (e.g. 郭叔, onlyLocIds: [], no
+       real wet market in Huizhou yet) is not placed at all, instead of
+       falling back to a random corner. */
+    const cast = npcsForCity(p.cityKey).filter((n) => !n.onlyLocIds || locs.some((l) => npcAllowedAt(n, l)));
     cast.slice(0, Math.max(2, cast.length - p.remotePlayers.length)).forEach((n, i) => {
-      const preferred = locs.filter((l) => n.preferTypes.includes(l.type));
+      const preferred = locs.filter((l) => npcAllowedAt(n, l));
       const pool = preferred.length > 0 ? preferred : locs;
       const loc = pool[(hash(n.name) + i) % pool.length];
-      const speed = n.behavior === "commute" ? 5.6 : n.behavior === "patrol" ? 3.4 : n.behavior === "stay" ? 2 : 4.2;
-      upsert({ key: `npc-${n.name}`, name: `${n.name}·${n.job}${p.npcMoodEmoji?.[n.name] ? ` ${p.npcMoodEmoji[n.name]}` : ""}`, emoji: n.emoji, color: n.color, wander: true, seed: hash(n.name), heading: 0, phase: hash(n.name) % 6, blend: 0, startLoc: loc?.id ?? "home", shirt: n.shirt, pants: n.pants, accessory: n.accessory, hair: hash(n.name) % 4, behavior: n.behavior, speed });
+      /* 路人走路的速度：不能比玩家步行（2.6）快，不然满街都是跑步的人。
+         普通路人 1.8 是散步，通勤族 2.6 是赶路的快走（等于玩家步行），
+         巡逻 2.0 是稳步，守摊/守工位 1.4 是慢挪。之前 wander 4.2 =
+         玩家跑步速度、commute 5.6 比玩家跑步还快，所以看着像在 sprint。 */
+      const speed = n.behavior === "commute" ? 2.6 : n.behavior === "patrol" ? 2.0 : n.behavior === "stay" ? 1.4 : 1.8;
+      upsert({ key: `npc-${n.name}`, name: `${n.name}·${n.job}${p.npcMoodEmoji?.[n.name] ? ` ${p.npcMoodEmoji[n.name]}` : ""}`, emoji: n.emoji, color: n.color, wander: true, seed: hash(n.name), faceSeed: n.name, heading: 0, phase: hash(n.name) % 6, blend: 0, startLoc: loc?.id ?? "home", shirt: n.shirt, pants: n.pants, accessory: n.accessory, hair: hash(n.name) % 4, behavior: n.behavior, speed });
     });
     // NPC schedules: the beat changes with the real hour, and when it does
     // the NPC visibly travels to the new anchor across the map (commuting
@@ -738,7 +1018,7 @@ export function MapView(p: Props) {
     for (const key of Array.from(actors.keys())) {
       if (!want.has(key)) actors.delete(key);
     }
-  }, [p.cityKey, p.selfLocId, p.selfEmoji, p.selfColor, p.selfName, remoteKey, p.selfOutfitId, p.selfHair, p.selfAccessory, moodKey, p.travelModeId]);
+  }, [p.cityKey, p.selfLocId, p.selfEmoji, p.selfColor, p.selfName, remoteKey, p.selfOutfitId, p.selfHair, p.selfAccessory, moodKey, p.travelModeId, faceKeyFor(p.selfFaceSpec ?? null, p.selfFaceId ?? `player-${p.selfEmoji}`)]);
 
   // Build/rebuild the whole 3D scene when the city changes.
   useEffect(() => {
@@ -747,7 +1027,19 @@ export function MapView(p: Props) {
     if (!mount || !labels) return;
     const cityKey = propsRef.current.cityKey;
     const locs = getLocations(cityKey);
-    const roads = ROADS[cityKey];
+    /* ROUND-2 (a) wider streets: the map's roads read cramped ("太急了").
+       Safest fix — do NOT rescale the canvas / move any place: widen every
+       road at the source (×1.35, so 深南大道 2.8 → 3.8). Every downstream
+       use reads r.w (road mesh, viaduct, sidewalks, zebra stop lines,
+       lamps, nearRoad clearance, shop offsets, pedestrian pavements), so
+       the whole street cross-section breathes out together and all place
+       positions, landAt(), metro lines and camera framing stay untouched.
+       ROUND-6: still too narrow / the map reads thin ("瘦") — bump to
+       ×1.8 (深南大道 2.8 → 5.0) and widen the sidewalks to match, so the
+       whole street corridor scales up proportionally. */
+    const ROAD_W = 1.8;
+    const SIDEWALK_W = 1.5;
+    const roads: Road[] = ROADS[cityKey].map((r) => ({ ...r, w: r.w * ROAD_W }));
     const flagGroups: THREE.Group[] = [];
     const wheelGroups: THREE.Object3D[] = [];
     const rnd = mulberry(cityKey === "sz" ? 2026 : cityKey === "hk" ? 2088 : 2077);
@@ -769,6 +1061,13 @@ export function MapView(p: Props) {
        when it runs smoothly. Text and labels are HTML and always native. */
     const dpr = window.devicePixelRatio || 1;
     const phoneLike = lite || window.innerWidth < 768 || (typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches);
+    /* ROUND-7 desktop-only visual effects (rain-wet streets, neon night,
+       procedural textures, warm night haze): only on a real desktop — fine
+       pointer, not phone-like, not lite. Phones keep the exact previous
+       look and cost; nothing below runs for them. */
+    const pointerFine = typeof matchMedia === "function" && matchMedia("(pointer: fine)").matches;
+    const desktopFxOn = !lite && !phoneLike && pointerFine;
+    const dfx: DesktopFx | null = desktopFxOn ? makeDesktopFx() : null;
     const prTop = Math.min(phoneLike ? 3 : 2, dpr);
     const prLadder = [prTop, 2, 1.5, 1].filter((v, i, a) => v <= prTop && a.indexOf(v) === i);
     let prIdx = 0;
@@ -784,6 +1083,7 @@ export function MapView(p: Props) {
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xbfd9e8);
     scene.fog = new THREE.Fog(0xbfd9e8, 120, 240);
+    sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 500);
 
@@ -853,6 +1153,13 @@ export function MapView(p: Props) {
     });
     let trainKey = ""; let trainIdx = -1; let trainSince = 0; let selfOnTrain = false;
     const trainPos = { x: 0, z: 0, active: false };
+    /* round-3 (C): the following pet — one makePetGroup model, rebuilt only
+       when the pet itself changes (id / kind / colour); the scene rebuild
+       on city change resets these, and the runtime ref restarts at the
+       player's feet. petPhase is the walk-cycle clock for the leg swing. */
+    let petGroup: THREE.Group | null = null;
+    let petGroupKey = "";
+    let petPhase = 0;
 
     /* registries for materials the frame loop animates with the day cycle */
     const buildingMats: THREE.MeshStandardMaterial[] = [];
@@ -864,14 +1171,112 @@ export function MapView(p: Props) {
     let glowMat: THREE.SpriteMaterial | null = null;
     let fillerMat: THREE.MeshStandardMaterial | null = null;
 
-    /* ---- water & land ---- */
-    const waterMat = new THREE.MeshStandardMaterial({ color: 0x2e7fb8, roughness: 0.35, metalness: 0.1, transparent: true, opacity: 0.94 });
+    /* ---- water & land ----
+       ROUND-2 (a) real-time water shader (Three.js Water-example pattern:
+       vertex waves + scrolling normal ripples + Fresnel + depth colour +
+       shoreline foam). The sea is a segmented plane whose vertices heave
+       with summed sines; the fragment shader perturbs the normal with
+       scrolling procedural noise, mixes deep/shallow colour, adds a
+       Fresnel sky tint + sun glint, and foams where the water meets the
+       coast (coastZ is reproduced in-shader from per-city coefficients).
+       Inland water (TERRAIN WATER polygons) shares the same shader with
+       foam off — same uniforms, so one loop update drives both. Rivers
+       stay on waterMat (thin ribbons; a vertex shader buys nothing there).
+       coastZ() / landAt() behaviour is untouched. */
+    const waterMat = new THREE.MeshStandardMaterial({ color: 0x2e7fb8, roughness: 0.35, metalness: 0.1, transparent: true, opacity: 0.9 });
+    const coastCoeff: [number, number, number, number, number, number] =
+      cityKey === "sz" ? [16.6, 0.1, 1.1, 0.23, 0.7, 1.7] :
+      cityKey === "hk" ? [21.6, 0.08, 1.0, 0.19, 0.6, 0.4] :
+      [14.6, 0.09, 1.2, 0.21, 0.7, 0.6];
+    const waterUniforms = {
+      uTime: { value: 0 },
+      uDayF: { value: 1 },
+      uNightF: { value: 0 },
+      uSunDir: { value: new THREE.Vector3(0.5, 0.8, 0.3) },
+      uCoast: { value: new THREE.Vector4(coastCoeff[0], coastCoeff[1], coastCoeff[2], coastCoeff[3]) },
+      uCoast2: { value: new THREE.Vector2(coastCoeff[4], coastCoeff[5]) },
+      uFoam: { value: 1 },
+    };
+    const waterVert = `
+      uniform float uTime;
+      varying vec3 vPos;
+      varying vec3 vNormalW;
+      void main() {
+        vec3 p = position;
+        float w = sin(p.x * 0.35 + uTime * 1.1) * 0.09
+          + sin(p.z * 0.28 - uTime * 0.8) * 0.07
+          + sin((p.x + p.z) * 0.16 + uTime * 0.5) * 0.05;
+        p.y += w;
+        // world position: the foam band compares against the world-space
+        // coast line, and the sea mesh sits at z = +4, so local z is off
+        vPos = (modelMatrix * vec4(p, 1.0)).xyz;
+        // analytic-ish normal from the wave slopes
+        float dx = 0.35 * 0.09 * cos(p.x * 0.35 + uTime * 1.1) + 0.16 * 0.05 * cos((p.x + p.z) * 0.16 + uTime * 0.5);
+        float dz = 0.28 * 0.07 * cos(p.z * 0.28 - uTime * 0.8) + 0.16 * 0.05 * cos((p.x + p.z) * 0.16 + uTime * 0.5);
+        vNormalW = normalize(vec3(-dx, 1.0, -dz));
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+      }`;
+    const waterFrag = `
+      uniform float uTime; uniform float uDayF; uniform float uNightF;
+      uniform vec3 uSunDir; uniform vec4 uCoast; uniform vec2 uCoast2; uniform float uFoam;
+      varying vec3 vPos; varying vec3 vNormalW;
+      float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float noise(vec2 p) {
+        vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+      }
+      void main() {
+        // scrolling ripple normal, two octaves drifting against each other
+        float n1 = noise(vPos.xz * 0.55 + vec2(uTime * 0.22, uTime * 0.13));
+        float n2 = noise(vPos.xz * 1.3 - vec2(uTime * 0.17, uTime * 0.29));
+        vec3 n = normalize(vNormalW + vec3(n1 - 0.5, 0.0, n2 - 0.5) * 0.55);
+        vec3 viewDir = normalize(cameraPosition - vPos);
+        float fres = pow(1.0 - max(dot(viewDir, n), 0.0), 3.0);
+        // depth colour: shallow turquoise where the waves crest / near shore, deep blue out at sea
+        float depthK = clamp(0.5 + vPos.y * 2.2 + (n1 - 0.5) * 0.4, 0.0, 1.0);
+        vec3 deep = vec3(0.05, 0.32, 0.55);
+        vec3 shallow = vec3(0.16, 0.62, 0.78);
+        vec3 col = mix(deep, shallow, depthK);
+        // Fresnel sky reflection + sun glint
+        col = mix(col, vec3(0.62, 0.78, 0.88), fres * 0.65);
+        float spec = pow(max(dot(reflect(-normalize(uSunDir), n), viewDir), 0.0), 90.0);
+        col += vec3(1.0, 0.95, 0.8) * spec * (0.4 + 0.6 * uDayF);
+        // shoreline foam: a breathing band just seaward of the coast line
+        if (uFoam > 0.5) {
+          float coast = uCoast.x + sin(vPos.x * uCoast.y) * uCoast.z + sin(vPos.x * uCoast.w + uCoast2.y) * uCoast2.x;
+          float d = coast - vPos.z;
+          float band = smoothstep(0.0, 0.9, d) * (1.0 - smoothstep(0.9, 2.6, d));
+          float foamN = noise(vPos.xz * 2.2 + vec2(uTime * 0.6, -uTime * 0.4));
+          float foam = band * smoothstep(0.35, 0.75, foamN + 0.25 * sin(uTime * 1.4 + vPos.x * 0.8));
+          col = mix(col, vec3(0.96, 0.99, 1.0), clamp(foam, 0.0, 1.0) * 0.85);
+        }
+        // night: dark, moonlit water
+        col = mix(col, col * vec3(0.16, 0.28, 0.48) + vec3(0.02, 0.05, 0.1), uNightF * 0.85);
+        gl_FragColor = vec4(col, 0.82);
+      }`;
+    const makeWaterMat = (foam: number) => {
+      const m = new THREE.ShaderMaterial({
+        uniforms: {
+          uTime: waterUniforms.uTime, uDayF: waterUniforms.uDayF, uNightF: waterUniforms.uNightF,
+          uSunDir: waterUniforms.uSunDir, uCoast: waterUniforms.uCoast, uCoast2: waterUniforms.uCoast2,
+          uFoam: { value: foam },
+        },
+        vertexShader: waterVert, fragmentShader: waterFrag,
+        transparent: true, depthWrite: false,
+      });
+      return m;
+    };
+    const seaWaterMat = makeWaterMat(1);
+    const lakeWaterMat = makeWaterMat(0);
     // The sea hugs the miniature (a margin around the land, not a 240×160
     // ocean): an oversized plane was most of the empty dark-blue area the
-    // city used to float in.
-    const water = new THREE.Mesh(new THREE.PlaneGeometry(168, 104), waterMat);
-    water.rotation.x = -Math.PI / 2;
+    // city used to float in. Geometry is baked flat (rotateX on the
+    // geometry, not the mesh) so the shader's local +Y is world up.
+    const seaGeo = new THREE.PlaneGeometry(168, 104, 96, 64);
+    seaGeo.rotateX(-Math.PI / 2);
+    const water = new THREE.Mesh(seaGeo, seaWaterMat);
     water.position.set(0, 0, 4);
+    water.renderOrder = 1;
     scene.add(water);
     // (rivers are real centrelines now — see TERRAIN[city].RIVERS below)
     // Hong Kong's Victoria Harbour: a real water channel cut between
@@ -911,17 +1316,56 @@ export function MapView(p: Props) {
     );
     land.receiveShadow = true;
     scene.add(land);
+    // hinterland: neighbouring land continuing off the map edge (Dongguan /
+    // Huizhou / Hong Kong New Territories) — a thin ring around the city,
+    // so the city no longer reads as an island. It is NOT in TERRAIN LAND,
+    // so isLand / nearestLand / click-to-walk stay inside the city (visual
+    // only, you cannot walk off into Dongguan).
+    // lee (2026-11-12): "四周加一圈边缘就好……不要这么多" — the first
+    // version was a huge solid deck, then a 35-unit fade was still too
+    // much land. So the fade is now the same short one ACROSS uses:
+    // solid within ~2 units of the city border, dithered out by ~10 — a
+    // narrow ring, sea where it's sea (the water plane shows), land where
+    // it's land (the ring). Same land colour as the city (no colour step
+    // at the border). +0.02 lift: it overlaps the faded ACROSS where the
+    // two meet (the NT), and a coplanar deck would z-fight with it.
+    if (TERRAIN[cityKey].HINTERLAND.length) {
+      const toShapeH = (ring: [number, number][]) => { const sh = new THREE.Shape(); ring.forEach(([x, z], i) => (i ? sh.lineTo(x, -z) : sh.moveTo(x, -z))); return sh; };
+      const hShapes = TERRAIN[cityKey].HINTERLAND.map((poly) => { const sh = toShapeH(poly[0]!); for (const hole of poly.slice(1)) sh.holes.push(toShapeH(hole)); return sh; });
+      const hGeo = new THREE.ExtrudeGeometry(hShapes, { depth: LAND, bevelEnabled: false });
+      hGeo.rotateX(-Math.PI / 2);
+      const ownPtsH: [number, number][] = [];
+      for (const poly of TERRAIN[cityKey].LAND) { const ring = poly[0] ?? []; const step = Math.max(1, Math.floor(ring.length / 600)); for (let i = 0; i < ring.length; i += step) ownPtsH.push(ring[i]!); }
+      const hinterPts: [number, number][] = [];
+      for (const poly of TERRAIN[cityKey].HINTERLAND) { const ring = poly[0] ?? []; const step = Math.max(1, Math.floor(ring.length / 600)); for (let i = 0; i < ring.length; i += step) hinterPts.push(ring[i]!); }
+      let borderH = ownPtsH.filter(([x, z]) => hinterPts.some(([hx, hz]) => (hx - x) ** 2 + (hz - z) ** 2 < 2.25));
+      if (borderH.length === 0) borderH = ownPtsH;
+      const NH = 64;
+      const pickH: THREE.Vector2[] = [];
+      for (let i = 0; i < NH; i++) { const p = borderH[Math.floor((i * borderH.length) / NH)] ?? borderH[0]!; pickH.push(new THREE.Vector2(p[0], p[1])); }
+      const hinterMat = new THREE.MeshStandardMaterial({ color: cityKey === "sz" ? 0xd9cfae : 0xcfd6a8, roughness: 1 });
+      hinterMat.onBeforeCompile = (sh) => {
+        sh.uniforms.uBorder = { value: pickH };
+        sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nvarying vec2 vXZ;").replace("#include <begin_vertex>", "#include <begin_vertex>\nvXZ = (modelMatrix * vec4(transformed, 1.0)).xz;");
+        sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec2 vXZ;\nuniform vec2 uBorder[64];").replace("#include <dithering_fragment>", "#include <dithering_fragment>\nfloat bd = 1e9; for (int i = 0; i < 64; i++) { bd = min(bd, distance(vXZ, uBorder[i])); }\nfloat fade = 1.0 - smoothstep(2.0, 10.0, bd); float nz = fract(sin(dot(floor(gl_FragCoord.xy), vec2(12.9898, 78.233))) * 43758.5453); if (fade < nz) discard;");
+      };
+      const hinter = new THREE.Mesh(hGeo, hinterMat);
+      hinter.position.y = 0.02;
+      hinter.receiveShadow = true;
+      scene.add(hinter);
+    }
     // the neighbour across the border (Hong Kong from Shenzhen and vice versa): seen, not walked
     if (TERRAIN[cityKey].ACROSS.length) {
       const toShape2 = (ring: [number, number][]) => { const sh = new THREE.Shape(); ring.forEach(([x, z], i) => (i ? sh.lineTo(x, -z) : sh.moveTo(x, -z))); return sh; };
       const shapes = TERRAIN[cityKey].ACROSS.map((poly) => { const sh = toShape2(poly[0]!); for (const hole of poly.slice(1)) sh.holes.push(toShape2(hole)); return sh; });
-      const g2 = new THREE.ExtrudeGeometry(shapes, { depth: LAND * 0.8, bevelEnabled: false });
+      const g2 = new THREE.ExtrudeGeometry(shapes, { depth: LAND, bevelEnabled: false });
       g2.rotateX(-Math.PI / 2);
       /* only a band of the neighbour shows: solid within ~2 units of the shared
-         border, fading out by ~5 — the border reads clearly without a big grey
+         border, fading out by ~10 — the border reads clearly without a big grey
          block filling the screen (portrait phones see far to the south). The
          fade is per pixel (distance to sampled border points), so big
-         triangles don't smear it. */
+         triangles don't smear it. The neighbour is extruded to the same height
+         as our own land (not lower): a step at the border reads as a cut. */
       const ownPts: [number, number][] = [];
       for (const poly of TERRAIN[cityKey].LAND) { const ring = poly[0] ?? []; const step = Math.max(1, Math.floor(ring.length / 600)); for (let i = 0; i < ring.length; i += step) ownPts.push(ring[i]!); }
       const acrossPts: [number, number][] = [];
@@ -931,11 +1375,11 @@ export function MapView(p: Props) {
       const N = 64;
       const pick: THREE.Vector2[] = [];
       for (let i = 0; i < N; i++) { const p = border[Math.floor((i * border.length) / N)] ?? border[0]!; pick.push(new THREE.Vector2(p[0], p[1])); }
-      const acrossMat = new THREE.MeshStandardMaterial({ color: 0x8b8f87, roughness: 1 });
+      const acrossMat = new THREE.MeshStandardMaterial({ color: 0xb3b598, roughness: 1 });
       acrossMat.onBeforeCompile = (sh) => {
         sh.uniforms.uBorder = { value: pick };
         sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nvarying vec2 vXZ;").replace("#include <begin_vertex>", "#include <begin_vertex>\nvXZ = (modelMatrix * vec4(transformed, 1.0)).xz;");
-        sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec2 vXZ;\nuniform vec2 uBorder[64];").replace("#include <dithering_fragment>", "#include <dithering_fragment>\nfloat bd = 1e9; for (int i = 0; i < 64; i++) { bd = min(bd, distance(vXZ, uBorder[i])); }\nfloat fade = 1.0 - smoothstep(3.0, 7.0, bd); float nz = fract(sin(dot(floor(gl_FragCoord.xy), vec2(12.9898, 78.233))) * 43758.5453); if (fade < nz) discard;");
+        sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec2 vXZ;\nuniform vec2 uBorder[64];").replace("#include <dithering_fragment>", "#include <dithering_fragment>\nfloat bd = 1e9; for (int i = 0; i < 64; i++) { bd = min(bd, distance(vXZ, uBorder[i])); }\nfloat fade = 1.0 - smoothstep(2.0, 10.0, bd); float nz = fract(sin(dot(floor(gl_FragCoord.xy), vec2(12.9898, 78.233))) * 43758.5453); if (fade < nz) discard;");
       };
       const across = new THREE.Mesh(g2, acrossMat);
       across.receiveShadow = true;
@@ -952,11 +1396,12 @@ export function MapView(p: Props) {
     // foam line where the water meets the sand, breathing with the waves
     foamMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35 });
     {
-      // reservoirs and lakes as water set into the land
+      // reservoirs and lakes as water set into the land — same shader as
+      // the sea (ripples + depth colour, no shoreline foam: no coast here)
       for (const poly of TERRAIN[cityKey].WATER) {
         const sh = new THREE.Shape(); poly[0]!.forEach(([x, z], i) => (i ? sh.lineTo(x, -z) : sh.moveTo(x, -z)));
         const g = new THREE.ShapeGeometry(sh); g.rotateX(-Math.PI / 2);
-        const m = new THREE.Mesh(g, waterMat); m.position.y = LAND + 0.03; m.receiveShadow = true; scene.add(m);
+        const m = new THREE.Mesh(g, lakeWaterMat); m.position.y = LAND + 0.03; m.receiveShadow = true; m.renderOrder = 1; scene.add(m);
       }
       // real bridges: deck, two towers, main cables (青马、汲水门、汀九、昂船洲、深圳湾…)
       const deckMat = new THREE.MeshStandardMaterial({ color: 0xe8e4da, roughness: 0.6 });
@@ -967,7 +1412,10 @@ export function MapView(p: Props) {
         for (let i = 1; i < rv.pts.length; i++) {
           const [ax, az] = rv.pts[i - 1]!, [bx, bz] = rv.pts[i]!;
           const mx = (ax + bx) / 2, mz = (az + bz) / 2;
-          if (!landAt(cityKey, mx, mz)) continue;
+          // border rivers (深圳河) hug the edge of the land, so a segment's
+          // midpoint can fall just off it — accept it if either end is on land,
+          // so the river ribbon doesn't drop out right at the border seam
+          if (!landAt(cityKey, mx, mz) && !landAt(cityKey, ax, az) && !landAt(cityKey, bx, bz)) continue;
           const len = Math.hypot(bx - ax, bz - az);
           const seg = new THREE.Mesh(new THREE.BoxGeometry(len + 0.25, 0.04, 0.55), waterMat);
           seg.position.set(mx, LAND + 0.02, mz); seg.rotation.y = -Math.atan2(bz - az, bx - ax); scene.add(seg);
@@ -999,6 +1447,11 @@ export function MapView(p: Props) {
 
     /* ---- roads ---- */
     const roadMat = new THREE.MeshStandardMaterial({ color: 0x3c4148, roughness: 0.95 });
+    // ROUND-7 desktop: procedural asphalt + rain-wet shader (phones: flat as before)
+    if (dfx) {
+      roadMat.map = dfx.asphaltTex;
+      applyWetShader(roadMat, dfx.wet);
+    }
     const lineMat = new THREE.MeshBasicMaterial({ color: 0xf5e9b8 });
     const roadMeshes: THREE.Mesh[] = [];
     const viaductMat = new THREE.MeshStandardMaterial({ color: 0xbfc3c7, roughness: 0.8 });
@@ -1110,11 +1563,16 @@ export function MapView(p: Props) {
     // sidewalks: a pale pavement strip hugging both sides of every road
     {
       const paveMat = new THREE.MeshStandardMaterial({ color: 0xcfc8b2, roughness: 1 });
+      // ROUND-7 desktop: procedural concrete + rain-wet shader (phones: flat as before)
+      if (dfx) {
+        paveMat.map = dfx.concreteTex;
+        applyWetShader(paveMat, dfx.wet);
+      }
       for (const r of roads) {
         const len = roadLen(r);
         const ang = Math.atan2(r.z2 - r.z1, r.x2 - r.x1);
         for (const side of [1, -1]) {
-          const off = (r.w / 2 + 0.5) * side;
+          const off = (r.w / 2 + SIDEWALK_W / 2 - 0.075) * side;
           if (TERRAIN[cityKey].LAND.length) {
             // pavements only where the road is on land (not along viaducts / tunnels)
             const n = Math.max(2, Math.ceil(len / 1.5));
@@ -1122,12 +1580,12 @@ export function MapView(p: Props) {
               const tm = (i + 0.5) / n;
               const mx = r.x1 + (r.x2 - r.x1) * tm + Math.sin(ang) * off, mz = r.z1 + (r.z2 - r.z1) * tm - Math.cos(ang) * off;
               if (!isLand(cityKey, mx, mz)) continue;
-              const pm = new THREE.Mesh(new THREE.BoxGeometry(len / n + 0.02, 0.07, 0.95), paveMat);
+              const pm = new THREE.Mesh(new THREE.BoxGeometry(len / n + 0.02, 0.07, SIDEWALK_W), paveMat);
               pm.position.set(mx, LAND + 0.045, mz); pm.rotation.y = -ang; pm.receiveShadow = true; scene.add(pm);
             }
             continue;
           }
-          const m = new THREE.Mesh(new THREE.BoxGeometry(len, 0.07, 0.95), paveMat);
+          const m = new THREE.Mesh(new THREE.BoxGeometry(len, 0.07, SIDEWALK_W), paveMat);
           m.position.set((r.x1 + r.x2) / 2 + Math.sin(ang) * off, LAND + 0.045, (r.z1 + r.z2) / 2 - Math.cos(ang) * off);
           m.rotation.y = -ang;
           m.receiveShadow = true;
@@ -1398,15 +1856,17 @@ export function MapView(p: Props) {
       roof.castShadow = true;
       g.add(roof);
       // neon shop sign for the lively places — pulses after dark
-      if (l.type === "food" || l.type === "mall" || l.type === "social" || l.type === "apec" || l.type === "market" || l.type === "transit" || l.type === "work" || l.type === "lodging" || l.type === "home") {
+      if (l.type === "food" || l.type === "mall" || l.type === "social" || l.type === "apec" || l.type === "market" || l.type === "electronics" || l.type === "oilpainting" || l.type === "secondhand" || l.type === "seafood" || l.type === "oldtown" || l.type === "womensstreet" || l.type === "museum" || l.type === "library" || l.type === "factory" || l.type === "transit" || l.type === "work" || l.type === "lodging" || l.type === "home") {
         const neonMat = new THREE.MeshStandardMaterial({ color: 0x1a1216, roughness: 0.5, emissive: l.color, emissiveIntensity: 0.35 });
+        // ROUND-7 desktop: neon-tube emissive map so signs read as tubing, not a flat glowing box
+        if (dfx) neonMat.emissiveMap = dfx.neonTex;
         const sign = new THREE.Mesh(new THREE.BoxGeometry(Math.min(2.2, l.w * 0.62), 0.55, 0.1), neonMat);
         sign.position.set(0, 0.5 + h * 0.52, l.w * 0.41 + 0.06);
         g.add(sign);
         neonMats.push(neonMat);
       }
       // storefront awning with a warm under-glow for the street-level places
-      if (l.type === "food" || l.type === "mall" || l.type === "market" || l.type === "social") {
+      if (l.type === "food" || l.type === "mall" || l.type === "market" || l.type === "electronics" || l.type === "oilpainting" || l.type === "secondhand" || l.type === "seafood" || l.type === "oldtown" || l.type === "womensstreet" || l.type === "social") {
         const awnMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(l.color).multiplyScalar(0.85), roughness: 0.7, emissive: 0xffb35c, emissiveIntensity: 0.12 });
         const awn = new THREE.Mesh(new THREE.BoxGeometry(l.w * 0.72, 0.08, 0.9), awnMat);
         awn.position.set(0, 1.55, l.w * 0.41 + 0.42);
@@ -1580,8 +2040,14 @@ export function MapView(p: Props) {
       }
     }
     fillerMat = new THREE.MeshStandardMaterial({ roughness: 0.95, emissive: 0xffc873, emissiveMap: winTex, emissiveIntensity: 0 });
+    /* ROUND-8 spacious blocks: filler footprints were wall-to-wall on a 2.8
+       grid (1.9 wide = 68% of the cell, gaps under a unit). Scale the
+       footprint down so blocks read roomy — visible open ground between
+       buildings — without moving any place, road or the canvas. Heights
+       (and the skyline) are untouched; only the footprint shrinks. */
+    const FILLER_W = 0.72;
     const filler = new THREE.InstancedMesh(
-      new THREE.BoxGeometry(1.9, 1, 1.9),
+      new THREE.BoxGeometry(1.9 * FILLER_W, 1, 1.9 * FILLER_W),
       fillerMat,
       spots.length,
     );
@@ -1643,6 +2109,8 @@ export function MapView(p: Props) {
             awnS.rotation.x = 0.35;
             g.add(awnS);
             const signMatS = new THREE.MeshStandardMaterial({ color: 0x1a1216, roughness: 0.5, emissive: [0xe63a1f, 0xf5b942, 0x2dd4bf, 0xec4899, 0x3b82f6][Math.floor(rnd() * 5)] ?? 0xe63a1f, emissiveIntensity: 0.4 });
+            // ROUND-7 desktop: neon-tube emissive map on shop signs too
+            if (dfx) signMatS.emissiveMap = dfx.neonTex;
             const signS = new THREE.Mesh(new THREE.BoxGeometry(Math.min(1.9, gw * 0.7), 0.42, 0.08), signMatS);
             signS.position.set(0, Math.min(gh - 0.35, 1.95), 0.84);
             g.add(signS);
@@ -1666,9 +2134,27 @@ export function MapView(p: Props) {
       if (nearLoc(x, z) || nearRoad(x, z) || nearMountain(x, z) || nearLake(x, z)) continue;
       treeSpots.push({ x, z, s: 0.7 + rnd() * 0.8 });
     }
+    // ROUND-2 (a) trees sway: a vertex-shader bend on the instanced
+    // foliage material (tip moves most, trunk stays put) — zero per-frame
+    // matrix work for 430 trees. uTime is fed from the frame loop.
+    const foliageMat = new THREE.MeshStandardMaterial({ color: 0x4d9b5f, roughness: 1, flatShading: true });
+    const foliageUniforms = { uTime: { value: 0 } };
+    foliageMat.onBeforeCompile = (sh) => {
+      sh.uniforms.uTime = foliageUniforms.uTime;
+      sh.vertexShader = sh.vertexShader
+        .replace("#include <common>", "#include <common>\nuniform float uTime;")
+        .replace("#include <begin_vertex>", `#include <begin_vertex>
+          #ifdef USE_INSTANCING
+            vec2 swayXZ = vec2(instanceMatrix[3][0], instanceMatrix[3][2]);
+            float swayPh = uTime * 1.1 + swayXZ.x * 0.8 + swayXZ.y * 0.6;
+            float swayK = smoothstep(0.0, 2.1, position.y) * 0.14;
+            transformed.x += sin(swayPh) * swayK;
+            transformed.z += cos(swayPh * 0.83) * swayK * 0.6;
+          #endif`);
+    };
     const foliage = new THREE.InstancedMesh(
       new THREE.ConeGeometry(0.85, 2.1, 7),
-      new THREE.MeshStandardMaterial({ color: 0x4d9b5f, roughness: 1, flatShading: true }),
+      foliageMat,
       treeSpots.length,
     );
     {
@@ -1731,12 +2217,80 @@ export function MapView(p: Props) {
     rainPts.visible = false;
     scene.add(rainPts);
 
+    /* ---- ROUND-2 (a) map ambient life: birds, butterflies, fish ----
+       The map was static. All three are instanced (a handful of draw
+       calls, matrices rewritten per frame from preallocated state — no
+       per-frame allocations). Birds circle the city in loose flocks;
+       butterflies flutter round the parks; fish school in the sea just
+       off the coast and in the reservoirs/lakes (TERRAIN WATER polygons).
+       Trees sway in the vertex shader (see foliage above), not here. */
+    const AMB_LITE = lite;
+    const birdN = AMB_LITE ? 8 : 14;
+    const bflyN = AMB_LITE ? 6 : 10;
+    const fishSeaN = AMB_LITE ? 14 : 24;
+    const birdBody = new THREE.InstancedMesh(new THREE.BoxGeometry(0.13, 0.07, 0.36), new THREE.MeshStandardMaterial({ color: 0x2b3440, roughness: 0.8 }), birdN);
+    const birdWingGeoL = new THREE.BoxGeometry(0.52, 0.03, 0.2); birdWingGeoL.translate(0.3, 0, 0);
+    const birdWingGeoR = new THREE.BoxGeometry(0.52, 0.03, 0.2); birdWingGeoR.translate(-0.3, 0, 0);
+    const birdWingMat = new THREE.MeshStandardMaterial({ color: 0x3a4556, roughness: 0.8 });
+    const birdWingL = new THREE.InstancedMesh(birdWingGeoL, birdWingMat, birdN);
+    const birdWingR = new THREE.InstancedMesh(birdWingGeoR, birdWingMat, birdN);
+    for (const m of [birdBody, birdWingL, birdWingR]) { m.frustumCulled = false; scene.add(m); }
+    const birds = Array.from({ length: birdN }, () => ({
+      cx: -30 + rnd() * 60, cz: -16 + rnd() * 30, r: 2 + rnd() * 3.5,
+      h: 7.5 + rnd() * 4.5, ang: rnd() * Math.PI * 2, sp: (0.14 + rnd() * 0.2) * (rnd() > 0.5 ? 1 : -1),
+      flap: 6 + rnd() * 3, ph: rnd() * 6,
+    }));
+    const parkLocs = locs.filter((l) => l.type === "fun" || l.type === "scenic");
+    const bflyAnchors = (parkLocs.length ? parkLocs : locs).slice(0, 3);
+    const bflyBody = new THREE.InstancedMesh(new THREE.BoxGeometry(0.05, 0.03, 0.15), new THREE.MeshStandardMaterial({ roughness: 0.7 }), bflyN);
+    const bflyWingGeoL = new THREE.BoxGeometry(0.26, 0.02, 0.2); bflyWingGeoL.translate(0.15, 0, 0);
+    const bflyWingGeoR = new THREE.BoxGeometry(0.26, 0.02, 0.2); bflyWingGeoR.translate(-0.15, 0, 0);
+    const bflyWingMat = new THREE.MeshStandardMaterial({ roughness: 0.7 });
+    const bflyWingL = new THREE.InstancedMesh(bflyWingGeoL, bflyWingMat, bflyN);
+    const bflyWingR = new THREE.InstancedMesh(bflyWingGeoR, bflyWingMat, bflyN);
+    for (const m of [bflyBody, bflyWingL, bflyWingR]) { m.frustumCulled = false; scene.add(m); }
+    const bflyCols = [0xf5b942, 0xffffff, 0x7cc7ff, 0xec4899, 0xff8a5c];
+    const bflies = Array.from({ length: bflyN }, (_, i) => {
+      const a = bflyAnchors[i % bflyAnchors.length] ?? locs[0]!;
+      const c = new THREE.Color(bflyCols[i % bflyCols.length]!);
+      bflyBody.setColorAt(i, c); bflyWingL.setColorAt(i, c); bflyWingR.setColorAt(i, c);
+      return { ax: a.x, az: a.z, seed: rnd() * 20, ph: rnd() * 6 };
+    });
+    const fishGeo = new THREE.ConeGeometry(0.08, 0.38, 5);
+    fishGeo.rotateX(Math.PI / 2); // tip forward (+Z)
+    const fishSea = new THREE.InstancedMesh(fishGeo, new THREE.MeshStandardMaterial({ color: 0x9fc4d8, roughness: 0.5, metalness: 0.2 }), fishSeaN);
+    fishSea.frustumCulled = false;
+    scene.add(fishSea);
+    const fishSeaState = Array.from({ length: fishSeaN }, (_, i) => {
+      const fx = -32 + (i / Math.max(1, fishSeaN - 1)) * 64 + (rnd() - 0.5) * 2;
+      return { cx: fx, cz: coastZ(cityKey, fx) + 2.2 + rnd() * 2.5, r: 0.8 + rnd() * 1.4, ang: rnd() * Math.PI * 2, sp: (0.25 + rnd() * 0.35) * (rnd() > 0.5 ? 1 : -1), ph: rnd() * 6 };
+    });
+    const fishSeaCols = [0x9fc4d8, 0x7fb3d5, 0xc7d8e6, 0x5b8fb9];
+    fishSeaState.forEach((_, i) => fishSea.setColorAt(i, new THREE.Color(fishSeaCols[i % fishSeaCols.length]!)));
+    // lake fish: one small school per inland water polygon (centroid)
+    const lakeSpots = TERRAIN[cityKey].WATER.map((poly) => {
+      const ring = poly[0]!;
+      let x = 0, z = 0;
+      for (const [px, pz] of ring) { x += px; z += pz; }
+      return { x: x / ring.length, z: z / ring.length };
+    });
+    const fishLakeN = AMB_LITE ? Math.min(6, lakeSpots.length * 3) : Math.min(12, lakeSpots.length * 4);
+    const fishLake = new THREE.InstancedMesh(fishGeo, new THREE.MeshStandardMaterial({ color: 0x8fb8c9, roughness: 0.5, metalness: 0.2 }), Math.max(1, fishLakeN));
+    fishLake.frustumCulled = false;
+    fishLake.count = fishLakeN;
+    scene.add(fishLake);
+    const fishLakeState = Array.from({ length: fishLakeN }, (_, i) => {
+      const s = lakeSpots[i % Math.max(1, lakeSpots.length)] ?? { x: 0, z: 0 };
+      return { cx: s.x, cz: s.z, r: 0.4 + rnd() * 0.6, ang: rnd() * Math.PI * 2, sp: (0.3 + rnd() * 0.3) * (rnd() > 0.5 ? 1 : -1), ph: rnd() * 6 };
+    });
+    fishLakeState.forEach((_, i) => fishLake.setColorAt(i, new THREE.Color(0xd8a75c))); // carp / koi flashes in the lakes
+
     /* ---- traffic: cars that drive like traffic ----
        Every vehicle eases toward its cruise speed, brakes for a red (or
        late-amber) light at the stop line ahead, and queues behind the
        vehicle in front — the flow visibly bunches at junctions and
        releases on green, like the real 深南大道 at rush hour. */
-    interface Car { road: Road; t: number; speed: number; cur: number; dir: 1 | -1; lane: number }
+    interface Car { road: Road; t: number; speed: number; cur: number; dir: 1 | -1; lane: number; want: number }
     const cars: Car[] = [];
     const carMesh = new THREE.InstancedMesh(
       new THREE.BoxGeometry(1.15, 0.5, 0.62),
@@ -1747,11 +2301,33 @@ export function MapView(p: Props) {
     for (let i = 0; i < 30; i++) {
       const road = roads[Math.floor(rnd() * roads.length)] ?? roads[0]!;
       const sp = 0.02 + rnd() * 0.035;
-      cars.push({ road, t: rnd(), speed: sp, cur: sp, dir: rnd() > 0.5 ? 1 : -1, lane: (rnd() - 0.5) * 1.1 });
+      cars.push({ road, t: rnd(), speed: sp, cur: sp, dir: rnd() > 0.5 ? 1 : -1, lane: (rnd() - 0.5) * 1.1, want: sp });
       carMesh.setColorAt(i, new THREE.Color(carColors[i % carColors.length]));
     }
     carMesh.castShadow = true;
     scene.add(carMesh);
+    /* ROUND-2 (a) vehicle refinement — lights + wheels, driven by the same
+       per-frame matrices as the cars, so GLB and box stand-ins match:
+       headlights (warm, brighten after dark) and tail lights (per-instance
+       colour: bright red while braking, dim otherwise) sit at the local
+       ±X ends — local +X is always forward (the yaw quat adds π for dir
+       −1). Wheels are real cylinders, shown only under the box stand-ins
+       (the Kenney GLBs already have wheels); they hide with carMesh when
+       the GLBs arrive. */
+    const headMat = new THREE.MeshStandardMaterial({ color: 0xfff6d5, emissive: 0xffe9a8, emissiveIntensity: 0.4 });
+    const headMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.14, 0.09, 0.1), headMat, 60);
+    headMesh.frustumCulled = false;
+    scene.add(headMesh);
+    const tailMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const tailMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.12, 0.09, 0.1), tailMat, 60);
+    tailMesh.frustumCulled = false;
+    for (let i = 0; i < 60; i++) tailMesh.setColorAt(i, new THREE.Color(0x7a1a12));
+    scene.add(tailMesh);
+    const wheelGeo = new THREE.CylinderGeometry(0.17, 0.17, 0.09, 10);
+    wheelGeo.rotateX(Math.PI / 2); // axle along the car's width (local Z)
+    const wheelMesh = new THREE.InstancedMesh(wheelGeo, new THREE.MeshStandardMaterial({ color: 0x1c1f24, roughness: 0.9 }), 120);
+    wheelMesh.frustumCulled = false;
+    scene.add(wheelMesh);
     /* real traffic: once the Kenney cars load, each car type becomes one merged
        instanced mesh (taxis, sedans, SUVs, vans, police, delivery trucks) and the
        box stand-ins hide; the same per-frame matrices drive them */
@@ -1813,8 +2389,11 @@ export function MapView(p: Props) {
     };
     const trafficAdvance = (v: Car, dt: number, tSec: number) => {
       const want = trafficWant(v, tSec);
-      if (want < v.cur) v.cur = Math.max(want, v.cur - dt * v.speed * 1.7);
-      else v.cur = Math.min(want, v.cur + dt * v.speed * 0.45);
+      v.want = want;
+      // ROUND-2 (a): snappier braking (2.2) + livelier pull-away (0.6) so
+      // the flow bunches and releases instead of gliding through reds
+      if (want < v.cur) v.cur = Math.max(want, v.cur - dt * v.speed * 2.2);
+      else v.cur = Math.min(want, v.cur + dt * v.speed * 0.6);
       v.t += v.cur * dt * v.dir;
       if (v.t > 1) v.t -= 1;
       if (v.t < 0) v.t += 1;
@@ -1822,7 +2401,7 @@ export function MapView(p: Props) {
     /* 阿强 the delivery rider is part of the traffic: his scooter loops
        the roads with the flow, stops at the same lights, and carries his
        name over his head — an NPC earning a living, not a prop. */
-    const riderCar: Car = { road: roads[1] ?? roads[0]!, t: 0.3, speed: 0.045, cur: 0.045, dir: 1, lane: -0.5 };
+    const riderCar: Car = { road: roads[1] ?? roads[0]!, t: 0.3, speed: 0.045, cur: 0.045, dir: 1, lane: -0.5, want: 0.045 };
     const riderG = new THREE.Group();
     {
       const tyreM = new THREE.MeshStandardMaterial({ color: 0x22262b, roughness: 0.9 });
@@ -2085,7 +2664,49 @@ export function MapView(p: Props) {
     const pinRing = new THREE.Mesh(new THREE.RingGeometry(0.55, 0.8, 36), new THREE.MeshBasicMaterial({ color: 0xff3b30, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false }));
     pinRing.rotation.x = -Math.PI / 2;
     pinBeam.visible = pinRing.visible = false;
+    // ROUND-8 click-to-walk marker: a sky-blue ring on the clicked ground
+    // point, pulsing while the player walks there (teal-blue, distinct from
+    // the red search pin). Position/visibility are driven by the frame loop.
+    const clickMarker = new THREE.Mesh(new THREE.RingGeometry(0.45, 0.7, 36), new THREE.MeshBasicMaterial({ color: 0x0ea5e9, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false }));
+    clickMarker.rotation.x = -Math.PI / 2;
+    clickMarker.visible = false;
+    scene.add(clickMarker);
+    clickMarkerRef.current = clickMarker;
     scene.add(pinBeam, pinRing);
+
+    /* ---- walk-to-person: tap an NPC / player and you walk up to them ----
+       Arrived beside the followed person: stop, hide the marker, and open
+       the chat/card that was waiting (if any). */
+    const arriveAtFollowed = () => {
+      const key = pendingActorRef.current;
+      followActorRef.current = null;
+      pendingActorRef.current = null;
+      clickWalkRef.current = null;
+      if (clickMarkerRef.current) clickMarkerRef.current.visible = false;
+      if (key) propsRef.current.onPickActor?.(key.startsWith("npc-") ? { npc: key.slice(4) } : { player: key.slice(2) });
+    };
+    /* Tap a person: a remote player's card opens at once (inspect) and you
+       walk over in the background; an NPC's chat opens when you arrive
+       beside them — at once if you are already close, or the spot is
+       unreachable by land (so a tap never silently does nothing). */
+    const tapActor = (key: string) => {
+      if (key === "self") return;
+      const openNow = () => propsRef.current.onPickActor?.(key.startsWith("npc-") ? { npc: key.slice(4) } : { player: key.slice(2) });
+      const target = actorsRef.current.get(key);
+      if (key.startsWith("p-")) {
+        openNow();
+        if (target && !propsRef.current.selfEtaAt) { followActorRef.current = key; clickRippleAtRef.current = performance.now(); }
+        return;
+      }
+      if (!target || propsRef.current.selfEtaAt) { openNow(); return; }
+      const self = actorsRef.current.get("self");
+      if (!self) { openNow(); return; }
+      if (Math.hypot(target.x - self.x, target.z - self.z) <= 1.5) { openNow(); return; }
+      if (!nearestLand(cityKey, target.x, target.z)) { openNow(); return; }
+      followActorRef.current = key;
+      pendingActorRef.current = key;
+      clickRippleAtRef.current = performance.now();
+    };
 
     /* ---- 📢 billboards: a real button per spot. The 「广告」 badge stays;
        only the text span is rewritten each pass (textContent on the root
@@ -2110,70 +2731,53 @@ export function MapView(p: Props) {
     const actorViews = new Map<string, THREE.Group>();
     const actorChips = new Map<string, Chip>();
     interface ActorLimbs { armL: THREE.Group; armR: THREE.Group; legL: THREE.Group; legR: THREE.Group }
+    /* Build one actor's body: the shared figure (./figure.ts) plus its
+       identity accessories. Split out of ensureActorView so a FACE change
+       can rebuild just the body — a face is geometry (eyes / mouth), it
+       can't be recoloured like a shirt. The hit cylinder, self ring and
+       vehicle live on the view group, not the body, so they survive a
+       rebuild untouched. */
+    const buildBody = (a: Actor) => {
+      const mat = (c: number, r = 0.85) => new THREE.MeshStandardMaterial({ color: c, roughness: r });
+      const faceSeed = a.faceSeed ?? a.key;
+      const spec = a.faceSpec ?? faceSpecFor(faceSeed);
+      // skin rule mirrors LifeStage: the player uses the fixed light skin,
+      // everyone else uses their face seed's skin tone — unless the creator
+      // picked a face, whose own skin tone wins (head and body must match)
+      const skin = a.faceSpec ? a.faceSpec.skin : (a.isSelf ? 0xf2c79b : spec.skin);
+      const fig = makeFigure(mat, a.shirt, a.pants, skin, faceSeed, a.faceSpec ?? undefined);
+      const body = fig.g;
+      // identity accessories, toggled by role/outfit: cap (保安), helmet (骑手),
+      // tie (正装/通勤), apron (摊主), reflective vest (保洁), bag (学生/白领).
+      // Geometry comes from the shared ./figure.ts addAccessory — the same
+      // definition LifeStage uses, so an accessory looks identical in both.
+      const accGroup = new THREE.Group();
+      const mkAcc = (name: string) => { const g = new THREE.Group(); g.name = `acc-${name}`; addAccessory(g, name); g.visible = false; accGroup.add(g); };
+      for (const accName of ["cap", "helmet", "tie", "apron", "vest", "bag"]) mkAcc(accName);
+      body.add(accGroup);
+      return { body, fig, accGroup };
+    };
     const ensureActorView = (a: Actor) => {
       let v = actorViews.get(a.key);
       if (!v) {
         v = new THREE.Group();
-        // body parts live in a subgroup so riding a vehicle can lift the
-        // figure onto the seat (and tuck the legs away in a car/bus)
-        const body = new THREE.Group();
-        v.add(body);
-        (v.userData as { body?: THREE.Group }).body = body;
-        const shirt = new THREE.MeshStandardMaterial({ color: a.shirt, roughness: 0.65 });
-        const shirtDark = new THREE.MeshStandardMaterial({ color: new THREE.Color(a.shirt).multiplyScalar(0.78), roughness: 0.7 });
-        const pants = new THREE.MeshStandardMaterial({ color: a.pants, roughness: 0.85 });
-        const skin = new THREE.MeshStandardMaterial({ color: 0xf2c79b, roughness: 0.7 });
-        const mkLimb = (mat: THREE.Material, w: number, len: number) => {
-          const pivot = new THREE.Group();
-          const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, len, w + 0.03), mat);
-          mesh.position.y = -len / 2;
-          mesh.castShadow = true;
-          pivot.add(mesh);
-          return pivot;
-        };
-        const legL = mkLimb(pants, 0.21, 0.82);
-        legL.position.set(-0.16, 0.86, 0);
-        body.add(legL);
-        const legR = mkLimb(pants, 0.21, 0.82);
-        legR.position.set(0.16, 0.86, 0);
-        body.add(legR);
-        const torso = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.74, 0.37), shirt);
-        torso.position.y = 1.24;
-        torso.castShadow = true;
-        body.add(torso);
-        const armL = mkLimb(shirtDark, 0.18, 0.68);
-        armL.position.set(-0.42, 1.56, 0);
-        body.add(armL);
-        const armR = mkLimb(shirtDark, 0.18, 0.68);
-        armR.position.set(0.42, 1.56, 0);
-        body.add(armR);
-        const head = new THREE.Mesh(new THREE.SphereGeometry(0.31, 14, 12), skin);
-        head.position.y = 1.86;
-        head.castShadow = true;
-        body.add(head);
-        const hairMat = new THREE.MeshStandardMaterial({ color: 0x2b2118, roughness: 0.95 });
-        const hair = new THREE.Mesh(new THREE.SphereGeometry(0.325, 14, 10), hairMat);
-        hair.position.y = 1.94;
-        hair.scale.set(1, 0.72, 1);
-        body.add(hair);
-        (v.userData as { limbs?: ActorLimbs }).limbs = { armL, armR, legL, legR };
-        (v.userData as { mats?: { shirt: THREE.MeshStandardMaterial; dark: THREE.MeshStandardMaterial; pants: THREE.MeshStandardMaterial; hair: THREE.MeshStandardMaterial; hairMesh: THREE.Mesh } }).mats = { shirt, dark: shirtDark, pants, hair: hairMat, hairMesh: hair };
-        // identity accessories, toggled by role/outfit: cap (保安), helmet (骑手),
-        // tie (正装/通勤), apron (摊主), reflective vest (保洁), bag (学生/白领)
-        const accGroup = new THREE.Group();
-        const mkAcc = (name: string, build: (g: THREE.Group) => void) => { const g = new THREE.Group(); g.name = `acc-${name}`; build(g); g.visible = false; accGroup.add(g); };
-        mkAcc("cap", (g) => { const m = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.14, 0.5), new THREE.MeshStandardMaterial({ color: 0x24304d, roughness: 0.8 })); m.position.y = 2.14; g.add(m); const brim = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.05, 0.3), m.material); brim.position.set(0, 2.08, 0.36); g.add(brim); });
-        mkAcc("helmet", (g) => { const m = new THREE.Mesh(new THREE.SphereGeometry(0.36, 12, 8), new THREE.MeshStandardMaterial({ color: 0xf5b301, roughness: 0.35 })); m.position.y = 1.97; m.scale.y = 0.78; g.add(m); });
-        mkAcc("tie", (g) => { const m = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.44, 0.03), new THREE.MeshStandardMaterial({ color: 0x8c2b2e, roughness: 0.6 })); m.position.set(0, 1.32, 0.2); g.add(m); });
-        mkAcc("apron", (g) => { const m = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.62, 0.03), new THREE.MeshStandardMaterial({ color: 0xf3ead8, roughness: 0.9 })); m.position.set(0, 1.14, 0.2); g.add(m); });
-        mkAcc("vest", (g) => { const m = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.5, 0.43), new THREE.MeshStandardMaterial({ color: 0xff7a1a, roughness: 0.7, emissive: 0xff7a1a, emissiveIntensity: 0.18 })); m.position.y = 1.3; g.add(m); });
-        mkAcc("bag", (g) => { const m = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.44, 0.16), new THREE.MeshStandardMaterial({ color: 0x54432e, roughness: 0.85 })); m.position.set(0.42, 1.18, -0.16); m.castShadow = true; g.add(m); });
-        body.add(accGroup);
-        (v.userData as { acc?: THREE.Group }).acc = accGroup;
-        const sp = emojiSprite(a.emoji, a.color, !!a.isSelf);
-        sp.position.y = 2.45;
-        if (a.isSelf) { sp.scale.set(2.1, 2.1, 1); sp.position.y = 2.7; sp.renderOrder = 25; (v.userData as { badge?: THREE.Sprite }).badge = sp; }
-        body.add(sp);
+        // round-9: generous invisible hit target so a moving person is
+        // tappable — the thin character mesh is nearly impossible to hit on
+        // touch, and a tap that misses it falls through to the building
+        // behind (place name instead of the person). The onUp raycast tests
+        // this cylinder, not the model. Never on yourself (you can't pick you).
+        if (a.key !== "self") {
+          const hitMat = new THREE.MeshBasicMaterial({ visible: false });
+          const hit = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 2.6, 8), hitMat);
+          hit.position.y = 1.3;
+          hit.userData.actorKey = a.key;
+          v.add(hit);
+          (v.userData as { hit?: THREE.Mesh }).hit = hit;
+        }
+        // No floating avatar badge above the head (round-9 removed it):
+        // the standard way is the 3D figure itself (it already has a face)
+        // plus the small DOM name chip. A big circular portrait dwarfs the
+        // character and covers the map at close zoom.
         if (a.isSelf) {
           const ring = new THREE.Mesh(
             new THREE.RingGeometry(0.65, 0.85, 28),
@@ -2357,10 +2961,27 @@ export function MapView(p: Props) {
           chipEl.setAttribute("role", "button");
           const key = a.key;
           chipEl.addEventListener("pointerdown", (e) => e.stopPropagation());
-          chipEl.addEventListener("click", (e) => { e.stopPropagation(); propsRef.current.onPickActor?.(key.startsWith("npc-") ? { npc: key.slice(4) } : { player: key.slice(2) }); });
+          chipEl.addEventListener("click", (e) => { e.stopPropagation(); tapActor(key); });
         }
         actorChips.set(a.key, { el: chipEl, kind: "actor", self: !!a.isSelf, npc: a.key.startsWith("npc-"), w: 0, h: 0, lastText: "", visible: true, clampDx: 0, clampDy: 0, getPos: () => ({ x: a.x, y: LAND + 3.6, z: a.z }) });
         chips.push(actorChips.get(a.key)!);
+      }
+      /* Face change? The body is rebuilt (and the old one disposed) — the
+         figure's own group IS the body subgroup, so riding a vehicle can
+         lift it onto the seat, and the frame loop reads body / limbs /
+         mats / acc fresh from userData every frame. Runs on first build
+         too (faceKey starts unset), so creation and rebuild share one path. */
+      const fk = a.faceKey ?? faceKeyFor(a.faceSpec ?? null, a.faceSeed ?? a.key);
+      if ((v.userData as { faceKey?: string }).faceKey !== fk) {
+        const oldBody = (v.userData as { body?: THREE.Group }).body;
+        if (oldBody) { v.remove(oldBody); disposeGroup(oldBody); }
+        const built = buildBody(a);
+        v.add(built.body);
+        (v.userData as { body?: THREE.Group }).body = built.body;
+        (v.userData as { limbs?: ActorLimbs }).limbs = { armL: built.fig.armL, armR: built.fig.armR, legL: built.fig.legL, legR: built.fig.legR };
+        (v.userData as { mats?: { shirt: THREE.MeshStandardMaterial; dark: THREE.MeshStandardMaterial; pants: THREE.MeshStandardMaterial; hair: THREE.MeshStandardMaterial; hairMesh: THREE.Mesh } }).mats = built.fig.mats;
+        (v.userData as { acc?: THREE.Group }).acc = built.accGroup;
+        (v.userData as { faceKey?: string }).faceKey = fk;
       }
       return v;
     };
@@ -2396,14 +3017,80 @@ export function MapView(p: Props) {
       dragging = false;
       dom.style.cursor = "grab";
       if (moved < 6) {
-        // treat as click: raycast buildings
+        // treat as click. Round-9: PEOPLE FIRST — the avatar itself is the tap
+        // target, not just the tiny floating name chip. A tap on a moving
+        // person must select the person even when a building is behind them
+        // (before this fix the ray hit the building and only the place name
+        // showed, so people were unselectable).
         const rect = dom.getBoundingClientRect();
         const ndc = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
         const rc = new THREE.Raycaster();
         rc.setFromCamera(ndc, camera);
-        const hits = rc.intersectObjects(pickMeshes, false);
+        const pickActor = (key: string) => { tapActor(key); };
+        // 1) raycast the generous hit cylinders on every actor (not the thin
+        //    character mesh). Nearest hit wins; yourself is never pickable.
+        const hitMeshes: THREE.Object3D[] = [];
+        for (const v of actorViews.values()) {
+          const hit = (v.userData as { hit?: THREE.Mesh }).hit;
+          if (hit) hitMeshes.push(hit);
+        }
+        const actorHits = rc.intersectObjects(hitMeshes, false);
+        const actorKey = actorHits[0]?.object.userData.actorKey as string | undefined;
+        if (actorKey) { pickActor(actorKey); return; }
+        // 2) screen-space fallback for moving people + imprecise touch: a tap
+        //    within ~36px of a person's projected position picks the nearest
+        //    such person (the raycast can miss someone who just walked on).
+        {
+          let best: { key: string; d: number } | null = null;
+          const tmp = new THREE.Vector3();
+          for (const [key, v] of actorViews) {
+            if (key === "self") continue;
+            tmp.set(v.position.x, LAND + 1.3, v.position.z).project(camera);
+            if (tmp.z > 1) continue; // behind the camera
+            const sx = ((tmp.x + 1) / 2) * rect.width;
+            const sy = ((1 - tmp.y) / 2) * rect.height;
+            const d = Math.hypot(sx - (e.clientX - rect.left), sy - (e.clientY - rect.top));
+            if (d <= 36 && (!best || d < best.d)) best = { key, d };
+          }
+          if (best) { pickActor(best.key); return; }
+        }
+        // 3) buildings (places + round-9 player shop/flat buildings).
+        const hits = rc.intersectObjects([...pickMeshes, ...playerPickMeshesRef.current], false);
         const id = hits[0]?.object.userData.locId as string | undefined;
-        if (id) propsRef.current.onSelect(id);
+        if (id) {
+          // a building was picked: select it, and stop any click-walk /
+          // walk-to-person (and its waiting chat)
+          clickWalkRef.current = null;
+          followActorRef.current = null;
+          pendingActorRef.current = null;
+          if (clickMarkerRef.current) clickMarkerRef.current.visible = false;
+          propsRef.current.onSelect(id);
+          return;
+        }
+        // ROUND-8 click-to-walk (mouse only — touch keeps its tap-to-select):
+        // no building hit, so raycast the ground plane and walk there.
+        // A trip in progress wins; a new click retargets, arrival clears.
+        // Clicked water / off-land (e.g. the Shenzhen Bay promenade, which
+        // looks walkable but sits outside the terrain LAND polygons): walk
+        // to the nearest dry land instead of silently doing nothing. The
+        // blue ring marker follows clickWalkRef, so it shows at the clamped
+        // point. No land within 10 units (far out in the sea): no-op.
+        if (e.pointerType === "mouse" && !propsRef.current.selfEtaAt) {
+          // a new ground click retargets: cancel any walk-to-person and
+          // the chat waiting on it (the player changed their mind)
+          followActorRef.current = null;
+          pendingActorRef.current = null;
+          const ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), -LAND);
+          const pt = new THREE.Vector3();
+          if (rc.ray.intersectPlane(ground, pt)) {
+            const dest = nearestLand(cityKey, pt.x, pt.z);
+            if (dest) {
+              clickWalkRef.current = dest;
+              // LoL-style move-click ripple: (re)start the expanding ring
+              clickRippleAtRef.current = performance.now();
+            }
+          }
+        }
       }
     };
     const onWheel = (e: WheelEvent) => {
@@ -2481,6 +3168,17 @@ export function MapView(p: Props) {
     const carQuat = new THREE.Quaternion();
     const carScl = new THREE.Vector3(1, 1, 1);
     const carEuler = new THREE.Euler();
+    // ROUND-2 (a) ambient-life + vehicle-light scratch (allocated once)
+    const ambM1 = new THREE.Matrix4();
+    const ambM2 = new THREE.Matrix4();
+    const ambM3 = new THREE.Matrix4();
+    const ambQ = new THREE.Quaternion();
+    const ambE = new THREE.Euler();
+    const ambV = new THREE.Vector3();
+    const ambS = new THREE.Vector3();
+    const tailCol = new THREE.Color();
+    const brakeCol = new THREE.Color(0xff2a1e);
+    const dimTailCol = new THREE.Color(0x7a1a12);
     const shirtTmp = new THREE.Color();
 
     const v3 = new THREE.Vector3();
@@ -2507,10 +3205,14 @@ export function MapView(p: Props) {
       }
       const rawDt = (now - last) / 1000;
       if (!document.hidden && rawDt < 1) { prFrames += 1; prTime += rawDt; }
-      if (prTime >= 2.5 && prChanges < 3) {
+      if (prTime >= 2.5) {
         const fps = prFrames / prTime;
         prFrames = 0; prTime = 0; prWindows += 1;
-        if (prWindows > 1) { // the first window is loading noise
+        // ROUND-7 desktop: the FPS guard for the new effects keeps measuring
+        // even after the pixel-ratio ladder is exhausted (3 changes), so a
+        // struggling desktop still steps its effects down
+        if (dfx) dfx.noteFps(fps);
+        if (prChanges < 3 && prWindows > 1) { // the first window is loading noise
           if (fps < 32 && prIdx < prLadder.length - 1) { prIdx += 1; prSmooth = 0; prWindows = 0; applyPixelRatio(); }
           else if (fps >= 57 && prIdx > 0) { prSmooth += 1; if (prSmooth >= 3) { prIdx -= 1; prSmooth = 0; prWindows = 0; applyPixelRatio(); } }
           else prSmooth = 0;
@@ -2553,6 +3255,13 @@ export function MapView(p: Props) {
         rainPts.position.x = Math.sin(tSec * 0.7) * 0.6;
       }
       const nightF = 1 - dayF;
+      // ROUND-7 desktop: ease the street wetness toward the weather.
+      // (The warm night-haze tint on sky/fog was reverted: it dragged the
+      // cool dark-blue night sky toward amber and turned it muddy
+      // reddish-brown, which looked worse than before.)
+      if (dfx) {
+        dfx.update({ raining, storm: wk === "storm", nightF, duskF, dt });
+      }
       waterMat.color.setHex(0x2e7fb8).lerp(C_WATER_NIGHT, nightF * 0.8);
       waterMat.roughness = 0.35 - dayF * 0.12 + nightF * 0.1;
       // ---- drive every animated material off the day cycle ----
@@ -2561,13 +3270,17 @@ export function MapView(p: Props) {
       (scene.fog as THREE.Fog).far = 240 - nightF * 45 - (wk === "fog" ? 95 : wk === "storm" ? 55 : wk === "rain" ? 35 : 0);
       moon.intensity = nightF * 0.55;
       playerLight.intensity = nightF * 26 + duskF * 8;
-      for (const m of buildingMats) m.emissiveIntensity = nightF * 0.95 + duskF * 0.3;
-      if (fillerMat) fillerMat.emissiveIntensity = nightF * 0.5;
-      if (bulbMat) bulbMat.emissiveIntensity = 0.15 + nightF * 2.4;
+      // ROUND-7 desktop: windows / bulbs / neon burn brighter after dark
+      // (the bloom pass turns the extra emissive into real glow)
+      const winB = dfx ? dfx.windowBoost() : 1;
+      const neoB = dfx ? dfx.neonBoost() : 1;
+      for (const m of buildingMats) m.emissiveIntensity = (nightF * 0.95 + duskF * 0.3) * winB;
+      if (fillerMat) fillerMat.emissiveIntensity = nightF * 0.5 * winB;
+      if (bulbMat) bulbMat.emissiveIntensity = (0.15 + nightF * 2.4) * winB;
       if (glowMat) glowMat.opacity = nightF * 0.75;
       if (foamMat) foamMat.opacity = 0.22 + 0.18 * (0.5 + 0.5 * Math.sin(tSec * 1.4));
       neonMats.forEach((m, i) => {
-        m.emissiveIntensity = 0.35 + nightF * 1.5 + Math.sin(tSec * 2.4 + i * 1.7) * (0.12 + nightF * 0.3);
+        m.emissiveIntensity = (0.35 + nightF * 1.5 + Math.sin(tSec * 2.4 + i * 1.7) * (0.12 + nightF * 0.3)) * neoB;
       });
       avLights.forEach((av, i) => {
         const m = av.material as THREE.MeshStandardMaterial;
@@ -2599,6 +3312,12 @@ export function MapView(p: Props) {
         if (cl.position.x > 55) cl.position.x = -55;
       }
       water.position.y = Math.sin(tSec * 0.7) * 0.05;
+      // ROUND-2 (a) water shader + tree sway run off the same clock
+      waterUniforms.uTime.value = tSec;
+      waterUniforms.uDayF.value = dayF;
+      waterUniforms.uNightF.value = nightF;
+      waterUniforms.uSunDir.value.copy(sun.position).normalize();
+      foliageUniforms.uTime.value = tSec;
 
       // traffic lights: lamps follow the same phase the cars obey
       for (const lh of lightHeads) {
@@ -2612,6 +3331,8 @@ export function MapView(p: Props) {
 
       // traffic
       {
+        headMat.emissiveIntensity = 0.25 + nightF * 2.2;
+        wheelMesh.visible = carMesh.visible;
         cars.forEach((car, i) => {
           trafficAdvance(car, dt, tSec);
           const r = car.road;
@@ -2621,16 +3342,39 @@ export function MapView(p: Props) {
           carQuat.setFromEuler(carEuler.set(0, -ang + (car.dir < 0 ? Math.PI : 0), 0));
           const slot = carSlot[i];
           const typed = slot && !carMesh.visible ? carTypes[slot.m] : undefined;
+          // suspension bob: a whisper of road feel, scaled by speed
+          const bobY = Math.sin(tSec * 9 + i * 1.3) * 0.012 * Math.min(1, car.cur / Math.max(1e-3, car.speed));
           if (typed && slot) {
-            carMat4.compose(v3.set(pxv, LAND, pzv), carQuat, carScl);
+            carMat4.compose(v3.set(pxv, LAND + bobY * 0.5, pzv), carQuat, carScl);
             typed.setMatrixAt(slot.k, carMat4);
           } else {
-            carMat4.compose(v3.set(pxv, LAND + 0.38, pzv), carQuat, carScl);
+            carMat4.compose(v3.set(pxv, LAND + 0.38 + bobY, pzv), carQuat, carScl);
             carMesh.setMatrixAt(i, carMat4);
+          }
+          // ROUND-2 (a) headlights / tail lights / wheels, from the same matrix
+          const hy = typed ? 0.42 : 0.07;
+          const hx = typed ? 0.62 : 0.58;
+          for (const sgn of [1, -1]) {
+            ambM2.copy(carMat4).multiply(ambM3.makeTranslation(hx, hy, 0.2 * sgn));
+            headMesh.setMatrixAt(i * 2 + (sgn > 0 ? 0 : 1), ambM2);
+            ambM2.copy(carMat4).multiply(ambM3.makeTranslation(-hx, hy + 0.03, 0.2 * sgn));
+            tailMesh.setMatrixAt(i * 2 + (sgn > 0 ? 0 : 1), ambM2);
+            tailCol.copy(car.want < car.cur * 0.85 || car.want < car.speed * 0.25 ? brakeCol : dimTailCol);
+            tailMesh.setColorAt(i * 2 + (sgn > 0 ? 0 : 1), tailCol);
+            if (!typed) {
+              for (const wx of [0.38, -0.38]) {
+                ambM2.copy(carMat4).multiply(ambM3.makeTranslation(wx, -0.2, 0.32 * sgn));
+                wheelMesh.setMatrixAt(i * 4 + (wx > 0 ? 0 : 1) + (sgn > 0 ? 0 : 2), ambM2);
+              }
+            }
           }
         });
         carMesh.instanceMatrix.needsUpdate = true;
         for (const im of carTypes) if (im) im.instanceMatrix.needsUpdate = true;
+        headMesh.instanceMatrix.needsUpdate = true;
+        tailMesh.instanceMatrix.needsUpdate = true;
+        if (tailMesh.instanceColor) tailMesh.instanceColor.needsUpdate = true;
+        wheelMesh.instanceMatrix.needsUpdate = true;
         // 阿强's scooter rides the same rules (it just isn't in the queue
         // check — one scooter slipping past a queue is true to life)
         trafficAdvance(riderCar, dt, tSec);
@@ -2640,6 +3384,70 @@ export function MapView(p: Props) {
           riderG.position.set(r.x1 + (r.x2 - r.x1) * riderCar.t + Math.sin(ang) * riderCar.lane, LAND + 0.1, r.z1 + (r.z2 - r.z1) * riderCar.t - Math.cos(ang) * riderCar.lane);
           riderG.rotation.y = -ang + (riderCar.dir < 0 ? Math.PI : 0) + Math.PI / 2;
         }
+      }
+
+      // ROUND-2 (a) ambient life: birds circle, butterflies flutter,
+      // fish school — all instanced, all from preallocated state
+      {
+        for (let i = 0; i < birds.length; i++) {
+          const b = birds[i]!;
+          b.ang += dt * b.sp;
+          b.ph += dt * b.flap;
+          const bx = b.cx + Math.cos(b.ang) * b.r;
+          const bz = b.cz + Math.sin(b.ang) * b.r;
+          // forward is local +Z: circling counter-clockwise, heading = -ang
+          ambM1.compose(ambV.set(bx, b.h + Math.sin(b.ph * 0.5) * 0.3, bz), ambQ.setFromEuler(ambE.set(0, -b.ang, 0.18)), ambS.set(1, 1, 1));
+          birdBody.setMatrixAt(i, ambM1);
+          const flap = Math.sin(b.ph) * 0.75;
+          ambM2.copy(ambM1).multiply(ambM3.makeRotationZ(flap));
+          birdWingL.setMatrixAt(i, ambM2);
+          ambM2.copy(ambM1).multiply(ambM3.makeRotationZ(-flap));
+          birdWingR.setMatrixAt(i, ambM2);
+        }
+        birdBody.instanceMatrix.needsUpdate = true;
+        birdWingL.instanceMatrix.needsUpdate = true;
+        birdWingR.instanceMatrix.needsUpdate = true;
+        for (let i = 0; i < bflies.length; i++) {
+          const f = bflies[i]!;
+          f.ph += dt * 11;
+          const fx = f.ax + Math.sin(tSec * 0.7 + f.seed) * 1.4 + Math.sin(tSec * 1.7 + f.seed * 2) * 0.4;
+          const fz = f.az + Math.cos(tSec * 0.55 + f.seed) * 1.2 + Math.cos(tSec * 1.3 + f.seed) * 0.4;
+          const fy = LAND + 1.4 + Math.sin(tSec * 1.3 + f.seed) * 0.5;
+          ambM1.compose(ambV.set(fx, fy, fz), ambQ.setFromEuler(ambE.set(0, tSec * 0.7 + f.seed, 0)), ambS.set(1, 1, 1));
+          bflyBody.setMatrixAt(i, ambM1);
+          const flap = Math.sin(f.ph) * 0.9;
+          ambM2.copy(ambM1).multiply(ambM3.makeRotationZ(flap));
+          bflyWingL.setMatrixAt(i, ambM2);
+          ambM2.copy(ambM1).multiply(ambM3.makeRotationZ(-flap));
+          bflyWingR.setMatrixAt(i, ambM2);
+        }
+        bflyBody.instanceMatrix.needsUpdate = true;
+        bflyWingL.instanceMatrix.needsUpdate = true;
+        bflyWingR.instanceMatrix.needsUpdate = true;
+        for (let i = 0; i < fishSeaState.length; i++) {
+          const f = fishSeaState[i]!;
+          f.ang += dt * f.sp;
+          f.ph += dt * 3;
+          ambM1.compose(
+            ambV.set(f.cx + Math.cos(f.ang) * f.r, -0.12 + Math.sin(f.ph) * 0.03, f.cz + Math.sin(f.ang) * f.r),
+            ambQ.setFromEuler(ambE.set(0, -f.ang + Math.sin(f.ph * 2) * 0.25, 0)),
+            ambS.set(1, 1, 1),
+          );
+          fishSea.setMatrixAt(i, ambM1);
+        }
+        fishSea.instanceMatrix.needsUpdate = true;
+        for (let i = 0; i < fishLakeState.length; i++) {
+          const f = fishLakeState[i]!;
+          f.ang += dt * f.sp;
+          f.ph += dt * 3;
+          ambM1.compose(
+            ambV.set(f.cx + Math.cos(f.ang) * f.r, LAND + 0.06 + Math.sin(f.ph) * 0.02, f.cz + Math.sin(f.ang) * f.r),
+            ambQ.setFromEuler(ambE.set(0, -f.ang + Math.sin(f.ph * 2) * 0.25, 0)),
+            ambS.set(0.85, 0.85, 0.85),
+          );
+          fishLake.setMatrixAt(i, ambM1);
+        }
+        fishLake.instanceMatrix.needsUpdate = true;
       }
 
       // pedestrians: walk the pavements, cross on green, duck into shops
@@ -2819,9 +3627,58 @@ export function MapView(p: Props) {
             if (dest) { a.tx = dest.x; a.tz = dest.z; }
           }
         }
+        // ROUND-8 click-to-walk: steer the self actor to the clicked ground
+        // point at travel-mode speed (the same tx/tz + speed path trips use,
+        // so walk cycle, heading and the player light all just work). A trip
+        // or a ride cancels it; arriving clears it and hides the marker.
+        if (a.isSelf) {
+          if (propsRef.current.selfEtaAt || trainPos.active) {
+            if (clickWalkRef.current) {
+              clickWalkRef.current = null;
+              if (clickMarkerRef.current) clickMarkerRef.current.visible = false;
+            }
+            followActorRef.current = null;
+            pendingActorRef.current = null;
+          } else if (followActorRef.current) {
+            // walk-to-person: re-target to the person's current spot each
+            // frame (they wander); stop beside them and open the chat/card
+            const target = actorsRef.current.get(followActorRef.current);
+            if (!target) {
+              // the person left the map: stop, don't open anything
+              followActorRef.current = null;
+              pendingActorRef.current = null;
+            } else if (Math.hypot(target.x - a.x, target.z - a.z) <= 1.5) {
+              arriveAtFollowed();
+            } else {
+              // clamp to the nearest land so a person at the water/road edge
+              // doesn't strand you; if unreachable, keep the last target
+              const dest = nearestLand(cityKey, target.x, target.z);
+              if (dest) clickWalkRef.current = dest;
+            }
+          }
+          if (clickWalkRef.current) {
+            a.tx = clickWalkRef.current.x;
+            a.tz = clickWalkRef.current.z;
+          }
+        }
         const dx = a.tx - a.x;
         const dz = a.tz - a.z;
         const dist = Math.hypot(dx, dz);
+        // arrived at the clicked point: stop here, hide the marker
+        if (a.isSelf && clickWalkRef.current && dist <= 0.25) {
+          clickWalkRef.current = null;
+          if (clickMarkerRef.current) clickMarkerRef.current.visible = false;
+          // walked to the closest land beside the person (they may have
+          // drifted just out of reach): open the waiting chat/card
+          if (pendingActorRef.current) {
+            const key = pendingActorRef.current;
+            followActorRef.current = null;
+            pendingActorRef.current = null;
+            propsRef.current.onPickActor?.(key.startsWith("npc-") ? { npc: key.slice(4) } : { player: key.slice(2) });
+          } else {
+            followActorRef.current = null;
+          }
+        }
         if (dist > 0.06) {
           const eta = a.isSelf ? propsRef.current.selfEtaAt : undefined;
           const left = eta ? (eta - Date.now()) / 1000 : 0;
@@ -2897,12 +3754,9 @@ export function MapView(p: Props) {
             const rb = a.rideBlend ?? 0;
             const rm = a.rideMode ?? "bike";
             veh.visible = rb > 0.03;
-            // riding: the whole rig (vehicle + you) grows a touch so the car / bus / scooter reads on the map,
-            // and your badge floats above the roof instead of covering the vehicle
+            // riding: the whole rig (vehicle + you) grows a touch so the car / bus / scooter reads on the map
             const grow = rm === "bike" ? 0.25 : 0.5;
             view.scale.setScalar(1 + grow * rb);
-            const bdg = (view.userData as { badge?: THREE.Sprite }).badge;
-            if (bdg) bdg.position.y = 2.7 + (rm === "bus" ? 1.1 : 0.6) * rb;
             const limbs0 = (view.userData as { limbs?: ActorLimbs }).limbs;
             if (veh.visible && limbs0) {
               for (const child of veh.children) child.visible = child.name === `veh-${rm}`;
@@ -2950,8 +3804,6 @@ export function MapView(p: Props) {
           }
           if (moving && Math.hypot(a.x - trailLast.x, a.z - trailLast.z) > 0.7) pushTrail(a.x, a.z);
         }
-        const badge = (view.userData as { badge?: THREE.Sprite }).badge;
-        if (badge) { const k = 2.1 * (1 + Math.sin(tSec * 3) * 0.06); badge.scale.set(k, k, 1); badge.visible = !scenicRef.current; }
         const ring = (view.userData as { ring?: THREE.Mesh }).ring;
         if (ring) {
           const s = 1 + Math.sin(tSec * 3) * 0.12;
@@ -2963,7 +3815,10 @@ export function MapView(p: Props) {
           mats.dark.color.copy(shirtTmp.setHex(a.shirt).multiplyScalar(0.78));
           mats.pants.color.setHex(a.pants);
           const look = HAIRS[(a.hair ?? 0) % HAIRS.length] ?? HAIRS[0]!;
-          if (mats.hair) mats.hair.color.setHex(look.color);
+          /* character creator: a hand-picked hair colour wins over the
+             hairstyle's own colour (the style still sets the silhouette
+             scale); without a custom face the style colour stands, as before */
+          if (mats.hair) mats.hair.color.setHex(a.faceSpec?.hair ?? look.color);
           if (mats.hairMesh) mats.hairMesh.scale.set(look.sx, look.sy, 1);
         }
         // your own car wears your identity colour
@@ -2990,6 +3845,49 @@ export function MapView(p: Props) {
             if (idx >= 0) chips.splice(idx, 1);
             actorChips.delete(key);
           }
+        }
+      }
+
+      // round-3 (C): the player's pet — a low-poly cat/dog (makePetGroup)
+      // driven every frame by stepPetFollow() in round2/pets.ts. No pet,
+      // or the player riding the train, hides the model; a new pet
+      // (id / kind / colour changed) rebuilds it. Poses come from the
+      // state machine: follow = legs swing + tail wag, sit = chest up,
+      // play = little hops + fast wag, sleep = lying low.
+      {
+        const pet = propsRef.current.activePet ?? null;
+        const selfA = actorsRef.current.get("self");
+        if (pet && selfA && !trainPos.active) {
+          const key = `${pet.id}|${pet.kind}|${pet.color}`;
+          if (!petGroup || petGroupKey !== key) {
+            if (petGroup) { scene.remove(petGroup); disposeObject(petGroup); }
+            petGroup = makePetGroup(pet);
+            petGroupKey = key;
+            scene.add(petGroup);
+            petRuntimeRef.current = { pos: { x: selfA.x, z: selfA.z }, heading: selfA.heading, pose: "sit" };
+            petPhase = 0;
+          }
+          const rt = stepPetFollow(pet, petRuntimeRef.current, { x: selfA.x, z: selfA.z }, selfA.heading, dt);
+          petRuntimeRef.current = rt;
+          const moving = rt.pose === "follow";
+          if (moving) petPhase += dt * 9;
+          const parts = petGroup.userData as PetParts;
+          if (parts.tail) parts.tail.rotation.y = Math.sin(tSec * (rt.pose === "play" ? 10 : 5)) * 0.45;
+          const swing = Math.sin(petPhase) * 0.55 * (moving ? 1 : 0);
+          if (parts.legFL) parts.legFL.rotation.x = swing;
+          if (parts.legBR) parts.legBR.rotation.x = swing;
+          if (parts.legFR) parts.legFR.rotation.x = -swing;
+          if (parts.legBL) parts.legBL.rotation.x = -swing;
+          if (parts.body) {
+            const target = rt.pose === "sit" ? -0.5 : rt.pose === "sleep" ? 0.28 : 0;
+            parts.body.rotation.x += (target - parts.body.rotation.x) * Math.min(1, dt * 8);
+          }
+          const hop = rt.pose === "play" ? Math.abs(Math.sin(tSec * 6)) * 0.09 : moving ? Math.abs(Math.sin(petPhase)) * 0.03 : 0;
+          petGroup.visible = true;
+          petGroup.position.set(rt.pos.x, LAND + hop, rt.pos.z);
+          petGroup.rotation.y = rt.heading;
+        } else if (petGroup) {
+          petGroup.visible = false;
         }
       }
 
@@ -3105,16 +4003,20 @@ export function MapView(p: Props) {
       // how many place labels may show at once (zoomed out it is the city view)
       // a phone shows a fraction of a desktop's map area, so it gets a fraction of the labels
       const scr = Math.max(0.35, Math.min(1, (w * h) / (1100 * 650)));
-      const locCap = density === "all" ? 999 : Math.max(3, Math.round((overview ? (density === "few" ? 6 : 12) : density === "few" ? 10 : 24) * scr));
+      const locCap = density === "all" ? 999 : Math.max(3, Math.round((overview ? (density === "few" ? 5 : 9) : density === "few" ? 8 : 18) * scr));
       let locShown = 0;
       /* separate budgets so place pins, neighbourhood names and stations never
          swamp the view (zoomed in they used to fill every gap) */
       const kc = (n: number) => Math.max(2, Math.round(n * scr));
-      const kindCap = density === "all" ? { place: 999, area: 999, station: 999, road: 999 } : density === "few" ? { place: kc(3), area: kc(3), station: kc(2), road: 1 } : { place: kc(5), area: kc(4), station: kc(4), road: kc(3) };
+      const kindCap = density === "all" ? { place: 999, area: 999, station: 999, road: 999 } : density === "few" ? { place: kc(3), area: kc(3), station: kc(2), road: 1 } : { place: kc(4), area: kc(3), station: kc(3), road: kc(2) };
       const kindShown = { place: 0, area: 0, station: 0, road: 0 };
       const cands: { chip: Chip; sx: number; sy: number; prio: number; near: boolean }[] = [];
       let measured = 0;
-      for (const chip of chips) {
+      /* round-3 (C): community pins ride the same declutter pass as the
+         place / NPC chips, so a snake warning never stacks on top of a
+         place name — they just compete for the same screen space. */
+      const allChips = communityChipsRef.current.length > 0 ? chips.concat(communityChipsRef.current) : chips;
+      for (const chip of allChips) {
         const pos = chip.getPos();
         // far-off place / area / station labels: skip before any projection or DOM work
         if ((chip.place || chip.area || chip.station) && !hover && (((chip.place || chip.station) && overview) || Math.hypot(pos.x - cam.tx, pos.z - cam.tz) > 32)) {
@@ -3155,6 +4057,17 @@ export function MapView(p: Props) {
           }
         } else if (chip.kind === "loc") {
           prio = (chip.locId !== undefined && chip.locId === propsRef.current.selfLocId ? 1 : 3) + dCam / 60;
+        } else if (chip.kind === "community") {
+          /* round-3 (C): community pins. A snake warning is safety info —
+             it shows even at city-wide zoom and outranks everything but
+             you and the searched pin; strays / notices / fishing spots
+             join the normal mid-zoom crowd. */
+          if (overview && chip.community !== "snake") {
+            chip.visible = false;
+            chip.el.style.display = "none";
+            continue;
+          }
+          prio = (chip.community === "snake" ? 1.5 : chip.community === "stray" ? 3.5 : chip.community === "notice" ? 4 : 5) + dCam / 60;
         } else if (chip.area) {
           // towns/streets show from mid zoom (and city-wide unless 精简);
           // small neighbourhoods only up close — or under the cursor
@@ -3297,6 +4210,39 @@ export function MapView(p: Props) {
           const k = 1 + Math.sin(performance.now() / 260) * 0.18; pinRing.scale.set(k, k, k);
         }
       }
+      // ROUND-8 click-to-walk marker: LoL-style move-click ripple on each
+      // click (the ring spreads outward and fades over ~500ms), then a faint
+      // persistent ring at the destination while the player walks there.
+      // One ring mesh, reused per click; hidden when there is no target.
+      {
+        const cw = clickWalkRef.current;
+        const mk = clickMarkerRef.current;
+        if (mk) {
+          if (!cw) {
+            mk.visible = false;
+          } else {
+            mk.visible = true;
+            mk.position.set(cw.x, LAND + 0.08, cw.z);
+            const now = performance.now();
+            const RIPPLE_MS = 500;
+            const t0 = clickRippleAtRef.current;
+            const mat = mk.material as THREE.MeshBasicMaterial;
+            if (t0 >= 0 && now - t0 < RIPPLE_MS) {
+              // expanding ripple: small -> ~2.4x, fading to transparent
+              const u = (now - t0) / RIPPLE_MS; // 0..1
+              const ease = 1 - Math.pow(1 - u, 2); // easeOutQuad: fast start
+              const s = 0.5 + ease * 1.9;
+              mk.scale.set(s, s, s);
+              mat.opacity = 0.95 * (1 - u);
+            } else {
+              // ripple done: faint persistent ring at the destination
+              const k = 1 + Math.sin(now / 300) * 0.15;
+              mk.scale.set(k, k, k);
+              mat.opacity = 0.55;
+            }
+          }
+        }
+      }
       if (fx) fx.render();
       else renderer.render(scene, camera);
     };
@@ -3306,6 +4252,8 @@ export function MapView(p: Props) {
       cancelAnimationFrame(raf);
       fx?.dispose();
       ro.disconnect();
+      sceneRef.current = null;
+      playerBuildingsGroupRef.current = null;
       dom.removeEventListener("pointerdown", onDown);
       dom.removeEventListener("pointermove", onMove);
       dom.removeEventListener("pointerup", onUp);
@@ -3327,6 +4275,127 @@ export function MapView(p: Props) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.cityKey]);
+
+  /* Round-3 (C): community pins. App passes toMapMarkers() output as the
+     communityMarkers prop; this effect turns each marker into a clickable
+     HTML chip in the labels overlay (same mkChip-free pattern as the actor
+     chips: emoji + label, pointer-events on, click → onCommunityMarkerClick).
+     Position resolves from the marker's own x/z, falling back to its locId
+     via resolveLoc, so pins without exact coordinates still land on their
+     place. Declared AFTER the scene effect on purpose: the scene rebuild
+     wipes the labels overlay (labels.innerHTML = ""), and effects run in
+     declaration order, so these chips are recreated after every rebuild.
+     Capped at 24 pins so a busy city can't flood the declutter pass. */
+  const communityKey = (p.communityMarkers ?? []).map((m) => `${m.kind}:${m.id}:${m.label}`).join("|");
+  useEffect(() => {
+    const labels = labelsRef.current;
+    for (const c of communityChipsRef.current) c.el.remove();
+    communityChipsRef.current = [];
+    const markers = (p.communityMarkers ?? []).slice(0, 24);
+    if (!labels || markers.length === 0) return;
+    const locs = getLocations(p.cityKey);
+    const byId = new Map(locs.map((l) => [l.id, l]));
+    for (const m of markers) {
+      const loc = byId.get(m.pin.locId) ?? resolveLoc(p.cityKey, m.pin.locId);
+      const x = m.pin.x ?? loc?.x;
+      const z = m.pin.z ?? loc?.z;
+      if (x === undefined || z === undefined) continue;
+      const el = document.createElement("button");
+      el.type = "button";
+      el.textContent = `${m.emoji} ${m.label}`;
+      el.setAttribute("aria-label", m.label);
+      el.style.cssText = "position:absolute;left:0;top:0;transform:translate(-50%,-100%);white-space:nowrap;pointer-events:auto;cursor:pointer;font:700 10.5px 'Noto Sans SC',sans-serif;line-height:1.3;padding:2px 7px;border-radius:999px;background:rgba(255,253,248,.94);color:#14202b;border:1px solid rgba(20,26,32,.4);box-shadow:0 1px 4px rgba(10,20,30,.25);";
+      if (m.kind === "snake") el.style.cssText += "background:#fef2f2;border-color:#dc2626;color:#991b1b;";
+      el.addEventListener("pointerdown", (e) => e.stopPropagation());
+      el.addEventListener("click", (e) => { e.stopPropagation(); propsRef.current.onCommunityMarkerClick?.(m); });
+      labels.appendChild(el);
+      communityChipsRef.current.push({
+        el, kind: "community", community: m.kind, w: 0, h: 0, lastText: "", visible: true, clampDx: 0, clampDy: 0,
+        getPos: () => ({ x, y: LAND + 1.6, z }),
+      });
+    }
+    return () => {
+      for (const c of communityChipsRef.current) c.el.remove();
+      communityChipsRef.current = [];
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [communityKey, p.cityKey]);
+
+  /* Round-9: player shops / flats as VISIBLE 3D buildings on the map. This
+     effect owns one group inside the scene (the scene effect owns the scene
+     itself); it re-runs whenever the list or city changes, so a building
+     appears as soon as the shop/flat is created and survives reload (the
+     list comes from the server). Each building sits offset from its place's
+     own building (dx +1.8, dz +1.3) so no surface is coplanar with it (no
+     z-fighting) and no existing place moves. Shops read as a shopfront
+     (small box + awning + neon sign); flats as a residential block with a
+     cone roof. The custom name rides the community-marker chip (same labels
+     overlay as places); the building also gets a coloured sign box. A pick
+     mesh (invisible box, userData.locId) makes the building clickable like
+     a place — onUp raycasts it alongside pickMeshes. */
+  const playerBuildingsKey = (p.playerBuildings ?? []).map((b) => `${b.id}|${b.kind}|${b.locId}|${b.name}|${b.color}`).join(";");
+  useEffect(() => {
+    const scene = sceneRef.current;
+    playerBuildingsGroupRef.current?.parent?.remove(playerBuildingsGroupRef.current);
+    playerBuildingsGroupRef.current = null;
+    playerPickMeshesRef.current = [];
+    const list = p.playerBuildings ?? [];
+    if (!scene || list.length === 0) return;
+    const locs = getLocations(p.cityKey);
+    const byId = new Map(locs.map((l) => [l.id, l]));
+    const group = new THREE.Group();
+    const pickMat = new THREE.MeshBasicMaterial({ visible: false });
+    for (const b of list) {
+      const loc = byId.get(b.locId) ?? resolveLoc(p.cityKey, b.locId);
+      if (!loc) continue;
+      const g = new THREE.Group();
+      const isShop = b.kind === "shop";
+      const w = isShop ? 1.3 : 1.4;
+      const h = isShop ? 1.15 : 1.9;
+      const bodyMat = new THREE.MeshStandardMaterial({ color: b.color, roughness: 0.8, metalness: 0.05 });
+      const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, w * 0.85), bodyMat);
+      body.position.y = h / 2;
+      body.castShadow = true;
+      body.receiveShadow = true;
+      g.add(body);
+      if (isShop) {
+        const awnMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(b.color).multiplyScalar(0.85), roughness: 0.7, emissive: 0xffb35c, emissiveIntensity: 0.12 });
+        const awn = new THREE.Mesh(new THREE.BoxGeometry(w * 0.9, 0.07, 0.55), awnMat);
+        awn.position.set(0, 0.95, w * 0.42 + 0.22);
+        awn.rotation.x = 0.38;
+        g.add(awn);
+        const signMat = new THREE.MeshStandardMaterial({ color: 0x1a1216, roughness: 0.5, emissive: b.color, emissiveIntensity: 0.4 });
+        const sign = new THREE.Mesh(new THREE.BoxGeometry(Math.min(1.1, w * 0.8), 0.32, 0.08), signMat);
+        sign.position.set(0, h * 0.62, w * 0.42 + 0.05);
+        g.add(sign);
+      } else {
+        const roof = new THREE.Mesh(
+          new THREE.ConeGeometry(w * 0.66, 0.7, 4),
+          new THREE.MeshStandardMaterial({ color: new THREE.Color(b.color).multiplyScalar(0.72), roughness: 0.9, flatShading: true }),
+        );
+        roof.position.y = h + 0.35;
+        roof.rotation.y = Math.PI / 4;
+        roof.castShadow = true;
+        g.add(roof);
+      }
+      const pick = new THREE.Mesh(new THREE.BoxGeometry(w + 0.3, h + 0.6, w + 0.3), pickMat);
+      pick.position.y = (h + 0.6) / 2;
+      pick.userData.locId = b.locId;
+      g.add(pick);
+      playerPickMeshesRef.current.push(pick);
+      // offset beside the place's own building (its body is ~w*0.82 wide)
+      g.position.set(loc.x + 1.8, LAND, loc.z + 1.3);
+      group.add(g);
+    }
+    scene.add(group);
+    playerBuildingsGroupRef.current = group;
+    return () => {
+      group.parent?.remove(group);
+      if (playerBuildingsGroupRef.current === group) playerBuildingsGroupRef.current = null;
+      playerPickMeshesRef.current = [];
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playerBuildingsKey, p.cityKey]);
 
   const zoomBy = (f: number) => {
     autoFitRef.current = false;
@@ -3445,6 +4514,13 @@ export function MapView(p: Props) {
           g.beginPath(); g.arc(px(a.x), py(a.z), 5, 0, Math.PI * 2); g.fill(); g.stroke();
         }
       }
+      // round-3 (C): community pins as small coloured dots (positions
+      // already resolved onto the map by the chip sync effect)
+      for (const c of communityChipsRef.current) {
+        const pos = c.getPos();
+        g.fillStyle = COMMUNITY_PIN_COLOR[c.community ?? "notice"];
+        g.beginPath(); g.arc(px(pos.x), py(pos.z), 3.2, 0, Math.PI * 2); g.fill();
+      }
       // you: the biggest dot, white ring + heading tick
       if (self) {
         const col = `#${self.color.toString(16).padStart(6, "0")}`;
@@ -3512,6 +4588,24 @@ export function MapView(p: Props) {
             </button>
           ))}
         </div>
+        {/* round-3 (C): community pins also work without WebGL — same tap → detail panel */}
+        {(p.communityMarkers?.length ?? 0) > 0 && (
+          <div className="mt-3">
+            <p className="mb-1.5 text-xs font-black">📍 社区动态 · 点一下看详情</p>
+            <div className="flex flex-wrap gap-1.5">
+              {p.communityMarkers!.map((m) => (
+                <button
+                  key={`${m.kind}:${m.id}`}
+                  type="button"
+                  onClick={() => p.onCommunityMarkerClick?.(m)}
+                  className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1.5 text-left text-xs font-bold"
+                >
+                  {m.emoji} {m.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     );
   }

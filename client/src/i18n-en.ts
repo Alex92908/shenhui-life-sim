@@ -1877,6 +1877,7 @@ export const EN_EXACT: Record<string, string> = {
 "商场约 9:30–22:00": "Mall about 9:30–22:00",
 "地铁 8 号线大梅沙站直达；旺季周末自驾前往要提前预约通行。": "Metro Line 8 straight to Dameisha; on peak-season weekends, driving requires a reservation.",
 "大芬姐在赛格摆过柜台：“以前发货用麻袋装，现在的小哥背个双肩包，包里就是一家公司的全部库存。”": "Dafen-jie once ran a counter at SEG: “we used to ship in sacks; now a courier with a backpack carries a whole company's stock.”",
+"阿杰在赛格摆了十年一米柜台：“以前发货用麻袋装，现在的小哥背个双肩包，包里就是一家公司的全部库存。买整机先验机，开发票，别贪便宜。”": "Ah Jie has run a one-metre counter at SEG for ten years: “We used to ship in sacks; now a courier with a backpack carries a whole company's stock. Check a full machine before you buy, and get a receipt — don't chase the cheapest price.”",
 "子健说他小学春游第一次坐过山车就是在这儿，下来腿软了一下午，现在带娃来玩还是先冲雪山飞龙。": "Zijian says his first roller coaster was here on a primary-school outing — wobbly legs all afternoon. Now he brings his kid and still heads for the Snow Mountain Dragon first.",
 "小吃人均 ¥30–60": "Snacks ¥30–60 per person",
 "山顶广场矗立着邓小平铜像；山下 2 万㎡的风筝广场，是深圳人周末放风筝的老地方。": "A bronze statue of Deng Xiaoping stands on the summit plaza; the 20,000 m² Kite Plaza below is where Shenzheners have flown kites for years.",

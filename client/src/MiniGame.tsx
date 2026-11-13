@@ -18,7 +18,7 @@ export interface GameResult { score: number; bust?: boolean }
 const T = (en: boolean, s: [string, string]) => (en ? s[1] : s[0]);
 const shuffle = <X,>(a: X[]) => a.map((x) => [Math.random(), x] as const).sort((p, q) => p[0] - q[0]).map((p) => p[1]);
 
-export function MiniGame({ spec, title, en, onDone, onQuit }: { spec: GameSpec; title: string; en: boolean; onDone: (r: GameResult) => void; onQuit: () => void }) {
+export function MiniGame({ spec, title, en, onDone, onQuit, onPush }: { spec: GameSpec; title: string; en: boolean; onDone: (r: GameResult) => void; onQuit: () => void; onPush?: () => void }) {
   const [res, setRes] = useState<GameResult | null>(null);
   /* real-time games wait for the player to press Start */
   const [ready, setReady] = useState(spec.type === "quiz" || spec.type === "meter" || spec.type === "mash");
@@ -38,7 +38,7 @@ export function MiniGame({ spec, title, en, onDone, onQuit }: { spec: GameSpec; 
             {spec.type === "timing" && <Timing spec={spec} en={en} done={!!res} onEnd={finish} />}
             {spec.type === "reel" && <Reel spec={spec} en={en} done={!!res} onEnd={finish} />}
             {spec.type === "rhythm" && <Rhythm spec={spec} en={en} done={!!res} onEnd={finish} />}
-            {spec.type === "meter" && <Meter spec={spec} en={en} done={!!res} onEnd={finish} />}
+            {spec.type === "meter" && <Meter spec={spec} en={en} done={!!res} onEnd={finish} onPush={onPush} />}
             {spec.type === "quiz" && <Quiz spec={spec} en={en} done={!!res} onEnd={finish} />}
             {spec.type === "mash" && <Mash spec={spec} en={en} done={!!res} onEnd={finish} />}
           </div>}
@@ -195,7 +195,7 @@ function Rhythm({ spec, en, done, onEnd }: { spec: Extract<GameSpec, { type: "rh
 }
 
 /* 4. 见好就收：每再来一次收益更高，翻车概率也更高 */
-function Meter({ spec, en, done, onEnd }: { spec: Extract<GameSpec, { type: "meter" }>; en: boolean; done: boolean; onEnd: (r: GameResult) => void }) {
+function Meter({ spec, en, done, onEnd, onPush }: { spec: Extract<GameSpec, { type: "meter" }>; en: boolean; done: boolean; onEnd: (r: GameResult) => void; onPush?: () => void }) {
   const [step, setStep] = useState(0);
   const [shake, setShake] = useState(false);
   const total = spec.gains.slice(0, step).reduce((a, b) => a + b, 0);
@@ -203,6 +203,7 @@ function Meter({ spec, en, done, onEnd }: { spec: Extract<GameSpec, { type: "met
   const risk = Math.min(0.95, spec.risk + spec.riskStep * step);
   const push = () => {
     if (done || step >= spec.gains.length) return;
+    onPush?.();
     if (Math.random() < risk) { setShake(true); onEnd({ score: 0, bust: true }); return; }
     const n = step + 1; setStep(n);
     if (n >= spec.gains.length) onEnd({ score: 1 });

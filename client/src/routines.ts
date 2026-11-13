@@ -391,9 +391,9 @@ export const ROLE_META: Record<RoutineRole, RoleMeta> = {
   office: { where: "work", pay: "wage", zh: "白领", en: "Office worker" },
   coder: { where: "work", pay: "wage", zh: "程序员", en: "Programmer" },
   factory: { where: "work", pay: "wage", zh: "工厂普工", en: "Factory worker" },
-  waiter: { where: ["food", "market"], pay: "wage", zh: "餐厅服务员", en: "Waiter" },
-  sales: { where: ["mall"], pay: "wage", zh: "商场导购", en: "Shop assistant" },
-  barber: { where: ["mall", "market", "social"], pay: "wage", zh: "理发师", en: "Barber" },
+  waiter: { where: ["food", "market", "seafood", "oldtown", "womensstreet"], pay: "wage", zh: "餐厅服务员", en: "Waiter" }, /* Round-2: 服务员只在食街/真菜市场/海鲜街/老城/女人街上班，不在电子市场、油画村、二手市集上班 */
+  sales: { where: ["mall", "electronics", "oilpainting"], pay: "wage", zh: "商场导购", en: "Shop assistant" }, /* Round-2: 导购也能在电子市场当柜台销售、在油画村当画廊店员（装机/销售、临摹/装裱/画廊店员的现成职业入口） */
+  barber: { where: ["mall", "social"], pay: "wage", zh: "理发师", en: "Barber" }, /* Round-2: 理发师不在任何市场上班 */
   masseur: { where: ["social", "lodging", "mall", "health"], pay: "wage", zh: "按摩师", en: "Masseur" },
   ktv: { where: ["social"], pay: "wage", zh: "KTV 包厢服务员", en: "KTV room attendant" },
   teacher: { where: ["learn"], pay: "wage", zh: "老师", en: "Teacher" },
@@ -405,23 +405,39 @@ export const ROLE_META: Record<RoutineRole, RoleMeta> = {
   guard: { where: ["mall", "lodging", "bank", "transit"], pay: "wage", zh: "保安", en: "Security guard" },
   cleaner: { where: ["mall", "transit", "lodging", "health", "learn"], pay: "wage", zh: "保洁阿姨", en: "Cleaner" },
   courier: { where: "any", pay: "wage", zh: "快递员", en: "Courier" },
-  chef: { where: ["food", "market", "lodging"], pay: "wage", zh: "厨师", en: "Chef" },
+  chef: { where: ["food", "market", "lodging", "seafood", "oldtown"], pay: "wage", zh: "厨师", en: "Chef" }, /* Round-2: 厨师只在食街/真菜市场/酒店/海鲜街（大排档代加工）/老城（客家小吃）上班，不在电子市场、油画村、二手市集上班 */
   nurse: { where: ["health"], pay: "wage", zh: "护士", en: "Nurse" },
-  agent: { where: ["mall", "market", "transit"], pay: "wage", zh: "房产中介", en: "Estate agent" },
+  agent: { where: ["mall", "transit", "oldtown"], pay: "wage", zh: "房产中介", en: "Estate agent" }, /* Round-2: 房产中介不在市场上班（老城房源除外：淡水老城、元朗大马路、南头古城有老房可带看） */
   streamer: { where: ["home", "mall", "scenic", "fun"], pay: "wage", zh: "带货主播", en: "Livestreamer" },
-  vendor: { where: ["market", "food", "transit", "scenic"], pay: "wage", zh: "摆摊小贩", en: "Street vendor" },
+  vendor: { where: ["market", "food", "transit", "scenic", "electronics", "oilpainting", "seafood", "secondhand", "oldtown", "womensstreet"], pay: "wage", zh: "摆摊小贩", en: "Street vendor" }, /* Round-2: 摆摊小贩所有市场子类型都能出摊，但卖的东西按子类型变（见 vendorSellFor） */
   builder: { where: "work", pay: "wage", zh: "建筑工人", en: "Construction worker" },
   coach: { where: ["gym"], pay: "wage", zh: "健身教练", en: "Gym coach" },
   teller: { where: ["bank"], pay: "wage", zh: "银行柜员", en: "Bank teller" },
   pharmacist: { where: ["health", "service", "mall"], pay: "wage", zh: "药店店员", en: "Pharmacy assistant" },
   stationstaff: { where: ["transit"], pay: "wage", zh: "地铁站务员", en: "Metro station staff" },
   netcafe: { where: ["fun", "social", "mall"], pay: "wage", zh: "网吧网管", en: "Internet-café attendant" },
-  barista: { where: ["food", "mall", "market"], pay: "wage", zh: "咖啡师", en: "Barista" },
-  nails: { where: ["mall", "market"], pay: "wage", zh: "美甲师", en: "Nail artist" },
-  petgroomer: { where: ["mall", "market"], pay: "wage", zh: "宠物美容师", en: "Pet groomer" },
+  barista: { where: ["food", "mall"], pay: "wage", zh: "咖啡师", en: "Barista" }, /* Round-2: 咖啡师不在任何市场上班 */
+  nails: { where: ["mall"], pay: "wage", zh: "美甲师", en: "Nail artist" }, /* Round-2: 美甲师不在任何市场上班 */
+  petgroomer: { where: ["mall"], pay: "wage", zh: "宠物美容师", en: "Pet groomer" }, /* Round-2: 宠物美容师不在任何市场上班（审计表 6 之外的同类错配） */
   frontdesk: { where: ["lodging"], pay: "wage", zh: "酒店前台", en: "Hotel receptionist" },
   guide: { where: ["scenic", "fun", "mountain"], pay: "wage", zh: "景区导游", en: "Tour guide" },
 };
+/** Round-2 (audit table 6): what the street vendor actually sells depends
+    on the market subtype. The static VENDOR "sell" step keeps the
+    night-market copy as its default; App.tsx should override that step's
+    zh/sub/en/subEn/prop with vendorSellFor(loc.type) when the role is vendor
+    (see ROUND2-LOG-b.md snippet S7). */
+export function vendorSellFor(locType: string): { zh: string; sub: string; en: string; subEn: string; emoji: string; prop: string } {
+  switch (locType) {
+    case "electronics": return { zh: "摆摊卖配件", sub: "手机壳、数据线、钢化膜，华强北的摊位最讲眼力", en: "Sell phone accessories", subEn: "Cases, cables, screen protectors — the Huaqiangbei stall", emoji: "📱", prop: "📱" };
+    case "oilpainting": return { zh: "摆摊卖画", sub: "小幅油画、画具、明信片，大芬的画摊最讲眼光", en: "Sell paintings", subEn: "Small oil paintings, brushes, postcards — the Dafen stall", emoji: "🎨", prop: "🎨" };
+    case "seafood": return { zh: "摆摊卖海鲜", sub: "现捞海鲜、干货，海鲜街的摊位早上最抢手", en: "Sell seafood", subEn: "Fresh catch and dried goods — the seafood street stall", emoji: "🦐", prop: "🦐" };
+    case "secondhand": return { zh: "摆摊卖旧货", sub: "旧手机、旧家具、黑胶唱片，贱买贱卖看眼力", en: "Sell second-hand goods", subEn: "Used phones, old furniture, vinyl — buy low, sell low", emoji: "🧺", prop: "🧺" };
+    case "oldtown": return { zh: "摆摊卖特产", sub: "客家小吃、老街特产，老城的摊位最讲人情", en: "Sell local specialities", subEn: "Hakka snacks and old-street goods", emoji: "🏮", prop: "🏮" };
+    case "womensstreet": return { zh: "摆摊卖小商品", sub: "平价衣袜、小商品，女人街的摊位最讲吆喝", en: "Sell small goods", subEn: "Cheap clothes and trinkets — the Ladies' Market stall", emoji: "🛍️", prop: "🛍️" };
+    default: return { zh: "摆摊卖货", sub: "烤串、炒粉、手机壳，吆喝起来", en: "Work the stall", subEn: "Skewers, fried noodles, phone cases — call it out", emoji: "🍢", prop: "🍢" };
+  }
+}
 const STEPS: Record<RoutineRole, RoutineStep[]> = { office: OFFICE, coder: CODER, factory: FACTORY, waiter: WAITER, sales: SALES, barber: BARBER, masseur: MASSEUR, ktv: KTV, teacher: TEACHER, student: STUDENT, boss: BOSS, flat: FLAT, rider: RIDER, driver: DRIVER, guard: GUARD, cleaner: CLEANER, courier: COURIER, chef: CHEF, nurse: NURSE, agent: AGENT, streamer: STREAMER, vendor: VENDOR, builder: BUILDER, coach: COACH, teller: TELLER, pharmacist: PHARMACIST, stationstaff: STATIONSTAFF, netcafe: NETCAFE, barista: BARISTA, nails: NAILS, petgroomer: PETGROOMER, frontdesk: FRONTDESK, guide: GUIDE };
 
 /** identity id → the job's daily routine */

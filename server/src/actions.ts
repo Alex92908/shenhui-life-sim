@@ -12,7 +12,7 @@ z,
 type ActionsModule,
 type Ctx,
 } from "@hatch/space-sdk";
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, sql } from "drizzle-orm";
 import * as schema from "./schema";
 import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
 import { cleanName, cleanText } from "./moderation";
@@ -40,6 +40,45 @@ const ONLINE_WINDOW_MS = 90_000;
     company × bonus day, a full day of overtime, plus rewards). */
 const MAX_EARN_PER_DAY = 25_000;
 
+/* 捏脸 (0023): a hand-picked face, stored as compact JSON on players.face.
+   Validated + clamped server-side so a forged heartbeat can't store junk
+   that breaks other clients' figure builder. Returns null for "clear it"
+   (back to the seed face) and undefined for "invalid — leave it alone". */
+const FACE_SKINS = [0xf2c79b, 0xe8b88a, 0xd9a06f, 0xc98d5f, 0xf6d7b0];
+const FACE_HAIRS = [0x2b2118, 0x2b2118, 0x4a3226, 0x6b6b6b, 0x8a5a2e, 0x1a1a22];
+function sanitizeFaceJson(raw: string | null): string | null | undefined {
+  if (raw === null) return null;
+  let o: unknown;
+  try {
+    o = JSON.parse(raw) as unknown;
+  } catch {
+    return undefined;
+  }
+  if (!o || typeof o !== "object" || Array.isArray(o)) return undefined;
+  const r = o as Record<string, unknown>;
+  const num = (x: unknown, lo: number, hi: number, d: number) => {
+    const n = typeof x === "number" && Number.isFinite(x) ? x : d;
+    return Math.min(hi, Math.max(lo, n));
+  };
+  const eyeShape = r.eyeShape === "round" || r.eyeShape === "narrow" || r.eyeShape === "wide" ? r.eyeShape : "round";
+  const mouth = r.mouth === "smile" || r.mouth === "flat" || r.mouth === "open" || r.mouth === "smirk" ? r.mouth : "smile";
+  const skin = typeof r.skin === "number" && FACE_SKINS.includes(r.skin) ? r.skin : FACE_SKINS[0]!;
+  const hair = typeof r.hair === "number" && FACE_HAIRS.includes(r.hair) ? r.hair : FACE_HAIRS[0]!;
+  return JSON.stringify({
+    eyeGap: num(r.eyeGap, 0.095, 0.135, 0.115),
+    eyeSize: num(r.eyeSize, 0.034, 0.05, 0.042),
+    eyeShape,
+    browAngle: num(r.browAngle, -0.25, 0.25, 0),
+    browThick: num(r.browThick, 0.7, 1.5, 1),
+    mouth,
+    mouthSize: num(r.mouthSize, 0.8, 1.3, 1),
+    nose: r.nose === true,
+    faceWidth: num(r.faceWidth, 0.92, 1.04, 0.98),
+    skin,
+    hair,
+  });
+}
+
 const playerShape = z.object({
   id: z.string(),
   name: z.string(),
@@ -58,6 +97,9 @@ const playerShape = z.object({
   resultTitle: z.string().nullable(),
   lastSeen: z.string(),
   look: z.string().nullable().optional(),
+  /* 捏脸 (0023): the player's hand-picked face as compact JSON (null =
+     seed-derived face) */
+  face: z.string().nullable().optional(),
 });
 
 const GIFT_KINDS = ["tea", "breakfast", "hongbao", "referral", "invite", "share"] as const;
@@ -114,6 +156,10 @@ const worldResponse = z.object({
   companyBoard: z.array(z.object({ employer: z.string(), count: z.number(), money: z.number() })),
   /* 集章排行：跨局累计盖章最多的人 */
   stampBoard: z.array(z.object({ id: z.string(), name: z.string(), emoji: z.string(), stamps: z.number(), title: z.string().nullable() })),
+  /* 玩家开的店（0022）：全城的店都出现在地图上 */
+  shops: z.array(z.object({ ownerPub: z.string(), ownerName: z.string(), kind: z.string(), name: z.string(), locId: z.string(), cityKey: z.string(), lvl: z.number(), floor: z.number(), building: z.string().nullable() })),
+  /* 玩家买下的房子（0022）：只有起了名字、有位置的才上地图 */
+  flats: z.array(z.object({ ownerPub: z.string(), ownerName: z.string(), name: z.string(), locId: z.string(), cityKey: z.string(), tier: z.number() })),
 });
 
 type World = z.infer<typeof worldResponse>;
@@ -161,6 +207,19 @@ async function loadWorld(ctx: Ctx, cityKey: string): Promise<World> {
     .where(and(eq(schema.players.suspect, 0), eq(schema.players.banned, 0)))
     .orderBy(desc(schema.players.stamps))
     .limit(10);
+  /* 玩家店铺 + 房子（0022）：本城所有的店；房子只有起了名字、有位置的才上地图 */
+  const shopRows = await db
+    .select()
+    .from(schema.shops)
+    .where(eq(schema.shops.cityKey, cityKey));
+  const flatRows = await db
+    .select()
+    .from(schema.homes)
+    .where(and(eq(schema.homes.cityKey, cityKey), isNotNull(schema.homes.name), isNotNull(schema.homes.locId)));
+  const flatOwners = flatRows.length
+    ? await db.select().from(schema.players).where(inArray(schema.players.id, flatRows.map((h) => h.playerId)))
+    : [];
+  const flatOwnerById = new Map(flatOwners.map((p) => [p.id, p]));
   return {
     online: onlineRows.map((p) => ({
       id: p.pub ?? pubOf(p.id),
@@ -180,6 +239,7 @@ async function loadWorld(ctx: Ctx, cityKey: string): Promise<World> {
       resultTitle: p.resultTitle,
       lastSeen: p.lastSeen.toISOString(),
       look: p.cosmetic ?? null,
+      face: p.face ?? null,
     })),
     onlineSz: onlineRows.filter((p) => p.cityKey === "sz").length,
     onlineHz: onlineRows.filter((p) => p.cityKey === "hz").length,
@@ -221,6 +281,25 @@ async function loadWorld(ctx: Ctx, cityKey: string): Promise<World> {
     stampBoard: stampRows
       .filter((p) => p.stamps > 0)
       .map((p) => ({ id: p.pub ?? pubOf(p.id), name: p.name, emoji: p.emoji, stamps: p.stamps, title: p.title })),
+    shops: shopRows.map((s) => ({
+      ownerPub: s.ownerPub ?? pubOf(s.ownerId),
+      ownerName: s.ownerName,
+      kind: s.kind,
+      name: s.name,
+      locId: s.locId,
+      cityKey: s.cityKey,
+      lvl: s.lvl,
+      floor: s.floor,
+      building: s.building ?? null,
+    })),
+    flats: flatRows.map((h) => ({
+      ownerPub: flatOwnerById.get(h.playerId)?.pub ?? pubOf(h.playerId),
+      ownerName: flatOwnerById.get(h.playerId)?.name ?? "?",
+      name: h.name!,
+      locId: h.locId!,
+      cityKey: h.cityKey ?? cityKey,
+      tier: h.tier,
+    })),
   };
 }
 
@@ -421,12 +500,19 @@ async function settleMoney(db: ReturnType<Ctx["db"]>, prev: PlayerRow, proposed:
   }
   return { money, reported: corrected ? money : proposed, budget: Math.max(0, Math.min(EARN_CAP * 2, budget)), corrected, cheat: delta > EARN_CAP };
 }
-/** Server-granted money (rewards): goes straight onto both balances, so the client's own +amount is not counted twice. */
+/** Server-granted money (rewards): goes straight onto both balances, so the client's own +amount is not counted twice.
+   NOTE: only `money` is bumped — `reportedMoney` is the last balance the
+   CLIENT reported, and the client does not know about a server-side grant
+   (it restores its balance from localStorage). If reportedMoney were bumped
+   too, the next heartbeat would see the client's stale lower balance as a
+   ¥(grant) "spend" and claw the whole grant back (settleMoney treats any
+   client-proposed decrease as spending). The client picks the grant up from
+   the heartbeat reply instead (see syncPresence onSuccess). */
 async function creditMoney(db: ReturnType<Ctx["db"]>, playerId: string, amount: number, note: string) {
   const d = db as any;
   const [p] = await d.select().from(schema.players).where(eq(schema.players.id, playerId)).limit(1);
   if (!p || !amount) return;
-  await d.update(schema.players).set({ money: p.money + amount, reportedMoney: p.reportedMoney + amount }).where(eq(schema.players.id, playerId));
+  await d.update(schema.players).set({ money: p.money + amount }).where(eq(schema.players.id, playerId));
   await writeLedger(db, playerId, p.season, "reward", amount, p.money + amount, note);
 }
 
@@ -647,6 +733,738 @@ async function bumpBuddies(db: ReturnType<Ctx["db"]>, members: PartyMember[]) {
   }
 }
 
+/* ---- round-2 (S): shared helpers for the round-2 server endpoints ----
+   Conventions (same as the existing actions): defineAction + zod, playerId
+   string (4–64), cleanText on free text, same-city + account gates +
+   banned/muted checks, creditMoney for every payout, single-claim guards
+   copied from claimGigMoney. No endpoint here moves real money (Starlight /
+   Stripe); all amounts are in-game ¥ on the server ledger. */
+const cityZ = z.enum(["sz", "hz", "hk"]);
+const pidZ = z.string().min(4).max(64);
+async function r2Player(db: Db, id: string) {
+  const [p] = await db.select().from(schema.players).where(eq(schema.players.id, id)).limit(1);
+  return p as typeof schema.players.$inferSelect | undefined;
+}
+/** Shared write rate-limit for the (c) community endpoints: ≤ 10 writes /
+    player / minute (in-memory, per server process — same pattern as the
+    world snapshot cache above). */
+const communityWrites = new Map<string, number[]>();
+function communityRateOk(playerId: string): boolean {
+  const now = Date.now();
+  const list = (communityWrites.get(playerId) ?? []).filter((t) => now - t < 60_000);
+  if (list.length >= 10) { communityWrites.set(playerId, list); return false; }
+  list.push(now);
+  communityWrites.set(playerId, list);
+  return true;
+}
+const RATE_MSG = "操作太快了, 歇会儿再来";
+const NO_PLAYER = "先进游戏再操作";
+
+/* ---- (c) strays: spawn pools (real loc ids from client/src/data.ts) ---- */
+const STRAY_POOLS: Record<string, { locId: string; locName: string; x: number; z: number }[]> = {
+  sz: [
+    { locId: "lianhua", locName: "莲花山公园", x: -2.8, z: -2.9 },
+    { locId: "fun", locName: "深圳湾公园", x: -20.5, z: 4.6 },
+    { locId: "talent", locName: "人才公园", x: -22, z: 6.8 },
+    { locId: "dameisha", locName: "大梅沙海滨公园", x: 31.5, z: -0.5 },
+    { locId: "xichong", locName: "西涌海滩", x: 36, z: -0.7 },
+  ],
+  hz: [
+    { locId: "dongjiangpark", locName: "东江公园", x: -2.2, z: -9.6 },
+    { locId: "dayawan", locName: "大亚湾黄金海岸", x: 10.4, z: 7.7 },
+    { locId: "haiguiwan", locName: "海龟湾", x: 22.2, z: 20.3 },
+  ],
+  hk: [
+    { locId: "vicpark", locName: "维多利亚公园", x: 16.6, z: 14.8 },
+    { locId: "stanley", locName: "赤柱", x: 16.4, z: 20.9 },
+    { locId: "tuenmun", locName: "屯门·黄金海岸", x: -9, z: 1.9 },
+  ],
+};
+const STRAY_APPEARANCES = ["橘白相间", "通体雪白", "黑白花", "狸花纹", "三花", "灰色短毛", "黄毛", "小黑", "奶牛花", "玳瑁色"];
+const STRAY_FEED_GAIN: Record<string, number> = { friendly: 15, shy: 10, wary: 8 };
+const STRAY_FEED_NOTES: Record<string, string> = {
+  friendly: "它立刻凑过来, 蹭了蹭你的手.",
+  shy: "它等你走开几步, 才小心翼翼地过来吃.",
+  wary: "它叼起食物跑到一边, 边吃边盯着你.",
+};
+async function ensureStrays(db: Db, city: string, gameDay: number) {
+  const alive = await db.select().from(schema.strays).where(and(eq(schema.strays.city, city), eq(schema.strays.adopted, 0)));
+  const target = 4; // keep 3–6 per city; top up to 4 on read (adopted ones are replaced elsewhere after a few days)
+  const pool = STRAY_POOLS[city] ?? STRAY_POOLS.sz!;
+  for (let i = alive.length; i < target; i++) {
+    const spot = pool[Math.floor(Math.random() * pool.length)]!;
+    const kind = Math.random() < 0.55 ? "cat" : "dog";
+    const temper = (["friendly", "shy", "wary"] as const)[Math.floor(Math.random() * 3)]!;
+    await db.insert(schema.strays).values({
+      city, kind,
+      appearance: STRAY_APPEARANCES[Math.floor(Math.random() * STRAY_APPEARANCES.length)] ?? "花色",
+      temper, locId: spot.locId, locName: spot.locName, x: spot.x, z: spot.z,
+      trust: 5 + Math.floor(Math.random() * 20), lastFedDay: -1, firstSeenDay: gameDay,
+      adopted: 0, fedByCount: 0, createdAt: new Date(),
+    });
+  }
+}
+const strayShape = z.object({
+  id: z.string(), kind: z.enum(["cat", "dog"]), appearance: z.string(), temper: z.enum(["friendly", "shy", "wary"]),
+  pin: z.object({ locId: z.string(), locName: z.string(), x: z.number().optional(), z: z.number().optional() }),
+  cityKey: z.enum(["sz", "hz", "hk"]), trust: z.number(), lastFedDay: z.number(), firstSeenDay: z.number(),
+  adopted: z.boolean(), fedByCount: z.number(),
+});
+function strayView(r: typeof schema.strays.$inferSelect, gameDay: number) {
+  // trust decays 5/day unfed (mirror of decayStrayTrust in community.ts)
+  const days = Math.max(0, gameDay - Math.max(r.lastFedDay, r.firstSeenDay));
+  const trust = Math.max(0, r.trust - 5 * days);
+  return {
+    id: String(r.id), kind: r.kind as "cat" | "dog", appearance: r.appearance, temper: r.temper as "friendly" | "shy" | "wary",
+    pin: { locId: r.locId, locName: r.locName, x: r.x ?? undefined, z: r.z ?? undefined },
+    cityKey: r.city as "sz" | "hz" | "hk", trust, lastFedDay: r.lastFedDay, firstSeenDay: r.firstSeenDay,
+    adopted: !!r.adopted, fedByCount: r.fedByCount,
+  };
+}
+const noticeReplyShape = z.object({ id: z.string(), authorId: z.string(), authorName: z.string(), text: z.string(), createdAt: z.string() });
+const noticeShape = z.object({
+  id: z.string(), kind: z.enum(["lost-pet", "lost-item", "found-pet", "found-item"]), cityKey: z.enum(["sz", "hz", "hk"]),
+  title: z.string(), body: z.string(),
+  pin: z.object({ locId: z.string(), locName: z.string(), x: z.number().optional(), z: z.number().optional() }),
+  photoUrl: z.string().nullable(), authorId: z.string(), authorName: z.string(),
+  status: z.enum(["open", "claimed", "expired"]), createdAt: z.string(), expiresAt: z.string(),
+  replies: z.array(noticeReplyShape), claimedByName: z.string().nullable(),
+});
+async function noticeView(db: Db, r: typeof schema.notices.$inferSelect) {
+  const replies = await db.select().from(schema.noticeReplies).where(eq(schema.noticeReplies.noticeId, r.id)).orderBy(schema.noticeReplies.id);
+  const expired = r.expiresAt.getTime() <= Date.now();
+  return {
+    id: String(r.id), kind: r.kind as "lost-pet" | "lost-item" | "found-pet" | "found-item",
+    cityKey: r.city as "sz" | "hz" | "hk", title: r.title, body: r.body,
+    pin: { locId: r.locId, locName: r.locName, x: r.x ?? undefined, z: r.z ?? undefined },
+    photoUrl: r.photoUrl, authorId: r.authorId, authorName: r.authorName,
+    status: (expired && r.status === "open" ? "expired" : r.status) as "open" | "claimed" | "expired",
+    createdAt: r.createdAt.toISOString(), expiresAt: r.expiresAt.toISOString(),
+    replies: replies.map((x: typeof schema.noticeReplies.$inferSelect) => ({ id: String(x.id), authorId: x.authorId, authorName: x.authorName, text: x.text, createdAt: x.createdAt.toISOString() })),
+    claimedByName: r.claimedByName,
+  };
+}
+const snakeShape = z.object({
+  id: z.string(), cityKey: z.enum(["sz", "hz", "hk"]),
+  pin: z.object({ locId: z.string(), locName: z.string(), x: z.number().optional(), z: z.number().optional() }),
+  speciesGuess: z.string(), description: z.string(), photoUrl: z.string().nullable(),
+  reporterId: z.string(), reporterName: z.string(), reportedAt: z.string(), expiresAt: z.string(), confirmations: z.number(),
+});
+function snakeView(r: typeof schema.snakeReports.$inferSelect) {
+  return {
+    id: String(r.id), cityKey: r.city as "sz" | "hz" | "hk",
+    pin: { locId: r.locId, locName: r.locName, x: r.x ?? undefined, z: r.z ?? undefined },
+    speciesGuess: r.speciesGuess, description: r.description, photoUrl: r.photoUrl,
+    reporterId: r.reporterId, reporterName: r.reporterName,
+    reportedAt: r.createdAt.toISOString(), expiresAt: r.expiresAt.toISOString(), confirmations: r.confirmations,
+  };
+}
+const fishingShape = z.object({
+  id: z.string(), cityKey: z.enum(["sz", "hz", "hk"]),
+  pin: z.object({ locId: z.string(), locName: z.string(), x: z.number().optional(), z: z.number().optional() }),
+  catchDesc: z.string(), bait: z.string(), notes: z.string(), photoUrl: z.string().nullable(),
+  reporterId: z.string(), reporterName: z.string(), reportedAt: z.string(), lastConfirmedAt: z.string(), confirmations: z.number(),
+});
+function fishingView(r: typeof schema.fishingSpots.$inferSelect) {
+  return {
+    id: String(r.id), cityKey: r.city as "sz" | "hz" | "hk",
+    pin: { locId: r.locId, locName: r.locName, x: r.x ?? undefined, z: r.z ?? undefined },
+    catchDesc: r.catchDesc, bait: r.bait, notes: r.notes, photoUrl: r.photoUrl,
+    reporterId: r.reporterId, reporterName: r.reporterName,
+    reportedAt: r.createdAt.toISOString(), lastConfirmedAt: r.lastConfirmedAt.toISOString(), confirmations: r.confirmations,
+  };
+}
+
+/* ---- (d) black reports: jury settle (mirror of settleGigs) ---- */
+const COMPANY_IDS = new Set(["startup", "tencent", "bytedance", "huawei", "dji", "baidu", "zte", "cmb", "pingan", "vanke", "byd", "tcl", "desay", "eve", "petro", "hk-bank", "hk-exchange", "hk-airline", "hk-property", "hk-sciencepark", "hk-rail"]);
+const blackReportShape = z.object({
+  id: z.number(), kind: z.enum(["landlord", "employer"]), city: z.enum(["sz", "hz", "hk"]),
+  reporter: z.object({ id: z.string(), name: z.string(), emoji: z.string() }),
+  targetId: z.string(), targetName: z.string(), body: z.string(), evidence: z.any().nullable(),
+  status: z.enum(["open", "upheld", "rejected", "expired"]),
+  votes: z.object({ uphold: z.number(), reject: z.number() }), myVote: z.enum(["uphold", "reject"]).nullable(),
+  dueAt: z.string(), createdAt: z.string(), verdictNote: z.string().nullable().optional(),
+});
+const reputationShape = z.object({
+  targetId: z.string(), targetName: z.string(), kind: z.enum(["landlord", "employer"]),
+  score: z.number(), upheldCount: z.number(), rejectedCount: z.number(),
+  flaggedUntil: z.string().nullable(), updatedAt: z.string(),
+});
+async function blackReportView(db: Db, r: typeof schema.blackReports.$inferSelect, meId: string) {
+  const vs = await db.select().from(schema.blackReportVotes).where(eq(schema.blackReportVotes.reportId, r.id));
+  const [rep] = await db.select().from(schema.players).where(eq(schema.players.id, r.reporterId)).limit(1);
+  let evidence: unknown = null;
+  try { evidence = r.evidence ? JSON.parse(r.evidence) : null; } catch { evidence = null; }
+  return {
+    id: r.id, kind: r.kind as "landlord" | "employer", city: r.city as "sz" | "hz" | "hk",
+    reporter: { id: pubOf(r.reporterId), name: rep?.name ?? "?", emoji: rep?.emoji ?? "🙂" },
+    targetId: r.targetId, targetName: r.targetName, body: r.body, evidence,
+    status: r.status as "open" | "upheld" | "rejected" | "expired",
+    votes: { uphold: vs.filter((v: { side: string }) => v.side === "uphold").length, reject: vs.filter((v: { side: string }) => v.side === "reject").length },
+    myVote: (vs.find((v: { voterId: string }) => v.voterId === meId)?.side ?? null) as "uphold" | "reject" | null,
+    dueAt: r.dueAt.toISOString(), createdAt: r.createdAt.toISOString(), verdictNote: r.verdictNote ?? null,
+  };
+}
+function reputationView(r: typeof schema.blackReputations.$inferSelect) {
+  return {
+    targetId: r.targetId, targetName: r.targetName, kind: r.kind as "landlord" | "employer",
+    score: r.score, upheldCount: r.upheldCount, rejectedCount: r.rejectedCount,
+    flaggedUntil: r.flaggedUntil?.toISOString() ?? null, updatedAt: r.updatedAt.toISOString(),
+  };
+}
+async function getStanding(db: Db, playerId: string) {
+  const [s] = await db.select().from(schema.reporterStanding).where(eq(schema.reporterStanding.playerId, playerId)).limit(1);
+  if (s) return s;
+  await db.insert(schema.reporterStanding).values({ playerId, credibility: 100, filedCount: 0, upheldCount: 0, rejectedCount: 0, updatedAt: new Date() }).onConflictDoNothing();
+  const [row] = await db.select().from(schema.reporterStanding).where(eq(schema.reporterStanding.playerId, playerId)).limit(1);
+  return row!;
+}
+/** Close every due black report (24 h jury, quorum 3, majority decides, tie /
+    no-quorum = expired). Reputation moves here — at settle time, so an
+    upheld report warns other players even if the reporter never claims.
+    Money / reporter standing move only in claimBlackReport. */
+async function settleBlackReports(db: Db) {
+  const now = new Date();
+  const due = await db.select().from(schema.blackReports).where(and(eq(schema.blackReports.status, "open"), sql`${schema.blackReports.dueAt} <= ${now.getTime()}`));
+  for (const r of due) {
+    const vs = await db.select().from(schema.blackReportVotes).where(eq(schema.blackReportVotes.reportId, r.id));
+    const uphold = vs.filter((v: { side: string }) => v.side === "uphold").length;
+    const reject = vs.filter((v: { side: string }) => v.side === "reject").length;
+    const total = uphold + reject;
+    const status = total < 3 ? "expired" : uphold > reject ? "upheld" : reject > uphold ? "rejected" : "expired";
+    const verdictNote = status === "upheld" ? `陪审团 ${uphold}–${reject} 判属实`
+      : status === "rejected" ? `陪审团 ${uphold}–${reject} 驳回`
+      : total < 3 ? `陪审团只凑到 ${total} 票，未达 ${3} 票，按“无法证实”结案` : `陪审团 ${uphold}–${reject} 打平，按“无法证实”结案`;
+    const changed = await db.update(schema.blackReports).set({ status, verdictNote }).where(and(eq(schema.blackReports.id, r.id), eq(schema.blackReports.status, "open"))).returning({ id: schema.blackReports.id });
+    if (!changed.length) continue; // another request settled it first
+    if (status === "upheld" || status === "rejected") {
+      const upheld = status === "upheld";
+      const [rep] = await db.select().from(schema.blackReputations).where(and(eq(schema.blackReputations.targetId, r.targetId), eq(schema.blackReputations.kind, r.kind))).limit(1);
+      if (rep) {
+        await db.update(schema.blackReputations).set({
+          score: upheld ? Math.max(0, rep.score - 20) : Math.min(100, rep.score + 5),
+          upheldCount: rep.upheldCount + (upheld ? 1 : 0),
+          rejectedCount: rep.rejectedCount + (upheld ? 0 : 1),
+          ...(upheld ? { flaggedUntil: new Date(now.getTime() + 7 * 86_400_000) } : {}),
+          updatedAt: now,
+        }).where(and(eq(schema.blackReputations.targetId, r.targetId), eq(schema.blackReputations.kind, r.kind)));
+      } else {
+        await db.insert(schema.blackReputations).values({
+          targetId: r.targetId, kind: r.kind, city: r.city, targetName: r.targetName,
+          score: upheld ? 60 : 85, upheldCount: upheld ? 1 : 0, rejectedCount: upheld ? 0 : 1,
+          flaggedUntil: upheld ? new Date(now.getTime() + 7 * 86_400_000) : null, updatedAt: now,
+        });
+      }
+    }
+  }
+}
+async function fileBlackReportInner(db: Db, me: typeof schema.players.$inferSelect, args: {
+  kind: "landlord" | "employer"; city: "sz" | "hz" | "hk"; targetId: string; targetName: string; body: string; evidence?: unknown;
+}): Promise<{ ok: boolean; error?: string; reportId?: number; dueAt?: string }> {
+  if (me.banned) return { ok: false, error: BANNED_MSG };
+  if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+  if (me.cityKey !== args.city) return { ok: false, error: "只能举报你所在城市的房东 / 公司" };
+  if (args.kind === "landlord" && args.targetId !== `home:${args.city}`) return { ok: false, error: "举报对象不对" };
+  if (args.kind === "employer" && !COMPANY_IDS.has(args.targetId)) return { ok: false, error: "举报对象不对" };
+  const body = cleanText(args.body).slice(0, 600);
+  if (body.trim().length < 10) return { ok: false, error: "写多一点再举报：至少 10 个字，说清楚发生了什么。" };
+  const standing = await getStanding(db, me.id);
+  if (standing.lockedUntil && standing.lockedUntil.getTime() > Date.now()) return { ok: false, error: "你最近的举报被陪审团驳回太多次了，先冷静几天，等信誉恢复再举报。" };
+  if (standing.credibility < 50) return { ok: false, error: "信誉太低了，暂时不能举报——等一周恢复，或者有一份举报被判属实就能恢复。" };
+  const open = await db.select({ n: sql<number>`count(*)` }).from(schema.blackReports).where(and(eq(schema.blackReports.reporterId, me.id), eq(schema.blackReports.status, "open")));
+  if (Number(open[0]?.n ?? 0) >= 3) return { ok: false, error: "你已经有 3 份举报在等陪审团了，等它们判完再报新的。" };
+  const recent = await db.select().from(schema.blackReports).where(and(eq(schema.blackReports.reporterId, me.id), eq(schema.blackReports.kind, args.kind), gte(schema.blackReports.createdAt, new Date(Date.now() - 24 * 3600_000)))).limit(1);
+  if (recent.length) return { ok: false, error: "今天已经报过一次了，明天再报——陪审团也需要时间。" };
+  const now = new Date();
+  const dueAt = new Date(now.getTime() + 24 * 3600_000);
+  const [row] = await db.insert(schema.blackReports).values({
+    city: args.city, kind: args.kind, reporterId: me.id,
+    targetId: args.targetId, targetName: cleanText(args.targetName).slice(0, 40) || args.targetId,
+    body, evidence: args.evidence !== undefined ? JSON.stringify(args.evidence).slice(0, 4000) : null,
+    status: "open", dueAt, reporterClaimed: 0, createdAt: now,
+  }).returning({ id: schema.blackReports.id });
+  await db.update(schema.reporterStanding).set({ filedCount: standing.filedCount + 1, updatedAt: now }).where(eq(schema.reporterStanding.playerId, me.id));
+  return { ok: true, reportId: row?.id, dueAt: dueAt.toISOString() };
+}
+
+/* ---- (e) economy: server copies of the client catalogs (economy.ts) ---- */
+const OVERSEAS_CATALOG = [
+  { id: "ov-jp-skincare", name: "日本药妆套装", emoji: "🧴", origin: "jp", category: "beauty", price: 320, shipDaysMin: 4, shipDaysMax: 7, dutyRate: 0, resellable: true, resaleRate: 0.9, blurb: "代购圈常年断货款，自己用也好，转手也好。" },
+  { id: "ov-kr-mask", name: "韩国面膜 10 片装", emoji: "🎭", origin: "kr", category: "beauty", price: 120, shipDaysMin: 3, shipDaysMax: 5, dutyRate: 0, resellable: true, resaleRate: 0.85, blurb: "便宜量大，囤着慢慢敷。" },
+  { id: "ov-jp-camera", name: "日本二手胶片机", emoji: "📷", origin: "jp", category: "electronics", price: 1500, shipDaysMin: 5, shipDaysMax: 9, dutyRate: 0.13, resellable: true, resaleRate: 1, blurb: "中古店淘的成色不错，玩胶片的人都懂。" },
+  { id: "ov-hk-sneakers", name: "香港限定球鞋", emoji: "👟", origin: "hk", category: "fashion", price: 980, shipDaysMin: 2, shipDaysMax: 4, dutyRate: 0.1, resellable: true, resaleRate: 1.15, blurb: "过关自己背回来都行，限定款转手常能加价。" },
+  { id: "ov-us-headphones", name: "美国降噪耳机", emoji: "🎧", origin: "us", category: "electronics", price: 1890, shipDaysMin: 6, shipDaysMax: 10, dutyRate: 0.13, resellable: true, resaleRate: 0.9, blurb: "海淘比专柜便宜几百，坐地铁全靠它。" },
+  { id: "ov-eu-chocolate", name: "比利时巧克力礼盒", emoji: "🍫", origin: "eu", category: "food", price: 210, shipDaysMin: 5, shipDaysMax: 8, dutyRate: 0, resellable: false, resaleRate: 0, blurb: "送礼体面，自己吃更体面。食品不能转手。" },
+  { id: "ov-jp-figure", name: "日本限定手办", emoji: "🧸", origin: "jp", category: "toy", price: 650, shipDaysMin: 4, shipDaysMax: 8, dutyRate: 0, resellable: true, resaleRate: 1.1, blurb: "抽不到的限定款，海淘是最后的办法。" },
+  { id: "ov-kr-lamp", name: "韩国设计师小夜灯", emoji: "💡", origin: "kr", category: "home", price: 180, shipDaysMin: 3, shipDaysMax: 6, dutyRate: 0, resellable: true, resaleRate: 0.8, blurb: "租房也要有点光。摆家里心情 +。" },
+] as const;
+const overseasItemShape = z.object({
+  id: z.string(), name: z.string(), emoji: z.string(), origin: z.string(), category: z.string(),
+  price: z.number(), shipDaysMin: z.number(), shipDaysMax: z.number(), dutyRate: z.number(),
+  resellable: z.boolean(), resaleRate: z.number(), blurb: z.string(),
+});
+const overseasOrderShape = z.object({
+  id: z.string(), buyer: z.object({ playerId: z.string(), name: z.string() }), item: overseasItemShape,
+  qty: z.number(), paidTotal: z.number(), dutyDue: z.number(), dutyPaid: z.number(),
+  shipDays: z.number(), orderedDay: z.number(), etaDay: z.number(),
+  status: z.enum(["ordered", "shipped", "customs", "arrived", "held"]), heldOnce: z.boolean(),
+});
+function overseasOrderView(r: typeof schema.overseasOrders.$inferSelect, buyerName: string) {
+  let item: z.infer<typeof overseasItemShape>;
+  try { item = JSON.parse(r.itemJson) as z.infer<typeof overseasItemShape>; } catch { item = OVERSEAS_CATALOG[0] as unknown as z.infer<typeof overseasItemShape>; }
+  return {
+    id: String(r.id), buyer: { playerId: r.buyerId, name: buyerName }, item, qty: r.qty,
+    paidTotal: r.paidTotal, dutyDue: r.dutyDue, dutyPaid: r.dutyPaid,
+    shipDays: r.shipDays, orderedDay: r.orderedDay, etaDay: r.etaDay,
+    status: r.status as "ordered" | "shipped" | "customs" | "arrived" | "held", heldOnce: !!r.heldOnce,
+  };
+}
+/** Lazy advance of overseas orders on read (there is no server day-advance
+    path; the client also ticks locally — the server is source of truth). */
+async function advanceOverseasOrders(db: Db, buyerId: string, gameDay: number) {
+  const rows = await db.select().from(schema.overseasOrders).where(eq(schema.overseasOrders.buyerId, buyerId));
+  for (const o of rows) {
+    if (o.status === "arrived") continue;
+    if (o.status === "held") continue; // waits for the player to pay duty
+    if (gameDay < o.etaDay) {
+      if (o.status === "ordered") await db.update(schema.overseasOrders).set({ status: "shipped" }).where(eq(schema.overseasOrders.id, o.id));
+      continue;
+    }
+    if (!o.heldOnce && o.dutyDue > 0 && Math.random() < 0.15) {
+      await db.update(schema.overseasOrders).set({ heldOnce: 1, status: "held", etaDay: o.etaDay + 2 }).where(eq(schema.overseasOrders.id, o.id));
+      continue;
+    }
+    if (o.dutyDue > o.dutyPaid) {
+      await db.update(schema.overseasOrders).set({ status: "customs" }).where(eq(schema.overseasOrders.id, o.id));
+      continue;
+    }
+    await db.update(schema.overseasOrders).set({ status: "arrived" }).where(eq(schema.overseasOrders.id, o.id));
+  }
+}
+/* Daily flea stock, server mirror of dailyCheapStock / dailyUsedFurnitureStock
+   in economy.ts — same seeds, same pools, so buy endpoints can verify the
+   price instead of trusting the client. Stock ids are deterministic
+   (`cheap-<day>-<i>` / `usedfurn-<day>-<i>`) and the client adopts them. */
+const CHEAP_POOL = [
+  { name: "旧手机（屏幕裂）", emoji: "📱", kind: "phone", state: "broken", condition: 45, buyPrice: 120, askPrice: 300, note: "屏幕裂了，其他都好使，能开机。" },
+  { name: "旧电饭煲", emoji: "🍚", kind: "appliance", state: "dirty", condition: 60, buyPrice: 35, askPrice: 80, note: "内胆有点黄，煮饭没问题。" },
+  { name: "牛仔外套", emoji: "🧥", kind: "clothes", state: "dirty", condition: 70, buyPrice: 25, askPrice: 60, note: "洗洗就跟新的一样。" },
+  { name: "旧自行车", emoji: "🚲", kind: "bike", state: "broken", condition: 50, buyPrice: 80, askPrice: 200, note: "链条掉了，刹车还行。" },
+  { name: "漫画合集", emoji: "📚", kind: "book", state: "plain", condition: 80, buyPrice: 40, askPrice: 70, note: "全套，书脊有点旧。" },
+  { name: "小霸王游戏机", emoji: "🕹️", kind: "toy", state: "broken", condition: 40, buyPrice: 60, askPrice: 150, note: "插卡没反应，可能是接触不良。" },
+  { name: "旧木椅", emoji: "🪑", kind: "furniture-piece", state: "dirty", condition: 65, buyPrice: 30, askPrice: 65, note: "实木的，擦擦能上油。" },
+  { name: "旧风扇", emoji: "🌀", kind: "appliance", state: "plain", condition: 75, buyPrice: 45, askPrice: 90, note: "三档都转，就是有点响。" },
+] as const;
+function dailyCheapStockServer(day: number) {
+  const seed = (day * 2654435761) % 1000;
+  const count = 4 + (seed % 3);
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    const p = CHEAP_POOL[(seed + i * 97) % CHEAP_POOL.length]!;
+    out.push({ id: `cheap-${day}-${i}`, ...p, boughtDay: day, fixSpent: 0 });
+  }
+  return out;
+}
+const USED_FURN_POOL = [
+  { baseId: "sofa-fabric", name: "布艺三人沙发（二手）", emoji: "🛋️", room: "living", condition: 70, price: 900, newPrice: 4800, note: "房东换房急出，布面洗过，没塌。" },
+  { baseId: "sofa-fabric", name: "布艺沙发（有点旧）", emoji: "🛋️", room: "living", condition: 45, price: 480, newPrice: 4800, note: "扶手磨白了，坐着还行，适合过渡。" },
+  { baseId: "kitchen-cabinet", name: "旧橱柜一套", emoji: "🍳", room: "kitchen", condition: 60, price: 1500, newPrice: 8900, note: "拆下来就能装，台面有刀痕。" },
+  { baseId: null, name: "实木旧书桌", emoji: "🪵", room: "living", condition: 75, price: 220, newPrice: 1200, note: "全实木，沉得很，抽屉顺滑。" },
+  { baseId: null, name: "老式木衣柜", emoji: "🚪", room: "living", condition: 55, price: 300, newPrice: 1800, note: "有点味，通通风就好，板子结实。" },
+  { baseId: null, name: "二手小冰箱", emoji: "🧊", room: "kitchen", condition: 65, price: 350, newPrice: 1600, note: "制冷正常，声音略大，学生党最爱。" },
+  { baseId: null, name: "旧唱片机", emoji: "📻", room: "living", condition: 50, price: 180, newPrice: 900, note: "能转，喇叭有点沙，怀旧摆件也值。" },
+  { baseId: null, name: "折叠小饭桌", emoji: "🍜", room: "living", condition: 80, price: 90, newPrice: 400, note: "出租屋神器，不用就折起来。" },
+] as const;
+function dailyUsedFurnitureStockServer(day: number) {
+  const seed = (day * 40503) % 997;
+  const count = 4 + (seed % 3);
+  return USED_FURN_POOL.slice(0, count).map((p, i) => ({
+    id: `usedfurn-${day}-${i}`, ...p,
+    seller: { playerId: "npc-flea", name: "桥东摊主阿伯" }, listedDay: day,
+  }));
+}
+const cheapGoodShape = z.object({
+  id: z.string(), name: z.string(), emoji: z.string(), kind: z.string(), state: z.string(),
+  condition: z.number(), buyPrice: z.number(), askPrice: z.number(), boughtDay: z.number(), fixSpent: z.number(), note: z.string(),
+});
+const usedFurnitureShape = z.object({
+  id: z.string(), baseId: z.string().nullable(), name: z.string(), emoji: z.string(), room: z.string(),
+  condition: z.number(), price: z.number(), newPrice: z.number(),
+  seller: z.object({ playerId: z.string(), name: z.string() }), note: z.string(), listedDay: z.number(),
+});
+/* ---- round-3 (S): trade-dispute jury (e) ----
+   disputeTradeTask only freezes the escrow; this settles it. Mirror of
+   settleBlackReports: 24 h jury, quorum 3, majority wins, tie / too few
+   votes = expired. One deliberate difference, forced by money: an expired
+   trade case cannot leave the escrow frozen forever, so the money is
+   refunded to whoever paid it (the buyer side). Seller wins → escrow
+   released to the seller side (same rule as completeTradeTask: sell-task
+   → poster, otherwise accepter). Settled tasks go back to completed /
+   cancelled, so the client never sees a new status string; the verdict
+   rides along in disputeVerdict. A task disputed after completion keeps
+   status completed (its escrow was already released) — the verdict is
+   recorded only. Called from the trade read endpoints, the vote endpoint
+   and adjudicateTradeDispute, like settleBlackReports / settleGigs. */
+const TRADE_JURY_MS = 24 * 3600_000;
+const TRADE_JURY_QUORUM = 3;
+type TradeVerdict = "seller" | "buyer" | "expired";
+async function tradeDisputeTallies(db: Db, taskId: number) {
+  const vs = await db.select().from(schema.tradeDisputeVotes).where(eq(schema.tradeDisputeVotes.taskId, taskId));
+  return {
+    seller: vs.filter((v: { side: string }) => v.side === "seller").length,
+    buyer: vs.filter((v: { side: string }) => v.side === "buyer").length,
+  };
+}
+async function settleTradeDisputes(db: Db) {
+  const now = new Date();
+  const due = await db.select().from(schema.tradeTasks).where(eq(schema.tradeTasks.status, "disputed"));
+  for (const t of due) {
+    const base = t.disputedAt ?? t.createdAt;
+    if (base.getTime() + TRADE_JURY_MS > now.getTime()) continue;
+    const { seller, buyer } = await tradeDisputeTallies(db, t.id);
+    const total = seller + buyer;
+    const verdict: TradeVerdict = total < TRADE_JURY_QUORUM ? "expired" : seller > buyer ? "seller" : buyer > seller ? "buyer" : "expired";
+    const amount = t.escrowHeld;
+    const releaseToId = t.kind === "sell" ? t.posterId : (t.accepterId ?? t.posterId);
+    // A task disputed after completion stays completed: the trade already
+    // happened and its escrow was already released — the verdict is a record.
+    const status = t.disputeFromStatus === "completed" || verdict === "seller" ? "completed" : "cancelled";
+    // compare-and-set: only the first settler moves the money
+    const changed = await db.update(schema.tradeTasks).set({ status, escrowHeld: 0, disputeVerdict: verdict, disputeSettledAt: now })
+      .where(and(eq(schema.tradeTasks.id, t.id), eq(schema.tradeTasks.status, "disputed"))).returning({ id: schema.tradeTasks.id });
+    if (!changed.length) continue; // another request settled it first
+    if (amount > 0) {
+      const [esc] = await db.select().from(schema.tradeEscrow).where(and(eq(schema.tradeEscrow.taskId, t.id), eq(schema.tradeEscrow.kind, "trade"), sql`(${schema.tradeEscrow.status} = 'frozen' OR ${schema.tradeEscrow.status} = 'held')`)).limit(1);
+      if (esc) {
+        await db.update(schema.tradeEscrow).set({ status: verdict === "seller" ? "released" : "refunded", releasedAt: now }).where(eq(schema.tradeEscrow.id, esc.id));
+      }
+      // The money moves even if the escrow row is missing (shouldn't happen):
+      // a settled verdict must never swallow the frozen amount.
+      const toId = verdict === "seller" ? releaseToId : (esc?.payerId ?? t.escrowFromId ?? t.posterId);
+      await creditMoney(db, toId, amount, verdict === "seller" ? `trade jury release #${t.id}` : `trade jury refund #${t.id}`);
+    }
+  }
+}
+const tradeTaskShape = z.object({
+  id: z.string(), poster: z.object({ playerId: z.string(), name: z.string() }),
+  kind: z.enum(["buy", "sell", "swap", "service", "other"]), title: z.string(), body: z.string(),
+  price: z.number().nullable(), negotiable: z.boolean(), tags: z.array(z.string()),
+  city: z.enum(["sz", "hz", "hk", "any"]), status: z.enum(["open", "accepted", "completed", "cancelled", "disputed"]),
+  accepter: z.object({ playerId: z.string(), name: z.string() }).optional(),
+  escrowHeld: z.number(), escrowFrom: z.object({ playerId: z.string(), name: z.string() }).optional(),
+  createdDay: z.number(), expiresDay: z.number(), completionNote: z.string().optional(),
+  disputeReason: z.string().optional(), disputeVerdict: z.enum(["seller", "buyer", "expired"]).optional(),
+  disputeDueAt: z.string().optional(),
+});
+function tradeTaskView(r: typeof schema.tradeTasks.$inferSelect) {
+  let tags: string[] = [];
+  try { const v = JSON.parse(r.tags) as unknown; if (Array.isArray(v)) tags = v.filter((t): t is string => typeof t === "string"); } catch { tags = []; }
+  return {
+    id: String(r.id), poster: { playerId: r.posterId, name: r.posterName },
+    kind: r.kind as "buy" | "sell" | "swap" | "service" | "other", title: r.title, body: r.body,
+    price: r.price, negotiable: !!r.negotiable, tags,
+    city: r.city as "sz" | "hz" | "hk" | "any",
+    status: r.status as "open" | "accepted" | "completed" | "cancelled" | "disputed",
+    ...(r.accepterId ? { accepter: { playerId: r.accepterId, name: r.accepterName ?? "" } } : {}),
+    escrowHeld: r.escrowHeld,
+    ...(r.escrowFromId ? { escrowFrom: { playerId: r.escrowFromId, name: r.escrowFromName ?? "" } } : {}),
+    createdDay: r.createdDay, expiresDay: r.expiresDay,
+    ...(r.completionNote ? { completionNote: r.completionNote } : {}),
+    ...(r.disputeReason ? { disputeReason: r.disputeReason } : {}),
+    ...(r.disputeVerdict ? { disputeVerdict: r.disputeVerdict as "seller" | "buyer" | "expired" } : {}),
+    ...(r.disputedAt ? { disputeDueAt: new Date(r.disputedAt.getTime() + TRADE_JURY_MS).toISOString() } : {}),
+  };
+}
+const subletShape = z.object({
+  id: z.string(), owner: z.object({ playerId: z.string(), name: z.string() }),
+  homeLocId: z.string(), city: z.enum(["sz", "hz", "hk"]), space: z.enum(["room", "bed", "sofa", "whole"]),
+  monthlyPrice: z.number(), deposit: z.number(), terms: z.string(), minDays: z.number(), maxDays: z.number(),
+  availableFromDay: z.number(), status: z.enum(["open", "taken", "closed"]),
+  tenant: z.object({ playerId: z.string(), name: z.string() }).optional(),
+  tenancyStartDay: z.number(), rentCollected: z.number(), createdDay: z.number(),
+  suspicion: z.number(), late: z.boolean(),
+});
+function subletView(r: typeof schema.subletListings.$inferSelect) {
+  return {
+    id: String(r.id), owner: { playerId: r.ownerId, name: r.ownerName },
+    homeLocId: r.homeLocId, city: r.city as "sz" | "hz" | "hk",
+    space: r.space as "room" | "bed" | "sofa" | "whole",
+    monthlyPrice: r.monthlyPrice, deposit: r.deposit, terms: r.terms,
+    minDays: r.minDays, maxDays: r.maxDays, availableFromDay: r.availableFromDay,
+    status: r.status as "open" | "taken" | "closed",
+    ...(r.tenantId ? { tenant: { playerId: r.tenantId, name: r.tenantName ?? "" } } : {}),
+    tenancyStartDay: r.tenancyStartDay, rentCollected: r.rentCollected, createdDay: r.createdDay,
+    suspicion: r.suspicion, late: !!r.rentLate,
+  };
+}
+
+/* ---- (f) lifestyles: server copies of the client ladder / courses / shifts ---- */
+const sanhePayServer = (city: string) => (city === "hk" ? 200 : city === "hz" ? 160 : 220);
+const SANHE_SHIFTS_SERVER: Record<string, number> = { warehouse: 1, construction: 1.45, moving: 1.2, flyer: 0.6, harbor: 1.1, market: 0.9 };
+const COURSES_SERVER: Record<string, { days: number; allowanceDay: number; skillGain: number }> = {
+  harbor: { days: 4, allowanceDay: 30, skillGain: 2 },
+  cooking: { days: 3, allowanceDay: 30, skillGain: 2 },
+  forklift: { days: 5, allowanceDay: 30, skillGain: 2 },
+  office: { days: 6, allowanceDay: 30, skillGain: 3 },
+  ecommerce: { days: 6, allowanceDay: 30, skillGain: 3 },
+  housekeeping: { days: 3, allowanceDay: 30, skillGain: 2 },
+};
+const JOB_LADDER_SERVER = [
+  { id: "daily-warehouse", rung: "daily", emoji: "📦", title: ["仓库日结", "Warehouse day pay"], desc: ["分拣打包，干完结钱。", "Sort and pack; paid when the shift ends."], payDay: 220, cityMul: { hz: 0.73, hk: 0.91 }, requires: {}, path: ["不要经验，当天结钱。干几天，手熟了就能往短工走。", "No experience needed, paid today. A few days of this and short-term work opens up."], tags: ["logistics"] },
+  { id: "daily-construction", rung: "daily", emoji: "👷", title: ["工地日结", "Construction day pay"], desc: ["搬砖绑钢筋，日结里给得最高的。", "Hauling and rebar — the best day pay there is."], payDay: 320, cityMul: { hz: 0.73, hk: 0.91 }, requires: {}, path: ["不要经验，当天结钱。身体累，攒钱快。", "No experience needed, paid today. Hard on the body, fast to save."], tags: ["construction"] },
+  { id: "daily-harbor", rung: "daily", emoji: "⚓", title: ["渔港日结", "Harbor day pay"], desc: ["卸货分鱼，早上开工中午结钱。", "Unload and sort the catch; start at dawn, paid by noon."], payDay: 240, cityMul: { hz: 0.73, hk: 0.91 }, requires: {}, path: ["不要经验。钓过鱼的优先——懂鱼的人上手快。", "No experience needed. People who've fished get picked first — they already know fish."], tags: ["fish", "harbor"] },
+  { id: "short-waiter", rung: "short", emoji: "🍜", title: ["餐厅短期帮工", "Restaurant short-term helper"], desc: ["午市晚市帮工，管饭。干满 7 天表现好就转正。", "Lunch and dinner shifts, meals included. Do well for 7 days and it turns permanent."], payDay: 200, cityMul: { hz: 0.8, hk: 1.3 }, identityId: "waiter", requires: {}, daysToPermanent: 7, path: ["不要经验，管饭。7 天试工，表现好转正当服务员。", "No experience, meals included. 7-day trial — do well and become a waiter."], tags: ["food"] },
+  { id: "short-courier", rung: "short", emoji: "📦", title: ["快递分拣短工", "Courier sorting short-term"], desc: ["按件算，多劳多得。干满 10 天可转正当快递员。", "Paid per parcel — the more you sort, the more you earn. 10 days to convert to courier."], payDay: 260, cityMul: { hz: 0.8, hk: 1.2 }, identityId: "courier", requires: {}, daysToPermanent: 10, path: ["不要经验，按件计酬。10 天试工，转正当快递员。", "No experience, paid per parcel. 10-day trial, then convert to courier."], tags: ["logistics"] },
+  { id: "short-guard", rung: "short", emoji: "💂", title: ["保安替班", "Security cover shifts"], desc: ["替人顶班，站岗巡逻。干满 14 天可转正。", "Cover shifts — gate duty and patrols. 14 days to convert."], payDay: 210, cityMul: { hz: 0.8, hk: 1.25 }, identityId: "guard", requires: {}, daysToPermanent: 14, path: ["不要经验。14 天替班，表现稳就转正当保安。", "No experience. 14 days of cover shifts, then convert to security guard."], tags: ["security"] },
+  { id: "short-harbor", rung: "short", emoji: "⚓", title: ["渔港短期工", "Harbor short-term hand"], desc: ["跟船卸货、理货。钓过鱼或上过渔港培训的优先。", "Unload with the boats, sort the catch. Fishers and harbor-course graduates go first."], payDay: 260, cityMul: { hz: 0.8, hk: 1.1 }, requires: { gigs: ["fish_sea", "fish_lake"] }, daysToPermanent: 10, path: ["要钓过鱼，或上过渔港帮工培训。10 天试工，转正上岸。", "Needs fishing experience or the harbor course. 10-day trial, then a steady harbor job."], tags: ["fish", "harbor"] },
+  { id: "short-cleaner", rung: "short", emoji: "🧹", title: ["商场保洁短工", "Mall cleaning short-term"], desc: ["早班保洁，干满 10 天可转正。", "Early cleaning shifts. 10 days to convert."], payDay: 180, cityMul: { hz: 0.8, hk: 1.3 }, identityId: "cleaner", requires: {}, daysToPermanent: 10, path: ["不要经验。10 天试工，转正当保洁。", "No experience. 10-day trial, then convert to cleaner."], tags: ["cleaning"] },
+  { id: "stable-factory", rung: "stable", emoji: "🔩", title: ["工厂普工", "Factory worker"], desc: ["流水线普工，包吃住，加班多攒钱快。", "Assembly line, meals and bed included. Overtime pays; savings grow fast."], payDay: 230, cityMul: { hz: 0.85, hk: 1.2 }, identityId: "factory", requires: { skill: 1 }, path: ["要技能 1 点（上个短期培训就有）。包吃住，月薪稳定。", "Needs skill 1 (one short course gets you there). Meals and bed included, steady monthly pay."], tags: ["factory"] },
+  { id: "stable-courier", rung: "stable", emoji: "🛵", title: ["快递员", "Courier"], desc: ["派件越多挣越多，片区跑熟了就是自己的地盘。", "More parcels, more pay. Learn your patch and it becomes yours."], payDay: 290, cityMul: { hz: 0.85, hk: 1.2 }, identityId: "courier", requires: { interviewReady: 40 }, path: ["要模拟面试练到 40 分。跑单计酬，越熟挣得越多。", "Needs mock-interview readiness 40. Paid per delivery — the better you know the streets, the more you earn."], tags: ["logistics"] },
+  { id: "stable-waiter", rung: "stable", emoji: "🍜", title: ["餐厅服务员", "Restaurant server"], desc: ["午市晚市两场，员工餐管饱。", "Lunch and dinner rushes; staff meals included."], payDay: 200, cityMul: { hz: 0.85, hk: 1.35 }, identityId: "waiter", requires: { interviewReady: 30 }, path: ["要模拟面试练到 30 分。熟手了能往领班走。", "Needs mock-interview readiness 30. Do it well and you can work up to shift lead."], tags: ["food"] },
+  { id: "stable-chef-assist", rung: "stable", emoji: "👨‍🍳", title: ["厨师助理", "Kitchen assistant"], desc: ["后厨帮手，切配打荷。会做饭的上手最快。", "Kitchen hand — prep and plating. People who cook pick it up fastest."], payDay: 300, cityMul: { hz: 0.85, hk: 1.3 }, identityId: "chef", requires: { course: "cooking" }, path: ["要上过「家常菜速成」培训。会做饭的人，后厨抢着要。", "Needs the \"home cooking crash course\". Kitchens fight over people who can cook."], tags: ["food", "cooking"] },
+  { id: "stable-guard", rung: "stable", emoji: "💂", title: ["保安", "Security guard"], desc: ["站岗巡逻，整栋楼的人你都认识。", "Gate duty and patrols — you'll know everyone in the building."], payDay: 210, cityMul: { hz: 0.85, hk: 1.25 }, identityId: "guard", requires: { interviewReady: 30 }, path: ["要模拟面试练到 30 分。稳定、包吃住、认识一栋楼的人。", "Needs mock-interview readiness 30. Steady, meals and bed included — and you'll know the whole building."], tags: ["security"] },
+  { id: "stable-harbor", rung: "stable", emoji: "⚓", title: ["渔港正式工", "Harbor permanent hand"], desc: ["跟船理货、验鱼，考证之后就是正式工。", "Sort and grade the catch with the boats — certified, and it's a permanent post."], payDay: 280, cityMul: { hz: 0.85, hk: 1.1 }, identityId: "worker", requires: { course: "harbor" }, path: ["要上过「渔港帮工考证」培训。钓过鱼 → 帮工 → 考证 → 稳定岗。", "Needs the \"harbor certification\" course. Fished before → harbor hand → certificate → steady job."], tags: ["fish", "harbor"] },
+] as const;
+const jobListingShape = z.object({
+  id: z.string(), rung: z.enum(["daily", "short", "stable"]), emoji: z.string(),
+  title: z.tuple([z.string(), z.string()]), desc: z.tuple([z.string(), z.string()]),
+  payDay: z.number(), cityMul: z.record(z.string(), z.number()).optional(), identityId: z.string().optional(),
+  requires: z.record(z.string(), z.any()), daysToPermanent: z.number().optional(),
+  path: z.tuple([z.string(), z.string()]), tags: z.array(z.string()),
+});
+const listingPayServer = (l: (typeof JOB_LADDER_SERVER)[number], city: string) =>
+  Math.round(l.payDay * ((l.cityMul as Record<string, number> | undefined)?.[city] ?? 1));
+const COUNSELOR_ROUTES_SERVER = [
+  { id: "route-fish", emoji: "🎣", title: ["从钓鱼到渔港正式工", "From fishing to a harbor job"], basedOn: ["你钓过鱼，懂鱼。", "You've fished before — you know fish."], steps: [["去渔港打几天日结，熟悉卸货分鱼", "Take harbor day shifts for a few days — learn unloading and sorting"], ["上「渔港帮工考证」培训（4 天，有补贴）", "Take the harbor certification course (4 days, with allowance)"], ["应聘渔港短期工，10 天试工转正", "Apply for the harbor short-term post — 10-day trial, then permanent"]] },
+  { id: "route-cook", emoji: "🍳", title: ["从做饭到后厨", "From cooking to the kitchen"], basedOn: ["你会做饭，这是手艺。", "You can cook — that's a trade."], steps: [["上「家常菜速成」培训（3 天，有补贴）", "Take the home-cooking crash course (3 days, with allowance)"], ["应聘餐厅短期帮工，管饭", "Apply for restaurant short-term work — meals included"], ["7 天试工转正，再往厨师助理走", "7-day trial to permanent, then work up to kitchen assistant"]] },
+  { id: "route-logistics", emoji: "📦", title: ["从搬货到快递员", "From hauling to courier"], basedOn: ["你搬过货、跑过腿，认路快。", "You've hauled and run errands — you learn streets fast."], steps: [["去快递站打几天分拣短工，按件计酬", "Take courier sorting short-term shifts — paid per parcel"], ["练两次模拟面试，练到 40 分", "Do two mock interviews, get readiness to 40"], ["应聘快递员，跑熟片区就是自己的地盘", "Apply for courier — learn your patch and it becomes yours"]] },
+  { id: "route-general", emoji: "🧭", title: ["先稳住，再慢慢走", "Steady first, then step by step"], basedOn: ["不着急，先找个落脚的活儿。", "No rush — find a foothold first."], steps: [["打几天日结，手里有现金，心里不慌", "Take day shifts for a few days — cash in hand steadies the nerves"], ["挑一个 3–6 天的短期培训，学个傍身的技能", "Pick a 3–6 day short course and learn a skill to lean on"], ["投一个短工，试工转正；转正了再想下一步", "Apply for a short-term post, convert from the trial — then think about what's next"]] },
+] as const;
+const counselorRouteShape = z.object({
+  id: z.string(), emoji: z.string(), title: z.tuple([z.string(), z.string()]), basedOn: z.tuple([z.string(), z.string()]),
+  steps: z.array(z.tuple([z.string(), z.string()])),
+});
+const STALL_KINDS_SERVER = ["烤串 / 小吃", "二手杂货", "花 / 手作", "手机配件"] as const;
+/** Load the stored LifestyleState JSON (null on first run). */
+async function loadLife(db: Db, playerId: string): Promise<{ flat: Record<string, unknown>; sanhe: Record<string, unknown> } | null> {
+  const [row] = await db.select().from(schema.lifestyleStates).where(eq(schema.lifestyleStates.playerId, playerId)).limit(1);
+  if (!row) return null;
+  try {
+    const v = JSON.parse(row.payload) as { flat?: Record<string, unknown>; sanhe?: Record<string, unknown> };
+    if (!v || typeof v !== "object" || !v.flat || !v.sanhe) return null;
+    return { flat: v.flat, sanhe: v.sanhe };
+  } catch { return null; }
+}
+async function saveLife(db: Db, playerId: string, life: unknown) {
+  const payload = JSON.stringify(life);
+  await db.insert(schema.lifestyleStates).values({ playerId, payload, updatedAt: new Date() })
+    .onConflictDoUpdate({ target: schema.lifestyleStates.playerId, set: { payload, updatedAt: new Date() } });
+}
+
+/* ---- (h) delivery pool: expire overdue open orders, refunding escrow ---- */
+async function expirePoolOrders(db: Db, city: string) {
+  const now = Date.now();
+  const due = await db.select().from(schema.deliveryPoolOrders).where(and(eq(schema.deliveryPoolOrders.city, city), eq(schema.deliveryPoolOrders.status, "open"), sql`${schema.deliveryPoolOrders.deadlineAt} <= ${now}`));
+  for (const o of due) {
+    const changed = await db.update(schema.deliveryPoolOrders).set({ status: "expired" }).where(and(eq(schema.deliveryPoolOrders.id, o.id), eq(schema.deliveryPoolOrders.status, "open"))).returning({ id: schema.deliveryPoolOrders.id });
+    if (!changed.length) continue;
+    await db.update(schema.tradeEscrow).set({ status: "refunded", releasedAt: new Date() }).where(and(eq(schema.tradeEscrow.taskId, o.id), eq(schema.tradeEscrow.kind, "delivery"), eq(schema.tradeEscrow.status, "held")));
+    await creditMoney(db, o.customerId, o.riderFee, `delivery pool #${o.id} expired refund`);
+  }
+}
+
+/* ---- round-3 (E): Lagos gaps — group orders, weekly quests, Livehouse tips ----
+   Server mirror of the client defs in client/src/round2/delivery.ts
+   (WEEKLY_QUESTS / WEEKLY_REWARD_COUPONS). Rewards are existing money/coupons
+   only: ¥ via creditMoney (ledger), coupons are client-side state the server
+   names by id and the client grants on claim. */
+const WEEKLY_QUEST_DEFS = [
+  { id: "order-3", target: 3, reward: { kind: "coupon", couponId: "weekly-free-delivery", label: "免配送费券 ×1" } },
+  { id: "try-new", target: 1, reward: { kind: "money", amount: 15, label: "¥15" } },
+  { id: "rate-5", target: 1, reward: { kind: "coupon", couponId: "weekly-off-8", label: "立减 ¥8 券 ×1" } },
+  { id: "spend-100", target: 100, reward: { kind: "money", amount: 20, label: "¥20" } },
+] as const;
+/** ISO week (Mon-based) in Beijing time, e.g. "2026-W46". */
+function weekKeyOf(d = new Date()): string {
+  const bj = new Date(d.getTime() + 8 * 3600_000); // shift to Beijing wall clock, read as UTC
+  const day = bj.getUTCDay() || 7;
+  const thu = new Date(Date.UTC(bj.getUTCFullYear(), bj.getUTCMonth(), bj.getUTCDate() + (4 - day)));
+  const year = thu.getUTCFullYear();
+  const week = Math.floor((thu.getTime() - Date.UTC(year, 0, 4)) / 604_800_000) + 1;
+  return `${year}-W${String(week).padStart(2, "0")}`;
+}
+async function ensureWeeklyQuestRows(db: Db, playerId: string, weekKey: string) {
+  const d = db as any;
+  for (const q of WEEKLY_QUEST_DEFS) {
+    await d.insert(schema.deliveryQuests).values({ playerId, weekKey, questId: q.id, progress: 0, claimed: 0, meta: "{}", updatedAt: new Date() }).onConflictDoNothing();
+  }
+}
+const GROUP_ORDER_MAX_MEMBERS = 6;
+const GROUP_ORDER_TTL_MS = 30 * 60_000; // 30 min to gather the group, then it auto-cancels
+const GROUP_CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no 0/O/1/I — read out loud safely
+function randomGroupCode(): string {
+  let code = "";
+  for (let i = 0; i < 6; i++) code += GROUP_CODE_CHARS[Math.floor(Math.random() * GROUP_CODE_CHARS.length)];
+  return code;
+}
+const GROUP_ORDER_ITEM_Z = z.object({ key: z.string().min(1).max(80), name: z.string().min(1).max(40), qty: z.number().int().min(1).max(99), cost: z.number().int().min(0).max(100000) });
+/** escrowStatus per member (shown in the client as 未托管 / 已托管 / 已结算 / 已退回):
+    none = nothing escrowed yet (group still open), held = locked at lockGroupOrder,
+    released = settled at completeGroupOrder, refunded = cancelled / expired. */
+const GROUP_ORDER_ESCROW_STATUS_Z = z.enum(["none", "held", "released", "refunded"]);
+const GROUP_ORDER_VIEW = z.object({
+  id: z.number(), code: z.string(), city: z.string(), hostId: z.string(), hostName: z.string(),
+  restaurantId: z.string(), restaurantName: z.string(), status: z.string(),
+  createdAt: z.string(), expiresAt: z.string(), poolId: z.string().nullable(),
+  members: z.array(z.object({ playerId: z.string(), playerName: z.string(), items: z.array(GROUP_ORDER_ITEM_Z), subtotal: z.number(), joinedAt: z.string(), escrowStatus: GROUP_ORDER_ESCROW_STATUS_Z, escrowTotal: z.number() })),
+});
+type GroupOrderView = z.infer<typeof GROUP_ORDER_VIEW>;
+/** A locked group the host never completes holds everyone's money: it
+    expires 2 h after locking (lazy, same pattern as the 30-min open
+    expiry below) and the escrow is refunded in full. */
+const GROUP_ORDER_LOCKED_TTL_MS = 2 * 3600_000;
+/** Server mirror of the client's groupOrderTotals (delivery.ts): the
+    delivery fee is split evenly, the remainder goes to the first member
+    (the host, who joined first). Fee shares + subtotals are the amounts
+    lockGroupOrder escrows per member. */
+function groupOrderSplit(members: { playerId: string; subtotal: number }[], deliveryFee: number): { playerId: string; feeShare: number; total: number }[] {
+  const n = Math.max(1, members.length);
+  const base = Math.floor(deliveryFee / n);
+  return members.map((m, i) => {
+    const feeShare = base + (i === 0 ? deliveryFee - base * n : 0);
+    return { playerId: m.playerId, feeShare, total: m.subtotal + feeShare };
+  });
+}
+async function groupEscrowByPlayer(db: Db, groupId: number): Promise<Map<string, { status: "held" | "released" | "refunded"; foodAmount: number; feeAmount: number; total: number }>> {
+  const rows = await db.select().from(schema.groupOrderEscrow).where(eq(schema.groupOrderEscrow.groupId, groupId));
+  return new Map(rows.map((r: typeof schema.groupOrderEscrow.$inferSelect) => [r.playerId, { status: r.status as "held" | "released" | "refunded", foodAmount: r.foodAmount, feeAmount: r.feeAmount, total: r.amount }]));
+}
+/** Refunds every still-held escrow row of a group (cancel / expiry).
+    Money moves even if a row is missing for a member — there is nothing
+    to refund then, the member was never charged. */
+async function refundGroupEscrow(db: Db, groupId: number): Promise<number> {
+  const now = new Date();
+  const rows = await db.select().from(schema.groupOrderEscrow).where(and(eq(schema.groupOrderEscrow.groupId, groupId), eq(schema.groupOrderEscrow.status, "held")));
+  for (const r of rows) {
+    const changed = await db.update(schema.groupOrderEscrow).set({ status: "refunded", releasedAt: now })
+      .where(and(eq(schema.groupOrderEscrow.groupId, groupId), eq(schema.groupOrderEscrow.playerId, r.playerId), eq(schema.groupOrderEscrow.status, "held"))).returning({ playerId: schema.groupOrderEscrow.playerId });
+    if (!changed.length) continue; // another request refunded it first
+    if (r.amount > 0) await creditMoney(db, r.playerId, r.amount, `group order #${groupId} refund`);
+  }
+  return rows.length;
+}
+/** Settles a completed group's escrow. The restaurant is an NPC (no player
+    account), so the food share is released to the merchant as a sink — the
+    money simply leaves the game, exactly as a normal client placeOrder
+    deducts it. The fee share: with a pool order the host already fronted
+    the riderFee through deliveryPoolPublish, so each member's fee share
+    reimburses the host (the rider is then paid out of the pool's own
+    riderFee escrow by deliveryPoolDelivered, on-time full / late 70% per
+    the existing rule); without a pool order the rider is an NPC too and
+    the fee is released as a sink, like a local order. */
+async function settleGroupEscrow(db: Db, groupId: number, hostId: string, poolId: string | null): Promise<{ food: number; fee: number; feeToHost: number }> {
+  const now = new Date();
+  const rows = await db.select().from(schema.groupOrderEscrow).where(and(eq(schema.groupOrderEscrow.groupId, groupId), eq(schema.groupOrderEscrow.status, "held")));
+  let food = 0, fee = 0, feeToHost = 0;
+  for (const r of rows) {
+    const changed = await db.update(schema.groupOrderEscrow).set({ status: "released", releasedAt: now })
+      .where(and(eq(schema.groupOrderEscrow.groupId, groupId), eq(schema.groupOrderEscrow.playerId, r.playerId), eq(schema.groupOrderEscrow.status, "held"))).returning({ playerId: schema.groupOrderEscrow.playerId });
+    if (!changed.length) continue;
+    food += r.foodAmount; fee += r.feeAmount;
+    if (poolId && r.feeAmount > 0) { await creditMoney(db, hostId, r.feeAmount, `group order #${groupId} rider fee share`); feeToHost += r.feeAmount; }
+  }
+  return { food, fee, feeToHost };
+}
+/** Loads a group + its members; an open group past its deadline is cancelled lazily (same pattern as expirePoolOrders), and a locked group
+    past its 2 h lock TTL is cancelled the same way. Either way the held
+    escrow (if any) is refunded in full before the view is returned. */
+async function groupOrderView(db: Db, groupId: number): Promise<GroupOrderView | null> {
+  const [g] = await db.select().from(schema.groupOrders).where(eq(schema.groupOrders.id, groupId)).limit(1);
+  if (!g) return null;
+  if (g.status === "open" && g.expiresAt.getTime() <= Date.now()) {
+    await db.update(schema.groupOrders).set({ status: "cancelled" }).where(and(eq(schema.groupOrders.id, g.id), eq(schema.groupOrders.status, "open")));
+    g.status = "cancelled";
+    await refundGroupEscrow(db, g.id);
+  } else if (g.status === "locked" && g.lockedAt && g.lockedAt.getTime() + GROUP_ORDER_LOCKED_TTL_MS <= Date.now()) {
+    await db.update(schema.groupOrders).set({ status: "cancelled" }).where(and(eq(schema.groupOrders.id, g.id), eq(schema.groupOrders.status, "locked")));
+    g.status = "cancelled";
+    await refundGroupEscrow(db, g.id);
+  }
+  const rows = await db.select().from(schema.groupOrderMembers).where(eq(schema.groupOrderMembers.groupId, g.id)).orderBy(schema.groupOrderMembers.joinedAt);
+  const escrow = await groupEscrowByPlayer(db, g.id);
+  return {
+    id: g.id, code: g.code, city: g.city, hostId: g.hostId, hostName: g.hostName,
+    restaurantId: g.restaurantId, restaurantName: g.restaurantName, status: g.status,
+    createdAt: g.createdAt.toISOString(), expiresAt: g.expiresAt.toISOString(), poolId: g.poolId ?? null,
+    members: rows.map((m: typeof schema.groupOrderMembers.$inferSelect) => {
+      let items: { key: string; name: string; qty: number; cost: number }[] = [];
+      try { const parsed = JSON.parse(m.itemsJson) as unknown; if (Array.isArray(parsed)) items = parsed.filter((x): x is { key: string; name: string; qty: number; cost: number } => !!x && typeof (x as { key?: unknown }).key === "string" && typeof (x as { name?: unknown }).name === "string" && typeof (x as { qty?: unknown }).qty === "number" && typeof (x as { cost?: unknown }).cost === "number"); } catch { items = []; }
+      const e = escrow.get(m.playerId);
+      return { playerId: m.playerId, playerName: m.playerName, items, subtotal: m.subtotal, joinedAt: m.joinedAt.toISOString(), escrowStatus: e ? e.status : "none" as const, escrowTotal: e ? e.total : 0 };
+    }),
+  };
+}
+/** Is this player already in an open group (host or member)? One open group at a time. */
+async function openGroupOf(db: Db, playerId: string): Promise<GroupOrderView | null> {
+  const rows = await db.select().from(schema.groupOrders).where(and(eq(schema.groupOrders.status, "open"), sql`${schema.groupOrders.expiresAt} > ${Date.now()}`));
+  for (const g of rows) {
+    if (g.hostId === playerId) return groupOrderView(db, g.id);
+    const [m] = await db.select().from(schema.groupOrderMembers).where(and(eq(schema.groupOrderMembers.groupId, g.id), eq(schema.groupOrderMembers.playerId, playerId))).limit(1);
+    if (m) return groupOrderView(db, g.id);
+  }
+  return null;
+}
+
+/* ---- round-3 (S): police patrol / observation (g) ----
+   Server side of client/src/round2/police.ts. Same three rules: in-game
+   avatar ids only (isGameAvatarId, mirrored from the client), the watched
+   player can always see who is watching (getWatchers), and watching alone
+   does nothing — consequences need a filed report through (d). Patrols and
+   watches are rows, not process memory, so 👁️ is visible across sessions.
+   A patrol goes stale after 6 h (lazy expiry on every patrol read/write);
+   ending a patrol ends every watch it opened. */
+const PATROL_TTL_MS = 6 * 3600_000;
+/** Mirror of client police.ts isGameAvatarId: lowercase slugs only — no
+    emails, phone numbers, real names or handles from other apps. */
+function isGameAvatarId(id: string): boolean {
+  if (!id || id.length > 48) return false;
+  if (!/^[a-z0-9][a-z0-9_-]*$/.test(id)) return false;
+  if (/\d{7,}/.test(id)) return false;
+  return true;
+}
+async function expirePatrols(db: Db) {
+  const cutoff = Date.now() - PATROL_TTL_MS;
+  const stale = await db.select().from(schema.patrols).where(sql`${schema.patrols.startedAt} <= ${cutoff}`);
+  for (const p of stale) {
+    await db.delete(schema.patrolWatches).where(eq(schema.patrolWatches.officerId, p.officerId));
+    await db.delete(schema.patrols).where(eq(schema.patrols.officerId, p.officerId));
+  }
+}
+async function activePatrol(db: Db, officerId: string) {
+  await expirePatrols(db);
+  const [p] = await db.select().from(schema.patrols).where(eq(schema.patrols.officerId, officerId)).limit(1);
+  return p as typeof schema.patrols.$inferSelect | undefined;
+}
+
+/* 玩家店铺菜单（0022）：服务端定价，客户端只传 itemId */
+const SHOP_MENUS: Record<string, { id: string; name: string; price: number }[]> = {
+  tangshui: [
+    { id: "tangshui", name: "糖水", price: 12 },
+    { id: "guilinggao", name: "龟苓膏", price: 15 },
+    { id: "yangzhi", name: "杨枝甘露", price: 18 },
+  ],
+  changfen: [
+    { id: "changfen", name: "肠粉", price: 10 },
+    { id: "baizhou", name: "白粥", price: 8 },
+    { id: "zhengjiao", name: "蒸饺", price: 14 },
+  ],
+  milktea: [
+    { id: "zhenzhu", name: "珍珠奶茶", price: 15 },
+    { id: "shuiguoch", name: "水果茶", price: 18 },
+    { id: "kafei", name: "咖啡", price: 20 },
+  ],
+};
+
 export const Actions = {
   joinWorld: defineAction({
     description:
@@ -758,8 +1576,14 @@ export const Actions = {
       /* 0–3 hair, 0–3 accessory. Stored on cosmetic as #h2a1 so name colours stay intact. */
       hair: z.number().int().min(0).max(3).optional(),
       accessory: z.number().int().min(0).max(3).optional(),
+      /* 捏脸 (0023): hand-picked face as compact JSON (null = clear it,
+         back to the seed face). Validated + clamped server-side. */
+      face: z.string().max(400).nullable().optional(),
+      /* 玩家店铺 + 买下的房子（0022）：心跳时同步到 shops / homes，供全城地图展示 */
+      shop: z.object({ kind: z.string(), name: z.string().max(16), locId: z.string().max(64), cityKey: z.enum(["sz", "hz", "hk"]), lvl: z.number().int().min(1).max(5), floor: z.number().int().min(1).max(3), building: z.string().max(32).nullable().optional() }).optional(),
+      flat: z.object({ name: z.string().max(16), locId: z.string().max(64), cityKey: z.enum(["sz", "hz", "hk"]) }).optional(),
     }),
-    response: z.object({ world: worldResponse, inbox: z.array(giftShape), me: z.string(), bank: z.object({ money: z.number(), corrected: z.boolean() }).optional() }),
+    response: z.object({ world: worldResponse, inbox: z.array(giftShape), me: z.string(), bank: z.object({ money: z.number(), corrected: z.boolean(), shopTill: z.number().optional() }).optional() }),
     async handler(ctx, args) {
       const db = ctx.db<typeof schema>();
       /* 防作弊：the simulation runs on the client, so the server checks each
@@ -778,6 +1602,62 @@ export const Actions = {
       }
       const bank = prev ? await settleMoney(db, prev, args.money, args.season ?? prev.season, args.gameDay) : null;
       if (bank?.cheat) suspect = 1;
+      /* 店铺 / 房子同步（0022）：只写展示字段，不碰 money / reportedMoney。
+         店的 till 冲突时保留（不重置）；房子的 tier/style/layout 冲突时保留。 */
+      let shopTill = 0;
+      if (prev) {
+        if (args.shop) {
+          await db.insert(schema.shops).values({
+            ownerId: args.playerId,
+            ownerPub: pubOf(args.playerId),
+            ownerName: prev.name,
+            kind: args.shop.kind,
+            name: args.shop.name,
+            locId: args.shop.locId,
+            cityKey: args.shop.cityKey,
+            lvl: args.shop.lvl,
+            floor: args.shop.floor,
+            building: args.shop.building ?? null,
+            till: 0,
+            updatedAt: new Date(),
+          }).onConflictDoUpdate({
+            target: schema.shops.ownerId,
+            set: {
+              ownerPub: pubOf(args.playerId),
+              ownerName: prev.name,
+              kind: args.shop.kind,
+              name: args.shop.name,
+              locId: args.shop.locId,
+              cityKey: args.shop.cityKey,
+              lvl: args.shop.lvl,
+              floor: args.shop.floor,
+              building: args.shop.building ?? null,
+              updatedAt: new Date(),
+            },
+          });
+          dropWorldCache();
+        }
+        if (args.flat) {
+          await db.insert(schema.homes).values({
+            playerId: args.playerId,
+            name: args.flat.name,
+            locId: args.flat.locId,
+            cityKey: args.flat.cityKey,
+            updatedAt: new Date(),
+          }).onConflictDoUpdate({
+            target: schema.homes.playerId,
+            set: { name: args.flat.name, locId: args.flat.locId, cityKey: args.flat.cityKey, updatedAt: new Date() },
+          });
+          dropWorldCache();
+        }
+        const [myShop] = await db.select().from(schema.shops).where(eq(schema.shops.ownerId, args.playerId)).limit(1);
+        shopTill = myShop?.till ?? 0;
+      }
+      /* 捏脸 (0023): a changed face must reach the other players' maps
+         right away, not after the world cache TTL — same treatment as
+         shops/flats above. Invalid payloads leave the stored face alone. */
+      const faceNext = args.face !== undefined ? sanitizeFaceJson(args.face) : undefined;
+      if (faceNext !== undefined && faceNext !== (prev?.face ?? null)) dropWorldCache();
       await db
         .update(schema.players)
         .set({
@@ -795,6 +1675,7 @@ export const Actions = {
           ...(args.title !== undefined ? { title: args.title } : {}),
           ...(args.season !== undefined ? { season: args.season } : {}),
           ...(args.hair !== undefined ? { cosmetic: `${(prev?.cosmetic ?? "").replace(/#h[0-3](?:a[0-3])?$/, "")}#h${args.hair}a${args.accessory ?? 0}` } : {}),
+          ...(faceNext !== undefined ? { face: faceNext } : {}),
           lastSeen: new Date(),
         })
         .where(eq(schema.players.id, args.playerId));
@@ -810,7 +1691,7 @@ export const Actions = {
         world: await loadWorldCached(ctx, args.cityKey),
         inbox: inboxRows.map((g) => ({ id: g.id, fromId: pubOf(g.fromId), fromName: g.fromName, kind: g.kind, company: g.company, amount: g.amount ?? 0, createdAt: g.createdAt.toISOString() })),
         me: pubOf(args.playerId),
-        ...(bank ? { bank: { money: bank.money, corrected: bank.corrected } } : {}),
+        ...(bank ? { bank: { money: bank.money, corrected: bank.corrected, shopTill } } : {}),
       };
     },
   }),
@@ -883,7 +1764,7 @@ export const Actions = {
       playerId: z.string().min(4).max(64),
       tier: z.number().int().min(0).max(3),
       style: z.string().max(40).nullable(),
-      layout: z.array(z.object({ id: z.string().regex(/^[a-z0-9-]{1,32}$/), slot: z.number().int().min(0).max(6) })).max(8),
+      layout: z.array(z.object({ id: z.string().regex(/^[a-z0-9-]{1,32}$/), slot: z.number().int().min(0).max(13) })).max(14),
     }),
     response: z.object({ ok: z.boolean() }),
     async handler(ctx, args) {
@@ -919,9 +1800,51 @@ export const Actions = {
         if (Array.isArray(parsed)) layout = parsed.flatMap((x) => {
           const o = x as { id?: unknown; slot?: unknown };
           return typeof o?.id === "string" && typeof o.slot === "number" ? [{ id: o.id, slot: o.slot }] : [];
-        }).slice(0, 8);
+        }).slice(0, 14);
       } catch { layout = []; }
       return { home: { tier: row.tier, style: row.style, layout } };
+    },
+  }),
+
+  /* ---- 玩家店铺（0022）：在别人的店里买东西，钱进店主的 till；店主收钱 ----
+     菜单是服务端定价，客户端只传 itemId。 */
+  buyFromShop: defineAction({
+    description: "Buys one item from another player's shop: the buyer pays, the price goes into the shop's till.",
+    request: z.object({ playerId: z.string().min(4).max(64), ownerPub: z.string().min(4).max(64), itemId: z.string().min(1).max(32) }),
+    response: z.object({ ok: z.boolean(), price: z.number().optional(), error: z.string().optional() }),
+    async handler(ctx, args): Promise<{ ok: boolean; price?: number; error?: string }> {
+      const db = ctx.db<typeof schema>();
+      const [buyer] = await db.select().from(schema.players).where(eq(schema.players.id, args.playerId)).limit(1);
+      const [shop] = await db.select().from(schema.shops).where(eq(schema.shops.ownerPub, args.ownerPub)).limit(1);
+      if (!buyer || !shop) return { ok: false, error: "找不到这家店" };
+      if (buyer.banned) return { ok: false, error: BANNED_MSG };
+      if (buyer.id === shop.ownerId) return { ok: false, error: "不能买自己的店" };
+      const item = SHOP_MENUS[shop.kind]?.find((i) => i.id === args.itemId);
+      if (!item) return { ok: false, error: "这家店没有这道菜" };
+      if (buyer.money < item.price) return { ok: false, error: "钱不够" };
+      /* 买家两边一起扣（客户端成交后本地也扣），心跳才不会把差额当收入/支出；
+         店主的 reportedMoney 不动——till 里的钱要他自己收钱才进钱包。 */
+      await db.update(schema.players).set({ money: buyer.money - item.price, reportedMoney: buyer.reportedMoney - item.price }).where(eq(schema.players.id, buyer.id));
+      await db.update(schema.shops).set({ till: shop.till + item.price }).where(eq(schema.shops.ownerId, shop.ownerId));
+      await writeLedger(db, buyer.id, buyer.season, "spend", -item.price, buyer.money - item.price, `在${shop.name}买${item.name}`);
+      return { ok: true, price: item.price };
+    },
+  }),
+
+  collectShopTill: defineAction({
+    description: "Collects the caller's shop till into their pocket: zeroes the till and returns what was in it. Money itself is applied by the client on success (heartbeat settles it); the server touches no balance here.",
+    request: z.object({ playerId: z.string().min(4).max(64) }),
+    response: z.object({ ok: z.boolean(), amount: z.number() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const [row] = await db.select().from(schema.shops).where(eq(schema.shops.ownerId, args.playerId)).limit(1);
+      if (!row) return { ok: true, amount: 0 };
+      const amount = row.till;
+      if (amount <= 0) return { ok: true, amount: 0 };
+      /* 乐观锁：只有 till 还是 amount 时才清零，并发收钱只成功一次 */
+      const cleared = await db.update(schema.shops).set({ till: 0 }).where(and(eq(schema.shops.ownerId, args.playerId), eq(schema.shops.till, amount))).returning();
+      if (!cleared.length) return { ok: true, amount: 0 };
+      return { ok: true, amount };
     },
   }),
 
@@ -2563,4 +3486,2317 @@ export const Actions = {
       return { ok: true };
     },
   }),
+
+  /* ---- round-2 (c): 流浪动物 + 社区玩法 ---- */
+  getStrays: defineAction({
+    description: "The city's stray cats/dogs (not adopted). The server keeps 3–6 per city from park/village/beach spots; trust decays 5/day unfed.",
+    request: z.object({ cityKey: cityZ, playerId: pidZ }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), strays: z.array(strayShape) }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER, strays: [] };
+      if (me.banned) return { ok: false, error: BANNED_MSG, strays: [] };
+      if (me.cityKey !== args.cityKey) return { ok: false, error: "只能看你所在城市的流浪动物", strays: [] };
+      await ensureStrays(db, args.cityKey, me.gameDay);
+      const rows = await db.select().from(schema.strays).where(and(eq(schema.strays.city, args.cityKey), eq(schema.strays.adopted, 0))).orderBy(schema.strays.id);
+      // persist the decayed trust so a later feed starts from the decayed value
+      for (const r of rows) {
+        const v = strayView(r, me.gameDay);
+        if (v.trust !== r.trust) await db.update(schema.strays).set({ trust: v.trust }).where(eq(schema.strays.id, r.id));
+      }
+      return { ok: true, strays: rows.map((r) => strayView(r, me.gameDay)) };
+    },
+  }),
+
+  feedStray: defineAction({
+    description: "Feeds a stray once per player per game day (+8/10/15 trust by temper, cap 100). The ¥5 food cost stays client-side.",
+    request: z.object({ playerId: pidZ, strayId: z.string().min(1).max(32), gameDay: z.number().int().min(1).max(366) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), trust: z.number().optional(), note: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      if (!communityRateOk(me.id)) return { ok: false, error: RATE_MSG };
+      const id = Number(args.strayId);
+      if (!Number.isInteger(id)) return { ok: false, error: "找不到这只流浪动物" };
+      const [s] = await db.select().from(schema.strays).where(eq(schema.strays.id, id)).limit(1);
+      if (!s || s.adopted) return { ok: false, error: "它已经被好心人收养了" };
+      try {
+        await db.insert(schema.strayFeeds).values({ strayId: id, playerId: me.id, day: args.gameDay, createdAt: new Date() });
+      } catch { return { ok: false, error: "今天已经喂过它了, 明天再来吧" }; }
+      const gain = STRAY_FEED_GAIN[s.temper] ?? 10;
+      const trust = Math.min(100, s.trust + gain);
+      const feeders = await db.select({ n: sql<number>`count(distinct ${schema.strayFeeds.playerId})` }).from(schema.strayFeeds).where(eq(schema.strayFeeds.strayId, id));
+      await db.update(schema.strays).set({ trust, lastFedDay: args.gameDay, fedByCount: Number(feeders[0]?.n ?? 1) }).where(eq(schema.strays.id, id));
+      const note = STRAY_FEED_NOTES[s.temper] ?? "它吃得很香.";
+      return { ok: true, trust, note: trust >= 70 ? `${note} 它好像愿意跟你回家了.` : note };
+    },
+  }),
+
+  adoptStray: defineAction({
+    description: "Adopts a stray (trust ≥ 70, not adopted). Atomic: the update only lands where adopted = 0, so two players can't adopt the same animal.",
+    request: z.object({ playerId: pidZ, strayId: z.string().min(1).max(32), petName: z.string().trim().min(1).max(12), gameDay: z.number().int().min(1).max(366) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      if (!communityRateOk(me.id)) return { ok: false, error: RATE_MSG };
+      const id = Number(args.strayId);
+      if (!Number.isInteger(id)) return { ok: false, error: "找不到这只流浪动物" };
+      const [s] = await db.select().from(schema.strays).where(eq(schema.strays.id, id)).limit(1);
+      if (!s) return { ok: false, error: "找不到这只流浪动物" };
+      if (s.adopted) return { ok: false, error: "已经被收养了" };
+      if (s.trust < 70) return { ok: false, error: "它还不太信任你, 多喂几次再来吧" };
+      const changed = await db.update(schema.strays).set({ adopted: 1 }).where(and(eq(schema.strays.id, id), eq(schema.strays.adopted, 0))).returning({ id: schema.strays.id });
+      if (!changed.length) return { ok: false, error: "已经被收养了" };
+      return { ok: true };
+    },
+  }),
+
+  syncPets: defineAction({
+    description: "Stores the caller's pets (max 3) for device-switch sync. adoptedStrayId marks that stray adopted with the same guard as adoptStray.",
+    request: z.object({
+      playerId: pidZ,
+      pets: z.array(z.object({
+        id: z.string().min(1).max(64), kind: z.enum(["cat", "dog"]), breed: z.string().max(16),
+        name: z.string().min(1).max(12), color: z.number().int().min(0).max(0xffffff),
+        source: z.enum(["shelter", "stray", "shop", "gift"]), adoptedDay: z.number().int().min(0).max(366),
+        adoptedAt: z.string().max(80),
+        stats: z.object({ mood: z.number().min(0).max(100), hunger: z.number().min(0).max(100), affection: z.number().min(0).max(100), energy: z.number().min(0).max(100), cleanliness: z.number().min(0).max(100) }),
+        tricks: z.array(z.object({ id: z.string().max(64), name: z.string().max(8), learnedDay: z.number().int() })).max(20),
+        personality: z.string().max(20), interactionsToday: z.number().int().min(0).max(100),
+        lastTickDay: z.number().int().min(0).max(366), greetedToday: z.boolean(),
+      })).max(3),
+      activePetId: z.string().max(64).nullable(),
+      adoptedStrayId: z.string().max(32).optional(),
+    }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (!communityRateOk(me.id)) return { ok: false, error: RATE_MSG };
+      if (args.adoptedStrayId) {
+        const id = Number(args.adoptedStrayId);
+        if (Number.isInteger(id)) await db.update(schema.strays).set({ adopted: 1 }).where(and(eq(schema.strays.id, id), eq(schema.strays.adopted, 0)));
+      }
+      const payload = JSON.stringify({ pets: args.pets, activePetId: args.activePetId });
+      await db.insert(schema.playerPets).values({ playerId: me.id, payload, updatedAt: new Date() })
+        .onConflictDoUpdate({ target: schema.playerPets.playerId, set: { payload, updatedAt: new Date() } });
+      return { ok: true };
+    },
+  }),
+
+  postNotice: defineAction({
+    description: "Posts a lost & found notice (title ≤ 30, body ≤ 200, 7-day TTL). Max 5 per player per day.",
+    request: z.object({
+      playerId: pidZ, kind: z.enum(["lost-pet", "lost-item", "found-pet", "found-item"]), cityKey: cityZ,
+      title: z.string().trim().min(1).max(30), body: z.string().trim().min(1).max(200),
+      locId: z.string().min(1).max(80), locName: z.string().min(1).max(40),
+      x: z.number().optional(), z: z.number().optional(), photoUrl: z.string().max(500).nullable().optional(),
+    }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), noticeId: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      if (!communityRateOk(me.id)) return { ok: false, error: RATE_MSG };
+      if (me.cityKey !== args.cityKey) return { ok: false, error: "只能在你所在的城市发启事" };
+      const today = await db.select({ n: sql<number>`count(*)` }).from(schema.notices).where(and(eq(schema.notices.authorId, me.id), gte(schema.notices.createdAt, new Date(Date.now() - 86_400_000))));
+      if (Number(today[0]?.n ?? 0) >= 5) return { ok: false, error: "今天已经发了 5 条启事，明天再来" };
+      const title = cleanText(args.title).slice(0, 30);
+      const body = cleanText(args.body).slice(0, 200);
+      if (!title.trim() || !body.trim()) return { ok: false, error: "标题和描述被过滤了，换个说法" };
+      const now = new Date();
+      const [row] = await db.insert(schema.notices).values({
+        city: args.cityKey, kind: args.kind, title, body,
+        locId: args.locId, locName: cleanText(args.locName).slice(0, 40),
+        x: args.x ?? null, z: args.z ?? null, photoUrl: args.photoUrl ?? null,
+        authorId: me.id, authorName: me.name, status: "open",
+        expiresAt: new Date(now.getTime() + 7 * 86_400_000), createdAt: now,
+      }).returning({ id: schema.notices.id });
+      return { ok: true, noticeId: String(row?.id) };
+    },
+  }),
+
+  getNotices: defineAction({
+    description: "This city's open, unexpired lost & found notices, newest first (max 50). Expiry is filtered on read — no cron needed.",
+    request: z.object({ cityKey: cityZ, playerId: pidZ }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), notices: z.array(noticeShape) }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER, notices: [] };
+      if (me.banned) return { ok: false, error: BANNED_MSG, notices: [] };
+      const rows = await db.select().from(schema.notices)
+        .where(and(eq(schema.notices.city, args.cityKey), eq(schema.notices.status, "open"), sql`${schema.notices.expiresAt} > ${Date.now()}`))
+        .orderBy(desc(schema.notices.id)).limit(50);
+      return { ok: true, notices: await Promise.all(rows.map((r) => noticeView(db, r))) };
+    },
+  }),
+
+  replyNotice: defineAction({
+    description: "Replies to an open notice (≤ 200 chars).",
+    request: z.object({ playerId: pidZ, noticeId: z.string().min(1).max(32), text: z.string().trim().min(1).max(200) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), reply: noticeReplyShape.optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      if (!communityRateOk(me.id)) return { ok: false, error: RATE_MSG };
+      const id = Number(args.noticeId);
+      if (!Number.isInteger(id)) return { ok: false, error: "这条启事找不到了" };
+      const [n] = await db.select().from(schema.notices).where(eq(schema.notices.id, id)).limit(1);
+      if (!n || n.status !== "open" || n.expiresAt.getTime() <= Date.now()) return { ok: false, error: "这条启事已经过期或被认领了" };
+      const text = cleanText(args.text).slice(0, 200);
+      if (!text.trim()) return { ok: false, error: "回复被过滤了" };
+      const [row] = await db.insert(schema.noticeReplies).values({ noticeId: id, authorId: me.id, authorName: me.name, text, createdAt: new Date() }).returning();
+      return { ok: true, reply: { id: String(row?.id), authorId: me.id, authorName: me.name, text, createdAt: new Date().toISOString() } };
+    },
+  }),
+
+  claimNotice: defineAction({
+    description: "Marks a notice claimed / found (author only).",
+    request: z.object({ playerId: pidZ, noticeId: z.string().min(1).max(32) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (!communityRateOk(me.id)) return { ok: false, error: RATE_MSG };
+      const id = Number(args.noticeId);
+      if (!Number.isInteger(id)) return { ok: false, error: "这条启事找不到了" };
+      const [n] = await db.select().from(schema.notices).where(eq(schema.notices.id, id)).limit(1);
+      if (!n) return { ok: false, error: "这条启事找不到了" };
+      if (n.authorId !== me.id) return { ok: false, error: "只有启事的作者能标记认领" };
+      if (n.status !== "open") return { ok: false, error: "这条启事已经结了" };
+      await db.update(schema.notices).set({ status: "claimed", claimedByName: me.name }).where(eq(schema.notices.id, id));
+      return { ok: true };
+    },
+  }),
+
+  reportSnake: defineAction({
+    description: "Reports a snake sighting (species guess ≤ 20, description ≤ 200, 3-day TTL). Max 3 per player per hour.",
+    request: z.object({
+      playerId: pidZ, cityKey: cityZ, locId: z.string().min(1).max(80), locName: z.string().min(1).max(40),
+      x: z.number().optional(), z: z.number().optional(),
+      speciesGuess: z.string().max(20), description: z.string().max(200), photoUrl: z.string().max(500).nullable().optional(),
+    }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), reportId: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      if (!communityRateOk(me.id)) return { ok: false, error: RATE_MSG };
+      if (me.cityKey !== args.cityKey) return { ok: false, error: "只能上报你所在城市的蛇出没" };
+      const hour = await db.select({ n: sql<number>`count(*)` }).from(schema.snakeReports).where(and(eq(schema.snakeReports.reporterId, me.id), gte(schema.snakeReports.createdAt, new Date(Date.now() - 3600_000))));
+      if (Number(hour[0]?.n ?? 0) >= 3) return { ok: false, error: "一小时内最多上报 3 条蛇出没" };
+      const speciesGuess = cleanText(args.speciesGuess).slice(0, 20);
+      const description = cleanText(args.description).slice(0, 200);
+      if (!speciesGuess.trim() && !description.trim()) return { ok: false, error: "描述一下这条蛇吧 (大小、颜色都行)" };
+      const now = new Date();
+      const [row] = await db.insert(schema.snakeReports).values({
+        city: args.cityKey, locId: args.locId, locName: cleanText(args.locName).slice(0, 40),
+        x: args.x ?? null, z: args.z ?? null, speciesGuess, description, photoUrl: args.photoUrl ?? null,
+        reporterId: me.id, reporterName: me.name,
+        expiresAt: new Date(now.getTime() + 3 * 86_400_000), confirmations: 0, createdAt: now,
+      }).returning({ id: schema.snakeReports.id });
+      return { ok: true, reportId: String(row?.id) };
+    },
+  }),
+
+  getSnakeWarnings: defineAction({
+    description: "This city's unexpired snake warnings, most-confirmed first.",
+    request: z.object({ cityKey: cityZ, playerId: pidZ }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), warnings: z.array(snakeShape) }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER, warnings: [] };
+      if (me.banned) return { ok: false, error: BANNED_MSG, warnings: [] };
+      const rows = await db.select().from(schema.snakeReports)
+        .where(and(eq(schema.snakeReports.city, args.cityKey), sql`${schema.snakeReports.expiresAt} > ${Date.now()}`))
+        .orderBy(desc(schema.snakeReports.confirmations), desc(schema.snakeReports.id)).limit(50);
+      return { ok: true, warnings: rows.map(snakeView) };
+    },
+  }),
+
+  confirmSnake: defineAction({
+    description: "Confirms a snake sighting (once per player per report); +1 confirmation and +1 day of expiry. ≥ 2 confirmations = verified.",
+    request: z.object({ playerId: pidZ, reportId: z.string().min(1).max(32) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), confirmations: z.number().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (!communityRateOk(me.id)) return { ok: false, error: RATE_MSG };
+      const id = Number(args.reportId);
+      if (!Number.isInteger(id)) return { ok: false, error: "这条上报找不到了" };
+      const [r] = await db.select().from(schema.snakeReports).where(eq(schema.snakeReports.id, id)).limit(1);
+      if (!r || r.expiresAt.getTime() <= Date.now()) return { ok: false, error: "这条上报已经过期了" };
+      try {
+        await db.insert(schema.snakeConfirms).values({ reportId: id, playerId: me.id, createdAt: new Date() });
+      } catch { return { ok: false, error: "你已经确认过这条了" }; }
+      const confirmations = r.confirmations + 1;
+      await db.update(schema.snakeReports).set({ confirmations, expiresAt: new Date(r.expiresAt.getTime() + 86_400_000) }).where(eq(schema.snakeReports.id, id));
+      return { ok: true, confirmations };
+    },
+  }),
+
+  reportFishingSpot: defineAction({
+    description: "Reports a fishing spot. A spot within ~100 m of an existing one is refused (returns existingSpotId). Max 5 per player per day.",
+    request: z.object({
+      playerId: pidZ, cityKey: cityZ, locId: z.string().min(1).max(80), locName: z.string().min(1).max(40),
+      x: z.number().optional(), z: z.number().optional(),
+      catchDesc: z.string().trim().min(1).max(200), bait: z.string().max(60).optional(), notes: z.string().max(200).optional(),
+      photoUrl: z.string().max(500).nullable().optional(),
+    }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), spotId: z.string().optional(), existingSpotId: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      if (!communityRateOk(me.id)) return { ok: false, error: RATE_MSG };
+      if (me.cityKey !== args.cityKey) return { ok: false, error: "只能上报你所在城市的钓点" };
+      const day = await db.select({ n: sql<number>`count(*)` }).from(schema.fishingSpots).where(and(eq(schema.fishingSpots.reporterId, me.id), gte(schema.fishingSpots.createdAt, new Date(Date.now() - 86_400_000))));
+      if (Number(day[0]?.n ?? 0) >= 5) return { ok: false, error: "今天已经上报了 5 个钓点，明天再来" };
+      const existing = await db.select().from(schema.fishingSpots).where(eq(schema.fishingSpots.city, args.cityKey)).orderBy(desc(schema.fishingSpots.id)).limit(100);
+      // ~100 m ≈ 1 world unit on this map (the whole map spans ~38 units); same locId with no coords also counts as a duplicate.
+      const dup = existing.find((s) => {
+        if (args.x !== undefined && args.z !== undefined && s.x !== null && s.z !== null) return Math.hypot(s.x - args.x, s.z - args.z) < 1;
+        return s.locId === args.locId;
+      });
+      if (dup) return { ok: false, error: "这里已有钓点, 去确认它吧", existingSpotId: String(dup.id) };
+      const now = new Date();
+      const [row] = await db.insert(schema.fishingSpots).values({
+        city: args.cityKey, locId: args.locId, locName: cleanText(args.locName).slice(0, 40),
+        x: args.x ?? null, z: args.z ?? null,
+        catchDesc: cleanText(args.catchDesc).slice(0, 200),
+        bait: cleanText(args.bait ?? "").slice(0, 60), notes: cleanText(args.notes ?? "").slice(0, 200),
+        photoUrl: args.photoUrl ?? null, reporterId: me.id, reporterName: me.name,
+        confirmations: 0, lastConfirmedAt: now, createdAt: now,
+      }).returning({ id: schema.fishingSpots.id });
+      return { ok: true, spotId: String(row?.id) };
+    },
+  }),
+
+  getFishingSpots: defineAction({
+    description: "This city's fishing spots, all of them including stale ones (the client sorts; stale = 30 days without a confirmation). Max 100.",
+    request: z.object({ cityKey: cityZ, playerId: pidZ }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), spots: z.array(fishingShape) }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER, spots: [] };
+      if (me.banned) return { ok: false, error: BANNED_MSG, spots: [] };
+      const rows = await db.select().from(schema.fishingSpots).where(eq(schema.fishingSpots.city, args.cityKey))
+        .orderBy(desc(schema.fishingSpots.confirmations), desc(schema.fishingSpots.id)).limit(100);
+      return { ok: true, spots: rows.map(fishingView) };
+    },
+  }),
+
+  confirmFishingSpot: defineAction({
+    description: "Confirms a fishing spot (once per player per spot); +1 confirmation and re-activates a stale spot.",
+    request: z.object({ playerId: pidZ, spotId: z.string().min(1).max(32) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), confirmations: z.number().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (!communityRateOk(me.id)) return { ok: false, error: RATE_MSG };
+      const id = Number(args.spotId);
+      if (!Number.isInteger(id)) return { ok: false, error: "这个钓点找不到了" };
+      const [r] = await db.select().from(schema.fishingSpots).where(eq(schema.fishingSpots.id, id)).limit(1);
+      if (!r) return { ok: false, error: "这个钓点找不到了" };
+      try {
+        await db.insert(schema.fishingConfirms).values({ spotId: id, playerId: me.id, createdAt: new Date() });
+      } catch { return { ok: false, error: "你已经确认过这个钓点了" }; }
+      const confirmations = r.confirmations + 1;
+      await db.update(schema.fishingSpots).set({ confirmations, lastConfirmedAt: new Date() }).where(eq(schema.fishingSpots.id, id));
+      return { ok: true, confirmations };
+    },
+  }),
+
+  /* ---- round-2 (d): 举报黑房东 / 黑公司 ---- */
+  fileBlackReport: defineAction({
+    description: "Files a free-text report against a game landlord (home:<city>) or company (COMPANIES id). Free; consequences only after a 24 h same-city jury upholds it.",
+    request: z.object({
+      playerId: pidZ, kind: z.enum(["landlord", "employer"]), city: cityZ,
+      targetId: z.string().min(1).max(64), targetName: z.string().min(1).max(40),
+      body: z.string().trim().min(10).max(600), evidence: z.record(z.string(), z.any()).optional(),
+    }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), reportId: z.number().optional(), dueAt: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      return fileBlackReportInner(db, me, args);
+    },
+  }),
+
+  getBlackReports: defineAction({
+    description: "The caller's reports, the open reports they can jury in their city, the upheld exposure board, reputations, their own standing, and any server-side rent rollback to re-apply on load. Settles due juries first.",
+    request: z.object({ playerId: pidZ, city: cityZ }),
+    response: z.object({
+      ok: z.boolean(), error: z.string().optional(),
+      mine: z.array(blackReportShape), jury: z.array(blackReportShape), exposed: z.array(blackReportShape),
+      reputations: z.array(reputationShape),
+      standing: z.object({ credibility: z.number(), filedCount: z.number(), upheldCount: z.number(), rejectedCount: z.number(), lockedUntil: z.string().nullable() }).optional(),
+      rentRollback: z.object({ rent: z.number(), baseRent: z.number() }).nullable().optional(),
+    }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      await settleBlackReports(db);
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER, mine: [], jury: [], exposed: [], reputations: [] };
+      if (me.banned) return { ok: false, error: BANNED_MSG, mine: [], jury: [], exposed: [], reputations: [] };
+      const mineRows = await db.select().from(schema.blackReports).where(eq(schema.blackReports.reporterId, me.id)).orderBy(desc(schema.blackReports.id)).limit(20);
+      const juryRows = await db.select().from(schema.blackReports).where(and(eq(schema.blackReports.city, args.city), eq(schema.blackReports.status, "open"))).orderBy(desc(schema.blackReports.id)).limit(20);
+      const exposedRows = await db.select().from(schema.blackReports).where(and(eq(schema.blackReports.city, args.city), eq(schema.blackReports.status, "upheld"))).orderBy(desc(schema.blackReports.id)).limit(20);
+      const repRows = await db.select().from(schema.blackReputations).where(eq(schema.blackReputations.city, args.city)).orderBy(desc(schema.blackReputations.updatedAt)).limit(50);
+      const standing = await getStanding(db, me.id);
+      const [rb] = await db.select().from(schema.blackRentRollbacks).where(eq(schema.blackRentRollbacks.playerId, me.id)).limit(1);
+      return {
+        ok: true,
+        mine: await Promise.all(mineRows.map((r) => blackReportView(db, r, me.id))),
+        jury: await Promise.all(juryRows.filter((r) => r.reporterId !== me.id).map((r) => blackReportView(db, r, me.id))),
+        exposed: await Promise.all(exposedRows.map((r) => blackReportView(db, r, me.id))),
+        reputations: repRows.map(reputationView),
+        standing: { credibility: standing.credibility, filedCount: standing.filedCount, upheldCount: standing.upheldCount, rejectedCount: standing.rejectedCount, lockedUntil: standing.lockedUntil?.toISOString() ?? null },
+        rentRollback: rb ? { rent: rb.rent, baseRent: rb.baseRent } : null,
+      };
+    },
+  }),
+
+  blackReportVote: defineAction({
+    description: "Votes on an open black report in the caller's city (uphold / reject). One vote, changeable until the jury closes; parties can't vote; needs an account.",
+    request: z.object({ playerId: pidZ, reportId: z.number().int().positive(), side: z.enum(["uphold", "reject"]) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      await settleBlackReports(db);
+      const [r] = await db.select().from(schema.blackReports).where(eq(schema.blackReports.id, args.reportId)).limit(1);
+      const me = await r2Player(db, args.playerId);
+      if (!r || !me || r.status !== "open") return { ok: false, error: "这个举报已经结案了" };
+      if (r.reporterId === me.id) return { ok: false, error: "举报人不能投票" };
+      if (me.cityKey !== r.city) return { ok: false, error: "只有同城的人能当陪审员" };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      if (socialNeedsAccount() && !me.accountId) return { ok: false, error: "先绑定账号，才能当陪审员——一人一票" };
+      await db.insert(schema.blackReportVotes).values({ reportId: r.id, voterId: me.id, side: args.side, createdAt: new Date() })
+        .onConflictDoUpdate({ target: [schema.blackReportVotes.reportId, schema.blackReportVotes.voterId], set: { side: args.side } });
+      return { ok: true };
+    },
+  }),
+
+  claimBlackReport: defineAction({
+    description: "Collects a closed report's verdict (reporter only, once). Upheld: deposit + overcharge / back pay via creditMoney, and the rent rollback is persisted server-side. Rejected: credibility −25. Expired: nothing.",
+    request: z.object({ playerId: pidZ, reportId: z.number().int().positive() }),
+    response: z.object({
+      ok: z.boolean(), error: z.string().optional(), money: z.number(),
+      remedy: z.union([
+        z.object({ rentRolledBackTo: z.number(), depositReturned: z.number(), overchargeRefunded: z.number(), fine: z.number() }),
+        z.object({ backPay: z.number(), listingFlagged: z.boolean(), hiringSuspended: z.boolean(), fine: z.number() }),
+      ]).optional(),
+      lines: z.array(z.string()),
+    }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      await settleBlackReports(db);
+      const [r] = await db.select().from(schema.blackReports).where(eq(schema.blackReports.id, args.reportId)).limit(1);
+      const me = await r2Player(db, args.playerId);
+      if (!r || !me) return { ok: false, error: "这份举报找不到了", money: 0, lines: [] };
+      if (r.reporterId !== me.id) return { ok: false, error: "只有举报人能领取裁决", money: 0, lines: [] };
+      if (r.status === "open") return { ok: false, error: "陪审团还没判完", money: 0, lines: [] };
+      // single-claim guard, same compare-and-set pattern as claimGigMoney
+      const claimed = await db.update(schema.blackReports).set({ reporterClaimed: 1 }).where(and(eq(schema.blackReports.id, r.id), eq(schema.blackReports.reporterClaimed, 0))).returning({ id: schema.blackReports.id });
+      if (!claimed.length) return { ok: false, error: "已经领过了", money: 0, lines: [] };
+      const standing = await getStanding(db, me.id);
+      const now = new Date();
+      if (r.status === "expired") {
+        return { ok: true, money: 0, lines: ["陪审团没凑够票，这份举报按“无法证实”结案，没有惩罚，证据更足了可以再报一次。"] };
+      }
+      if (r.status === "rejected") {
+        const credibility = Math.max(0, standing.credibility - 25);
+        const locked = credibility < 50;
+        await db.update(schema.reporterStanding).set({
+          credibility, rejectedCount: standing.rejectedCount + 1,
+          lockedUntil: locked ? new Date(now.getTime() + 7 * 86_400_000) : standing.lockedUntil, updatedAt: now,
+        }).where(eq(schema.reporterStanding.playerId, me.id));
+        return { ok: true, money: 0, lines: [`陪审团驳回了这份举报，信誉 -25（现在 ${credibility}）。${locked ? "举报功能锁定一周，等信誉恢复。" : "下次举报记得附上更实的证据。"}`] };
+      }
+      // upheld
+      let evidence: Record<string, unknown> = {};
+      try { evidence = r.evidence ? JSON.parse(r.evidence) as Record<string, unknown> : {}; } catch { evidence = {}; }
+      const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+      await db.update(schema.reporterStanding).set({ credibility: Math.min(100, standing.credibility + 5), upheldCount: standing.upheldCount + 1, updatedAt: now }).where(eq(schema.reporterStanding.playerId, me.id));
+      if (r.kind === "landlord") {
+        const baseRent = num(evidence.baseRent);
+        const currentRent = num(evidence.currentRent);
+        const depositReturned = num(evidence.depositPaid);
+        const overchargeRefunded = Math.max(0, currentRent - baseRent);
+        const money = depositReturned + overchargeRefunded;
+        const remedy = { rentRolledBackTo: baseRent, depositReturned, overchargeRefunded, fine: 200 };
+        if (money > 0) await creditMoney(db, me.id, money, `black report #${r.id} landlord remedy`);
+        // Persist the rollback server-side: the next save/load must not resurrect the raised rent.
+        if (baseRent > 0) {
+          await db.insert(schema.blackRentRollbacks).values({ playerId: me.id, rent: baseRent, baseRent, reportId: r.id, createdAt: now })
+            .onConflictDoUpdate({ target: schema.blackRentRollbacks.playerId, set: { rent: baseRent, baseRent, reportId: r.id, createdAt: now } });
+        }
+        const lines = [
+          ...(baseRent > 0 ? [`房租从 ¥${currentRent}/周滚回 ¥${baseRent}/周。`] : []),
+          ...(money > 0 ? [`押金 + 多收的房租，一共退回 ¥${money}。`] : []),
+          "房东被罚 ¥200，进了社区基金。",
+          "陪审团判你赢了。以后租房，记得先看曝光栏。",
+        ];
+        return { ok: true, money, remedy, lines };
+      }
+      const backPay = Math.min(2000, num(evidence.claimedUnpaid) || num(evidence.otCount) * num(evidence.otPayPerShift));
+      const [rep] = await db.select().from(schema.blackReputations).where(and(eq(schema.blackReputations.targetId, r.targetId), eq(schema.blackReputations.kind, r.kind))).limit(1);
+      const hiringSuspended = (rep?.upheldCount ?? 0) >= 2;
+      const remedy = { backPay, listingFlagged: true, hiringSuspended, fine: 500 };
+      if (backPay > 0) await creditMoney(db, me.id, backPay, `black report #${r.id} employer remedy`);
+      const lines = [
+        ...(backPay > 0 ? [`拖欠的加班费/工资补发了：+¥${backPay}。`] : []),
+        "这家公司的招聘已被标记，所有人都能看到这起举报。",
+        ...(hiringSuspended ? ["公司暂停招人，直到整改通过。"] : []),
+        "公司被罚 ¥500，进了社区基金。",
+        "陪审团判你赢了。打工人的委屈，有地方说了。",
+      ];
+      return { ok: true, money: backPay, remedy, lines };
+    },
+  }),
+
+  /* ---- round-2 (e): 开放经济 — 交易贴 / 转租 / 海淘 / 贱买贱卖 / 二手家具 ----
+     Posting is free; player-to-player trade takes 0% cut. Escrow uses the
+     dedicated trade_escrow ledger (NOT sendGift: gift kinds cap at ¥5,000
+     and 10/day). Frozen escrow is never released from the client side. */
+  getTradeTasks: defineAction({
+    description: "Searches the player trade board (free-text substring over title/body/tags + price range + kind/city filters). No fixed categories.",
+    request: z.object({
+      playerId: pidZ.optional(), city: z.enum(["sz", "hz", "hk", "any"]).optional(),
+      kind: z.enum(["buy", "sell", "swap", "service", "other"]).optional(),
+      text: z.string().max(60).optional(), minPrice: z.number().int().min(0).optional(),
+      maxPrice: z.number().int().min(0).optional(), openOnly: z.boolean().optional(), limit: z.number().int().min(1).max(50).optional(),
+    }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), tasks: z.array(tradeTaskShape) }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      await settleTradeDisputes(db);
+      const me = args.playerId ? await r2Player(db, args.playerId) : undefined;
+      if (args.playerId && !me) return { ok: false, error: NO_PLAYER, tasks: [] };
+      if (me?.banned) return { ok: false, error: BANNED_MSG, tasks: [] };
+      if (me && args.city && args.city !== "any" && me.cityKey !== args.city) return { ok: false, error: "只能看你所在城市的交易板", tasks: [] };
+      const rows = await db.select().from(schema.tradeTasks).orderBy(desc(schema.tradeTasks.id)).limit(200);
+      const needle = (args.text ?? "").trim().toLowerCase();
+      const openOnly = args.openOnly !== false;
+      const out = rows.filter((t) => {
+        if (openOnly && t.status !== "open") return false;
+        if (args.kind && t.kind !== args.kind) return false;
+        if (args.city && args.city !== "any" && t.city !== "any" && t.city !== args.city) return false;
+        if (args.minPrice !== undefined && (t.price === null || t.price < args.minPrice)) return false;
+        if (args.maxPrice !== undefined && (t.price === null || t.price > args.maxPrice)) return false;
+        if (needle) {
+          let tags: string[] = [];
+          try { const v = JSON.parse(t.tags) as unknown; if (Array.isArray(v)) tags = v.filter((x): x is string => typeof x === "string"); } catch { tags = []; }
+          if (!`${t.title} ${t.body} ${tags.join(" ")}`.toLowerCase().includes(needle)) return false;
+        }
+        return true;
+      }).slice(0, args.limit ?? 50);
+      return { ok: true, tasks: out.map(tradeTaskView) };
+    },
+  }),
+
+  postTradeTask: defineAction({
+    description: "Posts a free-text trade task (title ≤ 60, body ≤ 500, price 0 < p ≤ 1,000,000 or null = 面议). Free; max 10 open per player.",
+    request: z.object({
+      playerId: pidZ, kind: z.enum(["buy", "sell", "swap", "service", "other"]),
+      title: z.string().trim().min(1).max(60), body: z.string().trim().max(500),
+      price: z.number().int().min(1).max(1000000).nullable().optional(), negotiable: z.boolean().optional(),
+      tags: z.array(z.string().trim().min(1).max(10)).max(5).optional(),
+      city: z.enum(["sz", "hz", "hk", "any"]).optional(), expiresInDays: z.number().int().min(0).max(30).optional(),
+    }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), task: tradeTaskShape.optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      if (socialNeedsAccount() && !me.accountId) return { ok: false, error: "先绑定账号，才能发交易贴——防小号刷贴" };
+      if (args.city && args.city !== "any" && me.cityKey !== args.city) return { ok: false, error: "只能在你所在的城市发交易贴" };
+      const open = await db.select({ n: sql<number>`count(*)` }).from(schema.tradeTasks).where(and(eq(schema.tradeTasks.posterId, me.id), eq(schema.tradeTasks.status, "open")));
+      if (Number(open[0]?.n ?? 0) >= 10) return { ok: false, error: "你已经挂着 10 个未完成的交易，先完成或取消几个再发。" };
+      const title = cleanText(args.title).slice(0, 60);
+      const body = cleanText(args.body).slice(0, 500);
+      if (!title.trim()) return { ok: false, error: "写一句你要买还是要卖什么" };
+      const tags = (args.tags ?? []).map((t) => cleanText(t).slice(0, 10)).filter(Boolean);
+      const expiresIn = !args.expiresInDays ? 7 : args.expiresInDays;
+      const [row] = await db.insert(schema.tradeTasks).values({
+        city: args.city ?? me.cityKey, posterId: me.id, posterName: me.name, kind: args.kind,
+        title, body, price: args.price ?? null, negotiable: args.negotiable ? 1 : 0,
+        tags: JSON.stringify(tags), status: "open", escrowHeld: 0,
+        createdDay: me.gameDay, expiresDay: me.gameDay + expiresIn, createdAt: new Date(),
+      }).returning();
+      return { ok: true, task: row ? tradeTaskView(row) : undefined };
+    },
+  }),
+
+  acceptTradeTask: defineAction({
+    description: "Takes an open trade task (not your own, same city unless the task is city 'any'). No money moves yet — escrow is a separate step.",
+    request: z.object({ playerId: pidZ, taskId: z.string().min(1).max(32) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), task: tradeTaskShape.optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      const id = Number(args.taskId);
+      if (!Number.isInteger(id)) return { ok: false, error: "这个交易贴找不到了" };
+      const [t] = await db.select().from(schema.tradeTasks).where(eq(schema.tradeTasks.id, id)).limit(1);
+      if (!t) return { ok: false, error: "这个交易贴找不到了" };
+      if (t.status !== "open") return { ok: false, error: "这个交易已经有人接了 / 已经结束" };
+      if (t.posterId === me.id) return { ok: false, error: "不能接自己的交易贴" };
+      if (t.city !== "any" && me.cityKey !== t.city) return { ok: false, error: "只能接你所在城市的交易" };
+      const changed = await db.update(schema.tradeTasks).set({ status: "accepted", accepterId: me.id, accepterName: me.name }).where(and(eq(schema.tradeTasks.id, id), eq(schema.tradeTasks.status, "open"))).returning();
+      if (!changed.length) return { ok: false, error: "这个交易已经有人接了" };
+      return { ok: true, task: tradeTaskView(changed[0]!) };
+    },
+  }),
+
+  escrowTradeTask: defineAction({
+    description: "Pays into escrow for an accepted task (dedicated ledger, not sendGift). Amount must equal the task price when priced; 面议 tasks need the agreed amount. The payer's money is held by the server.",
+    request: z.object({ playerId: pidZ, taskId: z.string().min(1).max(32), amount: z.number().int().min(1).max(1000000) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), task: tradeTaskShape.optional(), escrowDue: z.number().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      if (socialNeedsAccount() && !me.accountId) return { ok: false, error: "先绑定账号，才能托管交易款" };
+      const id = Number(args.taskId);
+      if (!Number.isInteger(id)) return { ok: false, error: "这个交易贴找不到了" };
+      const [t] = await db.select().from(schema.tradeTasks).where(eq(schema.tradeTasks.id, id)).limit(1);
+      if (!t) return { ok: false, error: "这个交易贴找不到了" };
+      if (t.status !== "accepted") return { ok: false, error: "先接下交易，再托管钱。" };
+      if (t.posterId !== me.id && t.accepterId !== me.id) return { ok: false, error: "只有交易的双方能托管" };
+      if (t.escrowHeld > 0) return { ok: false, error: "这单已经托管过了。" };
+      const due = t.price ?? args.amount;
+      if (args.amount !== due) return { ok: false, error: t.price ? `这单托管金额就是 ${t.price}¥（贴主标的价）。` : "面议的单，先跟贴主谈好价再托管。" };
+      if (me.money < due) return { ok: false, error: "存款不够托管这笔钱" };
+      await creditMoney(db, me.id, -due, `trade escrow #${id}`);
+      await db.insert(schema.tradeEscrow).values({ taskId: id, kind: "trade", payerId: me.id, amount: due, status: "held", createdAt: new Date() });
+      const [row] = await db.update(schema.tradeTasks).set({ escrowHeld: due, escrowFromId: me.id, escrowFromName: me.name }).where(eq(schema.tradeTasks.id, id)).returning();
+      return { ok: true, task: row ? tradeTaskView(row) : undefined, escrowDue: due };
+    },
+  }),
+
+  completeTradeTask: defineAction({
+    description: "Either party confirms completion; escrow (if any) is released to the seller side (sell-task → poster, otherwise accepter). 0% cut.",
+    request: z.object({ playerId: pidZ, taskId: z.string().min(1).max(32), note: z.string().max(200).optional() }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), releasedTo: z.string().optional(), releasedAmount: z.number().optional(), task: tradeTaskShape.optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      const id = Number(args.taskId);
+      if (!Number.isInteger(id)) return { ok: false, error: "这个交易贴找不到了" };
+      const [t] = await db.select().from(schema.tradeTasks).where(eq(schema.tradeTasks.id, id)).limit(1);
+      if (!t) return { ok: false, error: "这个交易贴找不到了" };
+      if (t.status !== "accepted") return { ok: false, error: "这单还没人接 / 已经结束了。" };
+      if (t.posterId !== me.id && t.accepterId !== me.id) return { ok: false, error: "只有交易的双方能确认完成。" };
+      const releaseToId = t.kind === "sell" ? t.posterId : (t.accepterId ?? t.posterId);
+      const releaseAmount = t.escrowHeld;
+      const [row] = await db.update(schema.tradeTasks).set({ status: "completed", escrowHeld: 0, completionNote: cleanText(args.note ?? "").slice(0, 200) || null }).where(and(eq(schema.tradeTasks.id, id), eq(schema.tradeTasks.status, "accepted"))).returning();
+      if (!row) return { ok: false, error: "这单已经结束了。" };
+      if (releaseAmount > 0) {
+        const [esc] = await db.select().from(schema.tradeEscrow).where(and(eq(schema.tradeEscrow.taskId, id), eq(schema.tradeEscrow.kind, "trade"), eq(schema.tradeEscrow.status, "held"))).limit(1);
+        if (esc) {
+          await db.update(schema.tradeEscrow).set({ status: "released", releasedAt: new Date() }).where(eq(schema.tradeEscrow.id, esc.id));
+          await creditMoney(db, releaseToId, releaseAmount, `trade release #${id}`);
+        }
+      }
+      const [to] = await db.select().from(schema.players).where(eq(schema.players.id, releaseToId)).limit(1);
+      return { ok: true, releasedTo: to?.name ?? releaseToId, releasedAmount: releaseAmount, task: tradeTaskView(row) };
+    },
+  }),
+
+  cancelTradeTask: defineAction({
+    description: "Cancels an open/accepted task (either side); escrow, if held, is refunded to whoever paid it.",
+    request: z.object({ playerId: pidZ, taskId: z.string().min(1).max(32) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), refunded: z.number().optional(), task: tradeTaskShape.optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      const id = Number(args.taskId);
+      if (!Number.isInteger(id)) return { ok: false, error: "这个交易贴找不到了" };
+      const [t] = await db.select().from(schema.tradeTasks).where(eq(schema.tradeTasks.id, id)).limit(1);
+      if (!t) return { ok: false, error: "这个交易贴找不到了" };
+      if (t.status !== "open" && t.status !== "accepted") return { ok: false, error: "这单已经结束了，不能取消。" };
+      if (t.posterId !== me.id && t.accepterId !== me.id) return { ok: false, error: "只有交易的双方能取消这单。" };
+      const refundAmount = t.escrowHeld;
+      const refundTo = t.escrowFromId;
+      const [row] = await db.update(schema.tradeTasks).set({ status: "cancelled", escrowHeld: 0 }).where(eq(schema.tradeTasks.id, id)).returning();
+      if (refundAmount > 0 && refundTo) {
+        const [esc] = await db.select().from(schema.tradeEscrow).where(and(eq(schema.tradeEscrow.taskId, id), eq(schema.tradeEscrow.kind, "trade"), eq(schema.tradeEscrow.status, "held"))).limit(1);
+        if (esc) {
+          await db.update(schema.tradeEscrow).set({ status: "refunded", releasedAt: new Date() }).where(eq(schema.tradeEscrow.id, esc.id));
+          await creditMoney(db, refundTo, refundAmount, `trade refund #${id}`);
+        }
+      }
+      return { ok: true, refunded: refundAmount, task: row ? tradeTaskView(row) : undefined };
+    },
+  }),
+
+  disputeTradeTask: defineAction({
+    description: "Freezes an accepted/completed task and its escrow; the dispute goes to a 24 h same-city jury (quorum 3). The frozen money is released/refunded by adjudicateTradeDispute once the jury closes — never by this endpoint.",
+    request: z.object({ playerId: pidZ, taskId: z.string().min(1).max(32), reason: z.string().trim().min(4).max(200) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), caseId: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      const id = Number(args.taskId);
+      if (!Number.isInteger(id)) return { ok: false, error: "这个交易贴找不到了" };
+      const [t] = await db.select().from(schema.tradeTasks).where(eq(schema.tradeTasks.id, id)).limit(1);
+      if (!t) return { ok: false, error: "这个交易贴找不到了" };
+      if (t.status !== "accepted" && t.status !== "completed") return { ok: false, error: "只有进行中 / 刚完成的交易能申诉。" };
+      if (t.posterId !== me.id && t.accepterId !== me.id) return { ok: false, error: "只有交易的双方能申诉。" };
+      await db.update(schema.tradeTasks).set({ status: "disputed", disputeReason: cleanText(args.reason).slice(0, 200), disputedAt: new Date(), disputeFromStatus: t.status }).where(eq(schema.tradeTasks.id, id));
+      if (t.escrowHeld > 0) await db.update(schema.tradeEscrow).set({ status: "frozen" }).where(and(eq(schema.tradeEscrow.taskId, id), eq(schema.tradeEscrow.kind, "trade"), eq(schema.tradeEscrow.status, "held")));
+      return { ok: true, caseId: `trade-${id}` };
+    },
+  }),
+
+  tradeDisputeVote: defineAction({
+    description: "Votes on a disputed trade task in the caller's city (seller = release the frozen escrow to the seller side, buyer = refund it to whoever paid). One vote, changeable until the jury closes; the two parties can't vote; needs an account.",
+    request: z.object({ playerId: pidZ, taskId: z.string().min(1).max(32), side: z.enum(["seller", "buyer"]) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), votes: z.object({ seller: z.number(), buyer: z.number() }).optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      await settleTradeDisputes(db);
+      const id = Number(args.taskId);
+      if (!Number.isInteger(id)) return { ok: false, error: "这个交易贴找不到了" };
+      const [t] = await db.select().from(schema.tradeTasks).where(eq(schema.tradeTasks.id, id)).limit(1);
+      const me = await r2Player(db, args.playerId);
+      if (!t || !me || t.status !== "disputed") return { ok: false, error: "这个纠纷已经结案了" };
+      if (t.posterId === me.id || t.accepterId === me.id) return { ok: false, error: "当事人不能投票" };
+      if (t.city !== "any" && me.cityKey !== t.city) return { ok: false, error: "只有同城的人能当陪审员" };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      if (socialNeedsAccount() && !me.accountId) return { ok: false, error: "先绑定账号，才能当陪审员——一人一票" };
+      await db.insert(schema.tradeDisputeVotes).values({ taskId: id, voterId: me.id, side: args.side, createdAt: new Date() })
+        .onConflictDoUpdate({ target: [schema.tradeDisputeVotes.taskId, schema.tradeDisputeVotes.voterId], set: { side: args.side } });
+      return { ok: true, votes: await tradeDisputeTallies(db, id) };
+    },
+  }),
+
+  adjudicateTradeDispute: defineAction({
+    description: "Settles a disputed trade task's 24 h jury (quorum 3, majority wins, tie / too few votes = expired and the escrow is refunded to whoever paid it). Seller wins → escrow released to the seller side (sell-task → poster, otherwise accepter); buyer wins or expired → refunded to the payer. Anyone may trigger the settlement once the window has closed — it is deterministic and single-claim guarded — and the response reports the verdict and the money moved.",
+    request: z.object({ playerId: pidZ, taskId: z.string().min(1).max(32) }),
+    response: z.object({
+      ok: z.boolean(), error: z.string().optional(), task: tradeTaskShape.optional(),
+      verdict: z.enum(["seller", "buyer", "expired"]).optional(),
+      votes: z.object({ seller: z.number(), buyer: z.number() }).optional(),
+      releasedTo: z.string().optional(), releasedAmount: z.number().optional(), refunded: z.number().optional(),
+      dueAt: z.string().optional(),
+    }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      await settleTradeDisputes(db);
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      const id = Number(args.taskId);
+      if (!Number.isInteger(id)) return { ok: false, error: "这个交易贴找不到了" };
+      const [t] = await db.select().from(schema.tradeTasks).where(eq(schema.tradeTasks.id, id)).limit(1);
+      if (!t) return { ok: false, error: "这个交易贴找不到了" };
+      const votes = await tradeDisputeTallies(db, id);
+      if (t.status === "disputed") {
+        const dueAt = new Date((t.disputedAt ?? t.createdAt).getTime() + TRADE_JURY_MS);
+        return { ok: false, error: "陪审团还在投票，24 小时后再来结算。", votes, dueAt: dueAt.toISOString(), task: tradeTaskView(t) };
+      }
+      if (!t.disputeVerdict) return { ok: false, error: "这单没有在申诉中。", task: tradeTaskView(t) };
+      const verdict = t.disputeVerdict as TradeVerdict;
+      // The escrow row carries what moved at settle time (at most one trade
+      // escrow row exists per task). No row / still held = no money moved.
+      const [esc] = await db.select().from(schema.tradeEscrow).where(and(eq(schema.tradeEscrow.taskId, id), eq(schema.tradeEscrow.kind, "trade"))).limit(1);
+      const moved = esc && (esc.status === "released" || esc.status === "refunded") ? esc.amount : 0;
+      if (verdict === "seller") {
+        const releaseToId = t.kind === "sell" ? t.posterId : (t.accepterId ?? t.posterId);
+        const [to] = moved > 0 ? await db.select().from(schema.players).where(eq(schema.players.id, releaseToId)).limit(1) : [];
+        return { ok: true, task: tradeTaskView(t), verdict, votes, releasedTo: to?.name ?? releaseToId, releasedAmount: moved };
+      }
+      return { ok: true, task: tradeTaskView(t), verdict, votes, refunded: moved };
+    },
+  }),
+
+  getMyTradeTasks: defineAction({
+    description: "The caller's trade tasks, as poster or accepter.",
+    request: z.object({ playerId: pidZ }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), tasks: z.array(tradeTaskShape) }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      await settleTradeDisputes(db);
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER, tasks: [] };
+      if (me.banned) return { ok: false, error: BANNED_MSG, tasks: [] };
+      const rows = await db.select().from(schema.tradeTasks)
+        .where(sql`${schema.tradeTasks.posterId} = ${me.id} OR ${schema.tradeTasks.accepterId} = ${me.id}`)
+        .orderBy(desc(schema.tradeTasks.id)).limit(50);
+      return { ok: true, tasks: rows.map(tradeTaskView) };
+    },
+  }),
+
+  getSubletListings: defineAction({
+    description: "Open sublet listings (city / space / max-price filters), with each listing's landlord-suspicion level.",
+    request: z.object({
+      playerId: pidZ.optional(), city: z.enum(["sz", "hz", "hk"]).optional(),
+      space: z.enum(["room", "bed", "sofa", "whole"]).optional(), maxPrice: z.number().int().min(0).optional(),
+      openOnly: z.boolean().optional(),
+    }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), listings: z.array(subletShape) }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = args.playerId ? await r2Player(db, args.playerId) : undefined;
+      if (args.playerId && !me) return { ok: false, error: NO_PLAYER, listings: [] };
+      if (me?.banned) return { ok: false, error: BANNED_MSG, listings: [] };
+      const rows = await db.select().from(schema.subletListings).orderBy(desc(schema.subletListings.id)).limit(100);
+      const out = rows.filter((l) => {
+        if (args.openOnly !== false && l.status !== "open") return false;
+        if (args.city && l.city !== args.city) return false;
+        if (args.space && l.space !== args.space) return false;
+        if (args.maxPrice !== undefined && l.monthlyPrice > args.maxPrice) return false;
+        return true;
+      });
+      return { ok: true, listings: out.map(subletView) };
+    },
+  }),
+
+  getMySublets: defineAction({
+    description: "The caller's sublet listings (as owner) and tenancies (as tenant).",
+    request: z.object({ playerId: pidZ }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), listings: z.array(subletShape) }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER, listings: [] };
+      if (me.banned) return { ok: false, error: BANNED_MSG, listings: [] };
+      const rows = await db.select().from(schema.subletListings)
+        .where(sql`${schema.subletListings.ownerId} = ${me.id} OR ${schema.subletListings.tenantId} = ${me.id}`)
+        .orderBy(desc(schema.subletListings.id)).limit(50);
+      return { ok: true, listings: rows.map(subletView) };
+    },
+  }),
+
+  postSublet: defineAction({
+    description: "Posts a sublet listing (free). The poster's own rent is recorded for the markup-suspicion rule; a price above it only warns, never blocks.",
+    request: z.object({
+      playerId: pidZ, homeLocId: z.string().min(1).max(80), city: cityZ,
+      space: z.enum(["room", "bed", "sofa", "whole"]),
+      monthlyPrice: z.number().int().min(1).max(100000), deposit: z.number().int().min(0).max(100000),
+      terms: z.string().max(500), minDays: z.number().int().min(0).max(365), maxDays: z.number().int().min(0).max(365),
+      availableFromDay: z.number().int().min(0).max(366), ownMonthlyRent: z.number().int().min(0).max(100000).optional(),
+    }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), listing: subletShape.optional(), warning: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      if (socialNeedsAccount() && !me.accountId) return { ok: false, error: "先绑定账号，才能发转租贴" };
+      if (me.cityKey !== args.city) return { ok: false, error: "只能在你所在的城市发转租" };
+      if (args.maxDays > 0 && args.maxDays < args.minDays) return { ok: false, error: "最长入住不能比最短还短。" };
+      const open = await db.select({ n: sql<number>`count(*)` }).from(schema.subletListings).where(and(eq(schema.subletListings.ownerId, me.id), eq(schema.subletListings.status, "open")));
+      if (Number(open[0]?.n ?? 0) >= 10) return { ok: false, error: "你已经挂着 10 个转租贴了" };
+      const [row] = await db.insert(schema.subletListings).values({
+        city: args.city, ownerId: me.id, ownerName: me.name, homeLocId: args.homeLocId, space: args.space,
+        monthlyPrice: args.monthlyPrice, deposit: args.deposit, terms: cleanText(args.terms).slice(0, 500),
+        minDays: args.minDays, maxDays: args.maxDays, availableFromDay: args.availableFromDay,
+        status: "open", tenancyStartDay: 0, rentCollected: 0, lastRentDay: args.availableFromDay,
+        rentLate: 0, suspicion: 0, ownMonthlyRent: args.ownMonthlyRent ?? null,
+        createdDay: me.gameDay, createdAt: new Date(),
+      }).returning();
+      const warning = args.ownMonthlyRent !== undefined && args.monthlyPrice > args.ownMonthlyRent
+        ? "提醒：转租价比你自己的房租还高，房东更容易起疑——当二房东有风险。" : undefined;
+      return { ok: true, listing: row ? subletView(row) : undefined, warning };
+    },
+  }),
+
+  acceptSublet: defineAction({
+    description: "Takes an open sublet listing. The deposit moves from the tenant into escrow (held, not spent).",
+    request: z.object({ playerId: pidZ, listingId: z.string().min(1).max(32) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), listing: subletShape.optional(), depositDue: z.number().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      if (socialNeedsAccount() && !me.accountId) return { ok: false, error: "先绑定账号，才能租转租房" };
+      const id = Number(args.listingId);
+      if (!Number.isInteger(id)) return { ok: false, error: "这个转租贴找不到了" };
+      const [l] = await db.select().from(schema.subletListings).where(eq(schema.subletListings.id, id)).limit(1);
+      if (!l) return { ok: false, error: "这个转租贴找不到了" };
+      if (l.status !== "open") return { ok: false, error: "这间已经有人住了。" };
+      if (l.ownerId === me.id) return { ok: false, error: "不能租自己的房。" };
+      if (me.cityKey !== l.city) return { ok: false, error: "只能租你所在城市的转租房" };
+      if (me.gameDay < l.availableFromDay) return { ok: false, error: "还没到可入住的日子。" };
+      if (l.deposit > 0 && me.money < l.deposit) return { ok: false, error: "存款不够付押金" };
+      const changed = await db.update(schema.subletListings).set({ status: "taken", tenantId: me.id, tenantName: me.name, tenancyStartDay: me.gameDay, lastRentDay: me.gameDay }).where(and(eq(schema.subletListings.id, id), eq(schema.subletListings.status, "open"))).returning();
+      if (!changed.length) return { ok: false, error: "这间已经有人住了。" };
+      if (l.deposit > 0) {
+        await creditMoney(db, me.id, -l.deposit, `sublet deposit #${id}`);
+        await db.insert(schema.tradeEscrow).values({ taskId: id, kind: "sublet-deposit", payerId: me.id, amount: l.deposit, status: "held", createdAt: new Date() });
+      }
+      return { ok: true, listing: subletView(changed[0]!), depositDue: l.deposit };
+    },
+  }),
+
+  endSublet: defineAction({
+    description: "Ends a tenancy (owner or tenant). Deposit returns to the tenant minus damage % (kept part goes to the owner).",
+    request: z.object({ playerId: pidZ, listingId: z.string().min(1).max(32), damage: z.number().int().min(0).max(100).optional(), reason: z.string().max(200).optional() }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), depositReturned: z.number().optional(), depositKept: z.number().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      const id = Number(args.listingId);
+      if (!Number.isInteger(id)) return { ok: false, error: "这个转租贴找不到了" };
+      const [l] = await db.select().from(schema.subletListings).where(eq(schema.subletListings.id, id)).limit(1);
+      if (!l) return { ok: false, error: "这个转租贴找不到了" };
+      if (l.status !== "taken" || !l.tenantId) return { ok: false, error: "这间现在没有租客。" };
+      if (l.ownerId !== me.id && l.tenantId !== me.id) return { ok: false, error: "只有房东或租客能结束这次转租。" };
+      const damage = args.damage ?? 0;
+      const depositKept = Math.round((l.deposit * damage) / 100);
+      const depositReturned = l.deposit - depositKept;
+      await db.update(schema.subletListings).set({ status: "closed", tenantId: null, tenantName: null, tenancyStartDay: 0 }).where(eq(schema.subletListings.id, id));
+      if (l.deposit > 0) {
+        const [esc] = await db.select().from(schema.tradeEscrow).where(and(eq(schema.tradeEscrow.taskId, id), eq(schema.tradeEscrow.kind, "sublet-deposit"), eq(schema.tradeEscrow.status, "held"))).limit(1);
+        if (esc) {
+          await db.update(schema.tradeEscrow).set({ status: "released", releasedAt: new Date() }).where(eq(schema.tradeEscrow.id, esc.id));
+          if (depositReturned > 0) await creditMoney(db, l.tenantId, depositReturned, `sublet deposit return #${id}`);
+          if (depositKept > 0) await creditMoney(db, l.ownerId, depositKept, `sublet deposit kept #${id}`);
+        }
+      }
+      return { ok: true, depositReturned, depositKept };
+    },
+  }),
+
+  collectSubletRent: defineAction({
+    description: "Weekly sublet rent payout for the caller's listings (monthlyPrice × 7/30 per tenancy, due every 7 days). A tenant who can't pay is marked late — never auto-evicted. Also grows landlord suspicion (+2/day, +4 more when priced above the owner's own rent).",
+    request: z.object({ playerId: pidZ }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), paid: z.array(z.object({ listingId: z.string(), amount: z.number() })), late: z.array(z.string()) }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER, paid: [], late: [] };
+      if (me.banned) return { ok: false, error: BANNED_MSG, paid: [], late: [] };
+      const rows = await db.select().from(schema.subletListings).where(and(eq(schema.subletListings.ownerId, me.id), eq(schema.subletListings.status, "taken")));
+      const paid: { listingId: string; amount: number }[] = [];
+      const late: string[] = [];
+      for (const l of rows) {
+        const markup = l.ownMonthlyRent !== undefined && l.ownMonthlyRent !== null && l.monthlyPrice > l.ownMonthlyRent;
+        const suspicion = Math.min(100, l.suspicion + 2 + (markup ? 4 : 0));
+        await db.update(schema.subletListings).set({ suspicion }).where(eq(schema.subletListings.id, l.id));
+        if (me.gameDay - l.lastRentDay < 7 || !l.tenantId) continue;
+        const amount = Math.round((l.monthlyPrice * 7) / 30);
+        const [tenant] = await db.select().from(schema.players).where(eq(schema.players.id, l.tenantId)).limit(1);
+        if (!tenant || tenant.money < amount) {
+          await db.update(schema.subletListings).set({ rentLate: 1 }).where(eq(schema.subletListings.id, l.id));
+          late.push(String(l.id));
+          continue;
+        }
+        await creditMoney(db, tenant.id, -amount, `sublet rent #${l.id}`);
+        await creditMoney(db, me.id, amount, `sublet rent #${l.id}`);
+        await db.update(schema.subletListings).set({ rentCollected: l.rentCollected + amount, lastRentDay: me.gameDay, rentLate: 0 }).where(eq(schema.subletListings.id, l.id));
+        paid.push({ listingId: String(l.id), amount });
+      }
+      return { ok: true, paid, late };
+    },
+  }),
+
+  getOverseasCatalog: defineAction({
+    description: "The overseas shopping catalog (server copy of OVERSEAS_CATALOG).",
+    request: z.object({}),
+    response: z.object({ ok: z.boolean(), items: z.array(overseasItemShape) }),
+    async handler() {
+      return { ok: true, items: [...OVERSEAS_CATALOG] as unknown as z.infer<typeof overseasItemShape>[] };
+    },
+  }),
+
+  placeOverseasOrder: defineAction({
+    description: "Places an overseas order: charges goods + ¥25 shipping now (duty is assessed at customs and paid on arrival, never auto-deducted). Qty ≤ 5.",
+    request: z.object({ playerId: pidZ, itemId: z.string().min(1).max(40), qty: z.number().int().min(1).max(5) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), order: overseasOrderShape.optional(), chargeNow: z.number().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      const item = OVERSEAS_CATALOG.find((i) => i.id === args.itemId);
+      if (!item) return { ok: false, error: "这个海外商品下架了。" };
+      const chargeNow = item.price * args.qty + 25;
+      if (me.money < chargeNow) return { ok: false, error: "存款不够下这一单" };
+      const goods = item.price * args.qty;
+      const dutyDue = Math.round(Math.max(0, goods - 500) * item.dutyRate);
+      const shipDays = item.shipDaysMin + Math.floor(Math.random() * (item.shipDaysMax - item.shipDaysMin + 1));
+      await creditMoney(db, me.id, -chargeNow, `overseas order ${item.id} x${args.qty}`);
+      const [row] = await db.insert(schema.overseasOrders).values({
+        buyerId: me.id, itemId: item.id, itemJson: JSON.stringify(item), qty: args.qty,
+        paidTotal: chargeNow, dutyDue, dutyPaid: 0, shipDays,
+        orderedDay: me.gameDay, etaDay: me.gameDay + shipDays, status: "ordered", heldOnce: 0, createdAt: new Date(),
+      }).returning();
+      return { ok: true, order: row ? overseasOrderView(row, me.name) : undefined, chargeNow };
+    },
+  }),
+
+  getOverseasOrders: defineAction({
+    description: "The caller's overseas orders (statuses advanced lazily on read).",
+    request: z.object({ playerId: pidZ }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), orders: z.array(overseasOrderShape) }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER, orders: [] };
+      if (me.banned) return { ok: false, error: BANNED_MSG, orders: [] };
+      await advanceOverseasOrders(db, me.id, me.gameDay);
+      const rows = await db.select().from(schema.overseasOrders).where(eq(schema.overseasOrders.buyerId, me.id)).orderBy(desc(schema.overseasOrders.id)).limit(50);
+      return { ok: true, orders: rows.map((r) => overseasOrderView(r, me.name)) };
+    },
+  }),
+
+  payOverseasDuty: defineAction({
+    description: "Pays the customs duty on an order in customs/held; the order then arrives.",
+    request: z.object({ playerId: pidZ, orderId: z.string().min(1).max(32) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), dutyPaid: z.number().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      const id = Number(args.orderId);
+      if (!Number.isInteger(id)) return { ok: false, error: "这个订单找不到了。" };
+      const [o] = await db.select().from(schema.overseasOrders).where(eq(schema.overseasOrders.id, id)).limit(1);
+      if (!o || o.buyerId !== me.id) return { ok: false, error: "这个订单找不到了。" };
+      if (o.status !== "customs" && o.status !== "held") return { ok: false, error: "这单现在不用补关税。" };
+      const due = o.dutyDue - o.dutyPaid;
+      if (due <= 0) return { ok: false, error: "关税已经付过了。" };
+      if (me.money < due) return { ok: false, error: "存款不够付关税" };
+      await creditMoney(db, me.id, -due, `overseas duty #${id}`);
+      await db.update(schema.overseasOrders).set({ dutyPaid: o.dutyDue, status: "arrived" }).where(eq(schema.overseasOrders.id, id));
+      return { ok: true, dutyPaid: due };
+    },
+  }),
+
+  getFleaStock: defineAction({
+    description: "The day's flea-market stock: cheap goods + used furniture, seeded by game day so the market rotates (server mirror of dailyCheapStock / dailyUsedFurnitureStock). Player listings mix in on top.",
+    request: z.object({ city: cityZ, day: z.number().int().min(1).max(366) }),
+    response: z.object({ ok: z.boolean(), cheap: z.array(cheapGoodShape), usedFurniture: z.array(usedFurnitureShape) }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const cheap = dailyCheapStockServer(args.day);
+      const npcUsed = dailyUsedFurnitureStockServer(args.day);
+      const listed = await db.select().from(schema.usedFurnitureListings)
+        .where(and(eq(schema.usedFurnitureListings.city, args.city), eq(schema.usedFurnitureListings.status, "open")))
+        .orderBy(desc(schema.usedFurnitureListings.id)).limit(20);
+      const playerUsed = listed.map((p) => ({
+        id: `usedfurn-p-${p.id}`, baseId: p.baseId, name: p.name, emoji: p.emoji, room: p.room,
+        condition: p.condition, price: p.price, newPrice: p.newPrice,
+        seller: { playerId: p.sellerId, name: p.sellerName }, note: p.note, listedDay: p.listedDay,
+      }));
+      return { ok: true, cheap, usedFurniture: [...playerUsed, ...npcUsed] };
+    },
+  }),
+
+  buyCheapGood: defineAction({
+    description: "Buys a cheap good from today's flea stock (price verified against the server's day-seeded stock; buys ≤ ¥5,000 by construction). Repair/clean/resell stay local until a shared market exists.",
+    request: z.object({ playerId: pidZ, goodId: z.string().min(1).max(40) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), good: cheapGoodShape.optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      const stock = dailyCheapStockServer(me.gameDay);
+      const good = stock.find((g) => g.id === args.goodId);
+      if (!good) return { ok: false, error: "这件货今天不在市集上，刷新一下再看看。" };
+      if (good.buyPrice > 5000) return { ok: false, error: "超过 5000¥ 就不算「贱买」了。" };
+      if (me.money < good.buyPrice) return { ok: false, error: "存款不够买这件" };
+      await creditMoney(db, me.id, -good.buyPrice, `cheap good ${good.name}`);
+      await db.insert(schema.cheapGoodsOwned).values({
+        playerId: me.id, goodId: good.id, name: good.name, emoji: good.emoji, kind: good.kind,
+        state: good.state, condition: good.condition, buyPrice: good.buyPrice, boughtDay: me.gameDay, createdAt: new Date(),
+      });
+      return { ok: true, good };
+    },
+  }),
+
+  buyUsedFurniture: defineAction({
+    description: "Buys a used furniture piece from today's flea stock (price verified against the server's day-seeded stock, or a player listing). The piece is recorded against the player so resale pricing works after reload.",
+    request: z.object({ playerId: pidZ, pieceId: z.string().min(1).max(40) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), piece: usedFurnitureShape.optional(), furnitureIdToAdd: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      let piece: z.infer<typeof usedFurnitureShape> | undefined;
+      if (args.pieceId.startsWith("usedfurn-p-")) {
+        const id = Number(args.pieceId.replace("usedfurn-p-", ""));
+        if (Number.isInteger(id)) {
+          const [p] = await db.select().from(schema.usedFurnitureListings).where(eq(schema.usedFurnitureListings.id, id)).limit(1);
+          if (p && p.status === "open") {
+            piece = {
+              id: args.pieceId, baseId: p.baseId, name: p.name, emoji: p.emoji, room: p.room,
+              condition: p.condition, price: p.price, newPrice: p.newPrice,
+              seller: { playerId: p.sellerId, name: p.sellerName }, note: p.note, listedDay: p.listedDay,
+            };
+          }
+        }
+      } else {
+        piece = dailyUsedFurnitureStockServer(me.gameDay).find((p) => p.id === args.pieceId);
+      }
+      if (!piece) return { ok: false, error: "这件家具今天不在市集上，刷新一下再看看。" };
+      if (piece.seller.playerId === me.id) return { ok: false, error: "不能买自己挂的家具。" };
+      if (me.money < piece.price) return { ok: false, error: "存款不够买这件" };
+      const [owned] = await db.select().from(schema.usedFurnitureOwned).where(and(eq(schema.usedFurnitureOwned.playerId, me.id), eq(schema.usedFurnitureOwned.pieceId, piece.id))).limit(1);
+      if (owned) return { ok: false, error: "这件你已经买过了。" };
+      await creditMoney(db, me.id, -piece.price, `used furniture ${piece.name}`);
+      if (piece.seller.playerId !== "npc-flea") {
+        await creditMoney(db, piece.seller.playerId, piece.price, `used furniture sale ${piece.name}`);
+        const pid = Number(piece.id.replace("usedfurn-p-", ""));
+        if (Number.isInteger(pid)) await db.update(schema.usedFurnitureListings).set({ status: "sold" }).where(eq(schema.usedFurnitureListings.id, pid));
+      }
+      await db.insert(schema.usedFurnitureOwned).values({
+        playerId: me.id, pieceId: piece.id, baseId: piece.baseId, name: piece.name, emoji: piece.emoji,
+        room: piece.room, condition: piece.condition, paidPrice: piece.price, createdAt: new Date(),
+      });
+      return { ok: true, piece, furnitureIdToAdd: piece.baseId ?? piece.id };
+    },
+  }),
+
+  resellUsedFurniture: defineAction({
+    description: "Resells a used piece the player owns. Price = paid × conditionNow / conditionThen (0% cut now).",
+    request: z.object({ playerId: pidZ, pieceId: z.string().min(1).max(40), conditionNow: z.number().int().min(0).max(100) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), received: z.number().optional(), furnitureIdToRemove: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      const [owned] = await db.select().from(schema.usedFurnitureOwned).where(and(eq(schema.usedFurnitureOwned.playerId, me.id), eq(schema.usedFurnitureOwned.pieceId, args.pieceId))).limit(1);
+      if (!owned) return { ok: false, error: "这件家具找不到了。" };
+      const received = Math.max(0, Math.round(owned.paidPrice * (args.conditionNow / Math.max(1, owned.condition))));
+      await db.delete(schema.usedFurnitureOwned).where(eq(schema.usedFurnitureOwned.id, owned.id));
+      if (received > 0) await creditMoney(db, me.id, received, `used furniture resell ${owned.name}`);
+      return { ok: true, received, furnitureIdToRemove: owned.baseId ?? owned.pieceId };
+    },
+  }),
+
+  listUsedFurniture: defineAction({
+    description: "Lists one of the player's own old furniture pieces on the flea market (shows in getFleaStock for the city).",
+    request: z.object({
+      playerId: pidZ, city: cityZ, baseId: z.string().max(40).nullable().optional(),
+      name: z.string().trim().min(1).max(40), emoji: z.string().min(1).max(8), room: z.string().min(1).max(20),
+      condition: z.number().int().min(1).max(100), price: z.number().int().min(1).max(100000),
+      note: z.string().max(200).optional(),
+    }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), piece: usedFurnitureShape.optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      if (me.cityKey !== args.city) return { ok: false, error: "只能在你所在的城市挂二手家具" };
+      const open = await db.select({ n: sql<number>`count(*)` }).from(schema.usedFurnitureListings).where(and(eq(schema.usedFurnitureListings.sellerId, me.id), eq(schema.usedFurnitureListings.status, "open")));
+      if (Number(open[0]?.n ?? 0) >= 10) return { ok: false, error: "你已经挂着 10 件二手家具了" };
+      const newPrice = Math.max(args.price, Math.round(args.price / 0.25));
+      const [row] = await db.insert(schema.usedFurnitureListings).values({
+        city: args.city, sellerId: me.id, sellerName: me.name, baseId: args.baseId ?? null,
+        name: cleanText(args.name).slice(0, 40), emoji: [...args.emoji][0] ?? "🪑", room: args.room,
+        condition: args.condition, price: args.price, newPrice,
+        note: cleanText(args.note ?? "").slice(0, 200), status: "open", listedDay: me.gameDay, createdAt: new Date(),
+      }).returning();
+      const piece = row ? {
+        id: `usedfurn-p-${row.id}`, baseId: row.baseId, name: row.name, emoji: row.emoji, room: row.room,
+        condition: row.condition, price: row.price, newPrice: row.newPrice,
+        seller: { playerId: me.id, name: me.name }, note: row.note, listedDay: row.listedDay,
+      } : undefined;
+      return { ok: true, piece };
+    },
+  }),
+
+  /* ---- round-2 (f): 躺平 / 三和 / 就业指导 ----
+     No endpoint here moves real money. Money amounts (course allowance,
+     trial pay) are computed server-side and returned for the client to
+     apply to its local wallet, like other client-calculated earnings. */
+  getLifestyle: defineAction({
+    description: "Reads the player's lifestyle state (flat / Sanhe + guidance). Null on first run.",
+    request: z.object({ playerId: pidZ }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), life: z.record(z.string(), z.any()).nullable(), updatedAt: z.number().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER, life: null };
+      if (me.banned) return { ok: false, error: BANNED_MSG, life: null };
+      const [row] = await db.select().from(schema.lifestyleStates).where(eq(schema.lifestyleStates.playerId, me.id)).limit(1);
+      if (!row) return { ok: true, life: null };
+      try { return { ok: true, life: JSON.parse(row.payload) as Record<string, unknown>, updatedAt: row.updatedAt.getTime() }; } catch { return { ok: true, life: null }; }
+    },
+  }),
+
+  saveLifestyle: defineAction({
+    description: "Saves the player's lifestyle state (flat / Sanhe + guidance). hope is clamped 0–100, moodCapBonus 0–15.",
+    request: z.object({ playerId: pidZ, day: z.number().int().min(0).max(366), life: z.record(z.string(), z.any()) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      const life = { ...args.life } as Record<string, unknown>;
+      const flat = life.flat as Record<string, unknown> | undefined;
+      if (flat) {
+        if (typeof flat.hope === "number") flat.hope = Math.max(0, Math.min(100, Math.round(flat.hope)));
+        if (typeof flat.moodCapBonus === "number") flat.moodCapBonus = Math.max(0, Math.min(15, Math.round(flat.moodCapBonus)));
+      }
+      await saveLife(db, me.id, life);
+      return { ok: true };
+    },
+  }),
+
+  listJobBoard: defineAction({
+    description: "The ladder job board (14 server-mirrored listings) + open player-issued gigs for the city.",
+    request: z.object({ city: cityZ, playerId: pidZ.optional() }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), listings: z.array(jobListingShape), playerGigs: z.array(z.object({ id: z.string(), title: z.string(), pay: z.number(), employerName: z.string() })) }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = args.playerId ? await r2Player(db, args.playerId) : undefined;
+      if (args.playerId && !me) return { ok: false, error: NO_PLAYER, listings: [], playerGigs: [] };
+      if (me?.banned) return { ok: false, error: BANNED_MSG, listings: [], playerGigs: [] };
+      const listings = JOB_LADDER_SERVER.map((l) => ({
+        id: l.id, rung: l.rung, emoji: l.emoji,
+        title: [...l.title] as [string, string],
+        desc: [...l.desc] as [string, string],
+        payDay: l.payDay,
+        cityMul: l.cityMul ? { ...l.cityMul } : undefined,
+        ...("identityId" in l ? { identityId: l.identityId } : {}),
+        requires: { ...l.requires },
+        ...("daysToPermanent" in l ? { daysToPermanent: l.daysToPermanent } : {}),
+        path: [...l.path] as [string, string],
+        tags: [...l.tags],
+      }));
+      const gigRows = await db.select().from(schema.gigs).where(and(eq(schema.gigs.city, args.city), eq(schema.gigs.status, "open"))).orderBy(desc(schema.gigs.createdAt)).limit(20);
+      const playerGigs = await Promise.all(gigRows.map(async (g) => {
+        const [emp] = await db.select().from(schema.players).where(eq(schema.players.id, g.employerId)).limit(1);
+        return { id: String(g.id), title: g.title, pay: g.pay, employerName: emp?.name ?? g.employerId };
+      }));
+      return {
+        ok: true, listings, playerGigs,
+      };
+    },
+  }),
+
+  applyJob: defineAction({
+    description: "Applies for a ladder job (one application per listing; re-applying after a trial is rejected).",
+    request: z.object({ playerId: pidZ, listingId: z.string().min(1).max(40), day: z.number().int().min(0).max(366) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), application: z.object({ listingId: z.string(), day: z.number(), status: z.enum(["applied", "trial", "hired", "left"]) }).optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      if (socialNeedsAccount() && !me.accountId) return { ok: false, error: "先绑定账号，才能投简历" };
+      const listing = JOB_LADDER_SERVER.find((l) => l.id === args.listingId);
+      if (!listing) return { ok: false, error: "这个岗位找不到了。" };
+      const existing = await db.select().from(schema.jobApplications).where(and(eq(schema.jobApplications.playerId, me.id), eq(schema.jobApplications.listingId, args.listingId))).limit(1);
+      if (existing.length) return { ok: false, error: "你已经投过这个岗位了。" };
+      const [row] = await db.insert(schema.jobApplications).values({ playerId: me.id, listingId: args.listingId, day: args.day, status: "applied", createdAt: new Date() }).returning();
+      return { ok: true, application: row ? { listingId: row.listingId, day: row.day, status: row.status as "applied" } : undefined };
+    },
+  }),
+
+  bookGuidance: defineAction({
+    description: "Books a career-guidance session (counselor route). Logged for the counselor's follow-up.",
+    request: z.object({ playerId: pidZ, routeId: z.string().min(1).max(40) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), route: counselorRouteShape.optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      const route = COUNSELOR_ROUTES_SERVER.find((r) => r.id === args.routeId);
+      if (!route) return { ok: false, error: "这个指导路线找不到了。" };
+      await db.insert(schema.guidanceSessions).values({ playerId: me.id, routeId: route.id, createdAt: new Date() });
+      return {
+        ok: true,
+        route: {
+          id: route.id, emoji: route.emoji,
+          title: [...route.title] as [string, string],
+          basedOn: [...route.basedOn] as [string, string],
+          steps: route.steps.map((s) => [...s] as [string, string]),
+        },
+      };
+    },
+  }),
+
+  enrollCourse: defineAction({
+    description: "Enrolls in a free skill course (one active at a time; already-done courses can't repeat).",
+    request: z.object({ playerId: pidZ, courseId: z.string().min(1).max(40), day: z.number().int().min(0).max(366) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      const course = COURSES_SERVER[args.courseId];
+      if (!course) return { ok: false, error: "这门课找不到了。" };
+      const rows = await db.select().from(schema.courseEnrollments).where(eq(schema.courseEnrollments.playerId, me.id));
+      if (rows.some((r) => r.done === 0)) return { ok: false, error: "你已经在上另一门课了，结课后再报。" };
+      if (rows.some((r) => r.courseId === args.courseId && r.done === 1)) return { ok: false, error: "这门课你已经结课了。" };
+      await db.insert(schema.courseEnrollments).values({ playerId: me.id, courseId: args.courseId, startDay: args.day, days: 0, done: 0, allowancePaid: 0, createdAt: new Date() });
+      return { ok: true };
+    },
+  }),
+
+  courseDay: defineAction({
+    description: "Records one course day (idempotent per player+course+day). Returns the ¥30/day allowance for the client to apply — server-computed, not a ledger credit. On the last day, the course is marked done and the skill gain is returned.",
+    request: z.object({ playerId: pidZ, courseId: z.string().min(1).max(40), day: z.number().int().min(0).max(366) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), allowance: z.number().optional(), done: z.boolean().optional(), skillGain: z.number().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      const course = COURSES_SERVER[args.courseId];
+      if (!course) return { ok: false, error: "这门课找不到了。" };
+      const [enroll] = await db.select().from(schema.courseEnrollments).where(and(eq(schema.courseEnrollments.playerId, me.id), eq(schema.courseEnrollments.courseId, args.courseId))).limit(1);
+      if (!enroll) return { ok: false, error: "你还没报这门课。" };
+      if (enroll.done === 1) return { ok: false, error: "这门课你已经结课了。" };
+      try {
+        await db.insert(schema.courseAllowanceDays).values({ playerId: me.id, courseId: args.courseId, day: args.day, createdAt: new Date() });
+      } catch {
+        return { ok: false, error: "今天这门课的补贴已经领过了。" };
+      }
+      const daysDone = enroll.days + 1;
+      const done = daysDone >= course.days;
+      await db.update(schema.courseEnrollments).set({ days: daysDone, done: done ? 1 : 0, allowancePaid: enroll.allowancePaid + course.allowanceDay }).where(and(eq(schema.courseEnrollments.playerId, me.id), eq(schema.courseEnrollments.courseId, args.courseId)));
+      return { ok: true, allowance: course.allowanceDay, done, skillGain: done ? course.skillGain : 0 };
+    },
+  }),
+
+  mockInterview: defineAction({
+    description: "Records a mock interview (score 0–6); gain = 8 + score×2, stored in the lifestyle state. No penalty path.",
+    request: z.object({ playerId: pidZ, score: z.number().int().min(0).max(6), day: z.number().int().min(0).max(366) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), interviewReady: z.number().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      const life = (await loadLife(db, me.id)) ?? { flat: {}, sanhe: {} };
+      const flat = life.flat;
+      const interviews = (typeof flat.interviews === "number" ? flat.interviews : 0) + 1;
+      const ready = Math.max(0, Math.min(100, (typeof flat.interviewReady === "number" ? flat.interviewReady : 0) + 8 + args.score * 2));
+      flat.interviews = interviews; flat.interviewReady = ready; life.flat = flat;
+      await saveLife(db, me.id, life);
+      return { ok: true, interviewReady: ready };
+    },
+  }),
+
+  startTrial: defineAction({
+    description: "Starts a trial shift for a ladder job (needs a prior application; no concurrent active trial; interviewReady gate from the listing).",
+    request: z.object({ playerId: pidZ, listingId: z.string().min(1).max(40), day: z.number().int().min(0).max(366) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), trialId: z.number().optional(), requiredReady: z.number().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      const listing = JOB_LADDER_SERVER.find((l) => l.id === args.listingId);
+      if (!listing) return { ok: false, error: "这个岗位找不到了。" };
+      const [app] = await db.select().from(schema.jobApplications).where(and(eq(schema.jobApplications.playerId, me.id), eq(schema.jobApplications.listingId, args.listingId))).limit(1);
+      if (!app) return { ok: false, error: "先投简历，才能去试岗。" };
+      if (app.status === "trial") return { ok: false, error: "你已经在试这个岗位了。" };
+      if (app.status === "hired" || app.status === "left") return { ok: false, error: "这个岗位已经走完了。" };
+      const active = await db.select().from(schema.trials).where(and(eq(schema.trials.playerId, me.id), eq(schema.trials.status, "active"))).limit(1);
+      if (active.length) return { ok: false, error: "你已经在试岗了，先做完当前试岗。" };
+      const life = (await loadLife(db, me.id)) ?? { flat: {}, sanhe: {} };
+      const flat = life.flat;
+      const ready = typeof flat.interviewReady === "number" ? flat.interviewReady : 0;
+      const reqRaw = (listing.requires as { interviewReady?: unknown }).interviewReady;
+      const req = typeof reqRaw === "number" ? reqRaw : 0;
+      if (ready < req) return { ok: false, error: `面试准备还不够（${ready}/${req}），先练练模拟面试再来。`, requiredReady: req };
+      const [row] = await db.insert(schema.trials).values({ playerId: me.id, listingId: args.listingId, startDay: args.day, daysWorked: 0, totalScore: 0, status: "active", createdAt: new Date() }).returning();
+      await db.update(schema.jobApplications).set({ status: "trial" }).where(eq(schema.jobApplications.id, app.id));
+      return { ok: true, trialId: row?.id, requiredReady: req };
+    },
+  }),
+
+  trialDay: defineAction({
+    description: "Records one trial day (idempotent per trial+day). Returns the server-computed daily pay for the client to apply.",
+    request: z.object({ playerId: pidZ, listingId: z.string().min(1).max(40), score: z.number().int().min(0).max(100), day: z.number().int().min(0).max(366) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), daysWorked: z.number().optional(), pay: z.number().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      const listing = JOB_LADDER_SERVER.find((l) => l.id === args.listingId);
+      if (!listing) return { ok: false, error: "这个岗位找不到了。" };
+      const [trial] = await db.select().from(schema.trials).where(and(eq(schema.trials.playerId, me.id), eq(schema.trials.listingId, args.listingId), eq(schema.trials.status, "active"))).limit(1);
+      if (!trial) return { ok: false, error: "你没有在进行的试岗。" };
+      try {
+        await db.insert(schema.trialDays).values({ trialId: trial.id, day: args.day, score: args.score, createdAt: new Date() });
+      } catch {
+        return { ok: false, error: "今天这一天的试岗已经记过了。" };
+      }
+      const pay = listingPayServer(listing, me.cityKey);
+      await db.update(schema.trials).set({ daysWorked: trial.daysWorked + 1, totalScore: trial.totalScore + args.score }).where(eq(schema.trials.id, trial.id));
+      return { ok: true, daysWorked: trial.daysWorked + 1, pay };
+    },
+  }),
+
+  resolveTrial: defineAction({
+    description: "Resolves a trial (needs ≥ 3 days). Hired iff average score ≥ 60. A failed trial records NO black mark anywhere.",
+    request: z.object({ playerId: pidZ, listingId: z.string().min(1).max(40) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), hired: z.boolean().optional(), avgScore: z.number().optional(), identityId: z.string().nullable().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      const listing = JOB_LADDER_SERVER.find((l) => l.id === args.listingId);
+      if (!listing) return { ok: false, error: "这个岗位找不到了。" };
+      const [trial] = await db.select().from(schema.trials).where(and(eq(schema.trials.playerId, me.id), eq(schema.trials.listingId, args.listingId), eq(schema.trials.status, "active"))).limit(1);
+      if (!trial) return { ok: false, error: "你没有在进行的试岗。" };
+      if (trial.daysWorked < 3) return { ok: false, error: `试岗还差 ${3 - trial.daysWorked} 天才能出结果。` };
+      const avg = Math.round(trial.totalScore / trial.daysWorked);
+      const hired = avg >= 60;
+      await db.update(schema.trials).set({ status: hired ? "hired" : "left" }).where(eq(schema.trials.id, trial.id));
+      const [app] = await db.select().from(schema.jobApplications).where(and(eq(schema.jobApplications.playerId, me.id), eq(schema.jobApplications.listingId, args.listingId))).limit(1);
+      if (app) await db.update(schema.jobApplications).set({ status: hired ? "hired" : "left" }).where(eq(schema.jobApplications.id, app.id));
+      return { ok: true, hired, avgScore: avg, identityId: hired ? ((listing as { identityId?: string }).identityId ?? null) : null };
+    },
+  }),
+
+  postFlatGig: defineAction({
+    description: "Posts a lying-flat side gig (help/work, pay ≥ 0).",
+    request: z.object({ playerId: pidZ, city: cityZ.optional(), title: z.string().trim().min(1).max(40), desc: z.string().trim().max(200), pay: z.number().int().min(0).max(100000), kind: z.enum(["help", "work"]) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), gigId: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      if (socialNeedsAccount() && !me.accountId) return { ok: false, error: "先绑定账号，才能发小活" };
+      const city = args.city ?? me.cityKey;
+      if (city !== me.cityKey) return { ok: false, error: "只能在你所在的城市发小活" };
+      const open = await db.select({ n: sql<number>`count(*)` }).from(schema.flatGigs).where(and(eq(schema.flatGigs.posterId, me.id), eq(schema.flatGigs.status, "open")));
+      if (Number(open[0]?.n ?? 0) >= 10) return { ok: false, error: "你已经挂着 10 个小活了" };
+      const [row] = await db.insert(schema.flatGigs).values({
+        city, posterId: me.id, posterName: me.name,
+        title: cleanText(args.title).slice(0, 40), desc: cleanText(args.desc).slice(0, 200),
+        pay: args.pay, kind: args.kind, status: "open", createdAt: new Date(),
+      }).returning();
+      return { ok: true, gigId: row ? String(row.id) : undefined };
+    },
+  }),
+
+  listFlatGigs: defineAction({
+    description: "Lists open lying-flat side gigs for a city.",
+    request: z.object({ city: cityZ, playerId: pidZ.optional() }),
+    response: z.object({
+      ok: z.boolean(), error: z.string().optional(),
+      gigs: z.array(z.object({ id: z.string(), title: z.string(), desc: z.string(), pay: z.number(), kind: z.enum(["help", "work"]), poster: z.object({ id: z.string(), name: z.string(), emoji: z.string() }) })),
+    }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = args.playerId ? await r2Player(db, args.playerId) : undefined;
+      if (args.playerId && !me) return { ok: false, error: NO_PLAYER, gigs: [] };
+      if (me?.banned) return { ok: false, error: BANNED_MSG, gigs: [] };
+      const rows = await db.select().from(schema.flatGigs).where(and(eq(schema.flatGigs.city, args.city), eq(schema.flatGigs.status, "open"))).orderBy(desc(schema.flatGigs.id)).limit(50);
+      return {
+        ok: true,
+        gigs: await Promise.all(rows.map(async (g) => {
+          const [poster] = await db.select().from(schema.players).where(eq(schema.players.id, g.posterId)).limit(1);
+          return { id: String(g.id), title: g.title, desc: g.desc, pay: g.pay, kind: g.kind as "help" | "work", poster: { id: g.posterId, name: g.posterName, emoji: poster?.emoji ?? "🧑" } };
+        })),
+      };
+    },
+  }),
+
+  takeFlatGig: defineAction({
+    description: "Takes an open lying-flat gig (not your own; one taker, atomic).",
+    request: z.object({ playerId: pidZ, gigId: z.string().min(1).max(32) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      const id = Number(args.gigId);
+      if (!Number.isInteger(id)) return { ok: false, error: "这个小活找不到了。" };
+      const [g] = await db.select().from(schema.flatGigs).where(eq(schema.flatGigs.id, id)).limit(1);
+      if (!g) return { ok: false, error: "这个小活找不到了。" };
+      if (g.status !== "open") return { ok: false, error: "这个小活已经有人接了 / 已经结束" };
+      if (g.posterId === me.id) return { ok: false, error: "不能接自己的小活" };
+      if (me.cityKey !== g.city) return { ok: false, error: "只能接你所在城市的小活" };
+      const changed = await db.update(schema.flatGigs).set({ status: "taken", takerId: me.id }).where(and(eq(schema.flatGigs.id, id), eq(schema.flatGigs.status, "open"))).returning();
+      if (!changed.length) return { ok: false, error: "这个小活已经有人接了" };
+      return { ok: true };
+    },
+  }),
+
+  completeFlatGig: defineAction({
+    description: "EXTRA (not in the client spec): marks a taken flat gig done, so the taker/poster can close the loop. gigAction only works on the main gigs table.",
+    request: z.object({ playerId: pidZ, gigId: z.string().min(1).max(32) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      const id = Number(args.gigId);
+      if (!Number.isInteger(id)) return { ok: false, error: "这个小活找不到了。" };
+      const [g] = await db.select().from(schema.flatGigs).where(eq(schema.flatGigs.id, id)).limit(1);
+      if (!g) return { ok: false, error: "这个小活找不到了。" };
+      if (g.status !== "taken") return { ok: false, error: "这个小活还没人接 / 已经结束了。" };
+      if (g.posterId !== me.id && g.takerId !== me.id) return { ok: false, error: "只有发活的人或接活的人能确认完成。" };
+      await db.update(schema.flatGigs).set({ status: "done" }).where(eq(schema.flatGigs.id, id));
+      return { ok: true };
+    },
+  }),
+
+  openStall: defineAction({
+    description: "Opens a street stall (one per player).",
+    request: z.object({ playerId: pidZ, kind: z.string().min(1).max(20), day: z.number().int().min(0).max(366) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), stall: z.object({ kind: z.string(), day: z.number(), lvl: z.number() }).optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      if (!STALL_KINDS_SERVER.includes(args.kind as (typeof STALL_KINDS_SERVER)[number])) return { ok: false, error: "这个摊位类型还没有，换个试试" };
+      const kind = args.kind as (typeof STALL_KINDS_SERVER)[number];
+      const [existing] = await db.select().from(schema.stalls).where(eq(schema.stalls.playerId, me.id)).limit(1);
+      if (existing) return { ok: false, error: "你已经有摊位了" };
+      await db.insert(schema.stalls).values({ playerId: me.id, city: me.cityKey, kind, day: args.day, lvl: 1, createdAt: new Date() });
+      return { ok: true, stall: { kind, day: args.day, lvl: 1 } };
+    },
+  }),
+
+  /* ---- round-3 (g): 玩家警察巡逻 + 监视 ----
+     Server side of client/src/round2/police.ts. Replaces the in-memory
+     watchers Map: patrols and watches are rows, so 👁️ is visible across
+     sessions. Watching alone does nothing — consequences need a filed
+     report through (d) (fileBlackReport / reportPlayer). This block sits
+     where reportLandlord was (round-3: deleted, see ROUND3-LOG-S.md). */
+  startPatrol: defineAction({
+    description: "Starts a police patrol in the caller's city (one active patrol per officer; starting again refreshes it). Server-side, so other players can see the 👁️.",
+    request: z.object({ playerId: pidZ, city: cityZ }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), patrol: z.object({ officerId: z.string(), officerName: z.string(), city: z.string(), since: z.string() }).optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (me.cityKey !== args.city) return { ok: false, error: "只能在你所在的城市巡逻" };
+      await expirePatrols(db);
+      const now = new Date();
+      await db.insert(schema.patrols).values({ officerId: me.id, city: args.city, startedAt: now })
+        .onConflictDoUpdate({ target: schema.patrols.officerId, set: { city: args.city, startedAt: now } });
+      return { ok: true, patrol: { officerId: me.id, officerName: me.name, city: args.city, since: now.toISOString() } };
+    },
+  }),
+
+  stopPatrol: defineAction({
+    description: "Ends the caller's patrol — and every observation it opened, so no watch lingers after the patrol.",
+    request: z.object({ playerId: pidZ }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      await db.delete(schema.patrolWatches).where(eq(schema.patrolWatches.officerId, me.id));
+      await db.delete(schema.patrols).where(eq(schema.patrols.officerId, me.id));
+      return { ok: true };
+    },
+  }),
+
+  observe: defineAction({
+    description: "Starts watching a game avatar (player id or NPC slug) while on patrol. Avatar ids only — emails, phone numbers and real names are rejected. The watched player can see this via getWatchers.",
+    request: z.object({ playerId: pidZ, targetId: z.string().min(1).max(48), note: z.string().max(200).optional() }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), watch: z.object({ officerId: z.string(), targetId: z.string(), note: z.string(), city: z.string(), startedAt: z.string() }).optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      const patrol = await activePatrol(db, me.id);
+      if (!patrol) return { ok: false, error: "先开始巡逻，才能观察。" };
+      if (!isGameAvatarId(args.targetId)) return { ok: false, error: "只能观察游戏里的玩家 / NPC，不能填真实身份。" };
+      if (args.targetId === me.id) return { ok: false, error: "不能观察自己。" };
+      // A known player in another city can't be watched from this patrol;
+      // NPC slugs (not in the players table) are accepted on the slug rule.
+      const [target] = await db.select().from(schema.players).where(eq(schema.players.id, args.targetId)).limit(1);
+      if (target && target.cityKey !== patrol.city) return { ok: false, error: "这个人不在你巡逻的城市。" };
+      const [existing] = await db.select().from(schema.patrolWatches).where(and(eq(schema.patrolWatches.officerId, me.id), eq(schema.patrolWatches.targetId, args.targetId))).limit(1);
+      if (existing) return { ok: false, error: "已经在观察这个人了。" };
+      const now = new Date();
+      const note = cleanText(args.note ?? "").slice(0, 200);
+      await db.insert(schema.patrolWatches).values({ officerId: me.id, targetId: args.targetId, note, city: patrol.city, startedAt: now });
+      return { ok: true, watch: { officerId: me.id, targetId: args.targetId, note, city: patrol.city, startedAt: now.toISOString() } };
+    },
+  }),
+
+  stopObserving: defineAction({
+    description: "Stops watching one avatar.",
+    request: z.object({ playerId: pidZ, targetId: z.string().min(1).max(48) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      await db.delete(schema.patrolWatches).where(and(eq(schema.patrolWatches.officerId, me.id), eq(schema.patrolWatches.targetId, args.targetId)));
+      return { ok: true };
+    },
+  }),
+
+  getWatchers: defineAction({
+    description: "Who is watching the caller right now (officer name + note + city + since) — the watched player always sees this; surveillance is never secret. No banned check on purpose: a restricted player still gets to see who is watching them.",
+    request: z.object({ playerId: pidZ }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), watchers: z.array(z.object({ officerId: z.string(), officerName: z.string(), officerEmoji: z.string(), note: z.string(), city: z.string(), startedAt: z.string() })) }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER, watchers: [] };
+      await expirePatrols(db);
+      const rows = await db.select().from(schema.patrolWatches).where(eq(schema.patrolWatches.targetId, me.id)).orderBy(desc(schema.patrolWatches.startedAt));
+      const watchers = [];
+      for (const w of rows) {
+        const [officer] = await db.select().from(schema.players).where(eq(schema.players.id, w.officerId)).limit(1);
+        watchers.push({ officerId: w.officerId, officerName: officer?.name ?? w.officerId, officerEmoji: officer?.emoji ?? "🙂", note: w.note, city: w.city, startedAt: w.startedAt.toISOString() });
+      }
+      return { ok: true, watchers };
+    },
+  }),
+
+  sanheShiftLog: defineAction({
+    description: "Logs a Sanhe day-labor shift (one per day; pay must equal round(sanhePay(city) × shift multiplier) — anti-cheat only, no money moves here, the client pays itself).",
+    request: z.object({ playerId: pidZ, shiftId: z.string().min(1).max(40), pay: z.number().int().min(0).max(10000), day: z.number().int().min(0).max(366) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      const payMul = SANHE_SHIFTS_SERVER[args.shiftId];
+      if (payMul === undefined) return { ok: false, error: "这个工种找不到了。" };
+      const expected = Math.round(sanhePayServer(me.cityKey) * payMul);
+      if (args.pay !== expected) return { ok: false, error: `工资不对：今天这单应该是 ${expected}¥。` };
+      try {
+        await db.insert(schema.sanheShiftLogs).values({ playerId: me.id, day: args.day, shiftId: args.shiftId, pay: args.pay, city: me.cityKey, createdAt: new Date() });
+      } catch {
+        return { ok: false, error: "今天这单已经结过了。" };
+      }
+      return { ok: true };
+    },
+  }),
+
+  /* ---- round-2 (h): 跑腿接单池 ----
+     The riderFee is escrowed at publish time (tradeEscrow kind "delivery"),
+     so pool orders have real money to split. Late delivery pays 70% of the
+     fee, the remaining 30% is refunded to the customer. Rating is stored
+     ×100 (5.00 = 500). Delivery distance: the server has no place
+     coordinates, so distance is stored/returned as 0 and the client must
+     compute it from its own place data. */
+  deliveryPoolPublish: defineAction({
+    description: "Publishes a delivery order to the pool (max 2 open per player). The riderFee is escrowed immediately (dedicated ledger, not sendGift).",
+    request: z.object({
+      playerId: pidZ, city: cityZ,
+      order: z.object({
+        platformId: z.string().min(1).max(40), restaurantId: z.string().min(1).max(80),
+        restaurantName: z.string().min(1).max(60), items: z.array(z.object({ name: z.string().min(1).max(40), qty: z.number().int().min(1).max(99) })).min(1).max(20),
+        total: z.number().int().min(1).max(100000), riderFee: z.number().int().min(3).max(10000),
+        destLabel: z.string().min(1).max(60), placedAt: z.number().int().min(0), destId: z.string().max(80).optional(),
+      }),
+    }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), poolId: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      if (me.cityKey !== args.city) return { ok: false, error: "只能在你所在的城市发跑腿单" };
+      if (me.money < args.order.riderFee) return { ok: false, error: "存款不够付跑腿费" };
+      const open = await db.select({ n: sql<number>`count(*)` }).from(schema.deliveryPoolOrders).where(and(eq(schema.deliveryPoolOrders.customerId, me.id), eq(schema.deliveryPoolOrders.status, "open")));
+      if (Number(open[0]?.n ?? 0) >= 2) return { ok: false, error: "你已经挂着 2 单跑腿了，送完再发。" };
+      const now = new Date();
+      const [row] = await db.insert(schema.deliveryPoolOrders).values({
+        city: args.city, customerId: me.id, customerName: me.name,
+        platformId: args.order.platformId, restaurantId: args.order.restaurantId, restaurantName: cleanText(args.order.restaurantName).slice(0, 60),
+        itemsJson: JSON.stringify(args.order.items), total: args.order.total, riderFee: args.order.riderFee,
+        destId: args.order.destId ?? null, destName: cleanText(args.order.destLabel).slice(0, 60),
+        distance: 0,
+        status: "open", deadlineAt: new Date(now.getTime() + 10 * 60 * 1000), createdAt: now,
+      }).returning();
+      if (!row) return { ok: false, error: "发单失败，稍后再试。" };
+      await creditMoney(db, me.id, -args.order.riderFee, `delivery escrow #${row.id}`);
+      await db.insert(schema.tradeEscrow).values({ taskId: row.id, kind: "delivery", payerId: me.id, amount: args.order.riderFee, status: "held", createdAt: now });
+      return { ok: true, poolId: String(row.id) };
+    },
+  }),
+
+  deliveryPoolList: defineAction({
+    description: "Lists open pool orders for a city (overdue ones expire first, refunding the escrowed riderFee).",
+    request: z.object({ playerId: pidZ, city: cityZ }),
+    response: z.object({
+      ok: z.boolean(), error: z.string().optional(),
+      open: z.array(z.object({
+        id: z.string(), restaurantId: z.string(), restaurantName: z.string(),
+        destId: z.string().nullable(), destName: z.string(), distance: z.number(),
+        riderFee: z.number(), customerName: z.string(), deadlineAt: z.number(),
+      })),
+    }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER, open: [] };
+      if (me.banned) return { ok: false, error: BANNED_MSG, open: [] };
+      if (me.cityKey !== args.city) return { ok: false, error: "只能看你所在城市的接单池", open: [] };
+      await expirePoolOrders(db, args.city);
+      const rows = await db.select().from(schema.deliveryPoolOrders)
+        .where(and(eq(schema.deliveryPoolOrders.city, args.city), eq(schema.deliveryPoolOrders.status, "open"), sql`${schema.deliveryPoolOrders.deadlineAt} > ${Date.now()}`, sql`${schema.deliveryPoolOrders.customerId} != ${me.id}`))
+        .orderBy(desc(schema.deliveryPoolOrders.id)).limit(20);
+      return {
+        ok: true,
+        open: rows.map((r) => ({
+          id: String(r.id), restaurantId: r.restaurantId, restaurantName: r.restaurantName,
+          destId: r.destId, destName: r.destName, distance: r.distance, riderFee: r.riderFee,
+          customerName: r.customerName, deadlineAt: r.deadlineAt.getTime(),
+        })),
+      };
+    },
+  }),
+
+  deliveryPoolClaim: defineAction({
+    description: "Claims an open pool order (not your own; max 2 taken at once).",
+    request: z.object({ playerId: pidZ, city: cityZ, poolId: z.string().min(1).max(32) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      if (socialNeedsAccount() && !me.accountId) return { ok: false, error: "先绑定账号，才能接跑腿单" };
+      if (me.cityKey !== args.city) return { ok: false, error: "只能接你所在城市的单" };
+      const id = Number(args.poolId);
+      if (!Number.isInteger(id)) return { ok: false, error: "这单找不到了。" };
+      const [o] = await db.select().from(schema.deliveryPoolOrders).where(eq(schema.deliveryPoolOrders.id, id)).limit(1);
+      if (!o) return { ok: false, error: "这单找不到了。" };
+      if (o.status !== "open" || o.deadlineAt.getTime() <= Date.now()) return { ok: false, error: "这单已经过期 / 被接走了。" };
+      if (o.customerId === me.id) return { ok: false, error: "不能接自己的单" };
+      const taken = await db.select({ n: sql<number>`count(*)` }).from(schema.deliveryPoolOrders).where(and(eq(schema.deliveryPoolOrders.riderId, me.id), sql`${schema.deliveryPoolOrders.status} IN ('taken', 'pickedUp')`));
+      if (Number(taken[0]?.n ?? 0) >= 2) return { ok: false, error: "你手上已经有 2 单在跑了，送完再接。" };
+      const changed = await db.update(schema.deliveryPoolOrders).set({ status: "taken", riderId: me.id, riderName: me.name, takenAt: new Date() }).where(and(eq(schema.deliveryPoolOrders.id, id), eq(schema.deliveryPoolOrders.status, "open"))).returning();
+      if (!changed.length) return { ok: false, error: "这单已经被别人接了。" };
+      return { ok: true };
+    },
+  }),
+
+  deliveryPoolPickedUp: defineAction({
+    description: "Marks a taken pool order as picked up (rider only).",
+    request: z.object({ playerId: pidZ, poolId: z.string().min(1).max(32) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      const id = Number(args.poolId);
+      if (!Number.isInteger(id)) return { ok: false, error: "这单找不到了。" };
+      const [o] = await db.select().from(schema.deliveryPoolOrders).where(eq(schema.deliveryPoolOrders.id, id)).limit(1);
+      if (!o || o.riderId !== me.id) return { ok: false, error: "这单找不到了。" };
+      if (o.status !== "taken") return { ok: false, error: "这单现在不能取餐。" };
+      await db.update(schema.deliveryPoolOrders).set({ status: "pickedUp" }).where(eq(schema.deliveryPoolOrders.id, id));
+      return { ok: true };
+    },
+  }),
+
+  deliveryPoolDelivered: defineAction({
+    description: "Marks a pool order delivered (rider only). On-time pays the full riderFee; late pays 70% (the other 30% is refunded to the customer). Plus a 25% chance of a ¥3–10 tip.",
+    request: z.object({ playerId: pidZ, poolId: z.string().min(1).max(32), stars: z.number().int().min(1).max(5).optional() }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), pay: z.number().optional(), tip: z.number().optional(), onTime: z.boolean().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      const id = Number(args.poolId);
+      if (!Number.isInteger(id)) return { ok: false, error: "这单找不到了。" };
+      const [o] = await db.select().from(schema.deliveryPoolOrders).where(eq(schema.deliveryPoolOrders.id, id)).limit(1);
+      if (!o || o.riderId !== me.id) return { ok: false, error: "这单找不到了。" };
+      if (o.status !== "taken" && o.status !== "pickedUp") return { ok: false, error: "这单已经送达 / 已经结束了。" };
+      const onTime = Date.now() <= o.deadlineAt.getTime();
+      const pay = onTime ? o.riderFee : Math.round(o.riderFee * 0.7);
+      const tip = Math.random() < 0.25 ? 3 + Math.floor(Math.random() * 8) : 0;
+      const [row] = await db.update(schema.deliveryPoolOrders).set({ status: "delivered", deliveredAt: new Date(), tip }).where(and(eq(schema.deliveryPoolOrders.id, id), sql`${schema.deliveryPoolOrders.status} IN ('taken', 'pickedUp')`)).returning();
+      if (!row) return { ok: false, error: "这单已经送达 / 已经结束了。" };
+      const [esc] = await db.select().from(schema.tradeEscrow).where(and(eq(schema.tradeEscrow.taskId, id), eq(schema.tradeEscrow.kind, "delivery"), eq(schema.tradeEscrow.status, "held"))).limit(1);
+      if (esc) {
+        await db.update(schema.tradeEscrow).set({ status: "released", releasedAt: new Date() }).where(eq(schema.tradeEscrow.id, esc.id));
+        await creditMoney(db, me.id, pay + tip, `delivery pay #${id}`);
+        if (o.riderFee - pay > 0) await creditMoney(db, o.customerId, o.riderFee - pay, `delivery late refund #${id}`);
+      } else {
+        await creditMoney(db, me.id, pay + tip, `delivery pay #${id}`);
+      }
+      const [rider] = await db.select().from(schema.deliveryRiders).where(eq(schema.deliveryRiders.playerId, me.id)).limit(1);
+      if (rider) {
+        await db.update(schema.deliveryRiders).set({
+          completed: rider.completed + 1, onTime: rider.onTime + (onTime ? 1 : 0),
+          late: rider.late + (onTime ? 0 : 1), totalEarned: rider.totalEarned + pay + tip,
+        }).where(eq(schema.deliveryRiders.playerId, me.id));
+      } else {
+        await db.insert(schema.deliveryRiders).values({
+          playerId: me.id, completed: 1, onTime: onTime ? 1 : 0, late: onTime ? 0 : 1,
+          totalEarned: pay + tip, rating: 500, updatedAt: new Date(),
+        });
+      }
+      return { ok: true, pay, tip, onTime };
+    },
+  }),
+
+  deliveryPoolRate: defineAction({
+    description: "The customer rates a delivered pool order once (within 24h). 5★ +0.02 / 4★ +0.01 / 3★ −0.05 / ≤2★ −0.12, rider rating clamped to 3.0–5.0.",
+    request: z.object({ playerId: pidZ, poolId: z.string().min(1).max(32), stars: z.number().int().min(1).max(5) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), riderRating: z.number().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      const id = Number(args.poolId);
+      if (!Number.isInteger(id)) return { ok: false, error: "这单找不到了。" };
+      const [o] = await db.select().from(schema.deliveryPoolOrders).where(eq(schema.deliveryPoolOrders.id, id)).limit(1);
+      if (!o || o.customerId !== me.id) return { ok: false, error: "这单找不到了。" };
+      if (o.status !== "delivered") return { ok: false, error: "这单还没送达，没法评价。" };
+      if (o.stars !== null) return { ok: false, error: "你已经评价过这单了。" };
+      if (o.deliveredAt && Date.now() - o.deliveredAt.getTime() > 24 * 60 * 60 * 1000) return { ok: false, error: "评价时间已经过了（24 小时内）。" };
+      await db.update(schema.deliveryPoolOrders).set({ stars: args.stars }).where(eq(schema.deliveryPoolOrders.id, id));
+      let rating = 5;
+      if (o.riderId) {
+        const [rider] = await db.select().from(schema.deliveryRiders).where(eq(schema.deliveryRiders.playerId, o.riderId)).limit(1);
+        const delta = args.stars === 5 ? 2 : args.stars === 4 ? 1 : args.stars === 3 ? -5 : -12;
+        const current = rider ? rider.rating : 500;
+        const next = Math.max(300, Math.min(500, current + delta));
+        if (rider) await db.update(schema.deliveryRiders).set({ rating: next }).where(eq(schema.deliveryRiders.playerId, o.riderId));
+        else await db.insert(schema.deliveryRiders).values({ playerId: o.riderId, completed: 0, onTime: 0, late: 0, totalEarned: 0, rating: next, updatedAt: new Date() });
+        rating = next / 100;
+      }
+      return { ok: true, riderRating: rating };
+    },
+  }),
+
+  deliverySponsorSlot: defineAction({
+    description: "Admin-only: buys a sponsored-restaurant slot for a city (a sponsored restaurant appears in the pool's restaurant list). No public read endpoint exists yet — display is a next-round item.",
+    request: z.object({
+      token: z.string().min(1),
+      city: cityZ,
+      restaurant: z.object({
+        name: z.string().min(1).max(60), cuisine: z.string().min(1).max(20), emoji: z.string().min(1).max(8),
+        tier: z.enum(["low", "mid", "high"]),
+        dishes: z.array(z.object({ name: z.string().min(1).max(40), cost: z.number().int().min(0).max(100000), energy: z.number().int().min(0).max(100), mood: z.number().int().min(0).max(100), desc: z.string().max(200) })).min(1).max(20),
+      }),
+      days: z.number().int().min(1).max(365),
+    }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), sponsorId: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      if (!(await adminOk(db, args.token))) return { ok: false, error: "需要管理员权限。" };
+      const [row] = await db.insert(schema.deliverySponsors).values({
+        city: args.city, name: cleanText(args.restaurant.name).slice(0, 60),
+        cuisine: cleanText(args.restaurant.cuisine).slice(0, 20), emoji: [...args.restaurant.emoji][0] ?? "🍜",
+        tier: args.restaurant.tier, dishesJson: JSON.stringify(args.restaurant.dishes),
+        endsAt: new Date(Date.now() + args.days * 24 * 60 * 60 * 1000), createdAt: new Date(),
+      }).returning();
+      return { ok: true, sponsorId: row ? String(row.id) : undefined };
+    },
+  }),
+
+  /* ---- round-3 (E): Lagos gap merchant-sponsor — read side ----
+     deliverySponsorSlot (admin write) already exists; this is the missing
+     getDeliverySponsors the client menu needs. No banned/muted gate: reading
+     a menu is not a social write. */
+  getDeliverySponsors: defineAction({
+    description: "Lists the sponsored restaurants live in a city's delivery menu (admin-bought slots whose end date has not passed).",
+    request: z.object({ playerId: pidZ, city: cityZ }),
+    response: z.object({
+      ok: z.boolean(), error: z.string().optional(),
+      sponsors: z.array(z.object({
+        id: z.number(), name: z.string(), cuisine: z.string(), emoji: z.string(), tier: z.string(),
+        dishes: z.array(z.object({ name: z.string(), cost: z.number(), energy: z.number(), mood: z.number(), desc: z.string() })),
+        endsAt: z.string(),
+      })),
+    }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER, sponsors: [] };
+      if (me.cityKey !== args.city) return { ok: false, error: "只能看你所在城市的赞助餐厅", sponsors: [] };
+      const rows = await db.select().from(schema.deliverySponsors)
+        .where(and(eq(schema.deliverySponsors.city, args.city), sql`${schema.deliverySponsors.endsAt} > ${Date.now()}`))
+        .orderBy(desc(schema.deliverySponsors.id));
+      return {
+        ok: true,
+        sponsors: rows.map((r) => {
+          let dishes: { name: string; cost: number; energy: number; mood: number; desc: string }[] = [];
+          try {
+            const parsed = JSON.parse(r.dishesJson) as unknown;
+            if (Array.isArray(parsed)) dishes = parsed.flatMap((x) => {
+              const o = x as { name?: unknown; cost?: unknown; energy?: unknown; mood?: unknown; desc?: unknown };
+              return typeof o?.name === "string" && typeof o?.cost === "number" && typeof o?.energy === "number" && typeof o?.mood === "number"
+                ? [{ name: o.name, cost: o.cost, energy: o.energy, mood: o.mood, desc: typeof o?.desc === "string" ? o.desc : "" }] : [];
+            });
+          } catch { dishes = []; }
+          return { id: r.id, name: r.name, cuisine: r.cuisine, emoji: r.emoji, tier: r.tier, dishes, endsAt: r.endsAt.toISOString() };
+        }),
+      };
+    },
+  }),
+
+  /* ---- round-3 (E): Lagos gap creator-payout — Livehouse tips ----
+     Listener pays ✨, the musician gets 70% in ✨ through the account star
+     ledger (bookStars, same calls as buyLook / claimStars — the tipper's
+     account is debited, the musician's account credited; round-3b changed
+     this from the ¥ money ledger, see tipTrack). 30% is the house cut, kept
+     only as a number on the livehouse_tips row. Amounts on that table are
+     now ✨, not ¥ — no table change, just the unit. The client still shows
+     ¥ in its tip buttons / toasts until integration updates the copy. */
+  tipTrack: defineAction({
+    description: "Tips an approved Livehouse track in ✨: 70% goes to the musician's ✨ balance, 30% is the house cut. Max 10 tips a day per listener. The tipper needs a bound account (✨ lives on the account, not the run).",
+    request: z.object({ playerId: pidZ, trackId: z.number().int().positive(), amount: z.number().int().min(1).max(500), message: z.string().max(100).optional() }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), creatorShare: z.number().optional(), creatorName: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      const [t] = await db.select().from(schema.musicTracks).where(eq(schema.musicTracks.id, args.trackId)).limit(1);
+      if (!t || t.status !== "approved") return { ok: false, error: "这首歌还没上轮播，打赏不了。" };
+      const [creator] = await db.select().from(schema.players).where(eq(schema.players.accountId, t.accountId)).limit(1);
+      if (!creator) return { ok: false, error: "这首歌的音乐人还没进游戏，暂时不能打赏。" };
+      if (creator.id === me.id) return { ok: false, error: "不能给自己的歌打赏。" };
+      if (!me.accountId) return { ok: false, error: "打赏要用 ✨，先绑定账号（右上角 👤 账号）再打赏。" };
+      if ((await starBalance(db, me.accountId)) < args.amount) return { ok: false, error: "✨ 不够打赏。" };
+      const dayAgo = new Date(Date.now() - 86_400_000);
+      const sent = await db.select({ n: sql<number>`count(*)` }).from(schema.livehouseTips).where(and(eq(schema.livehouseTips.tipperId, me.id), gte(schema.livehouseTips.createdAt, dayAgo)));
+      if (Number(sent[0]?.n ?? 0) >= 10) return { ok: false, error: "今天打赏得够多了，明天再来。" };
+      const creatorShare = Math.floor(args.amount * 0.7);
+      // ✨ via bookStars (starLedger, reason+ref unique per tip so a retry
+      // can never double-book): tipper pays, musician gets 70%.
+      const ref = `livehouse-tip:${randomUUID()}`;
+      if (!(await bookStars(db, me.accountId, -args.amount, "livehouse-tip", ref))) return { ok: false, error: "✨ 不够打赏。" };
+      if (creatorShare > 0 && !(await bookStars(db, t.accountId, creatorShare, "livehouse-tip", `${ref}:creator`))) {
+        // Musician credit failed (shouldn't happen — fresh ref, positive
+        // amount): give the tip back rather than swallowing it.
+        await bookStars(db, me.accountId, args.amount, "livehouse-tip", `${ref}:refund`);
+        return { ok: false, error: "打赏没成功，✨ 已退回。" };
+      }
+      await db.insert(schema.livehouseTips).values({
+        trackId: t.id, tipperId: me.id, tipperName: me.name, creatorId: creator.id,
+        amount: args.amount, creatorShare, message: cleanText(args.message ?? "").slice(0, 100), createdAt: new Date(),
+      });
+      await db.insert(schema.feedEvents).values({ playerId: me.id, playerName: me.name, kind: "life", text: `给${creator.name}的《${t.title}》打赏了 ✨${args.amount}`, createdAt: new Date() });
+      ctx.invalidateQueries();
+      return { ok: true, creatorShare, creatorName: creator.name };
+    },
+  }),
+
+  getLivehouseTips: defineAction({
+    description: "The caller's received Livehouse tips (latest 20) plus per-track tip totals for the whole city, so the rotation can show how much each song earned. totalEarned is the all-time sum of the caller's creatorShare (SQL SUM over all their tips), in ✨.",
+    request: z.object({ playerId: pidZ }),
+    response: z.object({
+      ok: z.boolean(), error: z.string().optional(), totalEarned: z.number(),
+      mine: z.array(z.object({ id: z.number(), trackId: z.number(), trackTitle: z.string(), tipperName: z.string(), amount: z.number(), creatorShare: z.number(), message: z.string(), createdAt: z.string() })),
+      totals: z.array(z.object({ trackId: z.number(), total: z.number(), count: z.number() })),
+    }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER, totalEarned: 0, mine: [], totals: [] };
+      const rows = await db.select().from(schema.livehouseTips).where(eq(schema.livehouseTips.creatorId, me.id)).orderBy(desc(schema.livehouseTips.id)).limit(20);
+      const tracks = await db.select().from(schema.musicTracks);
+      const titleOf = new Map(tracks.map((t) => [t.id, t.title]));
+      const agg = await db.select({ trackId: schema.livehouseTips.trackId, total: sql<number>`sum(${schema.livehouseTips.amount})`, count: sql<number>`count(*)` }).from(schema.livehouseTips).groupBy(schema.livehouseTips.trackId);
+      // All-time total (not just the latest 20): one SQL SUM, no row scan.
+      const [sumRow] = await db.select({ total: sql<number>`sum(${schema.livehouseTips.creatorShare})` }).from(schema.livehouseTips).where(eq(schema.livehouseTips.creatorId, me.id));
+      return {
+        ok: true,
+        totalEarned: Number(sumRow?.total ?? 0),
+        mine: rows.map((r) => ({ id: r.id, trackId: r.trackId, trackTitle: titleOf.get(r.trackId) ?? "", tipperName: r.tipperName, amount: r.amount, creatorShare: r.creatorShare, message: r.message, createdAt: r.createdAt.toISOString() })),
+        totals: agg.map((a) => ({ trackId: a.trackId, total: Number(a.total ?? 0), count: Number(a.count ?? 0) })),
+      };
+    },
+  }),
+
+  /* ---- round-3 (E): Lagos gap group-order — 顾客拼单 ----
+     Not the rider-side stackWith field (delivery.ts:574): this is customers
+     ordering together. Host creates a group with a 6-char code, friends join
+     with their own dishes, host locks it and places one combined order
+     client-side (placeOrder with mergeGroupItems); delivery fee is split by
+     the client (groupOrderTotals in delivery.ts). Round-3b escrow: at lock
+     the server takes every member's share (subtotal + fee share, same split
+     as groupOrderTotals) into group_order_escrow via creditMoney/writeLedger
+     (tradeEscrow pattern, dedicated table for the food/fee split); the host
+     must NOT pay the combined order again client-side — the money is already
+     held. completeGroupOrder settles it (food to the NPC merchant, fee to
+     the host as riderFee reimbursement when the order went to the pool, else
+     to the NPC rider); cancel / expiry refunds everyone in full. One open
+     group per player; 30 min to gather; a locked group expires 2 h after
+     locking. The client passes the deliveryFee it computed for placeOrder
+     to lockGroupOrder so the server splits the same fee. */
+  createGroupOrder: defineAction({
+    description: "Starts a group order: the host picks a restaurant and their dishes, and gets a 6-char code to share. Max 6 members, 30 minutes to gather.",
+    request: z.object({ playerId: pidZ, city: cityZ, restaurantId: z.string().min(1).max(80), restaurantName: z.string().min(1).max(60), items: z.array(GROUP_ORDER_ITEM_Z).min(1).max(20) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), groupId: z.number().optional(), code: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      if (me.cityKey !== args.city) return { ok: false, error: "只能在你所在的城市拼单" };
+      if (await openGroupOf(db, me.id)) return { ok: false, error: "你已经在一个拼单里了，先结了它再开新的。" };
+      let code = "";
+      for (let i = 0; i < 5; i++) {
+        const c = randomGroupCode();
+        const [dup] = await db.select().from(schema.groupOrders).where(and(eq(schema.groupOrders.code, c), eq(schema.groupOrders.status, "open"))).limit(1);
+        if (!dup) { code = c; break; }
+      }
+      if (!code) return { ok: false, error: "拼单暗号生成失败，稍后再试。" };
+      const subtotal = args.items.reduce((s, it) => s + it.cost * it.qty, 0);
+      const now = new Date();
+      const [row] = await db.insert(schema.groupOrders).values({
+        city: args.city, hostId: me.id, hostName: me.name,
+        restaurantId: args.restaurantId, restaurantName: cleanText(args.restaurantName).slice(0, 60),
+        code, status: "open", createdAt: now, expiresAt: new Date(now.getTime() + GROUP_ORDER_TTL_MS),
+      }).returning();
+      if (!row) return { ok: false, error: "拼单开不起来，稍后再试。" };
+      await db.insert(schema.groupOrderMembers).values({ groupId: row.id, playerId: me.id, playerName: me.name, itemsJson: JSON.stringify(args.items), subtotal, joinedAt: now });
+      return { ok: true, groupId: row.id, code };
+    },
+  }),
+
+  joinGroupOrder: defineAction({
+    description: "Joins an open group order with a 6-char code and your own dishes.",
+    request: z.object({ playerId: pidZ, code: z.string().min(6).max(6), items: z.array(GROUP_ORDER_ITEM_Z).min(1).max(20) }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), groupId: z.number().optional(), memberCount: z.number().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG };
+      const [g] = await db.select().from(schema.groupOrders).where(and(eq(schema.groupOrders.code, args.code.toUpperCase()), eq(schema.groupOrders.status, "open"))).limit(1);
+      if (!g) return { ok: false, error: "这个拼单暗号不对，或者拼单已经结束了。" };
+      const view = await groupOrderView(db, g.id);
+      if (!view || view.status !== "open") return { ok: false, error: "这个拼单已经结束了。" };
+      if (me.cityKey !== g.city) return { ok: false, error: "拼单在别的城市，你得先过去。" };
+      if (view.members.some((m) => m.playerId === me.id)) return { ok: false, error: "你已经在这个拼单里了。" };
+      if (view.members.length >= GROUP_ORDER_MAX_MEMBERS) return { ok: false, error: `拼单满了（最多 ${GROUP_ORDER_MAX_MEMBERS} 人）。` };
+      if (await openGroupOf(db, me.id)) return { ok: false, error: "你已经在另一个拼单里了，先结了它再来。" };
+      const subtotal = args.items.reduce((s, it) => s + it.cost * it.qty, 0);
+      await db.insert(schema.groupOrderMembers).values({ groupId: g.id, playerId: me.id, playerName: me.name, itemsJson: JSON.stringify(args.items), subtotal, joinedAt: new Date() });
+      return { ok: true, groupId: g.id, memberCount: view.members.length + 1 };
+    },
+  }),
+
+  getGroupOrder: defineAction({
+    description: "Reads a group order (host + members + dishes + subtotals). Members only.",
+    request: z.object({ playerId: pidZ, groupId: z.number().int().positive() }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), group: GROUP_ORDER_VIEW.nullable() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER, group: null };
+      const view = await groupOrderView(db, args.groupId);
+      if (!view) return { ok: false, error: "这个拼单找不到了。", group: null };
+      if (view.hostId !== me.id && !view.members.some((m) => m.playerId === me.id)) return { ok: false, error: "你不在这个拼单里。", group: null };
+      return { ok: true, group: view };
+    },
+  }),
+
+  leaveGroupOrder: defineAction({
+    description: "Leaves an open group order. If the host leaves, the whole group is cancelled (members can still read it as cancelled) and any held escrow is refunded in full. The host may also cancel a locked group this way (before it is ordered) — the escrow is refunded in full; other members cannot leave once locked.",
+    request: z.object({ playerId: pidZ, groupId: z.number().int().positive() }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      const view = await groupOrderView(db, args.groupId);
+      if (!view) return { ok: false, error: "这个拼单找不到了。" };
+      if (!view.members.some((m) => m.playerId === me.id)) return { ok: false, error: "你不在这个拼单里。" };
+      if (view.status === "ordered") return { ok: false, error: "拼单已经下单，不能退出了。" };
+      if (view.status === "cancelled") return { ok: false, error: "拼单已经取消了。" };
+      if (view.status === "locked" && view.hostId !== me.id) return { ok: false, error: "拼单已锁定，不能退出了。" };
+      if (view.status === "locked") {
+        // Host cancels a locked group: whole group cancelled, escrow refunded in full.
+        await db.update(schema.groupOrders).set({ status: "cancelled" }).where(eq(schema.groupOrders.id, args.groupId));
+        await refundGroupEscrow(db, args.groupId);
+        return { ok: true };
+      }
+      await db.delete(schema.groupOrderMembers).where(and(eq(schema.groupOrderMembers.groupId, args.groupId), eq(schema.groupOrderMembers.playerId, me.id)));
+      if (view.hostId === me.id) {
+        await db.update(schema.groupOrders).set({ status: "cancelled" }).where(eq(schema.groupOrders.id, args.groupId));
+        await refundGroupEscrow(db, args.groupId);
+      } else {
+        // Normally nothing is escrowed while a group is still open (escrow
+        // happens at lock), but refund defensively if a row ever exists.
+        await refundGroupEscrow(db, args.groupId);
+      }
+      return { ok: true };
+    },
+  }),
+
+  lockGroupOrder: defineAction({
+    description: "Host only: locks an open group so nobody else can join, and escrows every member's share (dishes subtotal + delivery-fee share, same split as the client's groupOrderTotals) from each member's own balance via the money ledger. Fails with no money moved if any member is short — the error names them and the shortfall. The host then places one combined order client-side WITHOUT paying for it again (placeOrder with mergeGroupItems, money already held).",
+    request: z.object({ playerId: pidZ, groupId: z.number().int().positive(), deliveryFee: z.number().int().min(0).max(10000).optional() }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), group: GROUP_ORDER_VIEW.nullable(), shortfalls: z.array(z.object({ playerId: z.string(), playerName: z.string(), need: z.number(), have: z.number(), short: z.number() })).optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER, group: null };
+      const view = await groupOrderView(db, args.groupId);
+      if (!view) return { ok: false, error: "这个拼单找不到了。", group: null };
+      if (view.hostId !== me.id) return { ok: false, error: "只有发起人能锁定拼单。", group: null };
+      if (view.status !== "open") return { ok: false, error: "拼单已经锁定 / 结束了。", group: null };
+      const fee = args.deliveryFee ?? 0;
+      const split = groupOrderSplit(view.members, fee);
+      const existing = await groupEscrowByPlayer(db, args.groupId);
+      // All-or-nothing balance check first: nobody is charged if anyone is short.
+      const shortfalls: { playerId: string; playerName: string; need: number; have: number; short: number }[] = [];
+      for (const s of split) {
+        if (existing.has(s.playerId)) continue; // resume after a partial lock: already held, don't charge twice
+        const [p] = await db.select().from(schema.players).where(eq(schema.players.id, s.playerId)).limit(1);
+        const have = p?.money ?? 0;
+        if (have < s.total) {
+          const m = view.members.find((x) => x.playerId === s.playerId);
+          shortfalls.push({ playerId: s.playerId, playerName: m?.playerName ?? s.playerId, need: s.total, have, short: s.total - have });
+        }
+      }
+      if (shortfalls.length) {
+        const first = shortfalls[0]!;
+        const more = shortfalls.length > 1 ? `，还有 ${shortfalls.length - 1} 人也不够` : "";
+        return { ok: false, error: `余额不够：${first.playerName} 还差 ¥${first.short}（这单要 ¥${first.need}，只有 ¥${first.have}）${more}。没扣任何人的钱。`, group: null, shortfalls };
+      }
+      const now = new Date();
+      const inserted: string[] = [];
+      for (const s of split) {
+        if (existing.has(s.playerId)) continue;
+        const m = view.members.find((x) => x.playerId === s.playerId)!;
+        if (s.total > 0) await creditMoney(db, s.playerId, -s.total, `group order #${args.groupId} escrow`);
+        await db.insert(schema.groupOrderEscrow).values({ groupId: args.groupId, playerId: s.playerId, foodAmount: m.subtotal, feeAmount: s.feeShare, amount: s.total, status: "held", createdAt: now });
+        inserted.push(s.playerId);
+      }
+      // Compare-and-set: only the first locker wins. If another request
+      // locked it first, refund exactly the rows this call inserted.
+      const changed = await db.update(schema.groupOrders).set({ status: "locked", lockedAt: now }).where(and(eq(schema.groupOrders.id, args.groupId), eq(schema.groupOrders.status, "open"))).returning({ id: schema.groupOrders.id });
+      if (!changed.length) {
+        for (const pid of inserted) {
+          const [r] = await db.select().from(schema.groupOrderEscrow).where(and(eq(schema.groupOrderEscrow.groupId, args.groupId), eq(schema.groupOrderEscrow.playerId, pid))).limit(1);
+          if (r && r.status === "held") {
+            await db.update(schema.groupOrderEscrow).set({ status: "refunded", releasedAt: new Date() }).where(and(eq(schema.groupOrderEscrow.groupId, args.groupId), eq(schema.groupOrderEscrow.playerId, pid), eq(schema.groupOrderEscrow.status, "held")));
+            if (r.amount > 0) await creditMoney(db, pid, r.amount, `group order #${args.groupId} lock race refund`);
+          }
+        }
+        return { ok: false, error: "拼单已经锁定 / 结束了。", group: null };
+      }
+      return { ok: true, group: await groupOrderView(db, args.groupId) };
+    },
+  }),
+
+  completeGroupOrder: defineAction({
+    description: "Host only: marks a locked group as ordered, after the combined order is placed client-side, and settles the escrow: each member's food share goes to the restaurant (NPC merchant — released as spent, no player account), and the delivery-fee shares reimburse the host when the combined order was published to the rider pool (poolId), or go to the NPC rider for a local order. Groups locked before round-3b have no escrow rows and complete as before.",
+    request: z.object({ playerId: pidZ, groupId: z.number().int().positive(), poolId: z.string().min(1).max(32).optional() }),
+    response: z.object({ ok: z.boolean(), error: z.string().optional(), settlement: z.object({ food: z.number(), fee: z.number(), feeToHost: z.number() }).optional() }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      const [g] = await db.select().from(schema.groupOrders).where(eq(schema.groupOrders.id, args.groupId)).limit(1);
+      if (!g) return { ok: false, error: "这个拼单找不到了。" };
+      if (g.hostId !== me.id) return { ok: false, error: "只有发起人能确认下单。" };
+      // groupOrderView first: a locked group past its 2 h TTL is cancelled + refunded here.
+      const view = await groupOrderView(db, args.groupId);
+      if (!view || view.status !== "locked") return { ok: false, error: view?.status === "cancelled" ? "拼单已过期取消，托管已退回各成员。" : "拼单还没锁定，先锁定再确认。" };
+      let poolId: string | null = null;
+      if (args.poolId) {
+        const pid = Number(args.poolId);
+        if (!Number.isInteger(pid)) return { ok: false, error: "跑腿单号不对。" };
+        const [o] = await db.select().from(schema.deliveryPoolOrders).where(eq(schema.deliveryPoolOrders.id, pid)).limit(1);
+        if (!o) return { ok: false, error: "这个跑腿单找不到了。" };
+        if (o.customerId !== me.id) return { ok: false, error: "这个跑腿单不是你发的。" };
+        if (o.restaurantId !== g.restaurantId) return { ok: false, error: "跑腿单的餐厅和拼单对不上。" };
+        if (o.status === "expired" || o.status === "cancelled") return { ok: false, error: "这个跑腿单已经过期 / 取消了，骑手费托管还在原地。" };
+        poolId = String(pid);
+      }
+      const changed = await db.update(schema.groupOrders).set({ status: "ordered", poolId }).where(and(eq(schema.groupOrders.id, args.groupId), eq(schema.groupOrders.status, "locked"))).returning({ id: schema.groupOrders.id });
+      if (!changed.length) return { ok: false, error: "拼单还没锁定，先锁定再确认。" };
+      const settlement = await settleGroupEscrow(db, args.groupId, me.id, poolId);
+      return { ok: true, settlement };
+    },
+  }),
+
+  /* ---- round-3 (E): Lagos gap retention-loop — 顾客侧每周任务 ----
+     Courier streaks already exist; the customer side only had welcome
+     coupons. Four weekly quests on existing order/rating play (order count,
+     try a new restaurant, 5★ a delivered order, weekly spend). Progress is
+     reported by the client (reportDeliveryQuest) — same trust model as the
+     rest of delivery money, which is client-computed (see business-plan
+     note); a stricter version would derive progress from pool orders only,
+     but local orders never reach the pool. Rewards: existing ¥ (ledger) or
+     existing coupon ids the client grants on claim. */
+  getWeeklyQuests: defineAction({
+    description: "This week's delivery quests for the caller (Beijing ISO week): progress and claimed state per quest.",
+    request: z.object({ playerId: pidZ }),
+    response: z.object({
+      ok: z.boolean(), error: z.string().optional(), weekKey: z.string(),
+      quests: z.array(z.object({ questId: z.string(), progress: z.number(), target: z.number(), claimed: z.boolean() })),
+    }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER, weekKey: "", quests: [] };
+      const weekKey = weekKeyOf();
+      await ensureWeeklyQuestRows(db, me.id, weekKey);
+      const rows = await db.select().from(schema.deliveryQuests).where(and(eq(schema.deliveryQuests.playerId, me.id), eq(schema.deliveryQuests.weekKey, weekKey)));
+      const byId = new Map(rows.map((r) => [r.questId, r]));
+      return {
+        ok: true, weekKey,
+        quests: WEEKLY_QUEST_DEFS.map((q) => ({ questId: q.id, progress: byId.get(q.id)?.progress ?? 0, target: q.target, claimed: !!(byId.get(q.id)?.claimed) })),
+      };
+    },
+  }),
+
+  reportDeliveryQuest: defineAction({
+    description: "Reports one delivery event for weekly-quest progress: an order (counts orders + spend + new-restaurant) or a 5★ rating.",
+    request: z.object({ playerId: pidZ, event: z.enum(["order", "rate"]), restaurantId: z.string().max(80).optional(), amount: z.number().int().min(0).max(100000).optional(), stars: z.number().int().min(1).max(5).optional() }),
+    response: z.object({
+      ok: z.boolean(), error: z.string().optional(), weekKey: z.string(),
+      quests: z.array(z.object({ questId: z.string(), progress: z.number(), target: z.number(), claimed: z.boolean() })),
+    }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER, weekKey: "", quests: [] };
+      if (me.banned) return { ok: false, error: BANNED_MSG, weekKey: "", quests: [] };
+      if (isMuted(me)) return { ok: false, error: MUTED_MSG, weekKey: "", quests: [] };
+      if (!communityRateOk(me.id)) return { ok: false, error: RATE_MSG, weekKey: "", quests: [] };
+      const weekKey = weekKeyOf();
+      await ensureWeeklyQuestRows(db, me.id, weekKey);
+      const rows = await db.select().from(schema.deliveryQuests).where(and(eq(schema.deliveryQuests.playerId, me.id), eq(schema.deliveryQuests.weekKey, weekKey)));
+      const byId = new Map(rows.map((r) => [r.questId, r]));
+      const bump = async (questId: string, next: number, meta?: string) => {
+        const row = byId.get(questId);
+        if (!row) return;
+        const def = WEEKLY_QUEST_DEFS.find((q) => q.id === questId)!;
+        const capped = Math.min(def.target, Math.max(row.progress, next));
+        if (capped === row.progress && meta === undefined) return;
+        await db.update(schema.deliveryQuests).set({ progress: capped, ...(meta !== undefined ? { meta } : {}), updatedAt: new Date() }).where(and(eq(schema.deliveryQuests.playerId, me.id), eq(schema.deliveryQuests.weekKey, weekKey), eq(schema.deliveryQuests.questId, questId)));
+        row.progress = capped;
+        if (meta !== undefined) row.meta = meta;
+      };
+      if (args.event === "order") {
+        const o = byId.get("order-3");
+        if (o) await bump("order-3", o.progress + 1);
+        const s = byId.get("spend-100");
+        if (s) await bump("spend-100", s.progress + (args.amount ?? 0));
+        const t = byId.get("try-new");
+        if (t && args.restaurantId && t.progress < 1) {
+          let seen: string[] = [];
+          try { const parsed = JSON.parse(t.meta) as unknown; if (parsed && typeof parsed === "object" && Array.isArray((parsed as { seen?: unknown }).seen)) seen = (parsed as { seen: string[] }).seen.filter((x) => typeof x === "string"); } catch { seen = []; }
+          if (!seen.includes(args.restaurantId)) {
+            seen.push(args.restaurantId);
+            await bump("try-new", 1, JSON.stringify({ seen }));
+          }
+        }
+      } else if (args.event === "rate" && args.stars === 5) {
+        const r = byId.get("rate-5");
+        if (r) await bump("rate-5", 1);
+      }
+      return {
+        ok: true, weekKey,
+        quests: WEEKLY_QUEST_DEFS.map((q) => ({ questId: q.id, progress: byId.get(q.id)?.progress ?? 0, target: q.target, claimed: !!(byId.get(q.id)?.claimed) })),
+      };
+    },
+  }),
+
+  claimWeeklyQuest: defineAction({
+    description: "Claims a completed weekly quest once: ¥ goes to the caller's money via the ledger; a coupon is returned by id for the client to grant.",
+    request: z.object({ playerId: pidZ, questId: z.string().min(1).max(20) }),
+    response: z.object({
+      ok: z.boolean(), error: z.string().optional(),
+      reward: z.object({ kind: z.string(), amount: z.number().optional(), couponId: z.string().optional(), label: z.string() }).optional(),
+    }),
+    async handler(ctx, args) {
+      const db = ctx.db<typeof schema>();
+      const me = await r2Player(db, args.playerId);
+      if (!me) return { ok: false, error: NO_PLAYER };
+      if (me.banned) return { ok: false, error: BANNED_MSG };
+      const def = WEEKLY_QUEST_DEFS.find((q) => q.id === args.questId);
+      if (!def) return { ok: false, error: "没有这个任务。" };
+      const weekKey = weekKeyOf();
+      const [row] = await db.select().from(schema.deliveryQuests).where(and(eq(schema.deliveryQuests.playerId, me.id), eq(schema.deliveryQuests.weekKey, weekKey), eq(schema.deliveryQuests.questId, args.questId))).limit(1);
+      if (!row || row.progress < def.target) return { ok: false, error: "这项任务还没完成。" };
+      if (row.claimed) return { ok: false, error: "奖励已经领过了。" };
+      const changed = await db.update(schema.deliveryQuests).set({ claimed: 1, updatedAt: new Date() }).where(and(eq(schema.deliveryQuests.playerId, me.id), eq(schema.deliveryQuests.weekKey, weekKey), eq(schema.deliveryQuests.questId, args.questId), eq(schema.deliveryQuests.claimed, 0))).returning();
+      if (!changed.length) return { ok: false, error: "奖励已经领过了。" };
+      if (def.reward.kind === "money") await creditMoney(db, me.id, def.reward.amount, `weekly quest ${args.questId}`);
+      return { ok: true, reward: { kind: def.reward.kind, ...(def.reward.kind === "money" ? { amount: def.reward.amount } : { couponId: def.reward.couponId }), label: def.reward.label } };
+    },
+  }),
+
 } satisfies ActionsModule;

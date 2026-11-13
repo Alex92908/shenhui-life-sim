@@ -4,6 +4,9 @@
    - 音效仍是合成的：点按、进账、地铁开关门「叮咚」、到站
    - 曲子播不出来时才退回合成旋律
    - 音乐人投稿的歌（Livehouse）用 <audio> 播放，和背景音乐互斥
+   - sounds2（round-2 已接线）：真菜市场人声、真实雨声、地铁到站叮、失败提示、
+     做饭/健身房/键盘/咖啡馆/医院/机场/睡觉 7 个场景音、国语 K 歌 2 首、轮渡汽笛。
+     麻将音效仍缺——见 MAHJONG_SFX_FILE 占位符，别伪造文件。
    默认打开：浏览器要求用户先点一下才能出声，所以第一次点屏幕时才响；玩家可以用 🔇 关掉（记住选择）。 */
 
 export type SoundScene = "day" | "night" | "rain" | "club" | "scenic" | "citypop" | "piano" | "off";
@@ -42,14 +45,40 @@ export const EXTRA_CREDITS: { id: string; zh: string; en: string }[] = [
   { id: "k3", zh: "K 歌「I Wanna Know」Josh Woodward，CC-BY 4.0", en: "Karaoke \"I Wanna Know\" by Josh Woodward, CC-BY 4.0" },
   { id: "k4", zh: "K 歌「Procrastinating in the Sun」Stefan Kartenberg ft. Thespinwires，CC-BY 3.0", en: "Karaoke \"Procrastinating_in_The_Sun\" by Stefan Kartenberg ft. Thespinwires, CC-BY 3.0" },
   { id: "k5", zh: "K 歌「Silent Grey」Amarent，CC-BY 4.0", en: "Karaoke \"Silent Grey\" by Amarent, CC-BY 4.0" },
+  { id: "kcn1", zh: "K 歌「寂静的夜空」Adeline Yeo，CC-BY 4.0（AI 人声）", en: "Karaoke \"JiJingDeYeKong\" by Adeline Yeo, CC-BY 4.0 (AI vocals)" },
+  { id: "kcn2", zh: "K 歌「梦中的你」Adeline Yeo，CC-BY 4.0（AI 人声）", en: "Karaoke \"Meng Zhong De Ni\" by Adeline Yeo, CC-BY 4.0 (AI vocals)" },
+  { id: "metro-ding", zh: "地铁到站叮「Store Door Chime」Mike Koenig，CC-BY 3.0", en: "Metro arrival chime \"Store Door Chime\" by Mike Koenig, CC-BY 3.0" },
+  { id: "ferry-horn", zh: "轮渡汽笛「FogHorn Barge」Daniel Simon，CC-BY 3.0", en: "Ferry horn \"FogHorn Barge\" by Daniel Simon, CC-BY 3.0" },
 ];
+/** MAHJONG PLACEHOLDER (round-2): the mahjong sound is STILL MISSING —
+    no mahjong.mp3 exists anywhere in the repo. Do NOT fake the file: this
+    stays null until a real one is sourced (SFXMint CC0, free quota resets
+    2026-11-12 AM PST — see sounds2-manifest.md). When it lands at
+    client/public/music/shenhui-sounds2/sfx/scenes/mahjong.mp3, set this to
+    "sfx/scenes/mahjong.mp3" and the sfx("mahjong") call below plays it.
+    Until then the mahjong activity falls back to a soft synth knock. */
+export const MAHJONG_SFX_FILE: string | null = null;
 const PICK_KEY = "shhr-music";
 let pick: MusicPick = (() => { try { const v = localStorage.getItem(PICK_KEY) as MusicPick | null; return v && MUSIC_PICKS.some((m) => m.id === v) ? v : "auto"; } catch { return "auto"; } })();
 let wanted: SoundScene = "off";
 export function musicPick(): MusicPick { return pick; }
-export type Sfx = "click" | "coin" | "chime" | "arrive" | "fail" | "notify" | "door" | "horn" | "laugh" | "applause" | "cheer";
+export type Sfx = "click" | "coin" | "chime" | "arrive" | "fail" | "notify" | "door" | "horn" | "laugh" | "applause" | "cheer" | "mahjong";
 /** where the player is standing, for the ambience bed under the music */
 export type PlaceTone = "sea" | "mountain" | "park" | "market" | "mall" | "crowd" | "street" | "home" | "indoor" | "social";
+/** a scene-matched ambient bed from sounds2 (cooking, gym, cafe, hospital,
+    airport, office keyboard, sleep) — loops under the music while the
+    player is in that scene. The ferry horn is a one-shot, not a bed:
+    call playFerryHorn() when a ferry leaves instead. */
+export type SceneSfxId = "cooking" | "gym" | "keyboard-office" | "cafe" | "hospital" | "airport" | "sleep";
+export const SCENE_SFX_FILE: Record<SceneSfxId, string> = {
+  cooking: "sfx/scenes/cooking.mp3",
+  gym: "sfx/scenes/gym.mp3",
+  "keyboard-office": "sfx/scenes/keyboard-office.mp3",
+  cafe: "sfx/scenes/cafe.mp3",
+  hospital: "sfx/scenes/hospital.mp3",
+  airport: "sfx/scenes/airport.mp3",
+  sleep: "sfx/scenes/sleep.mp3",
+};
 export type TravelTone = "still" | "walk" | "metro";
 
 const KEY = "shhr-sound";
@@ -217,6 +246,11 @@ function musicUrl(id: Exclude<SoundScene, "off">): string {
 function soundUrl(rel: string): string {
   return publicUrl(`music/shenhui-sounds/${rel}`);
 }
+/** second sound pack (sounds2, 2026-11-10): real market / metro / rain /
+    scene recordings. Files live nested under music/shenhui-sounds2/. */
+function sounds2Url(rel: string): string {
+  return publicUrl(`music/shenhui-sounds2/${rel}`);
+}
 
 interface WorldAudio {
   minute: number;
@@ -226,6 +260,7 @@ interface WorldAudio {
   travel: TravelTone;
   storm: boolean;
   karaoke: boolean;
+  sceneSfx?: SceneSfxId;
 }
 let world: WorldAudio = { minute: 12 * 60, day: 1, month: 11, place: "street", travel: "still", storm: false, karaoke: false };
 let karaokeOn = false;
@@ -264,7 +299,11 @@ function resolveBed(sc: Exclude<SoundScene, "off">): { url: string; fade: number
   return first("citypop", "citypop");
 }
 export function nowPlayingCredit(): { zh: string; en: string } | null {
-  if (karaokeOn) return { zh: "K 歌房：英文歌（曲目署名在下面）", en: "Karaoke room: English songs (credits below)" };
+  if (karaokeOn) {
+    return karaokeLang === "cn"
+      ? { zh: "K 歌房：国语歌「寂静的夜空」「梦中的你」Adeline Yeo，CC-BY 4.0", en: "Karaoke room: Mandarin songs by Adeline Yeo, CC-BY 4.0" }
+      : { zh: "K 歌房：英文歌（曲目署名在下面）", en: "Karaoke room: English songs (credits below)" };
+  }
   const id = currentCreditId;
   const hit = MUSIC_CREDITS.find((c) => c.id === id) ?? EXTRA_CREDITS.find((c) => c.id === id);
   return hit ? { zh: hit.zh, en: hit.en } : null;
@@ -414,6 +453,27 @@ let karaokeEl: HTMLAudioElement | null = null;
 let karaokeGain: GainNode | null = null;
 let karaokeIdx = 0;
 const KARAOKE = ["karaoke-1.mp3", "karaoke-2.mp3", "karaoke-3.mp3", "karaoke-4.mp3", "karaoke-5.mp3"];
+/** sounds2 Mandarin karaoke (Adeline Yeo, CC-BY 4.0, AI vocals) */
+const KARAOKE_CN = ["karaoke-cn-1.mp3", "karaoke-cn-2.mp3"];
+let karaokeLang: "en" | "cn" = "en";
+function karaokeList(): { url: (f: string) => string; files: string[] } {
+  return karaokeLang === "cn"
+    ? { url: (f: string) => sounds2Url(`music/karaoke-cn/${f}`), files: KARAOKE_CN }
+    : { url: (f: string) => soundUrl(`music/karaoke/${f}`), files: KARAOKE };
+}
+/** switch the karaoke room between the English pack and the Mandarin pack (sounds2) */
+export function setKaraokeLang(lang: "en" | "cn") {
+  if (karaokeLang === lang) return;
+  karaokeLang = lang;
+  karaokeIdx = 0;
+  if (karaokeOn && karaokeEl) {
+    const { url, files } = karaokeList();
+    karaokeEl.src = url(files[0]!);
+    karaokeEl.currentTime = 0;
+    void karaokeEl.play().catch(() => {});
+  }
+}
+export function karaokeLangNow(): "en" | "cn" { return karaokeLang; }
 let thunderTimer: number | null = null;
 let thunderEl: HTMLAudioElement | null = null;
 
@@ -424,12 +484,18 @@ function ambiencePlan(): { url: string; gain: number }[] {
   const summer = month >= 5 && month <= 9;
   const outdoor = place === "sea" || place === "mountain" || place === "park" || place === "street";
   const one = (rel: string, gain: number) => [{ url: soundUrl(rel), gain }];
+  const one2 = (rel: string, gain: number) => [{ url: sounds2Url(rel), gain }];
   if (travel === "metro") return one("sfx/city/metro-ambience.mp3", 0.9);
   if (karaokeOn) return one("sfx/voices/crowd-murmur.mp3", 0.32);
-  if (world.storm) return one("sfx/nature/wind.mp3", 0.55);
+  // scene-matched bed from sounds2 (cooking / gym / cafe / hospital /
+  // airport / office / sleep) — beats the generic place bed when set
+  if (world.sceneSfx) return one2(SCENE_SFX_FILE[world.sceneSfx], 0.4);
+  // real rain (sounds2) instead of the old synth wind when it storms
+  if (world.storm) return one2("sfx/nature/rain-real.mp3", 0.5);
   if (travel === "walk") return one("sfx/city/footsteps.mp3", 0.42);
   if (place === "sea") return [{ url: soundUrl("sfx/nature/ocean-waves.mp3"), gain: 0.62 }, { url: soundUrl("sfx/nature/seagulls.mp3"), gain: 0.34 }];
-  if (place === "market") return one("sfx/city/market-ambience.mp3", 0.4);
+  // real wet-market voices (sounds2) — the old file was a supermarket
+  if (place === "market") return one2("sfx/market/market-wet.mp3", 0.45);
   if (place === "mall") return one("sfx/city/crowd-street.mp3", 0.36);
   if (place === "crowd" || place === "social") return one("sfx/voices/crowd-murmur.mp3", 0.34);
   if (place === "home" || place === "indoor") return [];
@@ -512,17 +578,19 @@ function ensureKaraokePlaying() {
     karaokeEl.addEventListener("ended", () => {
       if (!karaokeOn) return;
       sfx("applause");
-      karaokeIdx = (karaokeIdx + 1) % KARAOKE.length;
+      const { url, files } = karaokeList();
+      karaokeIdx = (karaokeIdx + 1) % files.length;
       const el = karaokeEl;
       if (!el) return;
-      el.src = soundUrl(`music/karaoke/${KARAOKE[karaokeIdx]!}`);
+      el.src = url(files[karaokeIdx]!);
       el.currentTime = 0;
       if (karaokeGain) rampGain(karaokeGain, 1, 0.35);
       void el.play().catch(() => {});
     });
   }
   if (!karaokeEl.paused && karaokeEl.src.includes("/karaoke-")) return;
-  karaokeEl.src = soundUrl(`music/karaoke/${KARAOKE[karaokeIdx]!}`);
+  const { url, files } = karaokeList();
+  karaokeEl.src = url(files[karaokeIdx % files.length]!);
   karaokeEl.currentTime = 0;
   if (karaokeGain) rampGain(karaokeGain, 1, 0.4);
   void karaokeEl.play().catch(() => {});
@@ -533,14 +601,38 @@ function stopKaraoke() {
   karaokeEl.pause();
   if (karaokeGain && ctx) karaokeGain.gain.setValueAtTime(0, ctx.currentTime);
 }
-export function setWorld(next: { scene: SoundScene; minute: number; day: number; month: number; place: PlaceTone; travel: TravelTone; storm: boolean; karaoke: boolean }) {
-  world = { minute: next.minute, day: next.day, month: next.month, place: next.place, travel: next.travel, storm: next.storm, karaoke: next.karaoke };
+export function setWorld(next: { scene: SoundScene; minute: number; day: number; month: number; place: PlaceTone; travel: TravelTone; storm: boolean; karaoke: boolean; sceneSfx?: SceneSfxId }) {
+  world = { minute: next.minute, day: next.day, month: next.month, place: next.place, travel: next.travel, storm: next.storm, karaoke: next.karaoke, sceneSfx: next.sceneSfx };
   if (!next.karaoke && karaokeOn) stopKaraoke();
   karaokeOn = next.karaoke;
   setScene(next.scene);
   if (karaokeOn) ensureKaraokePlaying();
   applyAmbience();
   syncThunder();
+}
+
+/** change just the scene bed (cooking / gym / cafe …) without a full setWorld */
+export function setSceneSfx(id: SceneSfxId | null) {
+  world = { ...world, sceneSfx: id ?? undefined };
+  applyAmbience();
+}
+
+/** one ferry-horn blast (sounds2, CC-BY 3.0) — call when a ferry leaves, not a loop */
+let ferryEl: HTMLAudioElement | null = null;
+export function playFerryHorn() {
+  if (!soundOn() || !ctx || !master) return;
+  if (!ferryEl) {
+    ferryEl = new Audio();
+    ferryEl.setAttribute("data-ferry", "1");
+    const src = ctx.createMediaElementSource(ferryEl);
+    const g = ctx.createGain();
+    g.gain.value = 0.5;
+    src.connect(g);
+    g.connect(master);
+  }
+  ferryEl.src = sounds2Url("sfx/scenes/ferry-horn.mp3");
+  ferryEl.currentTime = 0;
+  void ferryEl.play().catch(() => {});
 }
 
 /* ---- effects ---- */
@@ -555,12 +647,20 @@ const SFX_FILE: Partial<Record<Sfx, string>> = {
   applause: "sfx/voices/applause.mp3",
   cheer: "sfx/voices/cheering.mp3",
 };
+/** sounds2 one-shots: fail + the metro arrival ding (real recordings) */
+const SFX2_FILE: Partial<Record<Sfx, string>> = {
+  fail: "sfx/ui/fail.mp3",
+  chime: "sfx/transit/metro-ding.mp3",
+};
 let sfxPool: HTMLAudioElement[] = [];
 let sfxCursor = 0;
 let lastSfxAt = 0;
 function playSfxFile(name: Sfx): boolean {
-  const rel = SFX_FILE[name];
-  if (!rel || !ctx || !master) return false;
+  const rel1 = SFX_FILE[name];
+  const rel2 = !rel1 ? SFX2_FILE[name] : undefined;
+  const mahjong = name === "mahjong" && MAHJONG_SFX_FILE ? MAHJONG_SFX_FILE : undefined;
+  const url = rel1 ? soundUrl(rel1) : rel2 ? sounds2Url(rel2) : mahjong ? sounds2Url(mahjong) : null;
+  if (!url || !ctx || !master) return false;
   if (name === "click" && performance.now() - lastSfxAt < 40) return true;
   if (name === "click") lastSfxAt = performance.now();
   if (sfxPool.length === 0) {
@@ -576,7 +676,7 @@ function playSfxFile(name: Sfx): boolean {
     }
   }
   const el = sfxPool[sfxCursor++ % sfxPool.length]!;
-  el.src = soundUrl(rel);
+  el.src = url;
   el.currentTime = 0;
   void el.play().catch(() => {});
   return true;
@@ -587,9 +687,10 @@ export function sfx(name: Sfx) {
   const t = ctx.currentTime + 0.01;
   if (name === "click") tone(1250, t, 0.06, "sine", 0.08, master, 0.003);
   else if (name === "coin") { tone(NOTE(88), t, 0.12, "square", 0.05, master, 0.003); tone(NOTE(93), t + 0.08, 0.32, "square", 0.05, master, 0.003); }
-  else if (name === "chime") { tone(NOTE(76), t, 0.6, "sine", 0.18, master, 0.005); tone(NOTE(72), t + 0.32, 0.9, "sine", 0.18, master, 0.005); } // 地铁开门「叮—咚」，包里没有这声
+  else if (name === "chime") { tone(NOTE(76), t, 0.6, "sine", 0.18, master, 0.005); tone(NOTE(72), t + 0.32, 0.9, "sine", 0.18, master, 0.005); } // synth fallback — the real metro-ding.mp3 (sounds2) plays via SFX2_FILE when it loads
   else if (name === "arrive") { for (const [i, n] of [72, 76, 79, 84].entries()) tone(NOTE(n), t + i * 0.09, 0.35, "triangle", 0.09, master, 0.005); }
   else if (name === "fail") { tone(NOTE(55), t, 0.25, "sawtooth", 0.05, master, 0.005); tone(NOTE(52), t + 0.16, 0.35, "sawtooth", 0.05, master, 0.005); }
+  else if (name === "mahjong") { tone(NOTE(72), t, 0.08, "square", 0.06, master, 0.003); tone(NOTE(72), t + 0.11, 0.08, "square", 0.05, master, 0.003); } // synth knock — MAHJONG_SFX_FILE is still null, see the placeholder above
 }
 
 /* ---- a real song (Livehouse): plays instead of the synth, from a given second ---- */
