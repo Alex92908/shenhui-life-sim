@@ -839,3 +839,19 @@ lee 在街景里截了图：镜头离人很远、很高，整条街+摩天轮+�
 - **宝塔在香港也建在惠州西湖坐标上**（`getLocations("hz")` 的 else 分支）——这是原来就有的行为，保留了，顺带记一笔。
 - **texCpuRelease 今天是休眠的**：游戏没有 KTX2/ImageBitmap 贴图，钩子不生效；等 GLB 贴图上了 KTX2 / ImageBitmap 才开始省内存（下一步，见“思路来源”）。
 - **`nearLake` 是死代码**（LAKES 全空），`flagMats` 已删（死的）。
+
+### 复核：两份外部评审的逐条处置（2026-11-12，10g 已推送后）
+
+两份评审都肯定了方向（真卸载、数据/网格分离、迟滞、帧预算、量测驱动 Worker），指出的问题对照代码逐条核实后，大多是“文档写法”与“未来约束”，不是 10g 代码的现状 bug。没有需要推倒重来的。
+
+- **1. 16m 数据块 vs 32–64m 渲染合并块“冲突”**：代码里不存在——渲染块就是 16 米，每块 3 个合并网格 + 2 个 InstancedMesh，卸载时整块 dispose，没有跨块合并组。32–64m 是研究综述里的文献范围，文档第 1 页关键参数误写成了设计值；本文档“块大小”一节已纠正为 16 米，PDF 下次修订时同步改。
+- **2. texCpuRelease 太激进**：今天是休眠的（无 KTX2/ImageBitmap 贴图），且只动压缩贴图 + ImageBitmap、移动端才开、动态贴图 WeakSet 排除、共享 canvas 贴图绝不碰——实际就是评审建议的三档分类。缺的是 context 丢失后的重建路径：等 GLB 贴图上 KTX2 时，必须保留 .glb URL 可重载（下一步的约束）。
+- **3. Worker 阈值只看平均数**：决策用的不只是平均数——13 块全量分布已测（中位 3.02ms、最密 18.39ms、2/13 > 8ms），超 8ms 才上 Worker。帧预算：processQueue 只在操作之间查预算，单个同步 build 可超预算——代码注释已明说；Worker 路径下主线程只做 materialize（中位 2.05ms）。残留：进街景同步建玩家块最坏约 20ms（约 1 帧，一次性）。
+- **4. 异步竞争 / generationVersion**：已实现，叫 `buildId`——管理器级单调计数器（`nextBuildId`），新建/升级都递增；`onWorkerBuilt` 与 `materializePending` 双重校验，不符即丢弃；unload 时发 `cancel`，worker 接到后直接丢弃该 build。评审的 T1–T5 场景走不通。
+- **5. 引用计数不完整**：代码根本没做通用引用计数——按所有权分两类：共享材质/贴图是注册表所有、永不 dispose；块自有材质/贴图进 `ownedMats`/`ownedTexs`、随块释放。这正是评审建议的 Global/Chunk 两分法。文档里“引用计数”一词是措辞夸大，实际是所有权制。Material.dispose 不释纹理：块自有纹理在 ownedTexs 里显式 dispose。
+- **6. LOD 频繁重建**：迟滞（保持半径比进入半径宽 1 块）防边界抖动；降级同 tick 内 dispose 全细节 + 立剪影（0.73ms），升级走 worker、剪影当占位。没有 LOD 缓存是故意的——13 块的城，重建换内存划算；双档同驻留是下一步（NPC/室内来了再说）。
+- **7. 静态/动态边界**：已存在——NPC/车辆/行人是全局层，不进 ChunkData；ChunkData 是纯静态描述。类型上尚未拆出 ChunkRuntimeState，等 NPC 进块时再拆。
+- **补充五点**：距离度量是 Chebyshev（代码注释有，文档应明说）；雾/相机：camera.far 街景 64（雾 42 之外一点）、加载以玩家位置为中心全向 5×5/7×7，转身无空白；速度预测在步行速度（3–7m/s）下不需要，车速场景再说；内存账本是几何字节估算（自属性字节数），不是实测显存，renderer.info 只作辅助；地图模式峰值就是全城 3.69MB，不存在双重内存问题。
+- **架构拆分（LODManager/ResourceManager 独立）**：1490 行单文件、职责分区清晰，当前规模拆成 4 个模块是过度工程；NPC/室内扩展时再拆。评审建议的路线（Render Batch 放最后）实际就是代码现状——跨块合并从没建过。
+- **本次落地的改动**：街景雾 far 与加载半径的硬性断言——`STREET_FOG_FAR` 常量（chunks.ts，42 米），MapView 雾目标改用该常量，ChunkManager 构造函数 `console.assert(STREET_FOG_FAR <= (FULL_R + 1) * CHUNK)`。以后调雾必须同步调 FULL_R，否则控制台直接报错。
+- **补充验收（并入“还需 lee 在浏览器里验证”）**：同一边界来回 100 次无重复生成、内存不涨；快速斜向移动无空洞；街景↔地图连续切换 50 次无泄漏；走 30 分钟内存趋稳；Worker 迟到返回不覆盖新块（buildId 守卫，Node 已测）；同一贴图多块共享只在最后引用释放后 dispose（共享材质永不 dispose，设计如此）。

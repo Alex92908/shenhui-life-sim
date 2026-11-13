@@ -21,7 +21,7 @@ import { createLandmarks } from "./landmarks";
 import {
   ROAD_W, buildCityData, generateChunkData, buildChunkMesh, buildSilhouetteGroup,
   createSharedChunkMats, applyPinganGlb, ChunkManager, removeAll, makeNearChecks,
-  materializeChunk, chunkKeyOf,
+  materializeChunk, chunkKeyOf, STREET_FOG_FAR,
   type ChunkPayload, type PlayerBuildingData, type FacadeTarget,
   type ChunkMaterializeCtx, type ChunkBuildResult, type ChunkRecord, type ShopPt,
 } from "./chunks";
@@ -3356,7 +3356,7 @@ export function MapView(p: Props) {
       const fog = scene.fog as THREE.Fog;
       if (streetRef.current) {
         fog.near += (14 - fog.near) * fogK;
-        fog.far += (42 - fog.far) * fogK;
+        fog.far += (STREET_FOG_FAR - fog.far) * fogK; // 10g: fog far is tied to the chunk radii in chunks.ts — raise FULL_R with it
       } else {
         fog.near += (mapNear - fog.near) * fogK;
         fog.far += (mapFar - fog.far) * fogK;

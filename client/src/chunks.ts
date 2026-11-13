@@ -109,6 +109,12 @@ export const FULL_R = 2;
 export const FULL_KEEP_R = 3;
 export const SIMPLE_R = 3;
 export const SIMPLE_KEEP_R = 4;
+/** Street fog far end (m). Hard invariant: it must stay inside the
+    full-detail ring — a chunk at distance FULL_R spans up to
+    (FULL_R + 1) * CHUNK from the player's chunk edge — so new chunks
+    materialise inside the fog. If you raise the fog, raise FULL_R to match
+    (asserted in the ChunkManager constructor). */
+export const STREET_FOG_FAR = 42;
 export const chunkKeyOf = (x: number, z: number) => `${Math.floor(x / CHUNK)},${Math.floor(z / CHUNK)}`;
 export const chunkKeyOfCell = (cx: number, cz: number) => `${cx},${cz}`;
 /** chunk keys within Chebyshev radius r of (x, z). */
@@ -1202,7 +1208,11 @@ export class ChunkManager {
         absent, the manager is binary (full or unloaded) and the simple
         tier is skipped. */
     private buildSimple?: (key: string) => THREE.Group | null,
-  ) {}
+  ) {
+    // Hard invariant (external review #1.3): the street fog far end must
+    // stay inside the full-detail ring, or chunk pop-in shows past the fog.
+    console.assert(STREET_FOG_FAR <= (FULL_R + 1) * CHUNK, "[chunks] street fog far exceeds full-detail ring — raise FULL_R in chunks.ts");
+  }
 
   private newRecord(key: string): ChunkRecord {
     const [cx, cz] = key.split(",").map(Number);
