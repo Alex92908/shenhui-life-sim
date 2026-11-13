@@ -1994,6 +1994,11 @@ export function MapView(p: Props) {
        clouds, traffic, pedestrians, labels) and hands the manager the
        callbacks that register / un-register a chunk's bookkeeping. */
     const winTex = windowsTexture();
+    // ROUND-10h: the merged building buckets wear the street-facade tiles
+    // (day map + matching night emissive) so facades read in daylight, not
+    // only as night glow. winTex stays for landmarks + filler night glow.
+    const facadeDayTex = facadeTexture();
+    const facadeNightTex = facadeEmissiveTexture();
     const pickMeshes: THREE.Object3D[] = [];
     /* Real-place miniatures (landmarks.ts): a location with a model gets it
        instead of the generic box + roof. Label height follows the model. */
@@ -2004,7 +2009,7 @@ export function MapView(p: Props) {
     // shares it); the frame loop drives its night glow
     const fillerMatLocal = new THREE.MeshStandardMaterial({ roughness: 0.95, emissive: 0xffc873, emissiveMap: winTex, emissiveIntensity: 0 });
     fillerMat = fillerMatLocal;
-    const chunkMats = createSharedChunkMats(winTex);
+    const chunkMats = createSharedChunkMats(facadeDayTex, facadeNightTex);
     // the day-cycle registries hold ONLY the shared materials now (one
     // windows + one glassy + the landmark lit/neon sets) — per-building
     // materials are gone; the merged buckets wear these

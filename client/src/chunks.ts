@@ -376,11 +376,18 @@ export interface SharedChunkMats {
   /** instanced neon signs: one material, colour via instanceColor */
   sign: THREE.MeshBasicMaterial;
 }
-export function createSharedChunkMats(winTex: THREE.Texture): SharedChunkMats {
+export function createSharedChunkMats(dayTex: THREE.Texture, nightTex: THREE.Texture): SharedChunkMats {
   return {
     matte: new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.85, flatShading: true }),
-    windows: new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.78, metalness: 0.05, emissive: 0xffc873, emissiveMap: winTex, emissiveIntensity: 0 }),
-    glassy: new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.32, metalness: 0.45, emissive: 0xffc873, emissiveMap: winTex, emissiveIntensity: 0 }),
+    // ROUND-10h: the windows/glassy buckets wear a real diffuse window
+    // tile (MapView's facadeTexture: 2 bays x 1 floor) as `map`, so
+    // facades read in daylight, not only as night glow; the night tile
+    // (facadeEmissiveTexture, same window layout) stays the emissiveMap,
+    // so a window lit at night is a window by day. Both tiles repeat once
+    // per FACADE_TILE world units — tileBoxUVs() scales each merged body's
+    // UVs to that module in buildChunkPayload.
+    windows: new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.78, metalness: 0.05, map: dayTex, emissive: 0xffc873, emissiveMap: nightTex, emissiveIntensity: 0 }),
+    glassy: new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.32, metalness: 0.45, map: dayTex, emissive: 0xffc873, emissiveMap: nightTex, emissiveIntensity: 0 }),
     sign: new THREE.MeshBasicMaterial({ color: 0xffffff }),
   };
 }
@@ -422,6 +429,41 @@ const shade = (hex: number, f: number): number => new THREE.Color(hex).multiplyS
 
 const NEON_TYPES = new Set(["food", "mall", "social", "apec", "market", "electronics", "oilpainting", "secondhand", "seafood", "oldtown", "womensstreet", "museum", "library", "factory", "transit", "work", "lodging", "home"]);
 const STREET_TYPES = new Set(["food", "mall", "market", "electronics", "oilpainting", "secondhand", "seafood", "oldtown", "womensstreet", "social"]);
+/** ROUND-10h: residential fronts that wear balconies. */
+const RESI_TYPES = new Set(["home", "lodging", "oldtown", "womensstreet"]);
+
+/** ROUND-10h — one facade tile per 2.6 world units of frontage and height
+    (same module as the street-facade overlays in MapView: one tile per
+    2.6 m, one tile = 2 bays x 1 floor). */
+export const FACADE_TILE = 2.6;
+/** Scale a BoxGeometry's UVs so the facade tile repeats once per
+    FACADE_TILE world units on each side face (repeats rounded to whole
+    tiles, like the overlays, so windows are never cut mid-pane at a
+    corner). Top/bottom faces sample a plain wall patch — roofs don't wear
+    windows. BoxGeometry vertex order is +x, -x, +y, -y, +z, -z, four
+    vertices per face, uv (0,1),(1,1),(0,0),(1,0). Worker-safe: pure
+    attribute math, no DOM, no THREE objects beyond the geometry. */
+function tileBoxUVs(geo: THREE.BufferGeometry, w: number, h: number, d: number): THREE.BufferGeometry {
+  const uv = geo.attributes.uv as THREE.BufferAttribute | undefined;
+  if (!uv) return geo;
+  const rep = (faceW: number) => Math.max(1, Math.round(faceW / FACADE_TILE));
+  const arr = uv.array as Float32Array;
+  // side faces: +x/-x span depth, +z/-z span width; all span height
+  const faces: [number, number, number][] = [
+    [0, rep(d), rep(h)], [4, rep(d), rep(h)], // +x, -x
+    [16, rep(w), rep(h)], [20, rep(w), rep(h)], // +z, -z
+  ];
+  for (const [start, repU, repV] of faces) {
+    for (let i = 0; i < 4; i++) {
+      arr[(start + i) * 2] *= repU;
+      arr[(start + i) * 2 + 1] *= repV;
+    }
+  }
+  // top (+y, verts 8-11) and bottom (-y, verts 12-15): plain wall patch
+  // (facade tile centre gap between the two windows, below the glass)
+  for (let i = 8; i < 16; i++) { arr[i * 2] = 0.5; arr[i * 2 + 1] = 0.22; }
+  return geo;
+}
 
 export interface ChunkBuildCtx {
   cityKey: CityKey;
@@ -650,10 +692,47 @@ export function buildChunkPayload(data: ChunkData, pctx: ChunkPayloadCtx): Chunk
     }
     const h = l.h * 1.7;
     const bodyBucket = h > 6.5 ? glassy : windows;
+    const bw = l.w * 0.82;
     matte.push(paint(bake(new THREE.BoxGeometry(l.w, 0.5, l.w), l.x, l.z, 0, 0, 0.25, 0), 0xb8ad92));
-    bodyBucket.push(paint(bake(new THREE.BoxGeometry(l.w * 0.82, h, l.w * 0.82), l.x, l.z, 0, 0, 0.5 + h / 2, 0), l.color));
-    const roofH = Math.min(1.6, h * 0.22 + 0.5);
-    matte.push(paint(bake(new THREE.ConeGeometry(l.w * 0.66, roofH, 4), l.x, l.z, 0, 0, 0.5 + h + roofH / 2, 0, 0, Math.PI / 4, 0), shade(l.color, 0.72)));
+    if (h > 6.5) {
+      // ROUND-10h: tall towers step back — a lower slab and a narrower
+      // crown slab, flat roof with a parapet cap and seeded roof clutter
+      // (AC boxes, water tank) instead of the pyramid cone.
+      const h1 = h * 0.58;
+      const h2 = h - h1;
+      bodyBucket.push(paint(bake(tileBoxUVs(new THREE.BoxGeometry(bw, h1, bw), bw, h1, bw), l.x, l.z, 0, 0, 0.5 + h1 / 2, 0), l.color));
+      bodyBucket.push(paint(bake(tileBoxUVs(new THREE.BoxGeometry(bw * 0.76, h2, bw * 0.76), bw * 0.76, h2, bw * 0.76), l.x, l.z, 0, 0, 0.5 + h1 + h2 / 2, 0), shade(l.color, 0.92)));
+      matte.push(paint(bake(new THREE.BoxGeometry(bw * 0.82, 0.14, bw * 0.82), l.x, l.z, 0, 0, 0.5 + h + 0.07, 0), shade(l.color, 0.6)));
+      const rr = spotRnd(`roof:${l.id}`);
+      if (rr() > 0.4) matte.push(paint(bake(new THREE.BoxGeometry(0.3, 0.28, 0.3), l.x, l.z, 0, -bw * 0.22, 0.5 + h + 0.28, -bw * 0.2), 0x8a8f96));
+      if (rr() > 0.55) matte.push(paint(bake(new THREE.BoxGeometry(0.3, 0.28, 0.3), l.x, l.z, 0, bw * 0.22, 0.5 + h + 0.28, bw * 0.18), 0x8a8f96));
+      if (rr() > 0.65) {
+        matte.push(paint(bake(new THREE.CylinderGeometry(0.22, 0.22, 0.5, 8), l.x, l.z, 0, bw * 0.2, 0.5 + h + 0.39, -bw * 0.2), 0x7a7f86));
+        matte.push(paint(bake(new THREE.ConeGeometry(0.26, 0.18, 8), l.x, l.z, 0, bw * 0.2, 0.5 + h + 0.72, -bw * 0.2), 0x5a5f66));
+      }
+    } else {
+      bodyBucket.push(paint(bake(tileBoxUVs(new THREE.BoxGeometry(bw, h, bw), bw, h, bw), l.x, l.z, 0, 0, 0.5 + h / 2, 0), l.color));
+      const roofH = Math.min(1.6, h * 0.22 + 0.5);
+      matte.push(paint(bake(new THREE.ConeGeometry(l.w * 0.66, roofH, 4), l.x, l.z, 0, 0, 0.5 + h + roofH / 2, 0, 0, Math.PI / 4, 0), shade(l.color, 0.72)));
+      // parapet lip under the pyramid roof
+      matte.push(paint(bake(new THREE.BoxGeometry(l.w * 0.88, 0.1, l.w * 0.88), l.x, l.z, 0, 0, 0.5 + h + 0.05, 0), shade(l.color, 0.6)));
+      // ROUND-10h: balconies on residential fronts (seeded, distinct
+      // floors so two balconies never share coplanar faces)
+      if (RESI_TYPES.has(l.type)) {
+        const br = spotRnd(`balc:${l.id}`);
+        const floors = Math.max(2, Math.round(h / FACADE_TILE));
+        const fl1 = 1 + Math.floor(br() * (floors - 1));
+        const fl2 = floors > 2 ? (fl1 === 1 ? 2 : 1) : fl1;
+        const nBalc = 1 + (br() > 0.55 ? 1 : 0);
+        for (let i = 0; i < nBalc; i++) {
+          const fl = i === 0 ? fl1 : fl2;
+          const by = 0.5 + fl * FACADE_TILE + 0.32;
+          const bx = (br() - 0.5) * bw * 0.45;
+          matte.push(paint(bake(new THREE.BoxGeometry(0.85, 0.07, 0.38), l.x, l.z, 0, bx, by, bw / 2 + 0.16), shade(l.color, 0.8)));
+          matte.push(paint(bake(new THREE.BoxGeometry(0.85, 0.32, 0.04), l.x, l.z, 0, bx, by + 0.19, bw / 2 + 0.33), shade(l.color, 0.55)));
+        }
+      }
+    }
     if (NEON_TYPES.has(l.type)) {
       signs.push({ x: l.x, y: LAND + 0.5 + h * 0.52, z: l.z + l.w * 0.41 + 0.06, ry: 0, sx: Math.min(2.2, l.w * 0.62), sy: 0.55, sz: 0.1, color: l.color });
     }
@@ -664,8 +743,11 @@ export function buildChunkPayload(data: ChunkData, pctx: ChunkPayloadCtx): Chunk
       matte.push(paint(bake(new THREE.BoxGeometry(0.38, 0.38, 0.38), l.x, l.z, 0, -l.w * 0.28, 0.6, l.w * 0.41 + 0.32, 0, 0.3, 0), 0x8a6b45));
       matte.push(paint(bake(new THREE.CylinderGeometry(0.22, 0.16, 0.3, 8), l.x, l.z, 0, l.w * 0.34, 0.15, l.w * 0.41 + 0.38), 0x9a5a3c));
       matte.push(paint(bake(new THREE.ConeGeometry(0.26, 0.55, 8), l.x, l.z, 0, l.w * 0.34, 0.55, l.w * 0.41 + 0.38), 0x4a7a3f));
+      // ROUND-10h: glass storefront band + sign band under the awning
+      matte.push(paint(bake(new THREE.BoxGeometry(l.w * 0.6, 0.95, 0.06), l.x, l.z, 0, 0, 1.03, l.w * 0.41 + 0.03), 0x2b3a4a));
+      if (h > 3) matte.push(paint(bake(new THREE.BoxGeometry(l.w * 0.68, 0.26, 0.08), l.x, l.z, 0, 0, 2.0, l.w * 0.41 + 0.04), 0xf5edd8));
     }
-    if (h > 7) avs.push({ x: l.x, y: LAND + 0.5 + h + roofH + 0.25, z: l.z });
+    if (h > 7) avs.push({ x: l.x, y: LAND + 0.5 + h + 0.39, z: l.z });
     if (l.type === "food") {
       const rng = spotRnd(`smoke:${l.id}`);
       for (let i = 0; i < 9; i++) {
@@ -732,8 +814,10 @@ export function buildChunkPayload(data: ChunkData, pctx: ChunkPayloadCtx): Chunk
 
   /* ---- shop rows ---- */
   for (const s of data.shops) {
-    windows.push(paint(bake(new THREE.BoxGeometry(s.gw, s.gh, 1.6), s.x, s.z, s.rot, 0, s.gh / 2, 0), SHOP_PALETTE[s.pal] ?? 0xe8dcc4));
+    windows.push(paint(bake(tileBoxUVs(new THREE.BoxGeometry(s.gw, s.gh, 1.6), s.gw, s.gh, 1.6), s.x, s.z, s.rot, 0, s.gh / 2, 0), SHOP_PALETTE[s.pal] ?? 0xe8dcc4));
     matte.push(paint(bake(new THREE.BoxGeometry(s.gw * 0.82, 0.07, 0.6), s.x, s.z, s.rot, 0, 1.32, 1.06, 0.35, 0, 0), shade(SHOP_PALETTE[s.awnPal] ?? 0xe8dcc4, 0.7)));
+    // ROUND-10h: glass storefront band under the awning
+    matte.push(paint(bake(new THREE.BoxGeometry(s.gw * 0.7, 1.0, 0.06), s.x, s.z, s.rot, 0, 1.0, 0.83), 0x2b3a4a));
     const sy = Math.min(s.gh - 0.35, 1.95);
     signs.push({
       x: s.x + Math.sin(s.rot) * 0.84, y: LAND + sy, z: s.z + Math.cos(s.rot) * 0.84,
@@ -752,7 +836,8 @@ export function buildChunkPayload(data: ChunkData, pctx: ChunkPayloadCtx): Chunk
     const isShop = b.kind === "shop";
     const bw = isShop ? 2.6 : 2.1;
     const bh = isShop ? 2.4 : 2.1;
-    matte.push(paint(bake(new THREE.BoxGeometry(bw, bh, 2.0), x, z, 0, 0, bh / 2, 0), isShop ? 0xd9a86a : 0xb8a8d8));
+    // ROUND-10h: player buildings wear the window tile too (windows bucket)
+    windows.push(paint(bake(tileBoxUVs(new THREE.BoxGeometry(bw, bh, 2.0), bw, bh, 2.0), x, z, 0, 0, bh / 2, 0), isShop ? 0xd9a86a : 0xb8a8d8));
     matte.push(paint(bake(new THREE.BoxGeometry(bw, 0.3, 2.1), x, z, 0, 0, bh + 0.15, 0), isShop ? 0xa06a2e : 0x6a4a9a));
     if (isShop) {
       matte.push(paint(bake(new THREE.BoxGeometry(bw * 0.85, 0.07, 0.55), x, z, 0, 0, 1.28, 1.2, 0.32, 0, 0), 0xe8dcc4));

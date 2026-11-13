@@ -855,3 +855,35 @@ lee 在街景里截了图：镜头离人很远、很高，整条街+摩天轮+�
 - **架构拆分（LODManager/ResourceManager 独立）**：1490 行单文件、职责分区清晰，当前规模拆成 4 个模块是过度工程；NPC/室内扩展时再拆。评审建议的路线（Render Batch 放最后）实际就是代码现状——跨块合并从没建过。
 - **本次落地的改动**：街景雾 far 与加载半径的硬性断言——`STREET_FOG_FAR` 常量（chunks.ts，42 米），MapView 雾目标改用该常量，ChunkManager 构造函数 `console.assert(STREET_FOG_FAR <= (FULL_R + 1) * CHUNK)`。以后调雾必须同步调 FULL_R，否则控制台直接报错。
 - **补充验收（并入“还需 lee 在浏览器里验证”）**：同一边界来回 100 次无重复生成、内存不涨；快速斜向移动无空洞；街景↔地图连续切换 50 次无泄漏；走 30 分钟内存趋稳；Worker 迟到返回不覆盖新块（buildId 守卫，Node 已测）；同一贴图多块共享只在最后引用释放后 dispose（共享材质永不 dispose，设计如此）。
+
+## 二十九、白天看得见的楼立面（Round 10h；lee：“这个3d体验太差了，没有真实的3d建筑”）
+
+街景拉近后楼是没窗的扁盒子：windows/glassy 桶的窗纹理只是一张 emissiveMap，白天 emissiveIntensity 是 0，所以白天楼体就是纯色盒子；远处还是剪影盒子。10h 让楼在白天也长出窗户和进深——全部进已有的三个合并桶 + InstancedMesh，不新增 draw call。
+
+### 做法
+
+- **白天窗户**：windows/glassy 桶新加 diffuse `map`，用的就是 MapView 已有的街景立面贴图 `facadeTexture()`（一 tile = 2 户 × 1 层，暖白墙 + 深色玻璃窗 + 天光反光 + 楼层线）；夜光 `emissiveMap` 从 `windowsTexture()` 换成同一布局的 `facadeEmissiveTexture()`，所以白天是窗、晚上亮的还是同一扇窗。`createSharedChunkMats(winTex)` 改成 `createSharedChunkMats(dayTex, nightTex)`，调用点只有 MapView 一处；`winTex` 留给 landmarks 和填充楼的夜光，不动。夜里发光强度仍走原来的 day-cycle（`buildingMats` 的 emissiveIntensity）。
+- **UV 按 2.6 米模数拼贴**：新增 `tileBoxUVs()`（chunks.ts），把每个楼体盒子的 UV 按面缩放——一 tile 覆盖 2.6 米宽 × 2.6 米高（和街景 overlay 盒子同一个模数：`round(w/2.6)`、`round(h/2.6)`，取整所以窗户不在墙角被切一半）。顶面/底面采一块素墙（tile 中央两窗之间的墙面），屋顶不长窗户。UV 随 payload 走 worker，materialize 原样恢复。
+- **高楼退台**：h > 6.5 的玻璃楼不再是一个直筒——下段 58% 全宽、上段 42% 收成 0.76 倍宽，顶上是平屋顶 + 压顶板（0.82 倍宽），不再用金字塔尖顶。
+- **屋顶**：平屋顶按种子放空调外机（0.3 立方，两个位置）和水箱（圆柱 + 锥顶，约 1/3 的楼）；矮楼保留金字塔顶，下面加一圈女儿墙压边（0.88 倍宽的薄板）。
+- **阳台**：住宅类（home/lodging/oldtown/womensstreet）的矮楼，临街面按种子挂 1–2 个阳台——挑板 + 栏杆，楼层按种子取不同层，两个阳台绝不同层（共面闪烁的坑已避开）。
+- **底层商铺**：街边类（STREET_TYPES）已有雨棚/门/箱子/绿植，再加玻璃店面带（深色玻璃，0.95 高）和招牌带（米白，h > 3 的楼才有）；店排（shop rows）楼体同样贴窗纹理 + 玻璃店面带。玩家自开的店/房楼体也从 matte 桶移到 windows 桶，跟着贴窗纹理。
+- **没动的东西**：16 米块、三档 LOD（full/simple/silhouette）、dispose-on-unload、ChunkLedger、STREET_FOG_FAR 断言、worker 构建路径全都没碰；剪影仍是素盒子（远处本来就看不清）；填充楼（InstancedMesh）仍是素色——单块共享几何没法按楼高拼贴窗户，留作已知局限；地标小品（landmarks.ts）各有自己的材质，不动。
+
+### 改动文件
+
+- `client/src/chunks.ts`：`createSharedChunkMats` 改签名（day/night 两张贴图）；新增 `FACADE_TILE`、`tileBoxUVs()`、`RESI_TYPES`；`buildChunkPayload` 里楼体/店排/玩家楼走新逻辑（退台、阳台、商铺带、屋顶件、UV 拼贴）。
+- `client/src/MapView.tsx`：建城时多建两张贴图（`facadeTexture()` + `facadeEmissiveTexture()`），传给 `createSharedChunkMats`。
+
+### 验证
+
+- Node 烟测（最密块 -2,0，22 栋楼，4 栋高楼、4 栋住宅、3 间街铺 + 1 间店排 + 1 间玩家店）：两次构建 payload 完全一致（确定性还在）；windows/glassy 合并网格都有 uv、无 NaN，uv 最大 2.0（拼贴生效且有界）；顶面墙贴片顶点 windows 桶 160、glassy 桶 64（每盒 8 个顶/底面顶点）；合并顶点共 3323；剪影正常生成；facades 23、signs 16、picks 22。烟测脚本已删。
+- `bun x tsc --noEmit -p client/tsconfig.json`：只剩一条已知的 `TS2688: Cannot find type definition file for 'bun-types'`（改动前就有，和本次无关），无其他报错。`cd standalone && npm run build`：通过，`✓ built in 12.68s`，主包 `index-B-NlEoql.js` 2,174.99 kB，worker `chunk.worker-CwZg8aAU.js` 712.98 kB。
+- **没验证（等 lee 在浏览器里看）**：白天街景里楼是不是真的像楼（窗户密度、阳台、退台、店面在 3.5 米镜头下顺不顺眼）；地图模式下楼会不会显脏（同一张贴图在俯瞰时也会出现）；晚上窗光是不是和以前一样。
+
+### 已知局限（老实说）
+
+- **填充楼还是素盒子**：InstancedMesh 共用一块几何，UV 没法按每栋楼高拼贴；它们是背景楼群，近处看仍是纯色。想修得把填充楼改成合并几何（每块多一个 mesh），那是下一步。
+- **窗户是贴图，不是真几何**：凑到 1 米内看，窗户还是平的；真窗洞/窗框几何是 2.0 切片的事。
+- **阳台只在临街面（+z）**：楼的背面和侧面没有阳台；转到楼后会穿帮。
+- **玻璃店面带是深色平板**：没有真透视的室内，门后仍是楼体。
